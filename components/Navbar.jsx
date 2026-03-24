@@ -519,7 +519,7 @@ const Navbar = () => {
           <Link href="/" className="flex items-center flex-shrink-0">
             <Image
               src={LogoMobile}
-              alt="Quickfynd"
+              alt="Brandstored"
               width={120}
               height={32}
               className="h-8 w-auto object-contain"
@@ -985,7 +985,7 @@ const Navbar = () => {
             >
               {/* Header with Logo and Close Button */}
               <div className="flex justify-between items-center border-b border-gray-200 pb-4">
-                <Image src={Logo} alt="QuickFynd Logo" width={120} height={35} className="object-contain" />
+                <Image src={Logo} alt="Brandstored Logo" width={120} height={35} className="object-contain" />
                 <button onClick={() => setMobileMenuOpen(false)} className="p-1 hover:bg-gray-100 rounded-full transition">
                   <X size={24} className="text-gray-600" />
                 </button>

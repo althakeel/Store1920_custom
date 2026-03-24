@@ -27,9 +27,9 @@ export async function POST(req) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'Quickfynd <noreply@brandstored.com>',
+        from: 'brandstored <noreply@brandstored.com>',
         to: email,
-        subject: 'Login Alert - Quickfynd',
+        subject: 'Login Alert - brandstored',
         html: `
           <!DOCTYPE html>
           <html>
@@ -155,7 +155,7 @@ export async function POST(req) {
               <div class="content">
                 <h2 class="greeting">Hi ${name || 'there'}!</h2>
                 <p style="color: #475569; font-size: 16px; margin-bottom: 20px;">
-                  We detected a new login to your Quickfynd account. Here are the details:
+                  We detected a new login to your brandstored account. Here are the details:
                 </p>
                 
                 <div class="info-box">
@@ -194,8 +194,8 @@ export async function POST(req) {
                 </p>
               </div>
               <div class="footer">
-                <p><strong>QuickFynd</strong> - Shop smarter, live better</p>
-                <p>© ${new Date().getFullYear()} QuickFynd. All rights reserved.</p>
+                <p><strong>brandstored</strong> - Shop smarter, live better</p>
+                <p>© ${new Date().getFullYear()} brandstored. All rights reserved.</p>
                 <p style="margin-top: 10px; color: #94a3b8;">This is a security notification from brandstored.com</p>
               </div>
             </div>

@@ -1,5 +1,5 @@
 {
-  "baseUrl": "https://quickfynd.com",
+  "baseUrl": "https://brandstored.com",
   "notes": "All endpoints are under /api and return JSON.",
   "auth": {
     "type": "Firebase ID token",

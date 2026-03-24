@@ -200,7 +200,7 @@ export default function SendTestEmailPage() {
               <li>✅ Top 4 best-selling products from your store</li>
               <li>✅ Clickable product cards with images</li>
               <li>✅ Direct links to product pages</li>
-              <li>✅ Professional QuickFynd branding</li>
+              <li>✅ Professional Brandstored branding</li>
               <li>✅ Unsubscribe link (required for compliance)</li>
             </ul>
           </div>

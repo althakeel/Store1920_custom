@@ -16,9 +16,9 @@ export async function POST(request) {
     if (!store) {
       console.log('Creating default store...');
       store = await Store.create({
-        name: "QuickFynd Store",
+        name: "brandstored Store",
         userId: "default-admin",
-        username: "quickfynd",
+        username: "brandstored",
         description: "Your online marketplace",
         email: "admin@brandstored.com",
         isActive: true,

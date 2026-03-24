@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const Product = require('./models/Product').default;
 
-const mongoUri = process.env.MONGODB_URI || 'mongodb+srv://sagar143s:sagar@quickfynd.agjjl5t.mongodb.net/quickfynd?retryWrites=true&w=majority';
+const mongoUri = process.env.MONGODB_URI || 'mongodb+srv://sagar143s:sagar@Brandstored.agjjl5t.mongodb.net/Brandstored?retryWrites=true&w=majority';
 
 mongoose.connect(mongoUri).then(async () => {
   try {

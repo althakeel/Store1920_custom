@@ -768,7 +768,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                             value={productInfo.deliveredBy || ''}
                             onChange={onChangeHandler}
                             className="w-full border rounded px-3 py-2"
-                            placeholder="e.g. Quickfynd"
+                            placeholder="e.g. Brandstored"
                         />
                     </div>
                     <div>

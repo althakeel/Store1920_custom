@@ -348,8 +348,8 @@ const OrderSummary = ({ totalPrice, items }) => {
                 key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
                 order_id: rpData.orderId,
                 amount: Math.round(discountedAmount * 100),
-                currency: 'INR',
-                name: 'QuickFynd',
+                currency: 'AED',
+                name: 'brandstored',
                 description: 'Prepaid Payment (5% OFF)',
                 image: '/logo.png',
                 handler: async function (response) {

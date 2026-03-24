@@ -57,18 +57,18 @@ export async function POST(request) {
 
     // Custom email subject and body
     const inviteUrl = `${APP_URL}/store/invite/accept?token=${inviteToken}`;
-    const emailSubject = `🚀 You're invited to join ${store.name} on Quickfynd!`;
+    const emailSubject = `🚀 You're invited to join ${store.name} on brandstored!`;
     const emailBody = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto;">
-        <h2 style="color: #ff6600;">Quickfynd Store Invitation</h2>
+        <h2 style="color: #ff6600;">brandstored Store Invitation</h2>
         <p>Hello,</p>
-        <p><b>${store.name}</b> has invited you to join their store team on <a href="https://brandstored.com" style="color: #ff6600;">Quickfynd</a>.</p>
+        <p><b>${store.name}</b> has invited you to join their store team on <a href="https://brandstored.com" style="color: #ff6600;">brandstored</a>.</p>
         <p style="margin: 24px 0;">
           <a href="${inviteUrl}" style="background: #ff6600; color: #fff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: bold;">Accept Invitation</a>
         </p>
         <p>This link will expire in <b>7 days</b>. If you did not expect this invitation, you can ignore this email.</p>
         <hr style="margin: 32px 0;" />
-        <p style="font-size: 13px; color: #888;">Sent by Quickfynd Store Platform</p>
+        <p style="font-size: 13px; color: #888;">Sent by brandstored Store Platform</p>
       </div>
     `;
 

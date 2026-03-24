@@ -144,7 +144,7 @@ export default function EmailTemplatesPreview() {
                         Q
                       </div>
                       <div>
-                        <p className="font-semibold text-gray-900">QuickFynd</p>
+                        <p className="font-semibold text-gray-900">Brandstored</p>
                         <p className="text-xs text-gray-600">marketing@brandstored.com</p>
                       </div>
                     </div>
@@ -214,7 +214,7 @@ export default function EmailTemplatesPreview() {
             <li>✅ <strong>Responsive Design:</strong> Templates look great on desktop, tablet, and mobile devices</li>
             <li>✅ <strong>Dynamic Content:</strong> Products are fetched automatically from your store based on sales performance</li>
             <li>✅ <strong>Discount Badges:</strong> Sale prices automatically show discount percentages</li>
-            <li>✅ <strong>Brand Consistency:</strong> All emails maintain QuickFynd branding with consistent colors and style</li>
+            <li>✅ <strong>Brand Consistency:</strong> All emails maintain Brandstored branding with consistent colors and style</li>
             <li>✅ <strong>Unsubscribe Link:</strong> Every email includes an unsubscribe option for compliance</li>
           </ul>
         </div>

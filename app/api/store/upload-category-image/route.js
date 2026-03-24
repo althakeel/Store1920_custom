@@ -76,7 +76,7 @@ export async function POST(req) {
     const formData = new FormData();
     formData.append('file', base64Data);
     formData.append('fileName', fileNameWithExt);
-    formData.append('folder', '/quickfynd/home-categories');
+    formData.append('folder', '/Brandstored/home-categories');
 
     const uploadResponse = await fetch('https://upload.imagekit.io/api/v1/files/upload', {
       method: 'POST',

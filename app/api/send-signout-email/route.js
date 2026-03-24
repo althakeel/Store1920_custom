@@ -39,9 +39,9 @@ export async function POST(req) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'Quickfynd <noreply@brandstored.com>',
+        from: 'brandstored <noreply@brandstored.com>',
         to: email,
-        subject: 'You have been signed out - Quickfynd',
+        subject: 'You have been signed out - brandstored',
         html: `
           <!DOCTYPE html>
           <html>
@@ -98,7 +98,7 @@ export async function POST(req) {
             <div class="content">
               <p>Hi ${name || 'there'},</p>
               
-              <p>You have been successfully signed out from your <strong>Quickfynd</strong> account.</p>
+              <p>You have been successfully signed out from your <strong>brandstored</strong> account.</p>
               
               <div class="security-tip">
                 <strong>🔒 Security Tip:</strong> If you didn't sign out, please sign in immediately and change your password.
@@ -115,7 +115,7 @@ export async function POST(req) {
               <p>We hope to see you again soon!</p>
               
               <p>Best regards,<br>
-              <strong>The Quickfynd Team</strong></p>
+              <strong>The brandstored Team</strong></p>
             </div>
             <div class="footer">
               <p>This is an automated message from brandstored.com</p>
