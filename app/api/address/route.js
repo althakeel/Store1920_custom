@@ -61,7 +61,7 @@ export async function POST(req) {
     }
 
     // Basic validation
-    const required = ['name', 'email', 'street', 'city', 'state', 'country', 'phone']
+    const required = ['name', 'street', 'city', 'state', 'country', 'phone']
     for (const k of required) {
       if (!data[k] || String(data[k]).trim() === '') {
         return Response.json({ error: `Missing field: ${k}` }, { status: 400 })

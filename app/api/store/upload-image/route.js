@@ -1,22 +1,25 @@
 import authSeller from "@/middlewares/authSeller";
 import imagekit from "@/configs/imageKit";
+import { getAuth } from '@/lib/firebase-admin';
 
 
 export async function POST(request) {
     try {
-        // Get userId from Authorization header (Firebase ID token)
+        // Get userId from verified Firebase ID token
         const authHeader = request.headers.get('authorization') || '';
-        let userId = null;
-        if (authHeader.startsWith('Bearer ')) {
-            const token = authHeader.replace('Bearer ', '');
-            // Decode Firebase token to get userId (sub)
-            const base64Payload = token.split('.')[1];
-            const payload = JSON.parse(Buffer.from(base64Payload, 'base64').toString());
-            userId = payload.user_id || payload.sub || null;
-        }
-        if (!userId) {
+        if (!authHeader.startsWith('Bearer ')) {
             return Response.json({ error: "Unauthorized" }, { status: 401 });
         }
+
+        const idToken = authHeader.replace('Bearer ', '');
+        let userId = null;
+        try {
+            const decodedToken = await getAuth().verifyIdToken(idToken);
+            userId = decodedToken.uid;
+        } catch (authError) {
+            return Response.json({ error: "Unauthorized" }, { status: 401 });
+        }
+
         const storeId = await authSeller(userId);
         if (!storeId) {
             return Response.json({ error: "Store not approved or not found" }, { status: 403 });

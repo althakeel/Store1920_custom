@@ -27,10 +27,6 @@ const ProductDetails = ({ product, reviews = [], hideTitle = false, offerData = 
   const [wishlistMessage, setWishlistMessage] = useState('');
   const [showCartToast, setShowCartToast] = useState(false);
   const [isOrderingNow, setIsOrderingNow] = useState(false);
-  const [selectedOfferKey, setSelectedOfferKey] = useState('cashback');
-  const [showOfferPopup, setShowOfferPopup] = useState(false);
-  const [expandedOfferIndex, setExpandedOfferIndex] = useState(null);
-  const [showSecurityInfo, setShowSecurityInfo] = useState(false);
   const { isSignedIn, userId } = useAuth();
   const router = useRouter();
   const dispatch = useDispatch();
@@ -188,74 +184,6 @@ const ProductDetails = ({ product, reviews = [], hideTitle = false, offerData = 
     ? Math.round(((effAED - effPrice) / effAED) * 100)
     : 0;
 
-  const paymentOffers = [
-    {
-      key: 'cashback',
-      title: 'Cashback',
-      subtitle: 'Upto 5% cashback as wallet balance',
-      countLabel: '1 offer',
-      offers: [
-        {
-          title: 'Get upto 5% cashback on super.money UPI',
-          terms: 'Get upto 5% cashback on super.money UPI • T&Cs'
-        }
-      ]
-    },
-    {
-      key: 'bank',
-      title: 'Bank Offer',
-      subtitle: 'Upto AED1,500 off on select cards',
-      countLabel: '36 offers',
-      offers: [
-        {
-          title: '10% instant discount up to AED1,500 on HDFC Credit Cards',
-          terms: 'Valid on min order AED4,999 • T&Cs',
-          details: [
-            'Offer 1: 10% instant discount up to INR 1250 on BOBCARD Non-EMI transactions. Minimum purchase value INR 10,000.',
-            'Offer period: 11th February 2026 00:00 HRS to 20th February 2026 23:59 HRS.',
-            'EMI and Non-EMI both eligible on supported cards; bonus slabs may apply on 6 months+ EMI tenure.',
-            'Exchange orders are eligible if net payable amount meets minimum threshold.',
-            'COD, Net Banking and Amazon Pay Balance part-payment are not eligible for this bank offer.',
-            'If order is cancelled or returned, instant discount benefit is adjusted in refund amount.',
-            'Max cumulative benefit can be capped per card during offer period as per issuer terms.'
-          ]
-        },
-        {
-          title: 'Flat AED750 off on ICICI Bank Debit Cards',
-          terms: 'Valid on min order AED2,999 • T&Cs',
-          details: [
-            'Offer 2: Flat INR 750 instant discount on eligible ICICI Debit Cards.',
-            'Minimum cart value and card BIN eligibility checks apply at checkout.',
-            'Valid on one or multiple transactions until campaign end or budget exhaustion.',
-            'Cancelled/failed transactions do not qualify.'
-          ]
-        },
-        {
-          title: '5% cashback up to AED1,000 on SBI Credit Cards',
-          terms: 'Cashback credited in 5 working days • T&Cs',
-          details: [
-            'Offer 3: 5% cashback up to INR 1,000 on eligible SBI Credit Card spends.',
-            'Cashback is posted to card statement within standard settlement timeline.',
-            'Only successful card payment transactions qualify for cashback.'
-          ]
-        }
-      ]
-    },
-    {
-      key: 'partner',
-      title: 'Partner Offers',
-      subtitle: 'Get GST invoice and save more',
-      countLabel: '1 offer',
-      offers: [
-        {
-          title: 'Get GST invoice and claim input credit',
-          terms: 'For eligible business purchases only • T&Cs'
-        }
-      ]
-    }
-  ];
-  const activeOffer = paymentOffers.find((offer) => offer.key === selectedOfferKey) || paymentOffers[0];
-
   const deliveredByText = String(
     product?.attributes?.deliveredBy ??
     product?.deliveryInfo?.deliveredBy ??
@@ -269,26 +197,7 @@ const ProductDetails = ({ product, reviews = [], hideTitle = false, offerData = 
     ''
   ).trim();
 
-  const paymentText = 'Secure transaction';
-
-  const hasSellerMeta = Boolean(deliveredByText || soldByText || paymentText);
-  const securityInfoRef = useRef(null);
-
-  useEffect(() => {
-    const handleOutside = (event) => {
-      if (securityInfoRef.current && !securityInfoRef.current.contains(event.target)) {
-        setShowSecurityInfo(false);
-      }
-    };
-
-    if (showSecurityInfo) {
-      document.addEventListener('mousedown', handleOutside);
-    }
-
-    return () => {
-      document.removeEventListener('mousedown', handleOutside);
-    };
-  }, [showSecurityInfo]);
+  const hasSellerMeta = Boolean(deliveredByText || soldByText);
 
   // Helper to check if a color+size combination has stock
   const isVariantInStock = (color, size) => {
@@ -983,96 +892,6 @@ const ProductDetails = ({ product, reviews = [], hideTitle = false, offerData = 
               )}
             </div>
 
-            {/* Payment Offers */}
-            <div>
-              <h3 className="text-base font-semibold text-gray-900 mb-3">Offers</h3>
-
-              <div className="flex gap-2 overflow-x-auto pb-1">
-                {paymentOffers.map((offer) => {
-                  const isActive = offer.key === selectedOfferKey;
-                  return (
-                    <button
-                      key={offer.key}
-                      type="button"
-                      onClick={() => {
-                        setSelectedOfferKey(offer.key);
-                        setShowOfferPopup(true);
-                        setExpandedOfferIndex(null);
-                      }}
-                      className={`min-w-[160px] text-left border rounded-lg p-2.5 transition ${
-                        isActive ? 'border-blue-400' : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <p className="text-xs font-semibold text-gray-900">{offer.title}</p>
-                      <p className="text-xs text-gray-600 mt-1 line-clamp-2">{offer.subtitle}</p>
-                      <p className="text-xs text-blue-700 font-medium mt-2">{offer.countLabel} ›</p>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {showOfferPopup && activeOffer && (
-                <div
-                  className="fixed inset-0 z-[120] bg-black/30 flex items-center justify-center p-4"
-                  onClick={() => setShowOfferPopup(false)}
-                >
-                  <div
-                    className="w-full max-w-md bg-white border border-gray-200 rounded-2xl shadow-xl"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-                      <h4 className="text-sm font-semibold text-gray-900">{activeOffer.title}</h4>
-                      <button
-                        type="button"
-                        onClick={() => setShowOfferPopup(false)}
-                        className="text-gray-500 hover:text-gray-700 text-lg leading-none"
-                        aria-label="Close offers"
-                      >
-                        ×
-                      </button>
-                    </div>
-
-                    <div className="p-4 max-h-[60vh] overflow-y-auto space-y-3">
-                      {activeOffer.offers?.map((item, idx) => (
-                        <div key={idx} className="border border-gray-200 rounded-2xl overflow-hidden">
-                          <div className="p-4 flex items-start justify-between gap-3">
-                            <div className="flex items-start gap-3">
-                              <div className="w-8 h-8 rounded bg-indigo-600 text-white flex items-center justify-center text-sm font-bold">%</div>
-                              <p className="text-[15px] text-gray-900 leading-snug">{item.title}</p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => setExpandedOfferIndex(expandedOfferIndex === idx ? null : idx)}
-                              className="text-orange-500 hover:text-orange-600 text-sm font-semibold"
-                            >
-                              {expandedOfferIndex === idx ? 'Hide details' : 'View details'}
-                            </button>
-                          </div>
-                          <div className="bg-gray-50 px-4 py-3 text-sm text-gray-700 font-medium">{item.terms}</div>
-                          {expandedOfferIndex === idx && (
-                            <div className="px-4 py-3 border-t border-gray-200 bg-white">
-                              <p className="text-xs font-semibold text-gray-900 mb-2">Promotion Terms</p>
-                              <ul className="list-disc pl-4 space-y-1 text-xs text-gray-700">
-                                {(item.details || []).map((line, detailIdx) => (
-                                  <li key={detailIdx}>{line}</li>
-                                ))}
-                              </ul>
-                              <p className="text-xs font-semibold text-gray-900 mt-3 mb-2">Frequently Asked Questions (FAQs)</p>
-                              <ul className="list-disc pl-4 space-y-1 text-xs text-gray-700">
-                                <li>How to avail? Use eligible card on checkout; no promo code needed.</li>
-                                <li>Does EMI work? Yes, for eligible tenure and card combinations.</li>
-                                <li>Will cancelled orders get offer? No, benefits are reversed on cancellation/refund.</li>
-                              </ul>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
             {hasSellerMeta && (
               <div className="border border-gray-200 rounded-md px-3 py-2.5">
                 <div className="space-y-1.5 text-sm">
@@ -1090,45 +909,6 @@ const ProductDetails = ({ product, reviews = [], hideTitle = false, offerData = 
                     </div>
                   )}
 
-                  {paymentText && (
-                    <div className="grid grid-cols-[90px_1fr] gap-2">
-                      <span className="text-gray-600">Payment</span>
-                      <div
-                        className="relative w-fit"
-                        ref={securityInfoRef}
-                        onMouseEnter={() => setShowSecurityInfo(true)}
-                        onMouseLeave={() => setShowSecurityInfo(false)}
-                      >
-                        <button
-                          type="button"
-                          className="text-blue-700 hover:underline"
-                          onClick={() => setShowSecurityInfo((prev) => !prev)}
-                        >
-                          {paymentText}
-                        </button>
-
-                        {showSecurityInfo && (
-                          <div className="absolute left-0 top-full mt-2 z-40 w-[360px] max-w-[90vw] rounded-md border border-gray-300 bg-white shadow-lg p-4">
-                            <div className="flex items-start justify-between gap-3">
-                              <p className="text-base font-semibold text-gray-900">Your transaction is secure</p>
-                              <button
-                                type="button"
-                                onClick={() => setShowSecurityInfo(false)}
-                                className="text-gray-500 hover:text-gray-700 text-base leading-none"
-                                aria-label="Close payment security info"
-                              >
-                                ×
-                              </button>
-                            </div>
-                            <p className="mt-2 text-sm text-gray-700 leading-relaxed">
-                              We work hard to protect your security and privacy. Our payment security system encrypts your information during transmission. We don’t share your credit card details with third-party sellers, and we don’t sell your information to others.
-                            </p>
-                            <a href="/privacy-policy" className="inline-block mt-2 text-sm text-blue-600 hover:underline">Learn more</a>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
             )}

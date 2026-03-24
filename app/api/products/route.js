@@ -59,9 +59,10 @@ export async function GET(request){
         await dbConnect();
         const { searchParams } = new URL(request.url);
         const sortBy = searchParams.get('sortBy');
+        const fetchAll = searchParams.get('all') === 'true';
         const parsedLimit = parseInt(searchParams.get('limit') || '20', 10);
         const parsedOffset = parseInt(searchParams.get('offset') || '0', 10);
-        const limit = Math.min(Number.isFinite(parsedLimit) ? parsedLimit : 20, 300); // Default 20, max 300
+        const limit = fetchAll ? 5000 : Math.min(Number.isFinite(parsedLimit) ? parsedLimit : 20, 300); // Default 20, max 300 (or 5000 for all=true)
         const offset = Number.isFinite(parsedOffset) ? parsedOffset : 0;
         const fastDelivery = searchParams.get('fastDelivery');
         const categoryParam = searchParams.get('category');
@@ -69,7 +70,7 @@ export async function GET(request){
         
         // CHECK CACHE FIRST - Skip MongoDB if cached!
         // TEMPORARILY DISABLED TO FORCE FRESH DATA WITH CATEGORIES
-        const cacheKey = generateCacheKey('products', { limit, offset, fastDelivery: fastDelivery || 'false' });
+        const cacheKey = generateCacheKey('products', { limit, offset, fastDelivery: fastDelivery || 'false', fetchAll: fetchAll ? 'true' : 'false' });
         // const cachedProducts = getCachedData(cacheKey);
         // if (cachedProducts) {
         //     return NextResponse.json({ products: cachedProducts, fromCache: true });

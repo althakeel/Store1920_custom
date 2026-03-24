@@ -18,8 +18,8 @@ function InitializeApp({ children }) {
     if (products.length < 100) {
       const loadProducts = async () => {
         try {
-          // Fetch ALL products with a very high limit
-          const { data } = await axios.get("/api/products?limit=200");
+          // Fetch all products for complete search coverage
+          const { data } = await axios.get("/api/products?all=true&includeOutOfStock=true");
           if (data.products && Array.isArray(data.products)) {
             dispatch({ type: "product/setProduct", payload: data.products });
             console.log('[ClientLayout] Loaded', data.products.length, 'products');

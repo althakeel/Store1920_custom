@@ -57,8 +57,8 @@ const Footer = () => {
     ];
 
     const socialIcons = [
-        { icon: FacebookIcon, link: "https://www.facebook.com/profile.php?id=61584513867192" },
-        { icon: InstagramIcon, link: "https://www.instagram.com/quickfynd/" },
+        { icon: FacebookIcon, link: "https://www.facebook.com/brandstoredAE" },
+        { icon: InstagramIcon, link: "https://www.instagram.com/brandstored" },
     ];
 
     return (

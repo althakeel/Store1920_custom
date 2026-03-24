@@ -149,7 +149,6 @@ export default function HeroBannerSlider() {
                 willChange: isActive ? 'opacity, transform' : 'auto',
                 backfaceVisibility: 'hidden',
                 zIndex: isActive ? 2 : 1,
-                background: slide.bg,
               }}
             >
               <Image
@@ -185,7 +184,7 @@ export default function HeroBannerSlider() {
           justify-content: center;
           align-items: center;
           margin-left: calc(-50vw + 50%);
-          transition: background 0.7s ease-in-out;
+          transition: background 0.4s ease-in-out;
         }
 
         .hero-banner__viewport {

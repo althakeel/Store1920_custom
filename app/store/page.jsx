@@ -12,7 +12,6 @@ import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 import toast from "react-hot-toast"
 import { useAuth } from '@/lib/useAuth'
-import CustomerLocationAnalytics from "@/components/CustomerLocationAnalytics"
 
 
 // Dynamically import CarouselProducts to avoid SSR issues
@@ -170,12 +169,6 @@ export default function Dashboard() {
 
 
             {/* CarouselProducts and reviews removed as requested */}
-
-            {/* Customer Location Analytics */}
-            <div className="mt-10">
-                <CustomerLocationAnalytics />
-            </div>
-
             {/* Contact Us Messages Section */}
             <ContactMessagesSeller />
         </div>

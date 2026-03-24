@@ -12,8 +12,8 @@ import { useAuth } from '@/lib/useAuth';
 const indianStates = [
     "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal", "Delhi", "Jammu and Kashmir", "Ladakh" 
 ];
-const keralaDistricts = [
-    "Alappuzha", "Ernakulam", "Idukki", "Kannur", "Kasaragod", "Kollam", "Kottayam", "Kozhikode", "Malappuram", "Palakkad", "Pathanamthitta", "Thiruvananthapuram", "Thrissur", "Wayanad"
+const uaeEmirates = [
+    "Abu Dhabi", "Dubai", "Sharjah", "Ajman", "Ras Al Khaimah", "Fujairah", "Umm Al Quwain"
 ];
 
 const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddress = null, isEdit = false, onAddressUpdated, addressList = [], onSelectAddress, selectedAddressId }) => {
@@ -36,11 +36,11 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
         state: '',
         district: '',
         zip: '',
-        country: 'India',
+        country: 'United Arab Emirates',
         phone: '',
-        phoneCode: '+91',
+        phoneCode: '+971',
         alternatePhone: '',
-        alternatePhoneCode: '+91',
+        alternatePhoneCode: '+971',
         id: null,
     })
     
@@ -78,11 +78,11 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
                 state: addressToEdit.state || '',
                 district: addressToEdit.district || '',
                 zip: addressToEdit.zip || '',
-                country: addressToEdit.country || 'India',
+                country: addressToEdit.country || 'United Arab Emirates',
                 phone: phoneNumber,
-                phoneCode: addressToEdit.phoneCode || '+91',
+                phoneCode: addressToEdit.phoneCode || '+971',
                 alternatePhone: addressToEdit.alternatePhone || '',
-                alternatePhoneCode: addressToEdit.alternatePhoneCode || addressToEdit.phoneCode || '+91',
+                alternatePhoneCode: addressToEdit.alternatePhoneCode || addressToEdit.phoneCode || '+971',
             })
         } else if (!isEdit && !editingAddress) {
             // Reset form when adding new address
@@ -94,19 +94,19 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
                 state: '',
                 district: '',
                 zip: '',
-                country: 'India',
+                country: 'United Arab Emirates',
                 phone: '',
-                phoneCode: '+91',
+                phoneCode: '+971',
                 alternatePhone: '',
-                alternatePhoneCode: '+91',
+                alternatePhoneCode: '+971',
                 id: null,
             })
         }
     }, [isEdit, initialAddress, editingAddress])
 
     const countries = [
-        { name: 'India', code: '+91' },
         { name: 'United Arab Emirates', code: '+971' },
+        { name: 'India', code: '+91' },
         { name: 'Saudi Arabia', code: '+966' },
         { name: 'Qatar', code: '+974' },
         { name: 'Kuwait', code: '+965' },
@@ -122,9 +122,13 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
             setAddress({
                 ...address,
                 country: value,
+                state: '',
+                district: '',
+                zip: '',
                 phoneCode: selectedCountry?.code || '+971',
                 alternatePhoneCode: selectedCountry?.code || '+971'
             })
+            setPincodeError('')
         } else {
             setAddress({
                 ...address,
@@ -135,11 +139,20 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
 
     // Fetch pincode details from API
     const handlePincodeSearch = async (e) => {
-        const pincode = e.target.value;
+        const rawValue = e.target.value;
+        const pincode = address.country === 'India'
+            ? rawValue.replace(/\D/g, '').slice(0, 6)
+            : rawValue.slice(0, 12);
+
         setAddress({
             ...address,
             zip: pincode
         });
+
+        if (address.country !== 'India') {
+            setPincodeError('');
+            return;
+        }
         
         if (!pincode || pincode.length < 6) {
             setPincodeError('');
@@ -205,7 +218,7 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
                 return;
             }
 
-            if ((address.country || 'India') === 'India') {
+            if ((address.country || 'United Arab Emirates') === 'India') {
                 if (!/^[1-9][0-9]{5}$/.test(normalizedZip)) {
                     toast.error('Please enter a valid 6-digit Indian pincode.');
                     return;
@@ -260,11 +273,11 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
                 state: '',
                 district: '',
                 zip: '',
-                country: 'India',
+                country: 'United Arab Emirates',
                 phone: '',
-                phoneCode: '+91',
+                phoneCode: '+971',
                 alternatePhone: '',
-                alternatePhoneCode: '+91',
+                alternatePhoneCode: '+971',
                 id: null,
             })
         } catch (error) {
@@ -332,10 +345,10 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
                                                             {addr.city}, {addr.district && `${addr.district}, `}{addr.state}
                                                         </div>
                                                         <div className="text-gray-600 text-sm">
-                                                            {addr.country} - {addr.zip || addr.pincode || '673571'}
+                                                            {addr.country} - {addr.zip || addr.pincode || 'N/A'}
                                                         </div>
                                                         <div className="text-orange-600 text-sm font-semibold mt-2">
-                                                            {addr.phoneCode || '+91'} {addr.phone}
+                                                            {addr.phoneCode || '+971'} {addr.phone}
                                                         </div>
                                                     </div>
                                                 </div>
@@ -381,43 +394,6 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
                         /* Address Form */
                         <form onSubmit={e => toast.promise(handleSubmit(e), { loading: 'Adding Address...' })} className="p-6 space-y-4">
                     
-                    {/* Pincode Lookup - Top Section */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Zip/Postal Code</label>
-                        <div className="relative">
-                            <input 
-                                name="zip" 
-                                onChange={(e) => {
-                                    const value = e.target.value.replace(/\D/g, '').slice(0, 6);
-                                    e.target.value = value;
-                                    handlePincodeSearch(e);
-                                }}
-                                value={address.zip}
-                                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition" 
-                                type="text" 
-                                placeholder="Enter 6-digit pincode (e.g., 673571)" 
-                                maxLength="6"
-                                pattern="[0-9]{6}"
-                                inputMode="numeric"
-                            />
-                            {pincodeLoading && (
-                                <div className="absolute right-3 top-3">
-                                    <svg className="animate-spin h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
-                                    </svg>
-                                </div>
-                            )}
-                        </div>
-                        {pincodeError && (
-                            <p className="text-xs text-red-600 mt-1">{pincodeError}</p>
-                        )}
-                        {address.zip && !pincodeError && (
-                            <p className="text-xs text-green-600 mt-1">✓ Address details auto-filled</p>
-                        )}
-                        <p className="text-xs text-gray-500 mt-1">Enter pincode to auto-fill city, state, and district</p>
-                    </div>
-                    
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1.5">Full Name</label>
                         <input 
@@ -440,7 +416,6 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
                             className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition" 
                             type="email" 
                             placeholder="Email address" 
-                            required 
                         />
                     </div>
 
@@ -471,38 +446,33 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1.5">State</label>
-                            <select
-                                name="state"
-                                onChange={handleAddressChange}
-                                value={address.state}
-                                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition bg-white"
-                                required
-                            >
-                                <option value="">Select State</option>
-                                {indianStates.map((state) => (
-                                    <option key={state} value={state}>{state}</option>
-                                ))}
-                            </select>
+                            <label className="block text-sm font-medium text-gray-700 mb-1.5">{address.country === 'United Arab Emirates' ? 'Emirate' : 'State'}</label>
+                            {(address.country === 'India' || address.country === 'United Arab Emirates') ? (
+                                <select
+                                    name="state"
+                                    onChange={handleAddressChange}
+                                    value={address.state}
+                                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition bg-white"
+                                    required
+                                >
+                                    <option value="">{address.country === 'United Arab Emirates' ? 'Select Emirate' : 'Select State'}</option>
+                                    {(address.country === 'United Arab Emirates' ? uaeEmirates : indianStates).map((state) => (
+                                        <option key={state} value={state}>{state}</option>
+                                    ))}
+                                </select>
+                            ) : (
+                                <input
+                                    name="state"
+                                    onChange={handleAddressChange}
+                                    value={address.state}
+                                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+                                    type="text"
+                                    placeholder="State/Region"
+                                    required
+                                />
+                            )}
                         </div>
                     </div>
-                    {address.state === "Kerala" && (
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1.5">District</label>
-                            <select
-                                name="district"
-                                onChange={handleAddressChange}
-                                value={address.district}
-                                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition bg-white"
-                                required
-                            >
-                                <option value="">Select District</option>
-                                {keralaDistricts.map((district) => (
-                                    <option key={district} value={district}>{district}</option>
-                                ))}
-                            </select>
-                        </div>
-                    )}
 
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1.5">Country</label>
@@ -552,7 +522,7 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
                                 className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition" 
                                 type="text"
                                 inputMode="numeric"
-                                placeholder="9876543210" 
+                                placeholder={address.phoneCode === '+971' ? '501234567' : '9876543210'} 
                                 maxLength="15"
                                 pattern="[0-9]{7,15}"
                                 title="Phone number must be 7-15 digits"

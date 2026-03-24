@@ -16,7 +16,7 @@ import RecommendedProducts from "@/components/RecommendedProducts";
 
 // Below-the-fold components - lazy load
 const BannerSlider = dynamic(() => import("@/components/BannerSlider"), { ssr: true });
-const CarouselSlider = dynamic(() => import("@/components/CarouselSlider"), { ssr: false });
+// const CarouselSlider = dynamic(() => import("@/components/CarouselSlider"), { ssr: false });
 const Section3 = dynamic(() => import("@/components/section3"), { ssr: false });
 const Section4 = dynamic(() => import("@/components/section4"), { ssr: false });
 // const OriginalBrands = dynamic(() => import("@/components/OriginalBrands"), { ssr: false });
@@ -59,7 +59,7 @@ export default function Home() {
                 <HeroBannerSlider/>
                 {/* <Hero /> */}
                 <LatestProducts />
-                <CarouselSlider/>
+                {/* <CarouselSlider/> */}
                 <BannerSlider/>
             
                 <Section3/>

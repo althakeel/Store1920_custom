@@ -121,6 +121,14 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
 
     const { user, loading: authLoading, getToken } = useAuth();
 
+    const getAuthTokenOrThrow = async (forceRefresh = false) => {
+        const token = await getToken(forceRefresh)
+        if (!token) {
+            throw new Error('Session expired. Please login again.')
+        }
+        return token
+    }
+
     const normalizeErrorMessage = (value, fallback = 'Request failed') => {
         if (!value) return fallback;
         if (typeof value === 'string') return value;
@@ -221,11 +229,13 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
         fetchCategories();
     }, [user, getToken]);
 
-    // Fetch products for FBT selection
+    // Fetch products for FBT selection (lazy, only when enabled)
     useEffect(() => {
+        if (!enableFBT || availableProducts.length > 0) return;
+
         const fetchProducts = async () => {
             try {
-                const { data } = await axios.get('/api/products');
+                const { data } = await axios.get('/api/products?limit=60');
                 setAvailableProducts(data.products || []);
             } catch (error) {
                 console.warn('Could not fetch products for FBT (this is optional):', error.message);
@@ -234,7 +244,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
             }
         };
         fetchProducts();
-    }, []);
+    }, [enableFBT, availableProducts.length]);
 
     // Fetch FBT config when editing
     useEffect(() => {
@@ -410,6 +420,14 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
     }
 
     const handleImageUpload = async (key, file) => {
+        if (!file?.type?.startsWith('image/')) {
+            toast.error('Please select a valid image file')
+            return
+        }
+        if (file.size > 5 * 1024 * 1024) {
+            toast.error('Single image must be 5MB or smaller')
+            return
+        }
         // Create preview URL for the file
         const previewUrl = URL.createObjectURL(file)
         setImages(prev => ({ ...prev, [key]: { file, preview: previewUrl } }))
@@ -427,7 +445,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 ;
                 (async () => {
                     try {
-                        const token = await getToken();
+                        const token = await getAuthTokenOrThrow();
                         await axios.put('/api/store/product', {
                             productId: product._id,
                             images: newImages
@@ -556,7 +574,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 formData.append('productId', product._id)
             }
 
-            const token = await getToken()
+            const token = await getAuthTokenOrThrow(true)
             console.log('Submitting product with token:', token);
             const apiCall = product
                 ? axios.put(`/api/store/product`, formData, { 
@@ -891,12 +909,17 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                                 onChange={async (e) => {
                                     const file = e.target.files?.[0]
                                     if (!file) return
+                                    if (file.size > 5 * 1024 * 1024) {
+                                        toast.error('Single image must be 5MB or smaller')
+                                        e.target.value = ''
+                                        return
+                                    }
                                     
                                     try {
                                         const formData = new FormData()
                                         formData.append('image', file)
                                         
-                                        const token = await getToken()
+                                        const token = await getAuthTokenOrThrow()
                                         const { data } = await axios.post('/api/store/upload-image', formData, {
                                             headers: { Authorization: `Bearer ${token}` }
                                         })
@@ -931,7 +954,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                                         const formData = new FormData()
                                         formData.append('image', file) // Using same endpoint
                                         
-                                        const token = await getToken()
+                                        const token = await getAuthTokenOrThrow()
                                         const { data } = await axios.post('/api/store/upload-image', formData, {
                                             headers: { Authorization: `Bearer ${token}` }
                                         })
@@ -1059,8 +1082,8 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                             <div className="grid grid-cols-7 gap-2 font-medium text-sm text-gray-700">
                                 <div>Label</div>
                                 <div>Qty</div>
-                                <div>Price (AED)</div>
-                                <div>AED (AED)</div>
+                                <div>Sale Price (AED)</div>
+                                <div>Regular Price (AED)</div>
                                 <div>Stock</div>
                                 <div>Tag</div>
                                 <div></div>
@@ -1172,7 +1195,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                                         {/* Pricing */}
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                             <div>
-                                                <label className="block text-xs font-medium text-gray-600 mb-1">Price (AED)</label>
+                                                <label className="block text-xs font-medium text-gray-600 mb-1">Sale Price (AED)</label>
                                                 <input className="w-full border rounded px-3 py-2" placeholder="0.00" type="number" step="0.01"
                                                     value={v.price ?? ''}
                                                     onChange={(e)=>{
@@ -1180,7 +1203,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                                                     }} />
                                             </div>
                                             <div>
-                                                <label className="block text-xs font-medium text-gray-600 mb-1">AED (AED)</label>
+                                                <label className="block text-xs font-medium text-gray-600 mb-1">Regular Price (AED)</label>
                                                 <input className="w-full border rounded px-3 py-2" placeholder="0.00" type="number" step="0.01"
                                                     value={v.AED ?? ''}
                                                     onChange={(e)=>{

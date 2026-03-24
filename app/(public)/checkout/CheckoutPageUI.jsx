@@ -527,7 +527,7 @@ export default function CheckoutPage() {
 
   // Auto-open pincode modal for guests without saved addresses or when no address is present
   useEffect(() => {
-    if (!authLoading && !user && addressList.length === 0 && !form.pincode && isIndiaCountry(form.country || 'India')) {
+    if (!authLoading && !user && addressList.length === 0 && !form.pincode && isIndiaCountry(form.country || 'United Arab Emirates')) {
       const timer = setTimeout(() => {
         setShowPincodeModal(true);
       }, 500); // Small delay for better UX
@@ -923,13 +923,24 @@ export default function CheckoutPage() {
     // Clean and validate phone number
     const cleanedPhone = cleanDigits(form.phone);
     const cleanedAlternatePhone = cleanDigits(form.alternatePhone);
-    const isIndiaCheckout = isIndiaCountry(form.country || 'India');
+    const selectedAddr = (form.addressId && addressList.find(a => a._id === form.addressId)) || null;
+    const fallbackPhone = cleanDigits(selectedAddr?.phone) || cleanDigits(user?.phoneNumber || user?.phone);
+    const resolvedPhone = cleanedPhone || fallbackPhone;
+    const resolvedCountry = form.country || selectedAddr?.country || 'United Arab Emirates';
+    const isIndiaCheckout = isIndiaCountry(resolvedCountry);
     let resolvedPincode = sanitizePincode(form.pincode);
+
+    if (!cleanedPhone && resolvedPhone) {
+      setForm((f) => ({ ...f, phone: resolvedPhone }));
+    }
+
+    if (!form.country && resolvedCountry) {
+      setForm((f) => ({ ...f, country: resolvedCountry }));
+    }
 
     if (isIndiaCheckout) {
       // Auto-fill pincode from selected saved address if user entered invalid zero-only pincode
       if (!resolvedPincode || isZeroOnlyPincode(resolvedPincode)) {
-        const selectedAddr = (form.addressId && addressList.find(a => a._id === form.addressId)) || null;
         const fallbackPincode = pickValidPincode(selectedAddr?.zip, selectedAddr?.pincode);
 
         if (fallbackPincode) {
@@ -953,9 +964,9 @@ export default function CheckoutPage() {
 
     console.log('Checkout validation - Phone details:', {
       originalPhone: form.phone,
-      cleanedPhone: cleanedPhone,
-      cleanedLength: cleanedPhone.length,
-      isValid: /^[0-9]{7,15}$/.test(cleanedPhone)
+      cleanedPhone: resolvedPhone,
+      cleanedLength: resolvedPhone.length,
+      isValid: /^[0-9]{7,15}$/.test(resolvedPhone)
     });
 
     if (form.alternatePhone && !/^[0-9]{7,15}$/.test(cleanedAlternatePhone)) {
@@ -964,12 +975,12 @@ export default function CheckoutPage() {
     }
     
     // Validate main phone number
-    if (!cleanedPhone || cleanedPhone.length < 7 || cleanedPhone.length > 15) {
+    if (!resolvedPhone || resolvedPhone.length < 7 || resolvedPhone.length > 15) {
       console.warn('Phone validation failed:', {
-        hasValue: !!cleanedPhone,
-        length: cleanedPhone.length
+        hasValue: !!resolvedPhone,
+        length: resolvedPhone.length
       });
-      setFormError(`Please enter a valid phone number. Got ${cleanedPhone.length} digits, need 7-15.`);
+      setFormError(`Please enter a valid phone number. Got ${resolvedPhone.length} digits, need 7-15.`);
       return;
     }
     
@@ -981,8 +992,8 @@ export default function CheckoutPage() {
       }
       setPlacingOrder(true);
       // Validate phone number
-      if (!cleanedPhone || cleanedPhone.length < 7 || cleanedPhone.length > 15) {
-        setFormError(`Please enter a valid phone number. Got ${cleanedPhone.length} digits, need 7-15.`);
+      if (!resolvedPhone || resolvedPhone.length < 7 || resolvedPhone.length > 15) {
+        setFormError(`Please enter a valid phone number. Got ${resolvedPhone.length} digits, need 7-15.`);
         setPlacingOrder(false);
         return;
       }
@@ -1023,7 +1034,7 @@ export default function CheckoutPage() {
             payload.coinsToRedeem = safeRedeemCoins;
           }
         } else {
-          if (!form.name || !form.email || !form.phone || !form.street || !form.city || !form.state || !form.country || (isIndiaCheckout && !resolvedPincode)) {
+          if (!form.name || !form.email || !resolvedPhone || !form.street || !form.city || !form.state || !resolvedCountry || (isIndiaCheckout && !resolvedPincode)) {
             setFormError("Please fill all required shipping details.");
             setPlacingOrder(false);
             return;
@@ -1032,14 +1043,14 @@ export default function CheckoutPage() {
           payload.guestInfo = {
             name: form.name,
             email: form.email,
-            phone: cleanedPhone,
+            phone: resolvedPhone,
             phoneCode: form.phoneCode,
             alternatePhone: cleanedAlternatePhone || '',
             alternatePhoneCode: form.alternatePhone ? form.alternatePhoneCode || form.phoneCode : '',
             street: form.street,
             city: form.city,
             state: form.state,
-            country: form.country,
+            country: resolvedCountry,
             pincode: resolvedPincode || '',
           };
         }
@@ -1059,8 +1070,8 @@ export default function CheckoutPage() {
     
     // COD and other payment methods - Now supports guest checkout
     // Validate phone number for COD
-    if (!cleanedPhone || cleanedPhone.length < 7 || cleanedPhone.length > 15) {
-      setFormError(`Please enter a valid phone number. Got ${cleanedPhone.length} digits, need 7-15.`);
+    if (!resolvedPhone || resolvedPhone.length < 7 || resolvedPhone.length > 15) {
+      setFormError(`Please enter a valid phone number. Got ${resolvedPhone.length} digits, need 7-15.`);
       return;
     }
     
@@ -1155,14 +1166,14 @@ export default function CheckoutPage() {
           payload.addressData = {
             name: form.name || user.displayName || '',
             email: form.email || user.email || '',
-            phone: cleanedPhone || '',
+            phone: resolvedPhone || '',
             phoneCode: form.phoneCode,
             alternatePhone: cleanedAlternatePhone || '',
             alternatePhoneCode: form.alternatePhone ? form.alternatePhoneCode || form.phoneCode : '',
             street: form.street,
             city: form.city,
             state: form.state,
-            country: form.country || 'India',
+            country: resolvedCountry,
             zip: resolvedPincode || '',
             district: form.district || ''
           };
@@ -1178,14 +1189,14 @@ export default function CheckoutPage() {
           guestInfo: {
             name: form.name,
             email: form.email,
-            phone: cleanedPhone,
+            phone: resolvedPhone,
             phoneCode: form.phoneCode,
             alternatePhone: cleanedAlternatePhone || '',
             alternatePhoneCode: form.alternatePhone ? form.alternatePhoneCode || form.phoneCode : '',
             street: form.street,
             city: form.city,
             state: form.state,
-            country: form.country,
+            country: resolvedCountry,
             pincode: resolvedPincode || '',
           }
         };
@@ -1408,7 +1419,7 @@ export default function CheckoutPage() {
     );
   }
 
-  const isIndiaFormCountry = isIndiaCountry(form.country || 'India');
+  const isIndiaFormCountry = isIndiaCountry(form.country || 'United Arab Emirates');
   const isGuestAddressReady = !!(form.name && form.phone && form.city && form.state && form.street && (!isIndiaFormCountry || form.pincode));
 
   if (showPrepaidModal || navigatingToSuccess) {
@@ -2291,27 +2302,6 @@ export default function CheckoutPage() {
               </button>
             </div>
           )}
-          
-          {/* Cashback Rewards Section */}
-          <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-            <div className="flex items-center gap-2 mb-3">
-              <svg className="w-5 h-5 text-amber-600" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M8.16 2.75a.75.75 0 00-1.32 0l-.478 1.408a.75.75 0 01-.562.562l-1.408.478a.75.75 0 000 1.32l1.408.478a.75.75 0 01.562.562l.478 1.408a.75.75 0 001.32 0l.478-1.408a.75.75 0 01.562-.562l1.408-.478a.75.75 0 000-1.32l-1.408-.478a.75.75 0 01-.562-.562L8.16 2.75z" />
-              </svg>
-              <span className="font-semibold text-amber-900">Cashback Options</span>
-            </div>
-            
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-700">Super.Money UPI</span>
-                <span className="font-bold text-amber-600">Up to 5%</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-700">Credit Card</span>
-                <span className="font-bold text-amber-600">Up to 2%</span>
-              </div>
-            </div>
-          </div>
           
           {/* Final Total */}
           <div className="mb-4 pb-4 border-b border-gray-200">

@@ -69,7 +69,7 @@ export default function ProductBySlug() {
     const { slug } = useParams();
     const [product, setProduct] = useState(null);
     const [loading, setLoading] = useState(true);
-    const [relatedProducts, setRelatedProducts] = useState([]);
+    const [recommendedProducts, setRecommendedProducts] = useState([]);
     const [reviews, setReviews] = useState([]);
     const [loadingReviews, setLoadingReviews] = useState(false);
     const products = useSelector(state => state.product.list);
@@ -89,14 +89,19 @@ export default function ProductBySlug() {
             
             setProduct(found);
             
-            // Get related products from Redux if available
+            // Build recommendations from Redux if available
             if (found && products.length > 0) {
-                const related = products
+                const sameCategory = products
                     .filter(p => p.slug !== slug && p.category === found.category && p.inStock)
                     .slice(0, 5);
-                setRelatedProducts(related);
+
+                const fallback = products
+                    .filter(p => p.slug !== slug && p.inStock)
+                    .slice(0, 5);
+
+                setRecommendedProducts(sameCategory.length > 0 ? sameCategory : fallback);
             } else {
-                setRelatedProducts([]);
+                setRecommendedProducts([]);
             }
         } catch (error) {
             console.error('Error fetching product:', error);
@@ -187,16 +192,16 @@ export default function ProductBySlug() {
                     <>
                         <ProductDetails product={product} reviews={reviews} loadingReviews={loadingReviews} />
                         <ProductDescription product={product} reviews={reviews || []} loadingReviews={loadingReviews} onReviewAdded={() => fetchReviews(product._id || product.id)} />
-                        {/* Related Products */}
-                        {relatedProducts.length > 0 && (
+                        {/* Recommended Products */}
+                        {recommendedProducts.length > 0 && (
                             <div className="-mx-0 md:mx-0 mt-12 mb-16">
                                 <div className="px-4 md:px-0">
-                                    <h2 className="text-2xl font-semibold text-slate-800 mb-6">Related Products</h2>
+                                    <h2 className="text-2xl font-semibold text-slate-800 mb-6">Recommended Products</h2>
                                 </div>
                                 <div className="px-4 md:px-0">
                                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-5 xl:grid-cols-5 gap-6">
-                                        {relatedProducts.map((prod) => (
-                                            <ProductCard key={prod.id} product={prod} />
+                                        {recommendedProducts.map((prod) => (
+                                            <ProductCard key={prod._id || prod.id} product={prod} />
                                         ))}
                                     </div>
                                 </div>

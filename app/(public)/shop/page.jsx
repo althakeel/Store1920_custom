@@ -81,7 +81,7 @@ function ShopContent() {
 
         if (categoryParam) {
             setCategoryLoading(true);
-            fetch(`/api/products?category=${encodeURIComponent(categoryParam)}&limit=300&includeOutOfStock=true`)
+            fetch(`/api/products?category=${encodeURIComponent(categoryParam)}&all=true&includeOutOfStock=true`)
                 .then((res) => res.json())
                 .then((data) => {
                     if (!isActive) return;
@@ -103,7 +103,7 @@ function ShopContent() {
         // Fallback: ensure general list is available when no category filter
         if (!categoryParam && !fetchedRef.current.general && !loading) {
             fetchedRef.current.general = true;
-            dispatch(fetchProducts({ limit: 300 }));
+            dispatch(fetchProducts({ all: true, includeOutOfStock: true }));
         }
 
         return () => {
@@ -207,12 +207,7 @@ function ShopContent() {
                     variants,
                 ].join(' ');
 
-                // Use word boundary matching instead of partial match
-                // This ensures "car" matches "car" but not "skincare"
-                // Escape special regex characters first
-                const escapedTerm = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                const wordBoundaryRegex = new RegExp(`\\b${escapedTerm}\\b`, 'i');
-                return wordBoundaryRegex.test(haystack);
+                return haystack.includes(searchTerm);
             });
         }
 

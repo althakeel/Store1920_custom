@@ -122,6 +122,8 @@ export async function POST(request) {
             return /^0+$/.test(normalized);
         };
 
+        const isIndiaCountry = (country) => String(country || '').trim().toLowerCase() === 'india';
+
         // Validation
         if (isGuest === true) {
             console.log('ORDER API: Validating guest order...');
@@ -136,7 +138,9 @@ export async function POST(request) {
                 if (!guestInfo.state) missingFields.push('state');
                 if (!guestInfo.country) missingFields.push('country');
                 const guestZip = normalizeZip(guestInfo.pincode, guestInfo.zip);
-                if (!guestZip || isInvalidPincode(guestZip)) missingFields.push('pincode');
+                if (isIndiaCountry(guestInfo.country) && (!guestZip || isInvalidPincode(guestZip))) {
+                    missingFields.push('pincode');
+                }
             }
             console.log('ORDER API DEBUG: guestInfo received:', guestInfo);
             console.log('ORDER API DEBUG: missingFields:', missingFields);
@@ -167,7 +171,7 @@ export async function POST(request) {
                 const addressDataCheck = validateShippingAddress(addressData, 'addressData');
                 if (addressDataCheck) return addressDataCheck;
                 const inlineZip = normalizeZip(addressData.pincode, addressData.zip);
-                if (!inlineZip || isInvalidPincode(inlineZip)) {
+                if (isIndiaCountry(addressData.country) && (!inlineZip || isInvalidPincode(inlineZip))) {
                     return NextResponse.json({ error: 'shipping address required', missingFields: ['pincode'], source: 'addressData' }, { status: 400 });
                 }
             }
@@ -212,7 +216,7 @@ export async function POST(request) {
             let product;
             try {
                 product = await Product.findById(item.id)
-                  .select('_id name slug price mrp AED images category sku inStock stockQuantity')
+                                    .select('_id name slug price mrp AED images category sku inStock stockQuantity storeId')
                   .lean();
             } catch (err) {
                 console.error('Product.findById error:', err, 'productId:', item.id);
@@ -226,7 +230,7 @@ export async function POST(request) {
                 console.error('Trying to find any product with this ID...');
                 // Try alternative lookups
                 const altProduct = await Product.findOne({$or: [{_id: item.id}, {id: item.id}, {slug: item.id}]})
-                  .select('_id name slug price mrp AED images category sku inStock stockQuantity')
+                                    .select('_id name slug price mrp AED images category sku inStock stockQuantity storeId')
                   .lean();
                 if (!altProduct) {
                     return NextResponse.json({ 
@@ -361,7 +365,7 @@ export async function POST(request) {
                 const addressCheck = validateShippingAddress(addressExists, 'addressId');
                 if (addressCheck) return addressCheck;
                 const savedZip = normalizeZip(addressExists.pincode, addressExists.zip);
-                if (!savedZip || isInvalidPincode(savedZip)) {
+                if (isIndiaCountry(addressExists.country) && (!savedZip || isInvalidPincode(savedZip))) {
                     return NextResponse.json({ error: 'invalid pincode in selected address. Please update address.' }, { status: 400 });
                 }
             }
