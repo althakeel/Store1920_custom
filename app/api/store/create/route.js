@@ -11,6 +11,18 @@ export const dynamic = 'force-dynamic';
 
 const json = (body, status = 200) => NextResponse.json(body, { status });
 
+const decodeJwtPayload = (token) => {
+  try {
+    const parts = token.split('.');
+    if (parts.length < 2) return null;
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+    return JSON.parse(Buffer.from(padded, 'base64').toString('utf8'));
+  } catch {
+    return null;
+  }
+};
+
 
 export async function POST(request) {
   try {
@@ -22,7 +34,7 @@ export async function POST(request) {
       return json({ error: 'Unauthorized' }, 401);
     }
     const idToken = authHeader.split('Bearer ')[1];
-    console.log('[DEBUG] Received Firebase ID token:', idToken);
+    let adminProjectId = '';
     
     const { getAuth } = await import('firebase-admin/auth');
     const { initializeApp, cert, getApps } = await import('firebase-admin/app');
@@ -35,7 +47,7 @@ export async function POST(request) {
           return json({ error: 'Firebase configuration missing' }, 500);
         }
         const serviceAccount = JSON.parse(serviceAccountKey);
-        console.log('[DEBUG] Service account project_id:', serviceAccount.project_id);
+        adminProjectId = serviceAccount.project_id || '';
         
         initializeApp({
           credential: cert(serviceAccount)
@@ -45,13 +57,32 @@ export async function POST(request) {
         console.error('[DEBUG] Firebase initialization error:', initError);
         return json({ error: 'Firebase initialization failed', details: initError.message }, 500);
       }
+    } else {
+      try {
+        const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY || '{}');
+        adminProjectId = serviceAccount.project_id || '';
+      } catch {
+        adminProjectId = '';
+      }
     }
     
     let decodedToken;
     try {
       decodedToken = await getAuth().verifyIdToken(idToken);
-      console.log('[DEBUG] Decoded Firebase token:', decodedToken);
     } catch (e) {
+      const payload = decodeJwtPayload(idToken);
+      const tokenProjectId = payload?.aud || '';
+      if (adminProjectId && tokenProjectId && adminProjectId !== tokenProjectId) {
+        return json(
+          {
+            error: 'Invalid token',
+            details: 'Firebase project mismatch',
+            tokenProjectId,
+            adminProjectId,
+          },
+          401
+        );
+      }
       console.error('[DEBUG] Token verification error:', e);
       return json({ error: 'Invalid token', details: e.message }, 401);
     }
@@ -175,6 +206,7 @@ export async function GET(request) {
       return json({ error: 'Unauthorized' }, 401);
     }
     const idToken = authHeader.split('Bearer ')[1];
+    let adminProjectId = '';
     
     const { getAuth } = await import('firebase-admin/auth');
     const { initializeApp, cert, getApps } = await import('firebase-admin/app');
@@ -186,6 +218,7 @@ export async function GET(request) {
           return json({ error: 'Firebase configuration missing' }, 500);
         }
         const serviceAccount = JSON.parse(serviceAccountKey);
+        adminProjectId = serviceAccount.project_id || '';
         initializeApp({
           credential: cert(serviceAccount)
         });
@@ -193,12 +226,32 @@ export async function GET(request) {
         console.error('[DEBUG] Firebase initialization error:', initError);
         return json({ error: 'Firebase initialization failed' }, 500);
       }
+    } else {
+      try {
+        const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY || '{}');
+        adminProjectId = serviceAccount.project_id || '';
+      } catch {
+        adminProjectId = '';
+      }
     }
     
     let decodedToken;
     try {
       decodedToken = await getAuth().verifyIdToken(idToken);
     } catch (e) {
+      const payload = decodeJwtPayload(idToken);
+      const tokenProjectId = payload?.aud || '';
+      if (adminProjectId && tokenProjectId && adminProjectId !== tokenProjectId) {
+        return json(
+          {
+            error: 'Invalid token',
+            details: 'Firebase project mismatch',
+            tokenProjectId,
+            adminProjectId,
+          },
+          401
+        );
+      }
       console.error('[DEBUG] Token verification error:', e);
       return json({ error: 'Invalid token', details: e.message }, 401);
     }

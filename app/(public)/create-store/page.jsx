@@ -41,11 +41,36 @@ function CreateStoreAuthed() {
         setStoreInfo({ ...storeInfo, [e.target.name]: e.target.value })
     }
 
+    const getAuthHeaders = async (forceRefresh = false) => {
+        if (!firebaseUser) throw new Error('Please login to continue');
+        const token = await firebaseUser.getIdToken(forceRefresh);
+        return { Authorization: `Bearer ${token}` };
+    }
+
+    const isTokenError = (error) => {
+        const status = error?.response?.status;
+        const message = String(error?.response?.data?.error || error?.message || '').toLowerCase();
+        return status === 401 && message.includes('token');
+    }
+
+    const withTokenRetry = async (requestFn) => {
+        try {
+            return await requestFn(false);
+        } catch (error) {
+            if (firebaseUser && isTokenError(error)) {
+                return requestFn(true);
+            }
+            throw error;
+        }
+    }
+
     const fetchSellerStatus = async () => {
         if (!firebaseUser) return;
-        const token = await firebaseUser.getIdToken();
         try {
-            const { data } = await axios.get('/api/store/create', { headers: { Authorization: `Bearer ${token}` } })
+            const { data } = await withTokenRetry(async (forceRefresh) => {
+                const headers = await getAuthHeaders(forceRefresh);
+                return axios.get('/api/store/create', { headers });
+            })
             if ([ 'approved', 'rejected', 'pending' ].includes(data.status)) {
                 setStatus(data.status)
                 setAlreadySubmitted(true)
@@ -78,8 +103,6 @@ function CreateStoreAuthed() {
             return toast('Please login to continue');
         }
         try {
-            const token = await firebaseUser.getIdToken();
-            console.log('[DEBUG] Firebase ID token being sent:', token);
             const formData = new FormData();
             formData.append("name", storeInfo.name);
             formData.append("description", storeInfo.description);
@@ -89,7 +112,10 @@ function CreateStoreAuthed() {
             formData.append("address", storeInfo.address);
             formData.append("image", storeInfo.image);
 
-            const { data } = await axios.post('/api/store/create', formData, { headers: { Authorization: `Bearer ${token}` } });
+            const { data } = await withTokenRetry(async (forceRefresh) => {
+                const headers = await getAuthHeaders(forceRefresh);
+                return axios.post('/api/store/create', formData, { headers });
+            });
             toast.success(data.message);
             await fetchSellerStatus();
         } catch (error) {
