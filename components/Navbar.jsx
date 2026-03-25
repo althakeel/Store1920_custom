@@ -609,7 +609,7 @@ const Navbar = () => {
             {/* Left Links */}
             <div className="flex items-center gap-4 flex-shrink-0">
               <Link href="/5-star-rated" className="text-sm font-medium text-white hover:text-white/80 transition whitespace-nowrap flex items-center gap-1.5">
-                <StarIcon size={16} className="text-[#E6003E]" fill="#E6003E" />
+                <StarIcon size={16} className="text-white" fill="white" />
                 5 Star Rated
               </Link>
 
@@ -1094,7 +1094,7 @@ const Navbar = () => {
                   className="flex items-center gap-3 px-4 py-3 hover:bg-gray-100 rounded-lg transition text-gray-700 font-medium"
                   onClick={() => setMobileMenuOpen(false)}
                 >
-                  <StarIcon size={18} className="text-[#E6003E]" fill="#E6003E" />
+                  <StarIcon size={18} className="text-white" fill="white" />
                   5 Star Rated
                 </Link>
 

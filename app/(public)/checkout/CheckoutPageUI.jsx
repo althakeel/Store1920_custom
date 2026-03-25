@@ -7,7 +7,6 @@ import { indiaStatesAndDistricts } from "@/assets/indiaStatesAndDistricts";
 import { useSelector, useDispatch } from "react-redux";
 import { fetchAddress } from "@/lib/features/address/addressSlice";
 import { clearCart, addToCart, removeFromCart, deleteItemFromCart } from "@/lib/features/cart/cartSlice";
-import { fetchProducts } from "@/lib/features/product/productSlice";
 import { fetchShippingSettings, calculateShipping } from "@/lib/shipping";
 import FbqInitiateCheckout from "@/components/FbqInitiateCheckout";
 import { trackMetaEvent } from "@/lib/metaPixelClient";
@@ -82,12 +81,6 @@ export default function CheckoutPage() {
   const [showAlternatePhone, setShowAlternatePhone] = useState(false);
   const [abandonSaved, setAbandonSaved] = useState(false);
 
-  // Wallet / Coins
-  const [walletInfo, setWalletInfo] = useState({ coins: 0, rupeesValue: 0 });
-  const [walletLoading, setWalletLoading] = useState(false);
-  const [redeemCoins, setRedeemCoins] = useState('');
-  const [redeemError, setRedeemError] = useState('');
-
   // Coupon logic
   const [coupon, setCoupon] = useState("");
   const [couponError, setCouponError] = useState("");
@@ -97,6 +90,12 @@ export default function CheckoutPage() {
   const [couponLoading, setCouponLoading] = useState(false);
   const [storeId, setStoreId] = useState(null);
   const [formError, setFormError] = useState("");
+
+  const pushDataLayerEvent = (event, ecommerce) => {
+    if (typeof window === 'undefined') return;
+    window.dataLayer = window.dataLayer || [];
+    window.dataLayer.push({ event, ecommerce });
+  };
 
   const cleanDigits = (value) => (value ? String(value).replace(/\D/g, '') : '');
   const sanitizePincode = (value) => cleanDigits(value).trim();
@@ -115,11 +114,6 @@ export default function CheckoutPage() {
     e.preventDefault();
     if (!coupon.trim()) {
       setCouponError("Enter a coupon code to see discount.");
-      return;
-    }
-
-    if (isWalletOnly) {
-      setCouponError('Coupons cannot be used when wallet covers the full amount.');
       return;
     }
 
@@ -205,59 +199,37 @@ export default function CheckoutPage() {
 
   const router = useRouter();
 
-  // Fetch products if not loaded
+  // Fetch only the products that are in the cart (fast targeted batch fetch)
   useEffect(() => {
-    if (!products || products.length === 0) {
-      dispatch(fetchProducts({}));
-    }
-  }, [dispatch, products]);
-
-  // Ensure cart items are resolvable even if they are not in the product list
-  useEffect(() => {
-    const cartKeys = Object.keys(cartItems || {});
+    const cartKeys = Object.keys(cartItems || {}).filter((id) => {
+      const trimmed = id?.trim();
+      return trimmed && trimmed !== 'undefined' && trimmed !== 'null';
+    });
     if (cartKeys.length === 0) return;
 
-    const normalizedIds = cartKeys.filter((id) => {
-      if (typeof id !== 'string') return false;
-      const trimmed = id.trim();
-      return trimmed.length > 0 && trimmed !== 'undefined' && trimmed !== 'null';
-    });
-    if (normalizedIds.length === 0) return;
-
-    const missingIds = normalizedIds.filter(
+    const missingIds = cartKeys.filter(
       (id) => !products?.some((p) => String(p._id) === String(id))
     );
     if (missingIds.length === 0) return;
 
     let ignore = false;
-    const loadMissingProducts = async () => {
+    const loadCartProducts = async () => {
       try {
-        const { data } = await axios.post('/api/products/batch', {
-          productIds: missingIds,
-        });
+        const { data } = await axios.post('/api/products/batch', { productIds: missingIds });
         if (ignore || !data?.products?.length) return;
-
         const existing = new Set((products || []).map((p) => String(p._id)));
         const merged = [...(products || [])];
         data.products.forEach((p) => {
-          if (!existing.has(String(p._id))) {
-            merged.push(p);
-          }
+          if (!existing.has(String(p._id))) merged.push(p);
         });
         dispatch({ type: 'product/setProduct', payload: merged });
-      } catch (error) {
-        const details = error?.response?.data;
-        if (details || error?.message) {
-          console.warn('Missing cart products fetch skipped:', details || error.message);
-        }
+      } catch (e) {
+        console.warn('Cart product fetch failed:', e.message);
       }
     };
-
-    loadMissingProducts();
-    return () => {
-      ignore = true;
-    };
-  }, [cartItems, products, dispatch]);
+    loadCartProducts();
+    return () => { ignore = true; };
+  }, [cartItems, dispatch]);
 
   // Capture abandoned checkout (debounced)
   useEffect(() => {
@@ -449,34 +421,6 @@ export default function CheckoutPage() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Fetch wallet balance for logged-in users
-  useEffect(() => {
-    const loadWallet = async () => {
-      if (!user || !getToken) {
-        setWalletInfo({ coins: 0, rupeesValue: 0 });
-        setRedeemCoins('');
-        setWalletLoading(false);
-        return;
-      }
-      try {
-        setWalletLoading(true);
-        const token = await getToken();
-        const res = await fetch('/api/wallet', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        const data = await res.json();
-        if (res.ok) {
-          setWalletInfo({ coins: data.coins || 0, rupeesValue: data.rupeesValue || 0 });
-        }
-      } catch (e) {
-        // ignore wallet errors on checkout
-      } finally {
-        setWalletLoading(false);
-      }
-    };
-    loadWallet();
-  }, [user]);
-
   // Check if Razorpay is already loaded (in case script loaded before state update)
   useEffect(() => {
     if (typeof window !== 'undefined' && window.Razorpay) {
@@ -644,11 +588,7 @@ export default function CheckoutPage() {
   const totalAfterCoupon = Math.max(0, subtotal - couponDiscount);
   
   const total = totalAfterCoupon + shipping;
-  const maxRedeemableCoins = Math.floor(walletInfo.coins || 0);
-  const safeRedeemCoins = Math.min(Math.floor(redeemCoins || 0), maxRedeemableCoins);
-  const walletDiscount = Number((safeRedeemCoins * 1).toFixed(2));
-  const totalAfterWallet = Math.max(0, Number((total - walletDiscount).toFixed(2)));
-  const isWalletOnly = totalAfterWallet === 0 && safeRedeemCoins > 0;
+  const totalAfterWallet = total;
   const needsPaymentSelection = totalAfterWallet > 0;
   const maxCODAmount = shippingSetting?.maxCODAmount || 0;
   const hasPersonalizedOfferItem = Object.values(cartItems || {}).some(
@@ -661,9 +601,6 @@ export default function CheckoutPage() {
   const isPaymentMissing = needsPaymentSelection && !form.payment;
   const isInvalidPaymentSelection = form.payment === 'cod' && isCODDisabledForOrder;
   const isPlaceOrderDisabled = placingOrder || isPaymentMissing || isInvalidPaymentSelection;
-  const walletBalance = walletInfo?.rupeesValue ? Number(walletInfo.rupeesValue) : Number(walletInfo?.coins || 0);
-  const walletCanCoverTotal = walletBalance >= Math.ceil(total);
-  const walletCanUse = user && walletBalance > 0;
   const selectedAddressForView = form.addressId ? addressList.find((a) => a._id === form.addressId) : null;
   const shouldShowPhoneRequired =
     !!user &&
@@ -675,10 +612,28 @@ export default function CheckoutPage() {
   const isPincodeError = /pincode/i.test(String(formError || ''));
 
   useEffect(() => {
-    if (isWalletOnly && form.payment) {
-      setForm((f) => ({ ...f, payment: '' }));
-    }
-  }, [isWalletOnly, form.payment]);
+    if (typeof window === 'undefined') return;
+    if (cartArray.length === 0) return;
+
+    const orderKey = cartArray
+      .map((item) => `${String(item?._id || item?._cartKey || '')}:${Number(item?.quantity || 0)}`)
+      .join('|');
+    const eventKey = `gtm_begin_checkout_${orderKey}`;
+    if (sessionStorage.getItem(eventKey)) return;
+
+    pushDataLayerEvent('begin_checkout', {
+      currency: 'AED',
+      value: Number(totalAfterWallet || 0),
+      items: cartArray.map((item) => ({
+        item_id: String(item?._id || item?._cartKey || ''),
+        item_name: item?.name || 'Product',
+        price: Number(item?._cartPrice ?? item?.price ?? 0),
+        quantity: Number(item?.quantity || 0),
+      })),
+    });
+
+    sessionStorage.setItem(eventKey, '1');
+  }, [cartArray, totalAfterWallet]);
 
   useEffect(() => {
     if (hasPersonalizedOfferItem && form.payment === 'cod') {
@@ -687,17 +642,17 @@ export default function CheckoutPage() {
   }, [hasPersonalizedOfferItem, form.payment]);
 
   useEffect(() => {
-    if (appliedCoupon && (isWalletOnly || form.payment !== 'card')) {
+    if (appliedCoupon && form.payment !== 'card') {
       setAppliedCoupon(null);
       setCoupon('');
       setCouponError('Coupons are available only for card payments.');
     }
-  }, [appliedCoupon, isWalletOnly, form.payment]);
+  }, [appliedCoupon, form.payment]);
 
   // Meta Pixel: AddPaymentInfo when payment method is selected on checkout
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (!form.payment || isWalletOnly) return;
+    if (!form.payment) return;
     if (cartArray.length === 0) return;
 
     const contentIds = cartArray
@@ -719,7 +674,7 @@ export default function CheckoutPage() {
     });
 
     sessionStorage.setItem(eventKey, '1');
-  }, [form.payment, isWalletOnly, cartArray, totalAfterWallet]);
+  }, [form.payment, cartArray, totalAfterWallet]);
 
   // Load shipping settings - refetch on page load and when products change
   useEffect(() => {
@@ -985,11 +940,7 @@ export default function CheckoutPage() {
     }
     
     // For card payment, trigger Razorpay (allows guest checkout)
-    if (form.payment === 'card' && !isWalletOnly) {
-      if (totalAfterWallet <= 0) {
-        setFormError('Wallet covers the full amount. No card payment is needed.');
-        return;
-      }
+    if (form.payment === 'card') {
       setPlacingOrder(true);
       // Validate phone number
       if (!resolvedPhone || resolvedPhone.length < 7 || resolvedPhone.length > 15) {
@@ -1029,9 +980,6 @@ export default function CheckoutPage() {
           const addressId = form.addressId || (addressList[0] && addressList[0]._id);
           if (addressId) {
             payload.addressId = addressId;
-          }
-          if (safeRedeemCoins > 0) {
-            payload.coinsToRedeem = safeRedeemCoins;
           }
         } else {
           if (!form.name || !form.email || !resolvedPhone || !form.street || !form.city || !form.state || !resolvedCountry || (isIndiaCheckout && !resolvedPincode)) {
@@ -1081,10 +1029,8 @@ export default function CheckoutPage() {
       // If logged in and no address selected, skip address creation for now
       // Orders can work without addressId
       
-      const isWalletOnly = totalAfterWallet === 0 && safeRedeemCoins > 0;
-
       // Validate payment method for remaining balance
-      if (!form.payment && !isWalletOnly) {
+      if (!form.payment) {
         setFormError("Please select a payment method.");
         setPlacingOrder(false);
         return;
@@ -1108,7 +1054,7 @@ export default function CheckoutPage() {
         }
         
         if (maxCODAmount > 0 && remainingAmount > maxCODAmount) {
-          setFormError(`COD is not available for orders above AED${maxCODAmount}. Your order amount after wallet is AED${remainingAmount.toFixed(2)}. Please use online payment.`);
+          setFormError(`COD is not available for orders above AED${maxCODAmount}. Your order amount is AED${remainingAmount.toFixed(2)}. Please use online payment.`);
           setPlacingOrder(false);
           return;
         }
@@ -1134,9 +1080,7 @@ export default function CheckoutPage() {
         };
       }).filter(i => i.quantity > 0);
       
-      const finalPaymentMethod = isWalletOnly
-        ? 'WALLET'
-        : (form.payment === 'cod' ? 'COD' : form.payment.toUpperCase());
+      const finalPaymentMethod = form.payment === 'cod' ? 'COD' : form.payment.toUpperCase();
 
       if (user) {
         console.log('Building logged-in user payload...');
@@ -1146,9 +1090,6 @@ export default function CheckoutPage() {
           shippingFee: shipping,
           shippingMethod: shippingMethod,
         };
-        if (safeRedeemCoins > 0) {
-          payload.coinsToRedeem = safeRedeemCoins;
-        }
         // Add coupon data if applied
         if (appliedCoupon && couponDiscount > 0) {
           payload.coupon = {
@@ -1393,15 +1334,6 @@ export default function CheckoutPage() {
   };
 
   if (authLoading) return null;
-  
-  // Show loading state while products are being fetched
-  if (!products || products.length === 0) {
-    return (
-      <div className="py-20 text-center">
-        <div className="text-gray-600">Loading your cart...</div>
-      </div>
-    );
-  }
   
   if ((!cartItems || Object.keys(cartItems).length === 0) && !showPrepaidModal && !navigatingToSuccess) {
     return (
@@ -2062,75 +1994,16 @@ export default function CheckoutPage() {
                 </div>
               ) : null}
               <h2 className="text-xl font-bold mb-3 mt-4 text-gray-900">Payment methods</h2>
-              
-              {/* Wallet Apply Checkbox */}
-              <label className={`flex items-center gap-3 p-4 border-2 rounded-lg transition-all mb-3 ${
-                walletCanUse
-                  ? 'cursor-pointer border-green-200 hover:border-green-400 hover:bg-green-50/30'
-                  : 'opacity-60 cursor-not-allowed border-gray-200 bg-gray-50'
-              }`}>
-                <input
-                  type="checkbox"
-                  checked={safeRedeemCoins > 0}
-                  onChange={(e) => {
-                    if (!user) {
-                      setShowSignIn(true);
-                      return;
-                    }
-                    if (!walletCanUse) return;
-                    if (e.target.checked) {
-                      setRedeemCoins(String(Math.min(Math.ceil(total), walletBalance)));
-                    } else {
-                      setRedeemCoins('');
-                    }
-                  }}
-                  disabled={!walletCanUse}
-                  className="accent-green-600 w-5 h-5"
-                />
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                      <path d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 00-2-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z" />
-                    </svg>
-                    <div>
-                      <span className="font-semibold text-gray-900">Use Wallet</span>
-                      <div className="text-xs text-gray-600">
-                        {user ? `Balance AED ${walletBalance.toLocaleString()}` : 'Sign in to view wallet'}
-                      </div>
-                    </div>
-                  </div>
-                  {!user && (
-                    <span className="text-xs text-blue-600 ml-7">Sign in to use wallet</span>
-                  )}
-                  {user && walletBalance <= 0 && (
-                    <span className="text-xs text-gray-500 ml-7">Wallet balance is AED 0</span>
-                  )}
-                  {user && walletBalance > 0 && !walletCanCoverTotal && (
-                    <span className="text-xs text-gray-500 ml-7">Will apply wallet and pay remaining with another method</span>
-                  )}
-                </div>
-              </label>
-
-              {safeRedeemCoins > 0 && safeRedeemCoins < total && (
-                <h3 className="text-sm font-semibold text-gray-700 mb-2 px-1">
-                  Pay remaining AED {(total - walletDiscount).toLocaleString()} with:
-                </h3>
-              )}
 
               <div className="flex flex-col gap-2 mb-4">
                 {/* Credit Card Option */}
-                <label className={`flex items-center gap-3 p-4 border-2 rounded-lg transition-all ${
-                  isWalletOnly
-                    ? 'opacity-50 cursor-not-allowed border-gray-300 bg-gray-50'
-                    : 'cursor-pointer border-gray-200 hover:border-blue-400 hover:bg-blue-50/30 has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50'
-                }`}>
+                <label className="flex items-center gap-3 p-4 border-2 rounded-lg transition-all cursor-pointer border-gray-200 hover:border-blue-400 hover:bg-blue-50/30 has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50">
                   <input
                     type="radio"
                     name="payment"
                     value="card"
                     checked={form.payment === 'card'}
                     onChange={handleChange}
-                    disabled={isWalletOnly}
                     className="accent-blue-600 w-5 h-5"
                   />
                   <div className="flex-1 flex items-center justify-between">
@@ -2156,8 +2029,8 @@ export default function CheckoutPage() {
                 {/* Cash on Delivery Option */}
                 {!hasPersonalizedOfferItem && (() => {
                   const maxCODAmount = shippingSetting?.maxCODAmount || 0;
-                  const remainingAmount = total - walletDiscount;
-                  const isCODDisabled = isWalletOnly || shippingSetting?.enableCOD === false || 
+                  const remainingAmount = total;
+                  const isCODDisabled = shippingSetting?.enableCOD === false || 
                     (maxCODAmount > 0 && remainingAmount > maxCODAmount);
                   
                   return (
@@ -2188,9 +2061,6 @@ export default function CheckoutPage() {
                         {isCODDisabled && maxCODAmount > 0 && remainingAmount > maxCODAmount && (
                           <span className="text-xs text-red-600 ml-8">Max limit AED{maxCODAmount}</span>
                         )}
-                        {isWalletOnly && (
-                          <span className="text-xs text-gray-500 ml-8">Covered by wallet</span>
-                        )}
                       </div>
                     </label>
                   );
@@ -2213,34 +2083,6 @@ export default function CheckoutPage() {
         </div>
         {/* Right column: discount input, order summary and place order button */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8 h-fit flex flex-col justify-between">
-          {/* Discounts & Coupons - Clickable Section */}
-          <button
-            type="button"
-            onClick={() => {
-              if (!user) {
-                setCouponError("Please sign in to use coupons.");
-                setShowSignIn(true);
-                return;
-              }
-              setShowCouponModal(true);
-            }}
-            className="mb-6 pb-4 border-b border-gray-200 flex items-center justify-between hover:bg-gray-50 -mx-2 px-2 py-2 rounded transition"
-          >
-            <div className="flex items-center gap-2">
-              <svg className="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M5 2a1 1 0 011 1v1h1a1 1 0 010 2H6v1a1 1 0 01-2 0V6H3a1 1 0 010-2h1V3a1 1 0 011-1zm0 10a1 1 0 011 1v1h1a1 1 0 110 2H6v1a1 1 0 11-2 0v-1H3a1 1 0 110-2h1v-1a1 1 0 011-1zM12 2a1 1 0 01.967.744L14.146 7.2 17.5 9.134a1 1 0 010 1.732l-3.354 1.935-1.18 4.455a1 1 0 01-1.933 0L9.854 12.8 6.5 10.866a1 1 0 010-1.732l3.354-1.935 1.18-4.455A1 1 0 0112 2z" clipRule="evenodd"></path>
-              </svg>
-              <span className="font-semibold text-gray-900">Discounts & Coupons</span>
-            </div>
-            <span className="text-blue-600 text-sm font-semibold flex items-center gap-1">
-              View all
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </span>
-          </button>
-
-
           {/* Price Breakdown */}
           <hr className="my-3" />
           <div className="space-y-2 mb-4 pb-4 border-b border-gray-200">
@@ -2258,26 +2100,8 @@ export default function CheckoutPage() {
                 <span>-AED {couponDiscount.toLocaleString()}</span>
               </div>
             )}
-            {safeRedeemCoins > 0 && (
-              <div className="flex justify-between text-sm text-green-600 font-semibold">
-                <span>Wallet savings</span>
-                <span>-AED {walletDiscount.toLocaleString()}</span>
-              </div>
-            )}
           </div>
           
-          {user && (
-            <div className="space-y-2 mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-              {/* <div className="flex justify-between text-sm">
-                <span className="text-gray-700">Wallet used</span>
-                <span className="font-semibold text-gray-900">{safeRedeemCoins} coins</span>
-              </div> */}
-              <div className="flex justify-between text-sm font-semibold">
-                <span className="text-green-700">Wallet discount</span>
-                <span className="text-green-600">-AED {walletDiscount.toLocaleString()}</span>
-              </div>
-            </div>
-          )}
           <hr className="my-3" />
           
           {/* Coupon Discount Display */}
@@ -2567,9 +2391,9 @@ export default function CheckoutPage() {
                 />
                 <button
                   type="submit"
-                  disabled={isWalletOnly || form.payment !== 'card'}
+                  disabled={form.payment !== 'card'}
                   className={`font-semibold px-6 py-3 rounded-lg transition whitespace-nowrap w-full sm:w-auto ${
-                    isWalletOnly || form.payment !== 'card'
+                    form.payment !== 'card'
                       ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
                       : 'bg-blue-600 hover:bg-blue-700 text-white'
                   }`}
@@ -2577,7 +2401,7 @@ export default function CheckoutPage() {
                   Apply
                 </button>
               </form>
-              {(isWalletOnly || form.payment !== 'card') && (
+              {form.payment !== 'card' && (
                 <div className="text-xs text-amber-600 mt-2">
                   Coupons are available only for card payments.
                 </div>
@@ -2611,7 +2435,7 @@ export default function CheckoutPage() {
                   
                   const cartProductIds = cartItemsArray.map(item => item.productId);
                   
-                  const canUseCoupons = !isWalletOnly && form.payment === 'card';
+                  const canUseCoupons = form.payment === 'card';
                   let isEligible = true;
                   let ineligibleReason = '';
 

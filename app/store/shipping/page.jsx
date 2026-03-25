@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react'
 
 import axios from 'axios'
 import toast from 'react-hot-toast'
-import { SaveIcon, TruckIcon, PackageIcon, WeightIcon, DollarSignIcon } from 'lucide-react'
+import { SaveIcon, TruckIcon, PackageIcon, WeightIcon, DollarSignIcon, SearchIcon, XIcon } from 'lucide-react'
 import { useAuth } from '@/lib/useAuth'
 import { indiaStatesAndDistricts } from '@/assets/indiaStatesAndDistricts'
 
@@ -16,6 +16,9 @@ export default function StoreShippingSettings() {
   const stateOptions = indiaStatesAndDistricts.map((entry) => entry.state)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [allProducts, setAllProducts] = useState([])
+  const [selectedFreeProducts, setSelectedFreeProducts] = useState([])
+  const [productSearch, setProductSearch] = useState('')
   const [form, setForm] = useState({
     enabled: true,
     shippingType: 'FLAT_RATE',
@@ -44,38 +47,47 @@ export default function StoreShippingSettings() {
     const load = async () => {
       try {
         const token = await getToken();
-        const { data } = await axios.get('/api/shipping', {
-          headers: token ? { Authorization: `Bearer ${token}` } : {}
-        });
-        if (data?.setting) {
+        const [shippingRes, productsRes] = await Promise.all([
+          axios.get('/api/shipping', { headers: token ? { Authorization: `Bearer ${token}` } : {} }),
+          axios.get('/api/store/product')
+        ]);
+        if (shippingRes.data?.setting) {
           setForm({
-            enabled: Boolean(data.setting.enabled),
-            shippingType: data.setting.shippingType || 'FLAT_RATE',
-            flatRate: Number(data.setting.flatRate || 5),
-            perItemFee: Number(data.setting.perItemFee || 2),
-            maxItemFee: data.setting.maxItemFee ? Number(data.setting.maxItemFee) : '',
-            weightUnit: data.setting.weightUnit || 'kg',
-            baseWeight: Number(data.setting.baseWeight || 1),
-            baseWeightFee: Number(data.setting.baseWeightFee || 5),
-            additionalWeightFee: Number(data.setting.additionalWeightFee || 2),
-            freeShippingMin: Number(data.setting.freeShippingMin || 499),
-            enableProductSpecificFreeShipping: Boolean(data.setting.enableProductSpecificFreeShipping),
-            localDeliveryFee: data.setting.localDeliveryFee ? Number(data.setting.localDeliveryFee) : '',
-            regionalDeliveryFee: data.setting.regionalDeliveryFee ? Number(data.setting.regionalDeliveryFee) : '',
-            stateCharges: Array.isArray(data.setting.stateCharges)
-              ? data.setting.stateCharges.map((entry) => ({
+            enabled: Boolean(shippingRes.data.setting.enabled),
+            shippingType: shippingRes.data.setting.shippingType || 'FLAT_RATE',
+            flatRate: Number(shippingRes.data.setting.flatRate || 5),
+            perItemFee: Number(shippingRes.data.setting.perItemFee || 2),
+            maxItemFee: shippingRes.data.setting.maxItemFee ? Number(shippingRes.data.setting.maxItemFee) : '',
+            weightUnit: shippingRes.data.setting.weightUnit || 'kg',
+            baseWeight: Number(shippingRes.data.setting.baseWeight || 1),
+            baseWeightFee: Number(shippingRes.data.setting.baseWeightFee || 5),
+            additionalWeightFee: Number(shippingRes.data.setting.additionalWeightFee || 2),
+            freeShippingMin: Number(shippingRes.data.setting.freeShippingMin || 499),
+            enableProductSpecificFreeShipping: Boolean(shippingRes.data.setting.enableProductSpecificFreeShipping),
+            localDeliveryFee: shippingRes.data.setting.localDeliveryFee ? Number(shippingRes.data.setting.localDeliveryFee) : '',
+            regionalDeliveryFee: shippingRes.data.setting.regionalDeliveryFee ? Number(shippingRes.data.setting.regionalDeliveryFee) : '',
+            stateCharges: Array.isArray(shippingRes.data.setting.stateCharges)
+              ? shippingRes.data.setting.stateCharges.map((entry) => ({
                   state: String(entry?.state || '').trim(),
                   fee: Number(entry?.fee || 0)
                 })).filter((entry) => entry.state)
               : [],
-            estimatedDays: data.setting.estimatedDays || '3-5',
-            enableCOD: Boolean(data.setting.enableCOD),
-            codFee: Number(data.setting.codFee || 0),
-            maxCODAmount: Number(data.setting.maxCODAmount || 0),
-            enableExpressShipping: Boolean(data.setting.enableExpressShipping),
-            expressShippingFee: Number(data.setting.expressShippingFee || 20),
-            expressEstimatedDays: data.setting.expressEstimatedDays || '1-2'
+            estimatedDays: shippingRes.data.setting.estimatedDays || '3-5',
+            enableCOD: Boolean(shippingRes.data.setting.enableCOD),
+            codFee: Number(shippingRes.data.setting.codFee || 0),
+            maxCODAmount: Number(shippingRes.data.setting.maxCODAmount || 0),
+            enableExpressShipping: Boolean(shippingRes.data.setting.enableExpressShipping),
+            expressShippingFee: Number(shippingRes.data.setting.expressShippingFee || 20),
+            expressEstimatedDays: shippingRes.data.setting.expressEstimatedDays || '1-2'
           })
+        }
+        if (productsRes.data?.products) {
+          setAllProducts(productsRes.data.products)
+          setSelectedFreeProducts(
+            productsRes.data.products
+              .filter(p => p.freeShippingEligible)
+              .map(p => p._id)
+          )
         }
       } catch (e) {
         // ignore; keep defaults
@@ -94,6 +106,8 @@ export default function StoreShippingSettings() {
       const token = await getToken()
       const response = await axios.put('/api/shipping', form, { headers: { Authorization: `Bearer ${token}` } })
       console.log('Server response:', response.data)
+      // Save free shipping products
+      await axios.put('/api/store/products/free-shipping', { productIds: selectedFreeProducts }, { headers: { Authorization: `Bearer ${token}` } })
       toast.success('Shipping settings saved')
     } catch (e) {
       console.error('Save error:', e?.response?.data || e.message)
@@ -269,6 +283,71 @@ export default function StoreShippingSettings() {
                     <p className='text-xs text-slate-500 mt-1'>When enabled, any product marked for free shipping will make the order shipping free for that product selection.</p>
                   </div>
                 </label>
+
+                {form.enableProductSpecificFreeShipping && (
+                  <div className='mt-5 border border-slate-200 rounded-lg p-4'>
+                    <h3 className='text-sm font-semibold text-slate-700 mb-3'>Select Free Shipping Products</h3>
+
+                    {/* Selected tags */}
+                    {selectedFreeProducts.length > 0 && (
+                      <div className='flex flex-wrap gap-2 mb-3'>
+                        {selectedFreeProducts.map(id => {
+                          const p = allProducts.find(x => x._id === id)
+                          if (!p) return null
+                          return (
+                            <span key={id} className='flex items-center gap-1 bg-teal-100 text-teal-800 text-xs font-medium px-2.5 py-1 rounded-full'>
+                              {p.name}
+                              <button type='button' onClick={() => setSelectedFreeProducts(prev => prev.filter(i => i !== id))} className='ml-1 hover:text-teal-600'>
+                                <XIcon size={12} />
+                              </button>
+                            </span>
+                          )
+                        })}
+                      </div>
+                    )}
+
+                    {/* Search box */}
+                    <div className='relative mb-2'>
+                      <SearchIcon size={14} className='absolute left-3 top-1/2 -translate-y-1/2 text-slate-400' />
+                      <input
+                        type='text'
+                        value={productSearch}
+                        onChange={e => setProductSearch(e.target.value)}
+                        placeholder='Search products...'
+                        className='w-full border border-slate-300 rounded px-3 py-2 pl-8 text-sm'
+                      />
+                    </div>
+
+                    {/* Product list */}
+                    <div className='max-h-60 overflow-y-auto border border-slate-200 rounded divide-y divide-slate-100'>
+                      {allProducts
+                        .filter(p => p.name?.toLowerCase().includes(productSearch.toLowerCase()))
+                        .map(p => {
+                          const checked = selectedFreeProducts.includes(p._id)
+                          return (
+                            <label key={p._id} className={`flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-slate-50 ${checked ? 'bg-teal-50' : ''}`}>
+                              <input
+                                type='checkbox'
+                                checked={checked}
+                                onChange={() => {
+                                  setSelectedFreeProducts(prev =>
+                                    checked ? prev.filter(i => i !== p._id) : [...prev, p._id]
+                                  )
+                                }}
+                                className='accent-teal-600'
+                              />
+                              <span className='text-sm text-slate-700 flex-1'>{p.name}</span>
+                              {checked && <span className='text-xs text-teal-600 font-medium'>Free Ship</span>}
+                            </label>
+                          )
+                        })}
+                      {allProducts.filter(p => p.name?.toLowerCase().includes(productSearch.toLowerCase())).length === 0 && (
+                        <p className='text-sm text-slate-400 text-center py-4'>No products found</p>
+                      )}
+                    </div>
+                    <p className='text-xs text-slate-500 mt-2'>{selectedFreeProducts.length} product(s) selected for free shipping</p>
+                  </div>
+                )}
               </div>
             )}
 
@@ -298,79 +377,6 @@ export default function StoreShippingSettings() {
                   </div>
                   <p className='text-xs text-slate-500 mt-1'>Special fee for regional deliveries</p>
                 </div>
-              </div>
-            </div>
-
-            {/* State-wise Delivery Charges */}
-            <div className='bg-white p-6 rounded-xl border border-slate-200'>
-              <h2 className='text-xl font-semibold text-slate-800 mb-4'>State-wise Delivery Charges (Optional)</h2>
-              <div className='space-y-3'>
-                {form.stateCharges.length === 0 && (
-                  <p className='text-sm text-slate-500'>No state-based charges added yet.</p>
-                )}
-                {form.stateCharges.map((entry, index) => (
-                  <div key={`${entry.state}-${index}`} className='grid grid-cols-1 md:grid-cols-[1fr_auto_auto] gap-3 items-center'>
-                    <select
-                      value={entry.state}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        setForm((s) => {
-                          const next = [...s.stateCharges];
-                          next[index] = { ...next[index], state: value };
-                          return { ...s, stateCharges: next };
-                        });
-                      }}
-                      className='border border-slate-300 rounded px-3 py-2'
-                    >
-                      <option value=''>Select State</option>
-                      {stateOptions.map((state) => (
-                        <option key={state} value={state}>{state}</option>
-                      ))}
-                    </select>
-                    <div className='flex items-center gap-2'>
-                      <span className='text-slate-600'>{currency}</span>
-                      <input
-                        type='number'
-                        step='0.01'
-                        value={entry.fee}
-                        onChange={(e) => {
-                          const value = Number(e.target.value);
-                          setForm((s) => {
-                            const next = [...s.stateCharges];
-                            next[index] = { ...next[index], fee: Number.isFinite(value) ? value : 0 };
-                            return { ...s, stateCharges: next };
-                          });
-                        }}
-                        className='w-36 border border-slate-300 rounded px-3 py-2'
-                      />
-                    </div>
-                    <button
-                      type='button'
-                      onClick={() => {
-                        setForm((s) => ({
-                          ...s,
-                          stateCharges: s.stateCharges.filter((_, i) => i !== index)
-                        }));
-                      }}
-                      className='text-sm text-red-600 hover:text-red-700'
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-                <button
-                  type='button'
-                  onClick={() => {
-                    setForm((s) => ({
-                      ...s,
-                      stateCharges: [...s.stateCharges, { state: '', fee: 0 }]
-                    }));
-                  }}
-                  className='text-sm text-blue-600 hover:text-blue-700 font-medium'
-                >
-                  + Add State Charge
-                </button>
-                <p className='text-xs text-slate-500'>If a state has a fee, it overrides the base shipping fee (free shipping rules still apply).</p>
               </div>
             </div>
 

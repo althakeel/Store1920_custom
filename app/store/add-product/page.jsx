@@ -760,38 +760,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                     <input name="shortDescription" value={productInfo.shortDescription || ''} onChange={onChangeHandler} className="w-full border rounded px-3 py-2" placeholder="One-liner overview" />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                        <label className="block text-sm font-medium mb-1">Delivered by (optional)</label>
-                        <input
-                            name="deliveredBy"
-                            value={productInfo.deliveredBy || ''}
-                            onChange={onChangeHandler}
-                            className="w-full border rounded px-3 py-2"
-                            placeholder="e.g. Brandstored"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium mb-1">Sold by (optional)</label>
-                        <input
-                            name="soldBy"
-                            value={productInfo.soldBy || ''}
-                            onChange={onChangeHandler}
-                            className="w-full border rounded px-3 py-2"
-                            placeholder="e.g. Store name"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium mb-1">Payment text (optional)</label>
-                        <input
-                            name="paymentInfo"
-                            value={productInfo.paymentInfo || ''}
-                            onChange={onChangeHandler}
-                            className="w-full border rounded px-3 py-2"
-                            placeholder="e.g. Secure transaction"
-                        />
-                    </div>
-                </div>
+
 
                 {/* Tags */}
                 <div>

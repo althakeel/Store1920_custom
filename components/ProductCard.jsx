@@ -55,6 +55,24 @@ const ProductCard = ({ product }) => {
     const cartItems = useSelector(state => state.cart.cartItems)
     const itemQuantity = cartItems[product._id] || 0
 
+    const pushDataLayerAddToCart = () => {
+        if (typeof window === 'undefined') return
+        window.dataLayer = window.dataLayer || []
+        window.dataLayer.push({
+            event: 'add_to_cart',
+            ecommerce: {
+                currency: 'AED',
+                value: Number(priceNum > 0 ? priceNum : product.price || 0),
+                items: [{
+                    item_id: String(product._id || product.id || ''),
+                    item_name: product.name || product.title || 'Product',
+                    price: Number(priceNum > 0 ? priceNum : product.price || 0),
+                    quantity: 1,
+                }],
+            },
+        })
+    }
+
     const [reviews, setReviews] = useState([])
     const [, setLoadingReviews] = useState(false)
 
@@ -119,6 +137,7 @@ const ProductCard = ({ product }) => {
             toast.error('Out of stock')
             return
         }
+        pushDataLayerAddToCart()
         dispatch(addToCart({ 
             productId: product._id,
             price: priceNum > 0 ? priceNum : undefined
@@ -143,6 +162,11 @@ const ProductCard = ({ product }) => {
                     {hasFastDelivery && (
                         <span className="absolute top-3 left-3 text-white text-xs font-bold px-2.5 py-1 rounded-full shadow-sm z-20 pointer-events-none" style={{ backgroundColor: '#006644' }}>
                             Fast
+                        </span>
+                    )}
+                    {product.freeShippingEligible && (
+                        <span className="absolute top-3 right-3 text-white text-xs font-bold px-2.5 py-1 rounded-full shadow-sm z-20 pointer-events-none" style={{ backgroundColor: '#0f766e' }}>
+                            Free Ship
                         </span>
                     )}
                     <Image

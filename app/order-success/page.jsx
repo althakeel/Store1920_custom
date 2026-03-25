@@ -23,6 +23,12 @@ function OrderSuccessContent() {
   const [loading, setLoading] = useState(true);
   const { user, getToken } = useAuth();
 
+  const pushDataLayerEvent = (event, ecommerce) => {
+    if (typeof window === 'undefined') return;
+    window.dataLayer = window.dataLayer || [];
+    window.dataLayer.push({ event, ecommerce });
+  };
+
   useEffect(() => {
     const fetchOrder = async (orderId) => {
       try {
@@ -102,6 +108,31 @@ function OrderSuccessContent() {
       sessionStorage.setItem(purchaseEventKey, '1');
     }
   }, [order, total, params]);
+
+  useEffect(() => {
+    if (!order || typeof window === 'undefined') return;
+
+    const orderEventId = String(order?._id || order?.shortOrderNumber || params.get('orderId') || 'unknown');
+    const purchaseEventKey = `gtm_purchase_sent_${orderEventId}`;
+    if (sessionStorage.getItem(purchaseEventKey)) return;
+
+    pushDataLayerEvent('purchase', {
+      transaction_id: orderEventId,
+      value: Number(total || 0),
+      currency: 'AED',
+      items: products.map((item, idx) => {
+        const productRef = typeof item.productId === 'object' ? item.productId : null;
+        return {
+          item_id: String(productRef?._id || item.productId || item._id || idx),
+          item_name: productRef?.name || item.name || 'Product',
+          price: Number(item.price || 0),
+          quantity: Number(item.quantity || 0),
+        };
+      }),
+    });
+
+    sessionStorage.setItem(purchaseEventKey, '1');
+  }, [order, params, products, total]);
 
   // Render logic moved inside returned JSX to avoid early returns
   return (

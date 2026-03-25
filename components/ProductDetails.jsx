@@ -33,6 +33,12 @@ const ProductDetails = ({ product, reviews = [], hideTitle = false, offerData = 
   const cartCount = useSelector((state) => state.cart.total);
   const cartItems = useSelector((state) => state.cart.cartItems);
 
+  const pushDataLayerEvent = (event, ecommerce) => {
+    if (typeof window === 'undefined') return;
+    window.dataLayer = window.dataLayer || [];
+    window.dataLayer.push({ event, ecommerce });
+  };
+
   // FBT (Frequently Bought Together) state
   const [fbtProducts, setFbtProducts] = useState([]);
   const [fbtEnabled, setFbtEnabled] = useState(false);
@@ -70,8 +76,19 @@ const ProductDetails = ({ product, reviews = [], hideTitle = false, offerData = 
       currency: 'INR',
     });
 
+    pushDataLayerEvent('view_item', {
+      currency: 'AED',
+      value: Number(effPrice || product.price || 0),
+      items: [{
+        item_id: String(product._id || product.id || ''),
+        item_name: product.name || product.title || 'Product',
+        price: Number(effPrice || product.price || 0),
+        quantity: 1,
+      }],
+    });
+
     sessionStorage.setItem(eventKey, '1');
-  }, [product?._id, product?.name, product?.title, product?.price]);
+  }, [product?._id, product?.id, product?.name, product?.title, product?.price, effPrice]);
 
   useEffect(() => {
     router.prefetch('/checkout');
@@ -476,6 +493,17 @@ const ProductDetails = ({ product, reviews = [], hideTitle = false, offerData = 
       
       dispatch(addToCart(payload));
     }
+
+    pushDataLayerEvent('add_to_cart', {
+      currency: 'AED',
+      value: Number((effPrice || product.price || 0) * qty),
+      items: [{
+        item_id: String(product._id || product.id || ''),
+        item_name: product.name || product.title || 'Product',
+        price: Number(effPrice || product.price || 0),
+        quantity: qty,
+      }],
+    });
     
     // Upload to server if signed in
     if (isSignedIn) {
@@ -896,26 +924,7 @@ const ProductDetails = ({ product, reviews = [], hideTitle = false, offerData = 
               )}
             </div>
 
-            {hasSellerMeta && (
-              <div className="border border-gray-200 rounded-md px-3 py-2.5">
-                <div className="space-y-1.5 text-sm">
-                  {deliveredByText && (
-                    <div className="grid grid-cols-[90px_1fr] gap-2">
-                      <span className="text-gray-600">Delivered by</span>
-                      <span className="text-blue-700">{deliveredByText}</span>
-                    </div>
-                  )}
 
-                  {soldByText && (
-                    <div className="grid grid-cols-[90px_1fr] gap-2">
-                      <span className="text-gray-600">Sold by</span>
-                      <span className="text-blue-700">{soldByText}</span>
-                    </div>
-                  )}
-
-                </div>
-              </div>
-            )}
 
             {/* Color Options */}
             {variantColors.length > 0 && (
@@ -1057,13 +1066,15 @@ const ProductDetails = ({ product, reviews = [], hideTitle = false, offerData = 
                 <span className="text-sm font-medium text-gray-800">Arrives in 2-5 days</span>
               </div>
 
-              {/* Fast Shipping */}
-              <div className="flex items-center gap-2 bg-white border border-gray-200 p-3 rounded-lg">
-                <svg className="w-8 h-8 text-green-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
-                </svg>
-                <span className="text-sm font-medium text-gray-800">Free Shipping</span>
-              </div>
+              {/* Free Shipping (conditional) */}
+              {product.freeShippingEligible && (
+                <div className="flex items-center gap-2 bg-white border border-gray-200 p-3 rounded-lg">
+                  <svg className="w-8 h-8 text-green-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
+                  </svg>
+                  <span className="text-sm font-medium text-gray-800">Free Shipping</span>
+                </div>
+              )}
 
               {/* Cash On Delivery */}
               <div className="flex items-center gap-2 bg-white border border-gray-200 p-3 rounded-lg">

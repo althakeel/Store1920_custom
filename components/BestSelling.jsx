@@ -31,6 +31,24 @@ const ProductCard = ({ product }) => {
   const cartItems = useSelector(state => state.cart.cartItems)
   const itemQuantity = cartItems[product._id] || 0
 
+  const pushDataLayerAddToCart = () => {
+    if (typeof window === 'undefined') return
+    window.dataLayer = window.dataLayer || []
+    window.dataLayer.push({
+      event: 'add_to_cart',
+      ecommerce: {
+        currency: 'AED',
+        value: Number(product.price || 0),
+        items: [{
+          item_id: String(product._id || product.id || ''),
+          item_name: product.name || product.title || 'Product',
+          price: Number(product.price || 0),
+          quantity: 1,
+        }],
+      },
+    })
+  }
+
   const primaryImage = getImageSrc(product, 0)
   const secondaryImage = getImageSrc(product, 1)
   
@@ -62,6 +80,7 @@ const ProductCard = ({ product }) => {
       toast.error('Out of stock')
       return
     }
+    pushDataLayerAddToCart()
     dispatch(addToCart({ productId: product._id }))
     dispatch(uploadCart({ getToken }))
     toast.success('Added to cart')

@@ -74,6 +74,24 @@ const ProductCard = ({ product }) => {
     ? (product.name || product.title || 'Untitled Product').slice(0, 23) + '...'
     : (product.name || product.title || 'Untitled Product')
 
+  const pushDataLayerAddToCart = () => {
+    if (typeof window === 'undefined') return
+    window.dataLayer = window.dataLayer || []
+    window.dataLayer.push({
+      event: 'add_to_cart',
+      ecommerce: {
+        currency: 'AED',
+        value: Number(product.price || 0),
+        items: [{
+          item_id: String(product._id || product.id || ''),
+          item_name: product.name || product.title || 'Product',
+          price: Number(product.price || 0),
+          quantity: 1,
+        }],
+      },
+    })
+  }
+
   const handleAddToCart = (e) => {
     e.preventDefault()
     e.stopPropagation()
@@ -81,6 +99,7 @@ const ProductCard = ({ product }) => {
       toast.error('Out of stock')
       return
     }
+    pushDataLayerAddToCart()
     dispatch(addToCart({ productId: product._id }))
     dispatch(uploadCart({ getToken }))
     toast.success('Added to cart')
