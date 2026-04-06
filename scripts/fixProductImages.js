@@ -2,7 +2,7 @@
 // Script to fix product image URLs in the database by re-uploading to ImageKit if needed
 
 const { PrismaClient } = require('@prisma/client');
-const ImageKit = require('imagekit');
+const ImageKit = require('@imagekit/nodejs');
 const fetch = require('node-fetch');
 const path = require('path');
 const fs = require('fs');

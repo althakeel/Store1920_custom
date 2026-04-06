@@ -1,7 +1,7 @@
 'use client'
 import StoreLayout from "@/components/store/StoreLayout";
 
-import { ImageKitContext } from 'imagekitio-next'
+import { ImageKitContext } from '@imagekit/next'
 import { useEffect, useState } from "react"
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/useAuth"

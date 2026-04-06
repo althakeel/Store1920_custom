@@ -1,4 +1,4 @@
-import ImageKit from "imagekit";
+import ImageKit from "@imagekit/nodejs";
 
 // Lazy initialize ImageKit to avoid build-time crashes when env vars are missing
 let _imagekit = null;
