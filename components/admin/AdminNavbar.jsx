@@ -1,7 +1,7 @@
 'use client'
 import Link from "next/link"
 import Image from "next/image";
-import Logo from "../../assets/logo/logo3.png";
+import Logo from "../../assets/logo/logo.png";
 
 
 import { auth } from "@/lib/firebase";
@@ -37,14 +37,14 @@ const AdminNavbar = () => {
             <Link href="/admin" className="relative text-4xl font-semibold text-slate-700">
                 <Image
                     src={Logo}
-                    alt="Brandstored Logo"
+                    alt="Store1920 Logo"
                     width={180}
                     height={48}
                     className="object-contain"
                     priority
                 />
                 <p className="absolute text-xs font-semibold -top-1 -right-13 px-3 p-0.5 rounded-full flex items-center gap-2 text-white bg-green-500">
-               Brandstored
+               Store1920
                 </p>
             </Link>
             <div className="flex items-center gap-3">
@@ -54,7 +54,7 @@ const AdminNavbar = () => {
                         <button onClick={() => setShowConfirm(true)} className="px-4 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition">Sign Out</button>
                     </>
                 ) : (
-                    <p>Hi, Brandstored</p>
+                    <p>Hi, Store1920</p>
                 )}
             </div>
 

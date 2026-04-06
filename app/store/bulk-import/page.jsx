@@ -10,7 +10,6 @@ export default function BulkImportPage() {
   const { user, getToken } = useAuth();
   const router = useRouter();
   const [file, setFile] = useState(null);
-  const [skipExisting, setSkipExisting] = useState(true);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [failures, setFailures] = useState([]);
@@ -48,7 +47,8 @@ export default function BulkImportPage() {
       const token = await getToken();
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('skipExisting', skipExisting);
+      formData.append('importMode', 'update');
+      formData.append('skipExisting', 'false');
 
       const response = await axios.post('/api/store/product/bulk-import', formData, {
         headers: {
@@ -57,9 +57,21 @@ export default function BulkImportPage() {
         },
       });
 
-      setResult(response.data.summary);
+      const summary = response.data.summary;
+      setResult(summary);
       setFailures(response.data.failures || []);
-      toast.success('Bulk import completed');
+
+      if (summary?.created > 0 || summary?.updated > 0) {
+        toast.success(response.data?.message || 'Bulk import completed');
+      } else if (summary?.skipped === summary?.totalRows) {
+        toast((response.data?.message || 'Import finished, but all rows were skipped'), {
+          icon: '⚠️',
+        });
+      } else {
+        toast(response.data?.message || 'Import finished', {
+          icon: 'ℹ️',
+        });
+      }
     } catch (error) {
       toast.error(error.response?.data?.error || 'Import failed');
       console.error('Import error:', error);
@@ -88,6 +100,9 @@ export default function BulkImportPage() {
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-slate-900 mb-2">Bulk Import Products</h1>
           <p className="text-slate-600">Import multiple products at once using Excel or CSV format. Supports plain text and HTML-formatted descriptions.</p>
+          <p className="mt-2 text-sm font-medium text-amber-700">
+            Use the same Import Products button below for both new products and updates. Update mode is now the default for WordPress migration imports.
+          </p>
         </div>
 
         {/* Info Box */}
@@ -121,17 +136,8 @@ export default function BulkImportPage() {
             </label>
           </div>
 
-          {/* Options */}
-          <div className="mt-6 flex items-center gap-4">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={skipExisting}
-                onChange={(e) => setSkipExisting(e.target.checked)}
-                className="w-4 h-4 rounded border-slate-300"
-              />
-              <span className="text-sm text-slate-700">Skip products that already exist (by slug)</span>
-            </label>
+          <div className="mt-6 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+            Update mode is always ON. Existing products will be updated, and WooCommerce variation rows will be imported instead of skipped.
           </div>
 
           {/* Actions */}
@@ -141,7 +147,7 @@ export default function BulkImportPage() {
               disabled={!file || loading}
               className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-medium py-3 px-6 rounded-lg transition"
             >
-              {loading ? 'Importing...' : 'Import Products'}
+              {loading ? 'Importing...' : 'Import And Update Products'}
             </button>
             <button
               onClick={downloadTemplate}
@@ -194,8 +200,18 @@ export default function BulkImportPage() {
         {result && (
           <div className="bg-white rounded-lg shadow-md p-8 mb-8">
             <h3 className="text-xl font-bold text-slate-900 mb-6">Import Results</h3>
+
+            {result.totalRows > 0 && result.created === 0 && (result.updated || 0) === 0 && result.skipped === result.totalRows ? (
+              <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                All rows were skipped. Existing matches: {result.skippedExisting || 0}, unsupported WooCommerce row types: {result.skippedUnsupportedType || 0}, missing names: {result.skippedMissingName || 0}.
+              </div>
+            ) : null}
+
+            <div className="mb-6 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              Import mode: <span className="font-semibold capitalize">{result.importMode || 'update'}</span>. Existing skipped: <span className="font-semibold">{result.skippedExisting || 0}</span>. Unsupported row types skipped: <span className="font-semibold">{result.skippedUnsupportedType || 0}</span>. Missing names skipped: <span className="font-semibold">{result.skippedMissingName || 0}</span>.
+            </div>
             
-            <div className="grid grid-cols-4 gap-4 mb-8">
+            <div className="grid grid-cols-1 gap-4 mb-8 md:grid-cols-5">
               <div className="bg-slate-50 rounded-lg p-4">
                 <p className="text-slate-600 text-sm">Total Rows</p>
                 <p className="text-2xl font-bold text-slate-900">{result.totalRows}</p>
@@ -205,6 +221,10 @@ export default function BulkImportPage() {
                   <CheckCircle2 className="w-4 h-4" /> Created
                 </p>
                 <p className="text-2xl font-bold text-green-600">{result.created}</p>
+              </div>
+              <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                <p className="text-blue-700 text-sm">Updated</p>
+                <p className="text-2xl font-bold text-blue-600">{result.updated || 0}</p>
               </div>
               <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
                 <p className="text-yellow-700 text-sm">Skipped</p>

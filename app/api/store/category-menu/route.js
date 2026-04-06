@@ -76,8 +76,9 @@ export async function POST(request) {
       );
     }
 
-    const normalizedCategories = categories.map((category) => ({
+    const normalizedCategories = categories.map((category, index) => ({
       ...category,
+      id: category?.id || category?._id || slugify(category?.name || '') || `category-${index + 1}`,
       name: (category?.name || '').trim(),
       url: category?.url || buildCategoryUrl(category?.name || ''),
     }));

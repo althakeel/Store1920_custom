@@ -69,6 +69,7 @@ export async function PUT(request, { params }) {
         const body = await request.json();
         const {
             section,
+            sectionType,
             category,
             tag,
             productIds,
@@ -83,11 +84,16 @@ export async function PUT(request, { params }) {
             sortOrder
         } = body;
 
+        const normalizedType = sectionType || (category ? 'category' : 'manual');
+        const normalizedCategory = normalizedType === 'category' ? (category ?? null) : null;
+        const normalizedProductIds = normalizedType === 'manual' ? (productIds ?? []) : [];
+
         const updateData = {
             section,
-            category: category ?? null,
+            sectionType: normalizedType,
+            category: normalizedCategory,
             tag: tag ?? null,
-            productIds: productIds ?? [],
+            productIds: normalizedProductIds,
             title: title ?? section,
             subtitle: subtitle ?? null,
             slides: slides ?? [],

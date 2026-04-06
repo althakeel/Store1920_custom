@@ -5,7 +5,7 @@ import { auth } from '@/lib/firebase'
 import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from 'firebase/auth'
 import toast from 'react-hot-toast'
 import Image from 'next/image'
-import Logo from '@/assets/Asset11.png'
+import Logo from '@/assets/logo/logo.png'
 import { useAuth } from '@/lib/useAuth'
 
 export default function StoreLogin() {
@@ -55,6 +55,11 @@ export default function StoreLogin() {
       })
       const data = await response.json()
       
+      if (!response.ok && data?.reason === 'database-unavailable') {
+        toast.error('Store access check failed because the database is unreachable. Try again when the server connection is restored.')
+        return
+      }
+
       if (data.isSeller) {
         toast.success('Login successful!')
         router.push('/store')
@@ -100,6 +105,11 @@ export default function StoreLogin() {
       })
       const data = await response.json()
       
+      if (!response.ok && data?.reason === 'database-unavailable') {
+        toast.error('Store access check failed because the database is unreachable. Try again when the server connection is restored.')
+        return
+      }
+
       if (data.isSeller) {
         toast.success('Login successful!')
         router.push('/store')
@@ -149,7 +159,7 @@ export default function StoreLogin() {
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
             <p className="text-sm font-semibold text-blue-900 mb-2">📋 Demo Credentials:</p>
             <div className="space-y-1 text-sm text-blue-800">
-              <p><span className="font-medium">Email:</span>support@brandstored.com</p>
+              <p><span className="font-medium">Email:</span>support@Store1920.com</p>
               <p><span className="font-medium">Password:</span> Contact admin</p>
             </div>
           </div>

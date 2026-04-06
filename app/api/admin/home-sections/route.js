@@ -19,7 +19,7 @@ export async function GET(request) {
         await dbConnect();
         // Only select needed fields for homepage
         const sections = await HomeSection.find({}, {
-            section: 1, category: 1, tag: 1, productIds: 1, title: 1, subtitle: 1, slides: 1, slidesData: 1, bannerCtaText: 1, bannerCtaLink: 1, layout: 1, isActive: 1, sortOrder: 1
+            section: 1, sectionType: 1, category: 1, tag: 1, productIds: 1, title: 1, subtitle: 1, slides: 1, slidesData: 1, bannerCtaText: 1, bannerCtaLink: 1, layout: 1, isActive: 1, sortOrder: 1
         }).sort({ sortOrder: 1 }).lean();
         _cache.sections = sections;
         _cache.lastFetch = now;
@@ -38,18 +38,23 @@ export async function POST(request) {
     try {
         await dbConnect();
         const body = await request.json();
-        const { section, category, tag, productIds, title, subtitle, slides, bannerCtaText, bannerCtaLink, layout, isActive, sortOrder } = body;
+        const { section, sectionType, category, tag, productIds, title, subtitle, slides, bannerCtaText, bannerCtaLink, layout, isActive, sortOrder } = body;
         if (!section) {
             return NextResponse.json(
                 { error: "Section key is required" },
                 { status: 400 }
             );
         }
+        const normalizedType = sectionType || (category ? 'category' : 'manual');
+        const normalizedCategory = normalizedType === 'category' ? category : null;
+        const normalizedProductIds = normalizedType === 'manual' ? (productIds || []) : [];
+
         const newSection = await HomeSection.create({
             section,
-            category,
+            sectionType: normalizedType,
+            category: normalizedCategory,
             tag,
-            productIds,
+            productIds: normalizedProductIds,
             title,
             subtitle,
             slides,

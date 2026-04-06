@@ -12,51 +12,85 @@ import { onAuthStateChanged } from "firebase/auth";
 // Skeleton Loader Components
 const ProductDetailsSkeleton = () => (
     <div className="animate-pulse">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-            {/* Image Skeleton */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 lg:gap-8 items-start">
             <div>
-                <div className="bg-slate-200 rounded-lg h-96 mb-4"></div>
-                <div className="flex gap-2">
-                    {[1, 2, 3, 4].map(i => (
-                        <div key={i} className="bg-slate-200 rounded h-20 w-20"></div>
+                <div className="h-[360px] sm:h-[420px] md:h-[500px] rounded-2xl bg-slate-200" />
+                <div className="mt-3 flex gap-2 overflow-hidden">
+                    {[1, 2, 3, 4, 5].map(i => (
+                        <div key={i} className="h-16 w-16 sm:h-20 sm:w-20 rounded-lg bg-slate-200" />
                     ))}
                 </div>
-            </div>
-            
-            {/* Details Skeleton */}
-            <div className="space-y-4">
-                <div className="h-8 bg-slate-200 rounded w-3/4"></div>
-                <div className="h-6 bg-slate-200 rounded w-1/4"></div>
-                <div className="space-y-2">
-                    <div className="h-4 bg-slate-200 rounded w-full"></div>
-                    <div className="h-4 bg-slate-200 rounded w-5/6"></div>
-                    <div className="h-4 bg-slate-200 rounded w-4/6"></div>
-                </div>
-                <div className="h-10 bg-slate-200 rounded w-full"></div>
-                <div className="h-10 bg-slate-200 rounded w-full"></div>
-            </div>
-        </div>
-    </div>
-);
 
-const ProductDescriptionSkeleton = () => (
-    <div className="animate-pulse space-y-4 mt-8">
-        <div className="h-6 bg-slate-200 rounded w-1/4"></div>
-        <div className="space-y-2">
-            <div className="h-4 bg-slate-200 rounded w-full"></div>
-            <div className="h-4 bg-slate-200 rounded w-full"></div>
-            <div className="h-4 bg-slate-200 rounded w-3/4"></div>
+                <div className="mt-8 space-y-5">
+                    <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                        <div className="h-7 w-56 rounded bg-slate-200" />
+                        <div className="h-6 w-64 rounded bg-slate-200" />
+                    </div>
+
+                    <div className="flex gap-3">
+                        {[1, 2, 3].map((i) => (
+                            <div key={i} className="h-8 w-28 rounded-full border border-slate-200 bg-slate-100" />
+                        ))}
+                    </div>
+
+                    {[1, 2].map((i) => (
+                        <div key={i} className="space-y-2.5">
+                            <div className="h-4 w-44 rounded bg-slate-200" />
+                            <div className="h-4 w-24 rounded bg-slate-200" />
+                            <div className="h-4 w-full rounded bg-slate-200" />
+                            <div className="h-4 w-10/12 rounded bg-slate-200" />
+                        </div>
+                    ))}
+
+                    <div className="pt-2">
+                        <div className="h-8 w-52 rounded bg-slate-200 mb-4" />
+                        <div className="space-y-2.5">
+                            <div className="h-4 w-full rounded bg-slate-200" />
+                            <div className="h-4 w-11/12 rounded bg-slate-200" />
+                            <div className="h-4 w-9/12 rounded bg-slate-200" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="space-y-4">
+                <div className="h-6 w-24 rounded-full bg-slate-200" />
+                <div className="h-9 w-5/6 rounded bg-slate-200" />
+                <div className="h-5 w-1/2 rounded bg-slate-200" />
+
+                <div className="space-y-2">
+                    <div className="h-4 w-full rounded bg-slate-200" />
+                    <div className="h-4 w-11/12 rounded bg-slate-200" />
+                    <div className="h-4 w-8/12 rounded bg-slate-200" />
+                </div>
+
+                <div className="rounded-xl border border-slate-200 p-3 space-y-3">
+                    <div className="h-9 rounded-lg bg-slate-200" />
+                    <div className="h-9 rounded-lg bg-slate-200" />
+                    <div className="h-14 rounded-full bg-slate-200" />
+                    <div className="h-14 rounded-full bg-slate-200" />
+                </div>
+
+                <div className="rounded-xl border border-slate-200 p-3 space-y-2.5">
+                    <div className="h-4 w-1/3 rounded bg-slate-200" />
+                    <div className="h-3.5 w-1/2 rounded bg-slate-200" />
+                    <div className="h-20 rounded-lg bg-slate-200" />
+                    <div className="h-4 w-2/3 rounded bg-slate-200" />
+                    <div className="h-4 w-3/4 rounded bg-slate-200" />
+                    <div className="h-4 w-1/3 rounded bg-slate-200" />
+                </div>
+            </div>
         </div>
     </div>
 );
 
 const RelatedProductsSkeleton = () => (
-    <div className="px-4 mt-12 mb-16">
-        <div className="h-8 bg-slate-200 rounded w-48 mb-6 animate-pulse"></div>
+    <div className="mt-12 mb-16">
+        <div className="h-8 bg-slate-200 rounded w-56 mb-6 animate-pulse"></div>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-5 xl:grid-cols-5 gap-6">
             {[1, 2, 3, 4, 5].map(i => (
                 <div key={i} className="animate-pulse">
-                    <div className="bg-slate-200 rounded-lg h-48 mb-3"></div>
+                    <div className="bg-slate-200 rounded-xl h-48 mb-3"></div>
                     <div className="h-4 bg-slate-200 rounded w-3/4 mb-2"></div>
                     <div className="h-4 bg-slate-200 rounded w-1/2"></div>
                 </div>
@@ -79,12 +113,20 @@ export default function ProductBySlug() {
         try {
             let found = products.find((product) => product.slug === slug);
             
-            // If the Redux product is missing variants, refetch from backend to get full data
-            const needsFresh = !found || !Array.isArray(found.variants) || found.variants.length === 0;
+            // Refetch only when product is missing OR it is a variant product with incomplete variant data
+            const needsFresh = !found || (found?.hasVariants && (!Array.isArray(found.variants) || found.variants.length === 0));
             
             if (needsFresh) {
-                const { data } = await axios.get(`/api/products/by-slug?slug=${encodeURIComponent(slug)}`);
-                found = data.product || found || null;
+                const response = await axios.get(
+                    `/api/products/by-slug?slug=${encodeURIComponent(slug)}`,
+                    { validateStatus: (status) => status === 200 || status === 404 }
+                );
+
+                if (response.status === 200) {
+                    found = response.data.product || found || null;
+                } else if (response.status === 404) {
+                    found = found || null;
+                }
             }
             
             setProduct(found);
@@ -180,23 +222,28 @@ export default function ProductBySlug() {
 
     return (
         <div className="w-full">
-            <div className="w-full md:max-w-[1250px] md:mx-auto px-0 md:px-2 md:sm:px-6 pb-24 lg:pb-0">
+            <div className="w-full pb-24 lg:pb-0">
                 {/* Product Details */}
                 {loading ? (
-                    <>
-                        <ProductDetailsSkeleton />
-                        <ProductDescriptionSkeleton />
-                        <RelatedProductsSkeleton />
-                    </>
+                    <div>
+                        <div className="border-b border-gray-100">
+                            <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 py-2.5">
+                                <div className="h-4 w-72 rounded bg-slate-200 animate-pulse" />
+                            </div>
+                        </div>
+                        <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 py-6 pb-8">
+                            <ProductDetailsSkeleton />
+                            <RelatedProductsSkeleton />
+                        </div>
+                    </div>
                 ) : product ? (
                     <>
-                        <ProductDetails product={product} reviews={reviews} loadingReviews={loadingReviews} />
-                        <ProductDescription product={product} reviews={reviews || []} loadingReviews={loadingReviews} onReviewAdded={() => fetchReviews(product._id || product.id)} />
+                        <ProductDetails product={product} reviews={reviews} loadingReviews={loadingReviews} onReviewAdded={() => fetchReviews(product._id || product.id)} />
                         {/* Recommended Products */}
                         {recommendedProducts.length > 0 && (
                             <div className="-mx-0 md:mx-0 mt-12 mb-16">
                                 <div className="px-4 md:px-0">
-                                    <h2 className="text-2xl font-semibold text-slate-800 mb-6">Recommended Products</h2>
+                                    <h2 className="text-2xl font-semibold text-slate-800 mb-6">You May Also Like</h2>
                                 </div>
                                 <div className="px-4 md:px-0">
                                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-5 xl:grid-cols-5 gap-6">

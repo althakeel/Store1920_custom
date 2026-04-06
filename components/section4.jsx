@@ -8,18 +8,45 @@ import { useSelector, useDispatch } from 'react-redux'
 import { addToCart, uploadCart } from '@/lib/features/cart/cartSlice'
 import { useAuth } from '@/lib/useAuth'
 import toast from 'react-hot-toast'
+import BannerSlider from '@/components/BannerSlider'
 
-const Section4 = ({ sections }) => {
+const Section4 = ({ sections, loading = false }) => {
   const router = useRouter()
   const products = useSelector(state => state.product.list)
+  const bannerInsertAfterIndex = sections.length > 1 ? Math.floor((sections.length - 1) / 2) : -1
+
+  if (loading) {
+    return (
+      <div className="w-full bg-white py-8 px-4">
+        <div className="max-w-[1400px] mx-auto space-y-12">
+          {Array.from({ length: 2 }).map((_, index) => (
+            <div key={`section4-skeleton-${index}`} className="w-full">
+              <div className="mb-6">
+                <div className="h-7 w-48 bg-gray-100 rounded animate-pulse" />
+                <div className="h-4 w-64 bg-gray-100 rounded mt-2 animate-pulse" />
+              </div>
+              <div className="flex gap-3 sm:gap-4 overflow-hidden pb-2">
+                <SkeletonLoader />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
 
   if (!sections || sections.length === 0) return null
 
   return (
     <div className="w-full bg-white py-8 px-4">
-      <div className="max-w-[1300px] mx-auto space-y-12">
+      <div className="max-w-[1400px] mx-auto space-y-12">
         {sections.map((section, sectionIdx) => (
-          <HorizontalSlider key={section._id || sectionIdx} section={section} router={router} allProducts={products} />
+          <React.Fragment key={section._id || sectionIdx}>
+            <HorizontalSlider section={section} router={router} allProducts={products} />
+            {sectionIdx === bannerInsertAfterIndex && (
+              <BannerSlider className="mt-0 mb-0 px-0 sm:px-0" />
+            )}
+          </React.Fragment>
         ))}
       </div>
     </div>
@@ -80,42 +107,33 @@ const HorizontalSlider = ({ section, router, allProducts }) => {
 
   useEffect(() => {
     setLoading(true)
-    
-    // Simulate fetch delay for better UX
-    const timer = setTimeout(() => {
-      let featured = []
+    let featured = []
 
-      const normalizeId = (value) => {
-        if (!value) return null
-        if (typeof value === 'string' || typeof value === 'number') return String(value)
-        if (typeof value === 'object') {
-          if (value.$oid) return String(value.$oid)
-          const str = value.toString?.()
-          return str && str !== '[object Object]' ? String(str) : null
-        }
-        return null
+    const normalizeId = (value) => {
+      if (!value) return null
+      if (typeof value === 'string' || typeof value === 'number') return String(value)
+      if (typeof value === 'object') {
+        if (value.$oid) return String(value.$oid)
+        const str = value.toString?.()
+        return str && str !== '[object Object]' ? String(str) : null
       }
-      
-      // If section already has products array, use it (section4 format)
-      if (section.products && Array.isArray(section.products) && section.products.length > 0) {
-        featured = section.products
-      }
-      // If section has productIds, map from allProducts (featured sections format)
-      else if (section.productIds && Array.isArray(section.productIds)) {
-        const productMap = new Map(
-          allProducts.map(p => [normalizeId(p.id || p._id || p.productId), p])
-        )
+      return null
+    }
 
-        featured = section.productIds
-          .map(pid => productMap.get(normalizeId(pid)))
-          .filter(Boolean)
-      }
-      
-      setSectionProducts(featured)
-      setLoading(false)
-    }, 800) // 800ms delay for skeleton display
-    
-    return () => clearTimeout(timer)
+    if (section.products && Array.isArray(section.products) && section.products.length > 0) {
+      featured = section.products
+    } else if (section.productIds && Array.isArray(section.productIds)) {
+      const productMap = new Map(
+        allProducts.map((product) => [normalizeId(product.id || product._id || product.productId), product])
+      )
+
+      featured = section.productIds
+        .map((productId) => productMap.get(normalizeId(productId)))
+        .filter(Boolean)
+    }
+
+    setSectionProducts(featured)
+    setLoading(false)
   }, [allProducts, section])
 
   useEffect(() => {

@@ -23,7 +23,6 @@ import Creditimage4 from '../../../assets/creditcards/11.webp';
 
 const SignInModal = dynamic(() => import("@/components/SignInModal"), { ssr: false });
 const AddressModal = dynamic(() => import("@/components/AddressModal"), { ssr: false });
-const PincodeModal = dynamic(() => import("@/components/PincodeModal"), { ssr: false });
 const PrepaidUpsellModal = dynamic(() => import("@/components/PrepaidUpsellModal"), { ssr: false });
 
 export default function CheckoutPage() {
@@ -76,7 +75,6 @@ export default function CheckoutPage() {
   const [shippingMethod, setShippingMethod] = useState('standard'); // 'standard' or 'express'
   const [showSignIn, setShowSignIn] = useState(false);
   const [showAddressModal, setShowAddressModal] = useState(false);
-  const [showPincodeModal, setShowPincodeModal] = useState(false);
   const [editingAddressId, setEditingAddressId] = useState(null);
   const [showAlternatePhone, setShowAlternatePhone] = useState(false);
   const [abandonSaved, setAbandonSaved] = useState(false);
@@ -469,63 +467,6 @@ export default function CheckoutPage() {
     }
   }, [user, addressList, form.addressId]);
 
-  // Auto-open pincode modal for guests without saved addresses or when no address is present
-  useEffect(() => {
-    if (!authLoading && !user && addressList.length === 0 && !form.pincode && isIndiaCountry(form.country || 'United Arab Emirates')) {
-      const timer = setTimeout(() => {
-        setShowPincodeModal(true);
-      }, 500); // Small delay for better UX
-      return () => clearTimeout(timer);
-    }
-  }, [authLoading, user, addressList, form.pincode, form.country]);
-
-  const handlePincodeSubmit = (pincodeData) => {
-    setForm(f => ({
-      ...f,
-      pincode: pincodeData.pincode,
-      city: pincodeData.city,
-      district: pincodeData.district,
-      state: pincodeData.state,
-      country: pincodeData.country
-    }));
-    // Update districts for the selected state
-    const stateObj = indiaStatesAndDistricts.find(s => s.state === pincodeData.state);
-    if (stateObj) {
-      setDistricts(stateObj.districts);
-    }
-  };
-
-  const handleAutoFillClick = async () => {
-    const pincode = form.pincode?.trim();
-    
-    // If pincode is already filled and valid, fetch directly
-    if (pincode && pincode.length === 6 && /^\d{6}$/.test(pincode)) {
-      try {
-        const response = await fetch(`https://api.postalpincode.in/pincode/${pincode}`);
-        const data = await response.json();
-
-        if (data[0]?.Status === "Success" && data[0]?.PostOffice?.length > 0) {
-          const postOffice = data[0].PostOffice[0];
-          handlePincodeSubmit({
-            pincode: pincode,
-            city: postOffice.Name || postOffice.Region || postOffice.Division,
-            district: postOffice.District,
-            state: postOffice.State,
-            country: "India"
-          });
-          toast.success("Address auto-filled successfully!");
-        } else {
-          toast.error("Invalid pincode. Please enter a valid pincode.");
-        }
-      } catch (err) {
-        toast.error("Failed to fetch pincode details. Please try again.");
-      }
-    } else {
-      // Open modal if pincode is empty or invalid
-      setShowPincodeModal(true);
-    }
-  };
-
   const handleDeleteAddress = async (addressId) => {
     const confirmed = window.confirm("Are you sure you want to delete this address? This action cannot be undone.");
     if (!confirmed) return;
@@ -801,8 +742,8 @@ export default function CheckoutPage() {
         key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
         order_id: orderData.orderId, // Use the order ID from backend
         amount: Math.round(totalAfterWallet * 100), // Amount in paise
-        currency: "INR",
-        name: "brandstored",
+        currency: "AED",
+        name: "store1920",
         description: "Order Payment",
         image: "/logo.png",
         handler: async function (response) {
@@ -894,8 +835,7 @@ export default function CheckoutPage() {
     }
 
     if (isIndiaCheckout) {
-      // Auto-fill pincode from selected saved address if user entered invalid zero-only pincode
-      if (!resolvedPincode || isZeroOnlyPincode(resolvedPincode)) {
+      if ((!resolvedPincode || isZeroOnlyPincode(resolvedPincode)) && selectedAddr) {
         const fallbackPincode = pickValidPincode(selectedAddr?.zip, selectedAddr?.pincode);
 
         if (fallbackPincode) {
@@ -904,12 +844,7 @@ export default function CheckoutPage() {
         }
       }
 
-      if (!resolvedPincode || isZeroOnlyPincode(resolvedPincode)) {
-        setFormError('Please enter a valid pincode.');
-        return;
-      }
-
-      if (resolvedPincode.length !== 6) {
+      if (resolvedPincode && resolvedPincode.length !== 6) {
         setFormError('Please enter a valid 6-digit Indian pincode.');
         return;
       }
@@ -982,7 +917,7 @@ export default function CheckoutPage() {
             payload.addressId = addressId;
           }
         } else {
-          if (!form.name || !form.email || !resolvedPhone || !form.street || !form.city || !form.state || !resolvedCountry || (isIndiaCheckout && !resolvedPincode)) {
+          if (!form.name || !form.email || !resolvedPhone || !form.street || !form.city || !form.state || !resolvedCountry) {
             setFormError("Please fill all required shipping details.");
             setPlacingOrder(false);
             return;
@@ -1102,7 +1037,7 @@ export default function CheckoutPage() {
         // Only add addressId if it exists
         if (addressId || (addressList[0] && addressList[0]._id)) {
           payload.addressId = addressId || addressList[0]._id;
-        } else if (form.street && form.city && form.state && form.country && (isIndiaCheckout ? !!resolvedPincode : true)) {
+        } else if (form.street && form.city && form.state && form.country) {
           // User is logged in but has no saved address - include address in payload
           payload.addressData = {
             name: form.name || user.displayName || '',
@@ -1268,7 +1203,7 @@ export default function CheckoutPage() {
         order_id: rpData.orderId,
         amount: Math.round(discountedAmount * 100),
         currency: 'AED',
-        name: 'brandstored',
+        name: 'store1920',
         description: 'Prepaid Payment (5% OFF)',
         image: '/logo.png',
         handler: async function (response) {
@@ -1351,8 +1286,7 @@ export default function CheckoutPage() {
     );
   }
 
-  const isIndiaFormCountry = isIndiaCountry(form.country || 'United Arab Emirates');
-  const isGuestAddressReady = !!(form.name && form.phone && form.city && form.state && form.street && (!isIndiaFormCountry || form.pincode));
+  const isGuestAddressReady = !!(form.name && form.phone && form.city && form.state && form.street);
 
   if (showPrepaidModal || navigatingToSuccess) {
     // If we just placed a COD order, show the prepaid upsell modal even though cart is empty
@@ -1857,59 +1791,11 @@ export default function CheckoutPage() {
                     value={form.email || ''}
                     onChange={handleChange}
                   />
-                  {/* Pincode / Postal code */}
-                  {isIndiaCountry(form.country) ? (
-                    <>
-                      <div className="flex gap-2 items-center">
-                        <input
-                          className="border border-gray-200 bg-white rounded px-4 py-2 focus:border-gray-400 flex-1"
-                          type="text"
-                          name="pincode"
-                          placeholder="Pincode"
-                          value={form.pincode || ''}
-                          onChange={(e) => {
-                            const value = e.target.value.replace(/\D/g, '').slice(0, 6);
-                            handleChange({ target: { name: 'pincode', value } });
-                          }}
-                          maxLength={6}
-                          pattern="[0-9]{6}"
-                          required
-                        />
-                        <button
-                          type="button"
-                          onClick={handleAutoFillClick}
-                          className="px-4 py-2 bg-orange-500 text-white rounded hover:bg-orange-600 whitespace-nowrap text-sm font-semibold"
-                        >
-                          Auto-fill
-                        </button>
-                      </div>
-                      {form.pincode && /^0+$/.test(String(form.pincode).trim()) ? (
-                        <div className="text-xs text-red-500 -mt-2">
-                          Please enter a valid pincode. All-zero values are not allowed.
-                        </div>
-                      ) : form.pincode ? (
-                        <div className="text-xs text-gray-500 -mt-2">
-                          ✓ Address auto-filled from pincode
-                        </div>
-                      ) : null}
-                    </>
-                  ) : (
-                    <input
-                      className="border border-gray-200 bg-white rounded px-4 py-2 focus:border-gray-400"
-                      type="text"
-                      name="pincode"
-                      placeholder="Postal code (optional)"
-                      value={form.pincode || ''}
-                      onChange={handleChange}
-                      maxLength={20}
-                    />
-                  )}
-                  {/* City - Auto-filled from pincode */}
                   <input
                     className="border border-gray-200 bg-white rounded px-4 py-2 focus:border-gray-400"
                     type="text"
                     name="city"
-                    placeholder="City (auto-filled from pincode)"
+                    placeholder="City"
                     value={form.city || ''}
                     onChange={handleChange}
                     required
@@ -2345,12 +2231,6 @@ export default function CheckoutPage() {
         }}
       />
       <SignInModal open={showSignIn} onClose={() => setShowSignIn(false)} />
-      <PincodeModal 
-        open={showPincodeModal} 
-        onClose={() => setShowPincodeModal(false)} 
-        onPincodeSubmit={handlePincodeSubmit}
-      />
-
       <PrepaidUpsellModal 
         open={showPrepaidModal}
         onClose={() => {

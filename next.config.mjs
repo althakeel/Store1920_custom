@@ -26,7 +26,11 @@ const nextConfig = {
         unoptimized: true,
         domains,
         // Allow the same hosts via remotePatterns for fine-grained control
-        remotePatterns: domains.map((host) => ({ protocol: 'https', hostname: host, pathname: '/:path*' })),
+        remotePatterns: [
+            ...domains.map((host) => ({ protocol: 'https', hostname: host, pathname: '/:path*' })),
+            { protocol: 'https', hostname: '**', pathname: '/:path*' },
+            { protocol: 'http', hostname: '**', pathname: '/:path*' },
+        ],
         formats: ['image/avif', 'image/webp'],
         deviceSizes: [320, 420, 640, 768, 1024, 1280, 1536, 1920],
         imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
@@ -40,6 +44,8 @@ const nextConfig = {
             bodySizeLimit: '50mb'
         }
     },
+    serverExternalPackages: ['mongoose'],
+
     // Skip static generation for authenticated routes
     async headers() {
         return [

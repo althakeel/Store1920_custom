@@ -10,17 +10,21 @@ function isMongoConnectionError(error) {
     return (
         message.includes('Could not connect to any servers in your MongoDB Atlas cluster') ||
         message.includes('Server selection timed out') ||
+        message.includes('marked stale due to electionId/setVersion mismatch') ||
+        message.includes('ReplicaSetNoPrimary') ||
+        message.includes('no primary server available') ||
         message.includes('ECONNREFUSED') ||
         message.includes('ENOTFOUND')
     );
 }
 
 function createProductsResponse(products, headers = {}) {
+    const isDev = process.env.NODE_ENV !== 'production';
     return NextResponse.json(
         { products },
         {
             headers: {
-                'Cache-Control': 'public, s-maxage=600, stale-while-revalidate=1200',
+                'Cache-Control': isDev ? 'no-store' : 'public, s-maxage=600, stale-while-revalidate=1200',
                 'X-Cache': 'MISS',
                 ...headers,
             },
@@ -79,21 +83,21 @@ export async function POST(request) {
 
 
 export async function GET(request){
+    const { searchParams } = new URL(request.url);
+    const sortBy = searchParams.get('sortBy');
+    const fetchAll = searchParams.get('all') === 'true';
+    const parsedLimit = parseInt(searchParams.get('limit') || '20', 10);
+    const parsedOffset = parseInt(searchParams.get('offset') || '0', 10);
+    const limit = fetchAll ? 5000 : Math.min(Number.isFinite(parsedLimit) ? parsedLimit : 20, 300); // Default 20, max 300 (or 5000 for all=true)
+    const offset = Number.isFinite(parsedOffset) ? parsedOffset : 0;
+    const fastDelivery = searchParams.get('fastDelivery');
+    const categoryParam = searchParams.get('category');
+    const includeOutOfStock = searchParams.get('includeOutOfStock') === 'true';
+    const cacheKey = generateCacheKey('products', { limit, offset, fastDelivery: fastDelivery || 'false', fetchAll: fetchAll ? 'true' : 'false' });
+
     try {
-        const { searchParams } = new URL(request.url);
-        const sortBy = searchParams.get('sortBy');
-        const fetchAll = searchParams.get('all') === 'true';
-        const parsedLimit = parseInt(searchParams.get('limit') || '20', 10);
-        const parsedOffset = parseInt(searchParams.get('offset') || '0', 10);
-        const limit = fetchAll ? 5000 : Math.min(Number.isFinite(parsedLimit) ? parsedLimit : 20, 300); // Default 20, max 300 (or 5000 for all=true)
-        const offset = Number.isFinite(parsedOffset) ? parsedOffset : 0;
-        const fastDelivery = searchParams.get('fastDelivery');
-        const categoryParam = searchParams.get('category');
-        const includeOutOfStock = searchParams.get('includeOutOfStock') === 'true';
-        
         // CHECK CACHE FIRST - Skip MongoDB if cached!
         // TEMPORARILY DISABLED TO FORCE FRESH DATA WITH CATEGORIES
-        const cacheKey = generateCacheKey('products', { limit, offset, fastDelivery: fastDelivery || 'false', fetchAll: fetchAll ? 'true' : 'false' });
         // const cachedProducts = getCachedData(cacheKey);
         // if (cachedProducts) {
         //     return NextResponse.json({ products: cachedProducts, fromCache: true });
@@ -110,8 +114,8 @@ export async function GET(request){
                 });
             }
 
-            if (process.env.NODE_ENV !== 'production' && isMongoConnectionError(dbError)) {
-                console.warn('[products API] MongoDB unavailable in development, returning empty product list:', dbError.message);
+            if (isMongoConnectionError(dbError)) {
+                console.warn('[products API] MongoDB unavailable, returning empty product list:', dbError.message);
                 return createProductsResponse([], {
                     'Cache-Control': 'no-store',
                     'X-Data-Source': 'fallback-empty',
@@ -267,6 +271,22 @@ export async function GET(request){
         if (error instanceof Error && error.stack) {
             console.error('Stack trace:', error.stack);
         }
+
+        if (isMongoConnectionError(error)) {
+            const cachedProducts = getCachedData(cacheKey);
+            if (cachedProducts) {
+                return createProductsResponse(cachedProducts, {
+                    'X-Cache': 'STALE',
+                    'X-Data-Source': 'memory-cache-error-fallback',
+                });
+            }
+
+            return createProductsResponse([], {
+                'Cache-Control': 'no-store',
+                'X-Data-Source': 'fallback-empty-query-error',
+            });
+        }
+
         return NextResponse.json({ error: "An internal server error occurred.", details: error.message, stack: error.stack }, { status: 500 });
     }
 }

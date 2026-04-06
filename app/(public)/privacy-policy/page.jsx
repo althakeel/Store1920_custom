@@ -8,7 +8,7 @@ export default function PrivacyPolicyPage() {
           Privacy Policy
         </h1>
         <p className="text-gray-600 mb-8">
-          This Privacy Policy explains how <strong>brandstored.com</strong>, owned
+          This Privacy Policy explains how <strong>Store1920.com</strong>, owned
           and operated by <strong>Nilaas</strong>, collects, uses, stores, and
           protects your personal information when you use our website and
           services.
@@ -94,7 +94,7 @@ export default function PrivacyPolicyPage() {
               Subject to applicable laws, you may request access to, correction
               of, or deletion of your personal information. To make such a
               request, please contact us at{' '}
-              <strong>support@brandstored.com</strong>.
+              <strong>support@Store1920.com</strong>.
             </p>
           </section>
 
@@ -167,10 +167,10 @@ export default function PrivacyPolicyPage() {
               <strong>Business Name:</strong> Nilaas
             </p>
             <p className="text-gray-700 mb-1">
-              <strong>Website:</strong> https://www.brandstored.com
+              <strong>Website:</strong> https://www.Store1920.com
             </p>
             <p className="text-gray-700 mb-1">
-              <strong>Email:</strong> support@brandstored.com
+              <strong>Email:</strong> support@Store1920.com
             </p>
             <p className="text-gray-700">
               <strong>Customer Support:</strong> +91 7592875212

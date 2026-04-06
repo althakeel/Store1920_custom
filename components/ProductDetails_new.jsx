@@ -9,10 +9,12 @@ import axios from "axios";
 import { useDispatch, useSelector } from "react-redux";
 import { addToCart } from "@/lib/features/cart/cartSlice";
 import MobileProductActions from "./MobileProductActions";
+import normalizeImportedRichText from "@/lib/normalizeImportedRichText";
 
 import { useState, useEffect } from "react";
 
 const ProductDetails = ({ product }) => {
+  const normalizedDescription = normalizeImportedRichText(product?.description || '');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -564,7 +566,7 @@ const ProductDetails = ({ product }) => {
           </div>
           
           {/* Description Content */}
-          {product.description && (
+          {normalizedDescription && (
             <div 
               className="mt-6 prose prose-slate max-w-none 
                 prose-headings:text-gray-900 prose-headings:font-bold prose-headings:mb-3
@@ -575,7 +577,7 @@ const ProductDetails = ({ product }) => {
                 prose-table:border-collapse prose-table:w-full prose-table:my-4
                 prose-th:text-left prose-th:p-3 prose-th:bg-gray-50 prose-th:font-semibold prose-th:border prose-th:border-gray-200
                 prose-td:p-3 prose-td:border prose-td:border-gray-200"
-              dangerouslySetInnerHTML={{ __html: product.description }}
+              dangerouslySetInnerHTML={{ __html: normalizedDescription }}
             />
           )}
         </div>

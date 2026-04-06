@@ -6,7 +6,7 @@ export default function TermsOfSalePage() {
       <div className="max-w-[1250px] mx-auto px-4 py-10 min-h-[60vh]">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Terms of Sale</h1>
         <p className="text-gray-600 mb-8">
-          These Terms of Sale outline the terms and conditions governing the sale of products on brandstored.com.
+          These Terms of Sale outline the terms and conditions governing the sale of products on Store1920.com.
           By making a purchase, you agree to be bound by these terms.
         </p>
 
@@ -16,7 +16,7 @@ export default function TermsOfSalePage() {
           <section>
             <h2 className="font-semibold text-gray-900 mb-2">1. Offer & Acceptance</h2>
             <p className="text-gray-700 mb-3">
-              All product listings on brandstored.com constitute an offer to sell. When you add a product to your cart and proceed to checkout, you are making an offer to purchase. Your offer is accepted when we confirm your order via email or SMS, at which point a binding contract is formed between you and brandstored.com (operated by Nilaas).
+              All product listings on Store1920.com constitute an offer to sell. When you add a product to your cart and proceed to checkout, you are making an offer to purchase. Your offer is accepted when we confirm your order via email or SMS, at which point a binding contract is formed between you and Store1920.com (operated by Nilaas).
             </p>
             <p className="text-gray-700">
               We reserve the right to reject any order or require additional verification before acceptance without providing reason or liability.
@@ -44,7 +44,7 @@ export default function TermsOfSalePage() {
           <section>
             <h2 className="font-semibold text-gray-900 mb-2">3. Pricing & Taxes</h2>
             <p className="text-gray-700 mb-3">
-              All prices displayed on brandstored.com are in Indian Rupees (INR) unless otherwise specified.
+              All prices displayed on Store1920.com are in Indian Rupees (INR) unless otherwise specified.
             </p>
             <ul className="list-disc ml-6 mb-3 text-gray-700">
               <li>Prices are subject to change without notice, though current prices apply to confirmed orders</li>
@@ -149,10 +149,10 @@ export default function TermsOfSalePage() {
           <section>
             <h2 className="font-semibold text-gray-900 mb-2">9. Product Warranties & Guarantees</h2>
             <p className="text-gray-700 mb-3">
-              Many products include manufacturer warranties. brandstored.com acts as a facilitator only:
+              Many products include manufacturer warranties. Store1920.com acts as a facilitator only:
             </p>
             <ul className="list-disc ml-6 mb-3 text-gray-700">
-              <li>Manufacturer warranties are provided as-is without additional guarantees by brandstored.com</li>
+              <li>Manufacturer warranties are provided as-is without additional guarantees by Store1920.com</li>
               <li>Warranty claims should be directed to the manufacturer or seller</li>
               <li>We do not provide extended warranties unless explicitly mentioned</li>
               <li>Warranty coverage does not include damage due to misuse, accidents, or normal wear</li>
@@ -169,7 +169,7 @@ export default function TermsOfSalePage() {
               <li>Report within 48 hours of delivery with photographic evidence</li>
               <li>Provide order number and clear images showing the defect/damage</li>
               <li>We will offer a replacement or full refund at our discretion</li>
-              <li>Shipping for replacement will be covered by brandstored.com</li>
+              <li>Shipping for replacement will be covered by Store1920.com</li>
               <li>Return shipping must use original/similar packaging condition</li>
             </ul>
           </section>
@@ -178,7 +178,7 @@ export default function TermsOfSalePage() {
           <section>
             <h2 className="font-semibold text-gray-900 mb-2">11. Buyer Obligations</h2>
             <p className="text-gray-700">
-              By purchasing from brandstored.com, you agree to:
+              By purchasing from Store1920.com, you agree to:
             </p>
             <ul className="list-disc ml-6 mb-3 text-gray-700">
               <li>Provide accurate, current, and complete information during checkout</li>
@@ -197,7 +197,7 @@ export default function TermsOfSalePage() {
               To the maximum extent permitted by applicable law:
             </p>
             <ul className="list-disc ml-6 mb-3 text-gray-700">
-              <li>brandstored.com is not liable for indirect, incidental, special, or consequential damages</li>
+              <li>Store1920.com is not liable for indirect, incidental, special, or consequential damages</li>
               <li>Our total liability shall not exceed the order amount paid by you</li>
               <li>We are not responsible for delays, losses, or damages during shipping by logistics partners</li>
               <li>We disclaim any warranty of merchantability or fitness for a particular purpose</li>
@@ -209,7 +209,7 @@ export default function TermsOfSalePage() {
           <section>
             <h2 className="font-semibold text-gray-900 mb-2">13. Force Majeure</h2>
             <p className="text-gray-700">
-              brandstored.com is not liable for failures or delays in performance due to circumstances beyond our reasonable control, including but not limited to: natural disasters, wars, pandemics, government actions, strikes, or utility failures. During such events, we will make reasonable efforts to resume normal operations.
+              Store1920.com is not liable for failures or delays in performance due to circumstances beyond our reasonable control, including but not limited to: natural disasters, wars, pandemics, government actions, strikes, or utility failures. During such events, we will make reasonable efforts to resume normal operations.
             </p>
           </section>
 
@@ -231,12 +231,12 @@ export default function TermsOfSalePage() {
           <section>
             <h2 className="font-semibold text-gray-900 mb-2">15. Third-Party Sellers & Marketplace</h2>
             <p className="text-gray-700 mb-3">
-              brandstored.com operates as a marketplace platform where third-party sellers may list products:
+              Store1920.com operates as a marketplace platform where third-party sellers may list products:
             </p>
             <ul className="list-disc ml-6 mb-3 text-gray-700">
               <li>While we vet sellers, we do not guarantee seller credibility or product authenticity</li>
               <li>Seller-specific return/warranty policies are clearly disclosed during checkout</li>
-              <li>brandstored.com acts as a facilitator and is not a party to seller-buyer disputes unless otherwise stated</li>
+              <li>Store1920.com acts as a facilitator and is not a party to seller-buyer disputes unless otherwise stated</li>
               <li>For issues with seller products, our customer support will assist in resolution</li>
             </ul>
           </section>
@@ -259,7 +259,7 @@ export default function TermsOfSalePage() {
           <section>
             <h2 className="font-semibold text-gray-900 mb-2">17. Amendment of Terms</h2>
             <p className="text-gray-700">
-              brandstored.com reserves the right to modify these Terms of Sale at any time. Changes will be effective immediately upon posting to the website. We recommend reviewing this page regularly. Your continued use of the website following changes constitutes acceptance of the revised terms.
+              Store1920.com reserves the right to modify these Terms of Sale at any time. Changes will be effective immediately upon posting to the website. We recommend reviewing this page regularly. Your continued use of the website following changes constitutes acceptance of the revised terms.
             </p>
           </section>
 
@@ -279,8 +279,8 @@ export default function TermsOfSalePage() {
             </p>
             <div className="bg-blue-50 p-4 rounded-lg">
               <p className="text-gray-700 mb-1"><strong>Business Name:</strong> Nilaas</p>
-              <p className="text-gray-700 mb-1"><strong>Website:</strong> https://www.brandstored.com</p>
-              <p className="text-gray-700 mb-1"><strong>Email:</strong> support@brandstored.com</p>
+              <p className="text-gray-700 mb-1"><strong>Website:</strong> https://www.Store1920.com</p>
+              <p className="text-gray-700 mb-1"><strong>Email:</strong> support@Store1920.com</p>
               <p className="text-gray-700"><strong>Phone:</strong> +91 7592875212</p>
             </div>
             <p className="text-xs text-gray-500 mt-4">

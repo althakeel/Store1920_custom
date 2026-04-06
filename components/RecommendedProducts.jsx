@@ -118,7 +118,7 @@ export default function RecommendedProducts() {
 
   return (
     <section className="w-full bg-white py-8 mb-6">
-      <div className="max-w-[1280px] mx-auto">
+      <div className="max-w-[1400px] mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-6 px-4">
           <div>

@@ -28,6 +28,21 @@ export async function GET(request) {
         }
         const userId = decodedToken.uid;
         console.log('[is-seller API] Checking seller status for userId:', userId);
+
+        try {
+            await dbConnect();
+        } catch (dbError) {
+            console.error('[is-seller API] Database unavailable:', dbError);
+            return NextResponse.json(
+                {
+                    isSeller: false,
+                    reason: 'database-unavailable',
+                    message: dbError?.message || 'Failed to connect to database',
+                },
+                { status: 503 }
+            );
+        }
+
         const sellerResult = await authSeller(userId);
         console.log('[is-seller API] authSeller result:', sellerResult);
         if(!sellerResult){
@@ -36,7 +51,6 @@ export async function GET(request) {
             return NextResponse.json({ isSeller: false, userId, reason: 'not-seller-or-not-approved' }, { status: 200 });
         }
         console.log('[is-seller API] User IS a seller, fetching store info...');
-        await dbConnect();
         const storeInfo = await Store.findById(sellerResult).lean();
         console.log('[is-seller API] Store info:', storeInfo ? 'Found' : 'Not found');
         return NextResponse.json({ isSeller: true, storeInfo, userId });

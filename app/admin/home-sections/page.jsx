@@ -53,6 +53,7 @@ export default function HomeSectionsPage() {
                     <thead className="bg-gray-50 border-b border-gray-200">
                         <tr>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Title</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tag</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Products</th>
@@ -65,6 +66,7 @@ export default function HomeSectionsPage() {
                         {sections.map((section) => (
                             <tr key={section._id} className="hover:bg-gray-50">
                                 <td className="px-6 py-4 text-sm font-medium text-gray-900">{section.title || section.section}</td>
+                                <td className="px-6 py-4 text-sm text-gray-600">{section.sectionType === 'hero_categories' ? 'Hero Categories Slider' : section.sectionType === 'category' ? 'By Category' : 'Manual'}</td>
                                 <td className="px-6 py-4 text-sm text-gray-600">{section.category || '-'}</td>
                                 <td className="px-6 py-4 text-sm text-gray-600">{section.tag || '-'}</td>
                                 <td className="px-6 py-4 text-sm text-gray-600">{section.productIds?.length || 0} products</td>

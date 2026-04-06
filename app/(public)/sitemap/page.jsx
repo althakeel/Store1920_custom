@@ -146,7 +146,7 @@ export default function SitemapPage() {
             <h1 className="text-4xl md:text-5xl font-bold">Sitemap</h1>
           </div>
           <p className="text-blue-100 text-lg max-w-2xl">
-            Find all pages and sections of Brandstored in one place. Navigate easily to any part of our platform.
+            Find all pages and sections of Store1920 in one place. Navigate easily to any part of our platform.
           </p>
         </div>
       </div>
@@ -191,7 +191,7 @@ export default function SitemapPage() {
         <div className="mt-12 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl p-8 border border-blue-100">
           <h3 className="text-2xl font-bold text-slate-800 mb-4">Need Help Finding Something?</h3>
           <p className="text-slate-600 mb-6">
-            Can't find what you're looking for? Our support team is here to help you navigate Brandstored.
+            Can't find what you're looking for? Our support team is here to help you navigate Store1920.
           </p>
           <div className="flex flex-wrap gap-4">
             <Link 

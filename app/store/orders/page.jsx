@@ -29,7 +29,7 @@ import Loading from "@/components/Loading"
 
 import axios from "axios"
 import toast from "react-hot-toast"
-import { Package, Truck, X, Download, Printer, RefreshCw, MapPin } from "lucide-react"
+import { Package, Truck, X, Download, Printer, RefreshCw, MapPin, Trash2 } from "lucide-react"
 import { downloadInvoice, printInvoice } from "@/lib/generateInvoice"
 import { downloadAwbBill } from "@/lib/generateAwbBill"
 import { schedulePickup } from '@/lib/delhivery'
@@ -75,6 +75,12 @@ export default function StoreOrders() {
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState('');
     const [exportTypeFilter, setExportTypeFilter] = useState('ALL');
+    const [orderCsvFile, setOrderCsvFile] = useState(null);
+    const [importingOrdersCsv, setImportingOrdersCsv] = useState(false);
+    const [selectedOrderIds, setSelectedOrderIds] = useState([]);
+    const [deletingBulkOrders, setDeletingBulkOrders] = useState(false);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [ordersPerPage, setOrdersPerPage] = useState(20);
     const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false);
     const [schedulingPickup, setSchedulingPickup] = useState(false);
     const [sendingToDelhivery, setSendingToDelhivery] = useState(false);
@@ -281,6 +287,99 @@ export default function StoreOrders() {
 
     const stats = getOrderStats();
     const filteredOrders = getFilteredOrders();
+    const totalPages = Math.max(1, Math.ceil(filteredOrders.length / ordersPerPage));
+    const safeCurrentPage = Math.min(currentPage, totalPages);
+    const paginatedOrders = filteredOrders.slice(
+        (safeCurrentPage - 1) * ordersPerPage,
+        safeCurrentPage * ordersPerPage
+    );
+    const paginationWindowStart = Math.max(1, safeCurrentPage - 2);
+    const paginationWindowEnd = Math.min(totalPages, paginationWindowStart + 4);
+    const visiblePageNumbers = [];
+    for (let page = Math.max(1, paginationWindowEnd - 4); page <= paginationWindowEnd; page += 1) {
+        visiblePageNumbers.push(page);
+    }
+
+    const selectedVisibleOrderIds = paginatedOrders
+        .map((order) => String(order._id))
+        .filter((orderId) => selectedOrderIds.includes(orderId));
+    const allVisibleSelected = paginatedOrders.length > 0 && selectedVisibleOrderIds.length === paginatedOrders.length;
+    const hasSelectedOrders = selectedOrderIds.length > 0;
+
+    const toggleOrderSelection = (orderId) => {
+        const normalizedOrderId = String(orderId);
+        setSelectedOrderIds((prev) => (
+            prev.includes(normalizedOrderId)
+                ? prev.filter((id) => id !== normalizedOrderId)
+                : [...prev, normalizedOrderId]
+        ));
+    };
+
+    const toggleSelectAllVisibleOrders = () => {
+        const visibleIds = paginatedOrders.map((order) => String(order._id));
+        if (!visibleIds.length) return;
+
+        setSelectedOrderIds((prev) => {
+            if (visibleIds.every((id) => prev.includes(id))) {
+                return prev.filter((id) => !visibleIds.includes(id));
+            }
+
+            return [...new Set([...prev, ...visibleIds])];
+        });
+    };
+
+    const renderPaginationControls = () => {
+        if (filteredOrders.length <= ordersPerPage) return null;
+
+        return (
+            <div className="flex flex-col gap-3 border-t border-gray-200 bg-white px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="text-sm text-slate-500">
+                    Showing {(safeCurrentPage - 1) * ordersPerPage + 1} to {Math.min(safeCurrentPage * ordersPerPage, filteredOrders.length)} of {filteredOrders.length} orders
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                    <label className="text-xs text-slate-500">Rows</label>
+                    <select
+                        value={ordersPerPage}
+                        onChange={(event) => {
+                            setOrdersPerPage(Number(event.target.value) || 20);
+                            setCurrentPage(1);
+                        }}
+                        className="rounded-lg border border-gray-300 px-2 py-1 text-sm bg-white"
+                    >
+                        {[10, 20, 50, 100].map((size) => (
+                            <option key={size} value={size}>{size}</option>
+                        ))}
+                    </select>
+                    <button
+                        type="button"
+                        onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                        disabled={safeCurrentPage === 1}
+                        className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-slate-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                        Previous
+                    </button>
+                    {visiblePageNumbers.map((page) => (
+                        <button
+                            key={page}
+                            type="button"
+                            onClick={() => setCurrentPage(page)}
+                            className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${page === safeCurrentPage ? 'bg-blue-600 text-white' : 'border border-gray-300 text-slate-700 hover:bg-gray-50'}`}
+                        >
+                            {page}
+                        </button>
+                    ))}
+                    <button
+                        type="button"
+                        onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                        disabled={safeCurrentPage === totalPages}
+                        className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-slate-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                        Next
+                    </button>
+                </div>
+            </div>
+        );
+    };
 
     // Function to update tracking details (AWB), auto-set status and notify customer
     const updateTrackingDetails = async () => {
@@ -579,6 +678,7 @@ export default function StoreOrders() {
             }
 
             setOrders(syncedOrders);
+            setSelectedOrderIds((prev) => prev.filter((id) => syncedOrders.some((order) => String(order._id) === id)));
         } catch (error) {
             toast.error(error?.response?.data?.error || error.message);
         } finally {
@@ -596,6 +696,16 @@ export default function StoreOrders() {
         fetchOrders();
         // eslint-disable-next-line
     }, [authLoading, user]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [filterStatus, fromDate, toDate, datePreset, ordersPerPage]);
+
+    useEffect(() => {
+        if (currentPage > totalPages) {
+            setCurrentPage(totalPages);
+        }
+    }, [currentPage, totalPages]);
 
     // Auto-refresh tracking data
     useEffect(() => {
@@ -811,7 +921,7 @@ export default function StoreOrders() {
                 getCurrencyCode(),
                 isCod ? (order?.total ?? '') : '',
                 description,
-                'Brandstored.com',
+                'Store1920.com',
                 process.env.NEXT_PUBLIC_INVOICE_CONTACT || '',
                 'United Arab Emirates',
                 'Dubai',
@@ -858,6 +968,164 @@ export default function StoreOrders() {
         } catch (error) {
             console.error('Excel export failed:', error);
             toast.error('Failed to export Excel file');
+        }
+    };
+
+    const getOrderCsvRows = (exportOrders) => {
+        return exportOrders.map((order) => {
+            const shipping = order?.shippingAddress || {};
+            const customerName = order?.isGuest
+                ? (order?.guestName || '')
+                : (order?.userId?.name || order?.userId?.email || order?.guestName || '');
+            const customerEmail = order?.isGuest
+                ? (order?.guestEmail || '')
+                : (order?.userId?.email || order?.guestEmail || '');
+            const items = Array.isArray(order?.orderItems)
+                ? order.orderItems.map((item) => ({
+                    name: item?.productId?.name || item?.name || '',
+                    quantity: item?.quantity || 1,
+                    price: item?.price || 0,
+                })).filter((item) => item.name)
+                : [];
+
+            return {
+                orderId: order?._id || '',
+                shortOrderNumber: order?.shortOrderNumber || '',
+                legacySourceId: order?.legacySourceId || '',
+                customerName,
+                customerEmail,
+                customerPhone: order?.guestPhone || shipping?.phone || '',
+                total: order?.total ?? 0,
+                shippingFee: order?.shippingFee ?? 0,
+                status: order?.status || '',
+                paymentMethod: order?.paymentMethod || '',
+                paymentStatus: order?.paymentStatus || '',
+                isPaid: Boolean(order?.isPaid),
+                trackingId: order?.trackingId || '',
+                trackingUrl: order?.trackingUrl || '',
+                courier: order?.courier || '',
+                notes: order?.notes || '',
+                shippingName: shipping?.name || customerName,
+                shippingPhone: shipping?.phone || order?.guestPhone || '',
+                shippingAddress1: shipping?.street || shipping?.address1 || '',
+                shippingAddress2: shipping?.address2 || '',
+                shippingCity: shipping?.city || '',
+                shippingState: shipping?.state || '',
+                shippingCountry: shipping?.country || '',
+                shippingPostcode: shipping?.postcode || '',
+                orderItems: JSON.stringify(items),
+                createdAt: order?.createdAt || '',
+                updatedAt: order?.updatedAt || '',
+            };
+        });
+    };
+
+    const exportOrdersToCsv = async () => {
+        const exportOrders = getExportFilteredOrders();
+
+        if (!exportOrders.length) {
+            toast.error('No orders available to export');
+            return;
+        }
+
+        try {
+            const rows = getOrderCsvRows(exportOrders);
+            const headers = Object.keys(rows[0] || {});
+            const escapeCsv = (value) => {
+                const text = value === null || value === undefined ? '' : String(value);
+                if (/[",\n]/.test(text)) {
+                    return `"${text.replace(/"/g, '""')}"`;
+                }
+                return text;
+            };
+
+            const csv = [
+                headers.join(','),
+                ...rows.map((row) => headers.map((header) => escapeCsv(row[header])).join(',')),
+            ].join('\n');
+
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `store-orders-${new Date().toISOString().slice(0, 10)}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+
+            toast.success(`Exported ${exportOrders.length} order(s) to CSV`);
+        } catch (error) {
+            console.error('CSV export failed:', error);
+            toast.error('Failed to export CSV file');
+        }
+    };
+
+    const importOrdersFromCsv = async () => {
+        if (!orderCsvFile) {
+            toast.error('Choose a CSV file first');
+            return;
+        }
+
+        try {
+            setImportingOrdersCsv(true);
+            const token = await getToken();
+            if (!token) {
+                toast.error('Authentication failed. Please sign in again.');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', orderCsvFile);
+
+            const { data } = await axios.post('/api/store/orders/csv', formData, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+
+            toast.success(data?.message || 'Orders imported successfully');
+            setOrderCsvFile(null);
+            await fetchOrders();
+        } catch (error) {
+            console.error('Order CSV import failed:', error);
+            toast.error(error?.response?.data?.error || 'Failed to import orders CSV');
+        } finally {
+            setImportingOrdersCsv(false);
+        }
+    };
+
+    const deleteSelectedOrders = async () => {
+        if (!selectedOrderIds.length) {
+            toast.error('Select orders to delete first');
+            return;
+        }
+
+        const confirmed = window.confirm(`Delete ${selectedOrderIds.length} selected order(s)? This cannot be undone.`);
+        if (!confirmed) {
+            return;
+        }
+
+        try {
+            setDeletingBulkOrders(true);
+            const token = await getToken();
+            if (!token) {
+                toast.error('Authentication failed. Please sign in again.');
+                return;
+            }
+
+            const { data } = await axios.post('/api/store/orders/bulk-delete', {
+                orderIds: selectedOrderIds,
+            }, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+
+            toast.success(data?.message || 'Selected orders deleted successfully');
+            setSelectedOrderIds([]);
+            await fetchOrders();
+        } catch (error) {
+            console.error('Bulk delete orders failed:', error);
+            toast.error(error?.response?.data?.error || 'Failed to delete selected orders');
+        } finally {
+            setDeletingBulkOrders(false);
         }
     };
 
@@ -1027,7 +1295,7 @@ export default function StoreOrders() {
                         Last 7 Days
                     </button>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                     <div>
                         <label className="text-xs text-slate-500">From</label>
                         <input
@@ -1065,20 +1333,72 @@ export default function StoreOrders() {
                             <option value="COD">COD</option>
                         </select>
                     </div>
+                    <div>
+                        <label className="text-xs text-slate-500">Import Orders CSV</label>
+                        <input
+                            type="file"
+                            accept=".csv"
+                            onChange={(e) => setOrderCsvFile(e.target.files?.[0] || null)}
+                            className="w-full mt-1 text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:font-medium file:text-slate-700 hover:file:bg-slate-200"
+                        />
+                    </div>
                     <div className="flex items-end">
-                        <div className="w-full flex items-center justify-between gap-3">
-                            <div className="text-xs text-slate-500">Select date and export option before downloading</div>
-                            <button
-                                onClick={exportOrdersToExcel}
-                                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-semibold transition"
-                            >
-                                <Download size={14} />
-                                Export Excel
-                            </button>
+                        <div className="w-full flex flex-col gap-2 lg:items-end">
+                            <div className="text-xs text-slate-500">Select date and export option before downloading, or upload a CSV to import orders.</div>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <button
+                                    onClick={importOrdersFromCsv}
+                                    disabled={importingOrdersCsv}
+                                    className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                    <Download size={14} />
+                                    {importingOrdersCsv ? 'Importing...' : 'Import CSV'}
+                                </button>
+                                <button
+                                    onClick={exportOrdersToCsv}
+                                    className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition"
+                                >
+                                    <Download size={14} />
+                                    Export CSV
+                                </button>
+                                <button
+                                    onClick={exportOrdersToExcel}
+                                    className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-semibold transition"
+                                >
+                                    <Download size={14} />
+                                    Export Excel
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
+
+            {hasSelectedOrders && (
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+                    <div className="text-sm font-medium text-red-800">
+                        {selectedOrderIds.length} order(s) selected
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setSelectedOrderIds([])}
+                            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                        >
+                            Clear Selection
+                        </button>
+                        <button
+                            type="button"
+                            onClick={deleteSelectedOrders}
+                            disabled={deletingBulkOrders}
+                            className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                            <Trash2 size={14} />
+                            {deletingBulkOrders ? 'Deleting...' : 'Delete Selected'}
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {filteredOrders.length === 0 ? (
                 <p className="text-center py-8 text-slate-500">No orders found for this status</p>
@@ -1087,6 +1407,15 @@ export default function StoreOrders() {
                     <table className="w-full text-sm text-left text-gray-600">
                         <thead className="bg-gray-50 text-gray-700 text-xs uppercase tracking-wider">
                             <tr>
+                                <th className="px-4 py-3">
+                                    <input
+                                        type="checkbox"
+                                        checked={allVisibleSelected}
+                                        onChange={toggleSelectAllVisibleOrders}
+                                        className="h-4 w-4 rounded border-gray-300"
+                                        aria-label="Select all visible orders"
+                                    />
+                                </th>
                                 <th className="px-4 py-3">Sr. No.</th>
                                 <th className="px-4 py-3">Order No.</th>
                                 <th className="px-4 py-3">Customer</th>
@@ -1098,13 +1427,22 @@ export default function StoreOrders() {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                            {filteredOrders.map((order, index) => (
+                            {paginatedOrders.map((order, index) => (
                                 <tr
                                     key={order._id}
                                     className="hover:bg-gray-50 transition-colors duration-150 cursor-pointer"
                                     onClick={() => openModal(order)}
                                 >
-                                    <td className="pl-6 text-green-600 font-medium">{index + 1}</td>
+                                    <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedOrderIds.includes(String(order._id))}
+                                            onChange={() => toggleOrderSelection(order._id)}
+                                            className="h-4 w-4 rounded border-gray-300"
+                                            aria-label={`Select order ${order.shortOrderNumber || order._id}`}
+                                        />
+                                    </td>
+                                    <td className="pl-6 text-green-600 font-medium">{(safeCurrentPage - 1) * ordersPerPage + index + 1}</td>
                                     <td className="px-4 py-3 font-mono text-xs text-slate-700">{order.shortOrderNumber || order._id.slice(0, 8)}</td>
                                     <td className="px-4 py-3">
                                         <div className="flex flex-col gap-1">
@@ -1163,6 +1501,7 @@ export default function StoreOrders() {
                             ))}
                         </tbody>
                     </table>
+                    {renderPaginationControls()}
                 </div>
             )}
             {isModalOpen && selectedOrder && (

@@ -1,6 +1,6 @@
 "use client"
 import { usePathname } from "next/navigation"
-import { HomeIcon, LayoutListIcon, SquarePenIcon, SquarePlusIcon, StarIcon, FolderIcon, TicketIcon, TruckIcon, RefreshCw, User as UserIcon, Users as UsersIcon, MessageSquare, Sparkles, BellIcon, MailIcon, Image as ImageIcon, ShoppingCart, Wallet, BarChart3, Target, Gift } from "lucide-react"
+import { HomeIcon, LayoutListIcon, SquarePenIcon, SquarePlusIcon, StarIcon, FolderIcon, TicketIcon, TruckIcon, RefreshCw, User as UserIcon, Users as UsersIcon, MessageSquare, Sparkles, BellIcon, MailIcon, Image as ImageIcon, ShoppingCart, Wallet, BarChart3, Target, Gift, Palette } from "lucide-react"
 import Link from "next/link"
 
 const StoreSidebar = ({storeInfo}) => {
@@ -11,12 +11,8 @@ const StoreSidebar = ({storeInfo}) => {
         { name: 'Categories', href: '/store/categories', icon: FolderIcon },
         { name: 'Add Product', href: '/store/add-product', icon: SquarePlusIcon },
         { name: 'Manage Product', href: '/store/manage-product', icon: SquarePenIcon },
-        { name: 'Home Preferences', href: '/store/home-preferences', icon: Sparkles },
-        { name: 'Featured Sections', href: '/store/category-slider', icon: Sparkles },
-        { name: 'Navbar Menu', href: '/store/navbar-menu', icon: LayoutListIcon },
-        { name: 'Home Categories', href: '/store/storefront/home-menu-categories', icon: FolderIcon },
-        { name: 'Carousel Slider', href: '/store/storefront/carousel-slider', icon: Sparkles },
-        { name: 'Deals of the Day', href: '/store/storefront/deals', icon: StarIcon },
+        { name: 'Database Import', href: '/store/settings/database-import', icon: RefreshCw },
+        { name: 'Customize', href: '/store/customize', icon: Palette },
         { name: 'Promotional Offers', href: '/store/personalized-offers', icon: Gift },
         { name: 'Media', href: '/store/media', icon: ImageIcon },
         { name: 'Abandoned Checkout', href: '/store/abandoned-checkout', icon: ShoppingCart },
@@ -46,17 +42,13 @@ const StoreSidebar = ({storeInfo}) => {
                 '/store/categories',
                 '/store/add-product',
                 '/store/manage-product',
+                '/store/settings/database-import',
             ]
         },
         {
             name: 'Storefront',
             links: [
-                '/store/home-preferences',
-                '/store/category-slider',
-                '/store/navbar-menu',
-                '/store/storefront/home-menu-categories',
-                '/store/storefront/carousel-slider',
-                '/store/storefront/deals',
+                '/store/customize',
                 '/store/media',
             ]
         },

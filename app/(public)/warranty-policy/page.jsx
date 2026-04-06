@@ -14,7 +14,7 @@ export default function WarrantyPolicyPage() {
           </section>
           <section>
             <h2 className="font-semibold text-gray-900 mb-2">2. Claim Process</h2>
-            <p className="text-gray-700">To file a warranty claim, contact support@brandstored.com with your order ID, product serial (if applicable), and issue details. We’ll guide you to the authorized service center or process.</p>
+            <p className="text-gray-700">To file a warranty claim, contact support@Store1920.com with your order ID, product serial (if applicable), and issue details. We’ll guide you to the authorized service center or process.</p>
           </section>
           <section>
             <h2 className="font-semibold text-gray-900 mb-2">3. Exclusions</h2>

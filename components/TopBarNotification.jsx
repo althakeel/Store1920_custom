@@ -1,206 +1,187 @@
 'use client'
-import { useState, useEffect } from 'react'
-import { X } from 'lucide-react'
+
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { onAuthStateChanged } from 'firebase/auth'
-import { auth } from '@/lib/firebase'
-import { useRouter } from 'next/navigation'
+import { Bell, Gift, Truck } from 'lucide-react'
+
+const DEFAULT_ITEMS = [
+  {
+    id: 'shipping',
+    title: 'Free Shipping',
+    subtitle: 'Special for you'
+  },
+  {
+    id: 'policy',
+    title: 'Up to 90 days*',
+    subtitle: 'Price adjustment'
+  },
+  {
+    id: 'rewards',
+    title: 'Signup Rewards',
+    subtitle: '100 Coins + Free Coupons',
+    action: 'signup'
+  }
+]
+
+function parseItems(rawValue) {
+  if (!rawValue) return DEFAULT_ITEMS
+
+  try {
+    const parsed = JSON.parse(rawValue)
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      return DEFAULT_ITEMS
+    }
+
+    return parsed
+      .map((item, index) => ({
+        id: item?.id || `item-${index}`,
+        title: typeof item?.title === 'string' ? item.title.trim() : '',
+        subtitle: typeof item?.subtitle === 'string' ? item.subtitle.trim() : '',
+        href: typeof item?.href === 'string' ? item.href : '',
+        action: typeof item?.action === 'string' ? item.action : ''
+      }))
+      .filter((item) => item.title)
+  } catch (error) {
+    console.warn('[TopBarNotification] Invalid NEXT_PUBLIC_TOPBAR_ITEMS JSON.')
+    return DEFAULT_ITEMS
+  }
+}
+
+function getCountdownTarget(rawValue) {
+  if (rawValue) {
+    const parsed = Date.parse(rawValue)
+    if (!Number.isNaN(parsed)) return parsed
+  }
+
+  const target = new Date()
+  target.setHours(23, 59, 59, 999)
+  return target.getTime()
+}
+
+function formatCountdown(msLeft) {
+  const safeMs = Math.max(0, msLeft)
+  const totalSeconds = Math.floor(safeMs / 1000)
+  const hours = String(Math.floor(totalSeconds / 3600)).padStart(2, '0')
+  const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0')
+  const seconds = String(totalSeconds % 60).padStart(2, '0')
+
+  return { hours, minutes, seconds }
+}
+
+function TopItem({ item, icon, onAction }) {
+  const content = (
+    <div className="px-3 py-1 text-center md:px-5">
+      <div className="flex items-center justify-center gap-1 text-[13px] font-semibold leading-tight text-white">
+        {icon}
+        <span>{item.title}</span>
+      </div>
+    </div>
+  )
+
+  if (item.action) {
+    return (
+      <button type="button" onClick={() => onAction(item.action)} className="block w-full hover:bg-white/5 transition-colors">
+        {content}
+      </button>
+    )
+  }
+
+  if (item.href) {
+    return (
+      <Link href={item.href} className="block hover:bg-white/5 transition-colors">
+        {content}
+      </Link>
+    )
+  }
+
+  return content
+}
 
 const TopBarNotification = () => {
-  const [visible, setVisible] = useState(false)
-  const [isLoggedIn, setIsLoggedIn] = useState(false)
-  const [showLoginPrompt, setShowLoginPrompt] = useState(false)
-  const router = useRouter()
+  const isEnabled = process.env.NEXT_PUBLIC_TOPBAR_ENABLED !== 'false'
+  const items = useMemo(() => {
+    const parsed = parseItems(process.env.NEXT_PUBLIC_TOPBAR_ITEMS)
+    return [0, 1, 2].map((index) => parsed[index] || DEFAULT_ITEMS[index])
+  }, [])
+  const countdownLabel = process.env.NEXT_PUBLIC_TOPBAR_COUNTDOWN_LABEL || 'Hurry Up !'
+  const countdownTarget = useMemo(
+    () => getCountdownTarget(process.env.NEXT_PUBLIC_TOPBAR_COUNTDOWN_END),
+    []
+  )
+
+  const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
-    // Check auth state
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setIsLoggedIn(!!user)
-      
-      if (user) {
-        // Don't show to logged-in users
-        setVisible(false)
-        return
-      }
-
-      // Check if user dismissed and when
-      const dismissedTime = localStorage.getItem('topBarDismissedTime')
-      if (dismissedTime) {
-        const sixHoursInMs = 6 * 60 * 60 * 1000
-        const timePassed = Date.now() - parseInt(dismissedTime)
-        
-        if (timePassed < sixHoursInMs) {
-          // Still within 6 hours, don't show
-          setVisible(false)
-          return
-        }
-      }
-
-      // Show the notification
-      setVisible(true)
-    })
-
-    return () => unsubscribe()
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
   }, [])
 
-  const handleClose = () => {
-    setVisible(false)
-    // Store current timestamp
-    localStorage.setItem('topBarDismissedTime', Date.now().toString())
-  }
+  const countdown = formatCountdown(countdownTarget - now)
 
-  const handleClaimClick = (e) => {
-    e.preventDefault()
-    
-    // Check if user is logged in
-    if (!auth.currentUser) {
-      // Show login prompt
-      setShowLoginPrompt(true)
-    } else {
-      // Already logged in, go to products
-      router.push('/products')
-    }
-  }
+  const icons = [
+    <Truck key="truck" size={12} className="text-emerald-400" />,
+    <Bell key="bell" size={12} className="text-zinc-100" />,
+    <Gift key="gift" size={12} className="text-rose-500" />
+  ]
 
-  const handleSignup = () => {
-    // Mark that user claimed the welcome bonus
-    localStorage.setItem('welcomeBonusClaimed', 'true')
-    localStorage.setItem('welcomeBonusTimestamp', Date.now().toString())
-    
-    // Close the login prompt
-    setShowLoginPrompt(false)
-    
-    // Trigger the sign-in modal (you'll need to dispatch an event or use a global state)
+  const subtitleColors = [
+    'text-emerald-400',
+    'text-zinc-200',
+    'text-rose-400'
+  ]
+
+  const styledItems = items.map((item, index) => ({
+    ...item,
+    subtitle: item.subtitle,
+    subtitleClassName: subtitleColors[index] || 'text-zinc-300'
+  }))
+
+  const handleAction = (action) => {
+    if (action !== 'signup') return
     const signInEvent = new CustomEvent('openSignInModal', { detail: { isRegister: true } })
     window.dispatchEvent(signInEvent)
   }
 
-  const handleLogin = () => {
-    setShowLoginPrompt(false)
-    const signInEvent = new CustomEvent('openSignInModal', { detail: { isRegister: false } })
-    window.dispatchEvent(signInEvent)
-  }
-
-  if (!visible || isLoggedIn) return null
+  if (!isEnabled) return null
 
   return (
-    <>
-      <div className="bg-black text-white py-1.5 px-4 relative overflow-hidden">
-        <div className="max-w-7xl mx-auto flex items-center justify-center gap-2 text-xs md:text-sm relative z-10">
-          {/* Icon Badge */}
-          <span className="bg-white/20 backdrop-blur-sm rounded-full px-2 py-0.5 flex items-center gap-1 font-bold">
-            <span className="text-base">🎁</span>
-            <span className="hidden sm:inline text-[10px] md:text-xs">NEW</span>
-          </span>
-          
-          {/* Main message */}
-          <span className="text-center font-medium">
-            <span className="hidden sm:inline">First Order Special:</span>
-            <span className="sm:hidden">New Customer:</span>
-            {' '}
-            <strong className="text-yellow-300 text-sm md:text-base">AED100 OFF</strong>
-            {' '}+ Free Shipping
-            <span className="hidden md:inline"> on orders above AED499</span>
-          </span>
-          
-          {/* CTA */}
-          <button
-            onClick={handleClaimClick}
-            className="bg-white text-purple-600 px-3 py-1 rounded-full text-[10px] md:text-xs font-bold hover:bg-yellow-300 hover:text-purple-700 transition-all hover:scale-105 shadow-lg"
-          >
-            Claim Now →
-          </button>
-          
-          {/* Close button */}
-          <button
-            onClick={handleClose}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-white/70 hover:text-white hover:bg-white/20 rounded-full transition p-1"
-            aria-label="Close notification"
-          >
-            <X size={14} />
-          </button>
-        </div>
-      </div>
+    <div className="bg-[#11131a] border-b-2 border-b-[#ff7a00] border-t border-zinc-700/90 text-white">
+      <div className="mx-auto max-w-[1400px] overflow-x-auto">
+        <div className="grid min-w-[940px] grid-cols-[1fr_1fr_250px_1fr] items-stretch">
+          {styledItems.slice(0, 2).map((item, index) => (
+            <div key={item.id} className="relative border-r border-r-zinc-600/70">
+              <TopItem
+                item={{ ...item, subtitle: item.subtitle }}
+                icon={icons[index] || icons[0]}
+                onAction={handleAction}
+              />
+              <p className={`-mt-0.5 pb-1 text-center text-[10px] font-medium leading-none ${item.subtitleClassName}`}>
+                {item.subtitle}
+              </p>
+            </div>
+          ))}
 
-      {/* Login Prompt Modal */}
-      {showLoginPrompt && (
-        <>
-          <div 
-            className="fixed inset-0 bg-black/60 z-[9998] backdrop-blur-sm animate-fadeIn"
-            onClick={() => setShowLoginPrompt(false)}
-          />
-          
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full animate-slideUp relative">
-              <button
-                onClick={() => setShowLoginPrompt(false)}
-                className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition"
-              >
-                <X size={24} />
-              </button>
-
-              <div className="p-8 text-center">
-                <div className="w-20 h-20 bg-gradient-to-br from-purple-100 to-pink-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <span className="text-5xl">🎁</span>
-                </div>
-
-                <h2 className="text-2xl font-bold text-slate-900 mb-2">
-                  Welcome Bonus Awaits!
-                </h2>
-                
-                <p className="text-slate-600 mb-6">
-                  Sign up now to claim your <strong className="text-purple-600">AED100 OFF</strong> + <strong className="text-purple-600">FREE Shipping</strong> on your first order!
-                </p>
-
-                <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-4 mb-6">
-                  <div className="space-y-2 text-left text-sm">
-                    <div className="flex items-center gap-2">
-                      <div className="w-5 h-5 bg-purple-500 rounded-full flex items-center justify-center flex-shrink-0">
-                        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                      </div>
-                      <span className="text-slate-700">AED100 instant discount</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-5 h-5 bg-purple-500 rounded-full flex items-center justify-center flex-shrink-0">
-                        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                      </div>
-                      <span className="text-slate-700">Free shipping (Save AED50+)</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-5 h-5 bg-purple-500 rounded-full flex items-center justify-center flex-shrink-0">
-                        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                      </div>
-                      <span className="text-slate-700">Exclusive member deals</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <button
-                    onClick={handleSignup}
-                    className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 rounded-xl font-semibold hover:from-purple-700 hover:to-pink-700 transition shadow-lg hover:shadow-xl"
-                  >
-                    Sign Up & Claim Bonus
-                  </button>
-                  <button
-                    onClick={handleLogin}
-                    className="w-full bg-slate-100 text-slate-700 py-3 rounded-xl font-semibold hover:bg-slate-200 transition"
-                  >
-                    Already have an account? Login
-                  </button>
-                </div>
-              </div>
+          <div className="border-r border-r-zinc-600/70 px-2 py-1 text-center">
+            <div className="text-[36px] font-extrabold leading-none tracking-tight text-[#ffc700]">
+              {countdownLabel}
+            </div>
+            <div className="mt-0.5 text-[14px] font-semibold tracking-[0.16em] text-[#ffd463]">
+              {countdown.hours} : {countdown.minutes} : {countdown.seconds}
+            </div>
+            <div className="mt-0.5 text-[8px] font-semibold uppercase tracking-[0.24em] text-[#ffc66a]">
+              Hrs&nbsp;&nbsp;&nbsp;Min&nbsp;&nbsp;&nbsp;Sec
             </div>
           </div>
-        </>
-      )}
-    </>
+
+          <div className="relative">
+            <TopItem item={styledItems[2]} icon={icons[2]} onAction={handleAction} />
+            <p className={`-mt-0.5 pb-1 text-center text-[10px] font-medium leading-none ${styledItems[2].subtitleClassName}`}>
+              {styledItems[2].subtitle}
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 

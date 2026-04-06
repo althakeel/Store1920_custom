@@ -1,7 +1,36 @@
 import { NextResponse } from 'next/server'
 import connectDB from '@/lib/mongodb'
+import { getAuth } from '@/lib/firebase-admin'
+import authSeller from '@/middlewares/authSeller'
 import Store from '@/models/Store'
 import Product from '@/models/Product'
+
+const DEFAULT_FEATURED_RESPONSE = {
+    productIds: [],
+    sectionTitle: 'Craziest sale of the year!',
+    sectionDescription: "Grab the best deals before they're gone!"
+}
+
+function createFeaturedResponse(payload) {
+    return NextResponse.json(payload, {
+        headers: {
+            'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0'
+        }
+    })
+}
+
+async function getUserIdFromAuthHeader(request) {
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader || !authHeader.startsWith('Bearer ')) return null
+
+    const idToken = authHeader.split('Bearer ')[1]
+    try {
+        const decodedToken = await getAuth().verifyIdToken(idToken)
+        return decodedToken.uid || null
+    } catch {
+        return null
+    }
+}
 
 export async function GET(request) {
     try {
@@ -11,14 +40,44 @@ export async function GET(request) {
         const includeProducts = searchParams.get('includeProducts') === 'true'
         const limit = Number(searchParams.get('limit') || 0)
 
-        // Public: get the first (or only) store's featured products
-        // Optionally, you can filter by domain, subdomain, or query param for multi-store setups
-        const store = await Store.findOne().select('featuredProductIds')
+        // If authenticated, always return the caller's own store data.
+        let userId = null
+        try {
+            userId = await getUserIdFromAuthHeader(request)
+        } catch (authError) {
+            console.warn('[featured-products GET] auth lookup failed, falling back to public data:', authError?.message || authError)
+        }
+
+        let store = null
+        if (userId) {
+            try {
+                const storeId = await authSeller(userId)
+                if (storeId) {
+                    store = await Store.findById(storeId).lean()
+                }
+            } catch (sellerError) {
+                console.warn('[featured-products GET] seller lookup failed, falling back to public data:', sellerError?.message || sellerError)
+            }
+        }
+
+        // Public fallback: resolve the most recently updated store that has featured products.
+        if (!store) {
+            store = await Store.findOne({ featuredProductIds: { $exists: true, $ne: [] } })
+                .sort({ updatedAt: -1 })
+                .lean()
+        }
+        if (!store) {
+            store = await Store.findOne().sort({ updatedAt: -1 }).lean()
+        }
         const productIds = store?.featuredProductIds || []
+        const sectionTitle = store?.featuredSectionTitle || 'Craziest sale of the year!'
+        const sectionDescription = store?.featuredSectionDescription || "Grab the best deals before they're gone!"
 
         if (!includeProducts) {
-            return NextResponse.json({
-                productIds
+            return createFeaturedResponse({
+                productIds,
+                sectionTitle,
+                sectionDescription
             })
         }
 
@@ -32,13 +91,18 @@ export async function GET(request) {
             products = products.slice(0, limit)
         }
 
-        return NextResponse.json({
+        return createFeaturedResponse({
             productIds,
+            sectionTitle,
+            sectionDescription,
             products
         })
     } catch (error) {
         console.error('Error fetching featured products:', error)
-        return NextResponse.json({ error: error.message }, { status: 400 })
+        return createFeaturedResponse({
+            ...DEFAULT_FEATURED_RESPONSE,
+            products: []
+        })
     }
 }
 
@@ -46,41 +110,15 @@ export async function POST(request) {
     try {
         await connectDB()
 
-        // Firebase Auth
-        const authHeader = request.headers.get('authorization')
-        let userId = null
-        if (authHeader?.startsWith('Bearer ')) {
-            const idToken = authHeader.split('Bearer ')[1]
-            const { getAuth } = await import('firebase-admin/auth')
-            const { initializeApp, getApps } = await import('firebase-admin/app')
-            if (getApps().length === 0) {
-                initializeApp({ credential: await import('firebase-admin/app').then(m => m.applicationDefault()) })
-            }
-            try {
-                const decodedToken = await getAuth().verifyIdToken(idToken)
-                userId = decodedToken.uid
-            } catch (e) {
-                // Not authenticated
-            }
-        }
-
-
-        // Only allow saving if userId is present (basic check)
+        const userId = await getUserIdFromAuthHeader(request)
         if (!userId) return NextResponse.json({ error: 'Not authorized' }, { status: 401 })
 
-        // You may want to add more robust seller validation here if needed
-        let storeDoc = await Store.findOne({ userId }).select('_id')
-        if (!storeDoc) {
-            // Fallback for single-store setups
-            const fallbackStore = await Store.findOne().select('_id')
-            if (!fallbackStore) {
-                return NextResponse.json({ error: 'Store not found for user' }, { status: 404 })
-            }
-            storeDoc = fallbackStore
+        const storeId = await authSeller(userId)
+        if (!storeId) {
+            return NextResponse.json({ error: 'Store not found for user' }, { status: 404 })
         }
-        const storeId = storeDoc._id
 
-        const { productIds } = await request.json()
+        const { productIds, sectionTitle, sectionDescription } = await request.json()
 
         // Validate productIds is an array
         if (!Array.isArray(productIds)) {
@@ -90,16 +128,22 @@ export async function POST(request) {
         // Update store with featured product IDs
         const updatedStore = await Store.findByIdAndUpdate(
             storeId,
-            { featuredProductIds: productIds },
-            { new: true }
+            {
+                featuredProductIds: productIds,
+                ...(typeof sectionTitle === 'string' ? { featuredSectionTitle: sectionTitle.trim() } : {}),
+                ...(typeof sectionDescription === 'string' ? { featuredSectionDescription: sectionDescription.trim() } : {})
+            },
+            { new: true, strict: false }
         )
 
         return NextResponse.json({ 
             message: 'Featured products updated successfully',
-            productIds: updatedStore.featuredProductIds 
+            productIds: updatedStore.featuredProductIds,
+            sectionTitle: updatedStore.featuredSectionTitle,
+            sectionDescription: updatedStore.featuredSectionDescription
         })
     } catch (error) {
         console.error('Error saving featured products:', error)
-        return NextResponse.json({ error: error.message }, { status: 400 })
+        return NextResponse.json({ error: error.message }, { status: 500 })
     }
 }

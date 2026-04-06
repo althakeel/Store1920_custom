@@ -105,19 +105,19 @@ export default function ContactUs() {
         <p className="mb-2">
           <strong>Website:</strong>{' '}
           <a
-            href="https://www.brandstored.com"
+            href="https://www.store1920.com"
             className="text-orange-600 hover:underline"
           >
-            https://www.brandstored.com
+            https://www.store1920.com
           </a>
         </p>
         <p className="mb-2">
           <strong>Email:</strong>{' '}
           <a
-            href="mailto:support@brandstored.com"
+            href="mailto:support@store1920.com"
             className="text-orange-600 hover:underline"
           >
-            support@brandstored.com
+            support@store1920.com
           </a>
         </p>
         <p className="mb-1">

@@ -2,13 +2,17 @@ import mongoose from "mongoose";
 
 const ProductSchema = new mongoose.Schema({
   name: String,
+  legacySourceId: { type: String, default: null, index: true },
   slug: { type: String, unique: true },
+  brand: { type: String, default: '' },
   description: String,
   shortDescription: String,
   AED: Number,
   price: Number,
   costPrice: { type: Number, default: 0 }, // Actual cost/purchase price for profit calculation
   images: [String],
+  externalImages: { type: [String], default: [] },
+  imageImportStatus: { type: Object, default: {} },
   category: { type: String, ref: 'Category' },
   categories: { type: [String], default: [] }, // Multiple categories support
   sku: String,
@@ -31,6 +35,7 @@ const ProductSchema = new mongoose.Schema({
   fbtProductIds: { type: [String], default: [] },
   fbtBundlePrice: { type: Number, default: null },
   fbtBundleDiscount: { type: Number, default: null },
+  wooImport: { type: Object, default: {} },
 }, { timestamps: true });
 
 // Add indexes for better query performance

@@ -1,8 +1,8 @@
 "use client";
 import ReduxProvider from "@/lib/ReduxProvider";
 import Navbar from "@/components/Navbar";
-import TopBarNotification from "@/components/TopBarNotification";
 import Footer from "@/components/Footer";
+import GoogleOneTap from "@/components/GoogleOneTap";
 import SupportBar from "@/components/SupportBar";
 import { Toaster } from "react-hot-toast";
 import { useEffect } from "react";
@@ -50,9 +50,9 @@ function InitializeApp({ children }) {
 export default function ClientLayout({ children }) {
   return (
     <ReduxProvider>
-      {/* <TopBarNotification /> */}
       <Navbar />
       <Toaster />
+      <GoogleOneTap />
       <InitializeApp>{children}</InitializeApp>
       <SupportBar />
       <Footer />

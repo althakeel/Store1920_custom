@@ -1,13 +1,14 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import Image from "next/image";
 import axios from "axios";
-import Dummy from '../assets/ads.png';
+
+const TOP_DEALS_SECTION_KEYS = new Set(["top_deals", "top-deals", "topdeals"]);
 
 export default function TopDeals() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [title, setTitle] = useState("Top Deals");
 
   useEffect(() => {
     const load = async () => {
@@ -20,16 +21,48 @@ export default function TopDeals() {
         const adminSections = sectionData.sections || [];
         const allProducts = productData.products || productData;
 
-        const section = adminSections.find(s => s.category);
-// let result = allProducts.filter(p => p.category === "Trending Deals");
-let result = allProducts;
-        if (section && section.category) {
-          result = allProducts.filter(p => p.category === section.category);
+        const normalizeKey = (value) =>
+          String(value || "")
+            .toLowerCase()
+            .trim()
+            .replace(/[^a-z0-9]+/g, "_")
+            .replace(/^_+|_+$/g, "");
+
+        const normalizeId = (value) => {
+          if (!value) return null;
+          if (typeof value === "string" || typeof value === "number") return String(value);
+          if (typeof value === "object") {
+            if (value.$oid) return String(value.$oid);
+            const stringValue = value.toString?.();
+            return stringValue && stringValue !== "[object Object]" ? String(stringValue) : null;
+          }
+          return null;
+        };
+
+        const section =
+          adminSections.find((item) => TOP_DEALS_SECTION_KEYS.has(normalizeKey(item.section))) ||
+          adminSections.find((item) => normalizeKey(item.title) === "top_deals") ||
+          adminSections.find((item) => item.category);
+
+        let result = allProducts;
+
+        if (section?.title) {
+          setTitle(section.title);
+        }
+
+        if (section?.sectionType === "manual" && Array.isArray(section.productIds) && section.productIds.length > 0) {
+          const selectedProductIds = new Set(section.productIds.map(normalizeId).filter(Boolean));
+          result = allProducts.filter((product) =>
+            selectedProductIds.has(normalizeId(product._id || product.id || product.productId))
+          );
+        } else if (section?.category) {
+          result = allProducts.filter((product) => product.category === section.category);
         }
 
         setProducts(result);
       } catch {
         setProducts([]);
+        setTitle("Top Deals");
       } finally {
         setLoading(false);
       }
@@ -38,16 +71,14 @@ let result = allProducts;
   }, []);
 
   return (
-    <div className="w-full flex justify-center px-3 sm:px-4 mt-6 sm:mt-8">
-      <div className="w-full max-w-[1250px] flex flex-col lg:flex-row gap-4 lg:gap-6">
-
-        {/* LEFT GRID PRODUCTS */}
-        <div className="flex-1 w-full">
-          <h2 className="text-base sm:text-lg md:text-[28px] font-semibold mb-4 sm:mb-5">Top Deals</h2>
+    <div className="w-full flex justify-center mt-6 sm:mt-8">
+      <div className="w-full max-w-[1400px] px-4 sm:px-6">
+        <div className="w-full">
+          <h2 className="text-base sm:text-lg md:text-[28px] font-semibold mb-4 sm:mb-5">{title}</h2>
 
           {loading ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-4 md:gap-6">
-              {[...Array(10)].map((_, index) => (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 md:gap-6">
+              {[...Array(12)].map((_, index) => (
                 <div
                   key={`skeleton-${index}`}
                   className="cursor-pointer text-center flex flex-col items-center"
@@ -87,8 +118,8 @@ let result = allProducts;
           ) : products.length === 0 ? (
             <p className="text-gray-500 py-8 text-center text-sm sm:text-base">No Deals Found</p>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-4 md:gap-6">
-              {products?.slice(0, 10).map((item, i) => {
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 md:gap-6">
+              {products?.slice(0, 12).map((item, i) => {
                 const img =
                   item.images?.[0] && item.images[0] !== ""
                     ? item.images[0]
@@ -108,26 +139,17 @@ let result = allProducts;
                         onError={e => { e.currentTarget.src = "https://ik.imagekit.io/jrstupuke/placeholder.png"; }}
                       />
                     </div>
-                    <p className="text-[11px] sm:text-[13px] md:text-[15px] font-medium mt-2 sm:mt-2.5 line-clamp-2 w-full px-1">
+                    <p className="w-full truncate px-1 text-[11px] font-medium mt-2 sm:mt-2.5 sm:text-[13px] md:text-[15px] sm:whitespace-normal sm:line-clamp-2">
                       {item.name}
                     </p>
                     <p className="font-bold text-[10px] sm:text-[12px] md:text-[16px] mt-1 sm:mt-1.5 text-[#E6003E]">
-                      From AED{item.price}
+                      From AED {item.price}
                     </p>
                   </a>
                 );
               })}
             </div>
           )}
-        </div>
-
-        {/* RIGHT FIXED BANNER - HIDDEN ON MOBILE */}
-        <div className="w-full sm:w-[250px] md:w-[300px] hidden lg:block">
-          <Image
-            src={Dummy}
-            alt="Offer Banner"
-            className="w-full rounded-lg shadow"
-          />
         </div>
       </div>
     </div>

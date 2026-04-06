@@ -4,20 +4,20 @@ export default function AboutUsPage() {
   return (
     <div className="bg-gray-50 max-w-[1450px] mx-auto">
       <div className="max-w-4xl mx-auto px-4 py-10 min-h-[60vh]">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">ABOUT BRANDSTORED</h1>
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">ABOUT store1920</h1>
         <p className="text-lg text-gray-700 font-medium mb-8">Smart Living. Smarter Prices.</p>
 
         <div className="space-y-6 bg-white border border-gray-200 rounded-xl p-6">
           <section>
             <p className="text-gray-700">
-              BrandStored is your go-to online destination in the UAE for quality electronics, gadgets, and home essentials — all at prices that make sense for everyday life.
+              store1920 is your go-to online destination in the UAE for quality electronics, gadgets, and home essentials — all at prices that make sense for everyday life.
             </p>
           </section>
 
           <section>
             <h2 className="font-semibold text-gray-900 mb-2">Who We Are</h2>
             <p className="text-gray-700 mb-3">
-              BrandStored was founded with a straightforward belief: everyone deserves access to great products without overpaying. We are a UAE-based e-commerce store offering a carefully selected range of electronics, gadgets, and home living products that genuinely improve your everyday life.
+              store1920 was founded with a straightforward belief: everyone deserves access to great products without overpaying. We are a UAE-based e-commerce store offering a carefully selected range of electronics, gadgets, and home living products that genuinely improve your everyday life.
             </p>
             <p className="text-gray-700">
               Whether you're upgrading your home setup, finding the perfect gift, or just looking for something that works — we've handpicked it, priced it fairly, and made it easy to get to your door.
@@ -62,7 +62,7 @@ export default function AboutUsPage() {
           <section>
             <h2 className="font-semibold text-gray-900 mb-2">Shop Smart. Live Better.</h2>
             <p className="text-gray-700">
-              Join thousands of UAE residents who trust BrandStored for their electronics and home needs. Great products, great prices — delivered to your door.
+              Join thousands of UAE residents who trust store1920 for their electronics and home needs. Great products, great prices — delivered to your door.
             </p>
           </section>
         </div>

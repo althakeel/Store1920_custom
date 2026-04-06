@@ -54,7 +54,7 @@ export default function EditHomeSection(){
         isActive: typeof section.isActive==='boolean' ? section.isActive : true,
         sortOrder: section.sortOrder || 0,
       })
-      setSectionType(section.category ? 'category' : 'manual')
+      setSectionType(section.sectionType || (section.category ? 'category' : 'manual'))
       setProducts(p.products || [])
     }catch(e){ toast.error('Failed to load section') }finally{ setLoading(false) }
   })() },[id, user])
@@ -81,7 +81,13 @@ export default function EditHomeSection(){
     try {
       if (!user) throw new Error('Not authenticated');
       const token = await user.getIdToken();
-      await axios.put(`/api/admin/home-sections/${id}`, form, {
+      const payload = {
+        ...form,
+        sectionType,
+        category: sectionType === 'category' ? form.category : '',
+        productIds: sectionType === 'manual' ? form.productIds : [],
+      };
+      await axios.put(`/api/admin/home-sections/${id}`, payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
       toast.success('Section updated');
@@ -133,6 +139,7 @@ export default function EditHomeSection(){
             <select className='w-full border rounded-lg px-3 py-2' value={sectionType} onChange={e=>setSectionType(e.target.value)}>
               <option value='manual'>Manual</option>
               <option value='category'>By Category</option>
+              <option value='hero_categories'>Hero Categories Slider</option>
             </select>
           </div>
           <div>
@@ -152,6 +159,12 @@ export default function EditHomeSection(){
               <option value=''>Select</option>
               {categories.map(c=> <option key={c} value={c}>{c}</option>)}
             </select>
+          </div>
+        )}
+
+        {sectionType==='hero_categories' && (
+          <div className='rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900'>
+            This section enables the icon-based categories strip directly below the hero slider on the homepage. Manage the category items from Storefront Home Menu Categories.
           </div>
         )}
 

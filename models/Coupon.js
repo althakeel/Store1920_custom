@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 
 const CouponSchema = new mongoose.Schema({
+  legacySourceId: { type: String, default: null, index: true },
   code: { type: String, unique: true, required: true, uppercase: true },
   title: { type: String, required: true }, // e.g., "10% Off", "AED50 Off"
   description: { type: String, required: true }, // e.g., "Get 10% off on orders above AED500"

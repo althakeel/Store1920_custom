@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/lib/useAuth';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { FiTrash2, FiPlus, FiEdit2, FiX, FiSearch, FiCheckCircle } from 'react-icons/fi';
+import { FiTrash2, FiPlus, FiEdit2, FiX, FiSearch, FiCheckCircle, FiUpload } from 'react-icons/fi';
 import { MdEdit, MdCategory, MdOutlineCheckCircleOutline } from 'react-icons/md';
 import Loading from '@/components/Loading';
 
@@ -31,8 +31,10 @@ export default function StoreCategoryMenu() {
   const [showForm, setShowForm] = useState(false);
   const [editingIdx, setEditingIdx] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [importingCategories, setImportingCategories] = useState(false);
   const [activeTab, setActiveTab] = useState('my-categories');
   const [searchQuery, setSearchQuery] = useState('');
+  const categoryImportInputRef = useRef(null);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -86,6 +88,54 @@ export default function StoreCategoryMenu() {
         setImagePreview(reader.result);
       };
       reader.readAsDataURL(file);
+    }
+  };
+
+  const handleImportCategories = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setImportingCategories(true);
+      const token = await getToken();
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const { data } = await axios.post('/api/store/categories/import', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      await fetchCategories();
+
+      const summary = data?.counts
+        ? `Created ${data.counts.created}, updated ${data.counts.updated}, mirrored ${data.counts.mirroredImages} image${data.counts.mirroredImages === 1 ? '' : 's'}`
+        : 'Categories imported';
+
+      toast.success(summary);
+
+      if (Array.isArray(data?.warnings) && data.warnings.length) {
+        toast((t) => (
+          <div className="max-w-sm text-sm">
+            <p className="font-semibold text-slate-900 mb-1">Import completed with notes</p>
+            <p className="text-slate-600 line-clamp-4">{data.warnings.join(' ')}</p>
+            <button
+              type="button"
+              onClick={() => toast.dismiss(t.id)}
+              className="mt-2 text-blue-600 font-medium"
+            >
+              Close
+            </button>
+          </div>
+        ), { duration: 7000 });
+      }
+    } catch (error) {
+      toast.error(error?.response?.data?.error || 'Failed to import categories');
+    } finally {
+      setImportingCategories(false);
+      event.target.value = '';
     }
   };
 
@@ -335,18 +385,42 @@ export default function StoreCategoryMenu() {
         {/* Main Content */}
         {activeTab === 'my-categories' ? (
           <>
-            {/* Add Category Button */}
-            {!showForm && categories.length < MAX_CATEGORIES && (
-              <div className="mb-8">
+            <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                {!showForm && categories.length < MAX_CATEGORIES && (
+                  <button
+                    onClick={() => setShowForm(true)}
+                    className="w-full md:w-auto flex items-center justify-center gap-3 px-8 py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:shadow-xl transition-all duration-200 font-semibold text-lg"
+                  >
+                    <FiPlus size={24} />
+                    Add New Category
+                  </button>
+                )}
+
                 <button
-                  onClick={() => setShowForm(true)}
-                  className="w-full md:w-auto flex items-center justify-center gap-3 px-8 py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:shadow-xl transition-all duration-200 font-semibold text-lg"
+                  type="button"
+                  onClick={() => categoryImportInputRef.current?.click()}
+                  disabled={importingCategories}
+                  className="w-full md:w-auto flex items-center justify-center gap-3 px-8 py-4 bg-white text-slate-800 rounded-xl border border-slate-200 hover:shadow-lg transition-all duration-200 font-semibold text-lg disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  <FiPlus size={24} />
-                  Add New Category
+                  <FiUpload size={22} />
+                  {importingCategories ? 'Importing...' : 'Import Categories'}
                 </button>
+
+                <input
+                  ref={categoryImportInputRef}
+                  type="file"
+                  accept=".csv,.xlsx,.xls"
+                  onChange={handleImportCategories}
+                  className="hidden"
+                />
               </div>
-            )}
+
+              <div className="max-w-xl rounded-2xl border border-blue-100 bg-white/80 px-5 py-4 text-sm text-slate-600 shadow-sm">
+                <p className="font-semibold text-slate-900">Spreadsheet import</p>
+                <p className="mt-1">Supported columns: Name, Slug, Description, Image or Image URL, URL, Parent, Parent Slug, Parent ID, Include In Menu, Legacy Source ID.</p>
+              </div>
+            </div>
 
             {/* Form Modal */}
             {showForm && (

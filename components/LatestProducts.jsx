@@ -1,7 +1,7 @@
 'use client'
 
 import { useDispatch, useSelector } from 'react-redux'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import axios from 'axios'
 import Image from 'next/image'
 import Link from 'next/link'
@@ -291,19 +291,61 @@ const ProductCard = ({ product }) => {
 
 // Featured selection component (only show admin-selected featured products)
 const BestSelling = () => {
-  const displayQuantity = 10
+  const { getToken, user, loading } = useAuth()
   const [featuredProducts, setFeaturedProducts] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [sectionTitle, setSectionTitle] = useState('Craziest sale of the year!')
+  const [sectionDescription, setSectionDescription] = useState("Grab the best deals before they're gone!")
+  const [layoutSettings, setLayoutSettings] = useState({ style: 'grid', itemsPerRow: 5, rows: 2 })
 
-  useEffect(() => {
-    const fetchFeatured = async () => {
+  const visibleCount = Math.max(1, Math.min(40, Number(layoutSettings.itemsPerRow || 5) * Number(layoutSettings.rows || 2)))
+
+  const fetchFeaturedAndSectionText = useCallback(async () => {
       try {
         setIsLoading(true)
         setError(null)
 
+        let headers = undefined
+        try {
+          const token = await getToken()
+          if (token) {
+            headers = { Authorization: `Bearer ${token}` }
+          }
+        } catch {
+          // Public users won't have a token; continue without auth header.
+        }
+
+        const appearanceRequest = headers
+          ? axios.get('/api/store/appearance/sections', {
+              params: { t: Date.now() },
+              headers
+            })
+          : axios.get('/api/store/appearance/sections/public', {
+              params: { t: Date.now() }
+            })
+
+        const [{ data: featuredData }, { data: appearanceData }] = await Promise.all([
+          axios.get('/api/store/featured-products', {
+            params: { t: Date.now() },
+            headers
+          }),
+          appearanceRequest.catch(() => ({ data: {} }))
+        ])
+
+        const homeMenu = appearanceData?.homeMenuCategories || {}
+        setLayoutSettings((prev) => ({
+          style: ['grid', 'list', 'carousel', 'horizontal'].includes(homeMenu.style) ? homeMenu.style : prev.style,
+          itemsPerRow: Math.max(1, Math.min(10, Number(homeMenu.itemsPerRow || prev.itemsPerRow))),
+          rows: Math.max(1, Math.min(6, Number(homeMenu.rows || prev.rows)))
+        }))
+
+        const dynamicTitle = featuredData?.sectionTitle
+        const dynamicDescription = featuredData?.sectionDescription
+        if (dynamicTitle) setSectionTitle(dynamicTitle)
+        if (dynamicDescription) setSectionDescription(dynamicDescription)
+
         // Fetch featured product IDs from store settings
-        const { data: featuredData } = await axios.get('/api/store/featured-products')
         const productIds = featuredData.productIds || []
 
         if (!productIds.length) {
@@ -316,8 +358,7 @@ const BestSelling = () => {
         const { data: productsData } = await axios.post('/api/products/batch', { productIds })
         const products = productsData.products || []
 
-        // Keep top 10 only
-        setFeaturedProducts(products.slice(0, displayQuantity))
+        setFeaturedProducts(products)
       } catch (err) {
         console.error('Failed to load featured products', err)
         setError('Could not load featured products')
@@ -325,22 +366,88 @@ const BestSelling = () => {
       } finally {
         setIsLoading(false)
       }
+    }, [getToken])
+
+  useEffect(() => {
+    // Wait for auth resolution so logged-in sellers don't get stuck on public fallback data.
+    if (loading) return
+    fetchFeaturedAndSectionText()
+  }, [fetchFeaturedAndSectionText, user?.uid, loading])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const applyLivePayload = (payload) => {
+      const nextTitle = payload?.sectionTitle
+      const nextDescription = payload?.sectionDescription
+      const nextLayout = payload?.layout
+      if (typeof nextTitle === 'string' && nextTitle.trim()) {
+        setSectionTitle(nextTitle)
+      }
+      if (typeof nextDescription === 'string' && nextDescription.trim()) {
+        setSectionDescription(nextDescription)
+      }
+      if (nextLayout && typeof nextLayout === 'object') {
+        setLayoutSettings((prev) => ({
+          style: ['grid', 'list', 'carousel', 'horizontal'].includes(nextLayout.style) ? nextLayout.style : prev.style,
+          itemsPerRow: Math.max(1, Math.min(10, Number(nextLayout.itemsPerRow || prev.itemsPerRow))),
+          rows: Math.max(1, Math.min(6, Number(nextLayout.rows || prev.rows)))
+        }))
+      }
     }
 
-    fetchFeatured()
-  }, [])
+    const handleStorage = (event) => {
+      if (event.key !== 'featuredSectionLive' || !event.newValue) return
+      try {
+        applyLivePayload(JSON.parse(event.newValue))
+      } catch {
+        // ignore malformed storage payload
+      }
+    }
+
+    const handleLiveUpdate = (event) => {
+      applyLivePayload(event?.detail)
+      // Also refresh products and canonical API values in background.
+      fetchFeaturedAndSectionText()
+    }
+
+    // On mount, use latest live payload if present.
+    try {
+      const cached = window.localStorage.getItem('featuredSectionLive')
+      if (cached) applyLivePayload(JSON.parse(cached))
+    } catch {
+      // ignore malformed cache
+    }
+
+    window.addEventListener('storage', handleStorage)
+    window.addEventListener('featuredSectionLiveUpdate', handleLiveUpdate)
+
+    // Keep homepage in sync even if updates happen elsewhere.
+    const intervalId = window.setInterval(() => {
+      fetchFeaturedAndSectionText()
+    }, 10000)
+
+    return () => {
+      window.removeEventListener('storage', handleStorage)
+      window.removeEventListener('featuredSectionLiveUpdate', handleLiveUpdate)
+      window.clearInterval(intervalId)
+    }
+  }, [fetchFeaturedAndSectionText])
 
   return (
-    <div className="px-4 py-6 max-w-[1250px] w-full mx-auto bg-white relative z-10">
+    <div className="px-4 sm:px-6 py-6 max-w-[1400px] w-full mx-auto bg-white relative z-10">
       <Title
-        title="Craziest sale of the year!"
-        description="Grab the best deals before they're gone!"
+        title={sectionTitle}
+        description={sectionDescription}
         visibleButton={false}
       />
 
-      <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 sm:gap-4">
+      <div
+        className={layoutSettings.style === 'list' ? 'mt-6 grid grid-cols-1 gap-3' : 'featured-products-grid mt-6 gap-2 sm:gap-4'}
+        style={layoutSettings.style === 'list' ? undefined : { '--desktop-cols': String(Math.max(1, Math.min(10, Number(layoutSettings.itemsPerRow || 5)))) }}
+      >
         {isLoading
-          ? Array(displayQuantity).fill(0).map((_, idx) => (
+          ? Array(visibleCount).fill(0).map((_, idx) => (
               <div key={idx} className="bg-white rounded-xl shadow-sm animate-pulse">
                 <div className="w-full h-36 sm:h-64 bg-gray-200 rounded-t-xl" />
                 <div className="p-2">
@@ -357,10 +464,29 @@ const BestSelling = () => {
                 </div>
               </div>
             ))
-          : featuredProducts.map((product) => (
+          : featuredProducts.slice(0, visibleCount).map((product) => (
               <ProductCard key={product._id || product.id} product={product} />
             ))}
       </div>
+
+      <style jsx>{`
+        .featured-products-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        @media (min-width: 640px) {
+          .featured-products-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+        }
+
+        @media (min-width: 768px) {
+          .featured-products-grid {
+            grid-template-columns: repeat(var(--desktop-cols), minmax(0, 1fr));
+          }
+        }
+      `}</style>
 
       {!isLoading && !error && featuredProducts.length === 0 && (
         <div className="mt-6 text-center text-sm text-gray-500">No featured products selected yet.</div>

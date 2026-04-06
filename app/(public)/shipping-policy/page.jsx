@@ -9,8 +9,8 @@ export default function ShippingPolicyPage() {
         </h1>
         <p className="text-gray-600 mb-8">
           This Shipping & Delivery Policy explains how orders placed on{" "}
-          <strong>brandstored.com</strong>, owned and operated by{" "}
-          <strong>Brandstored</strong>, are processed, shipped, and delivered.
+          <strong>Store1920.com</strong>, owned and operated by{" "}
+          <strong>Store1920</strong>, are processed, shipped, and delivered.
         </p>
 
         <div className="space-y-6 bg-white border border-gray-200 rounded-xl p-6">
@@ -35,7 +35,7 @@ export default function ShippingPolicyPage() {
               2. Shipping Methods & Delivery Timeline
             </h2>
             <p className="text-gray-700">
-              Brandstored currently delivers products{" "}
+              Store1920 currently delivers products{" "}
               <strong>across all Emirates in the UAE</strong>. Delivery timelines depend on
               your location, product availability, and courier partner.
             </p>
@@ -75,7 +75,7 @@ export default function ShippingPolicyPage() {
             <p className="text-gray-700">
               Once your order is shipped, tracking details will be shared via{" "}
               <strong>SMS or email</strong>. You can also track your order anytime
-              from the <strong>My Orders</strong> section on brandstored.com.
+              from the <strong>My Orders</strong> section on Store1920.com.
             </p>
           </section>
 
@@ -105,7 +105,7 @@ export default function ShippingPolicyPage() {
               <strong>photos or videos</strong>.
             </p>
             <p className="text-gray-700 mt-1">
-              📧 Email: <strong>support@brandstored.com</strong>
+              📧 Email: <strong>support@Store1920.com</strong>
             </p>
           </section>
 
@@ -116,7 +116,7 @@ export default function ShippingPolicyPage() {
             </h2>
             <p className="text-gray-700">
               Customers are responsible for providing accurate shipping address
-              and contact details during checkout. Brandstored is not responsible
+              and contact details during checkout. Store1920 is not responsible
               for delivery failures caused by incorrect information.
             </p>
           </section>
@@ -141,7 +141,7 @@ export default function ShippingPolicyPage() {
             <p className="text-gray-700">
               Delivery delays may occur due to weather conditions, courier
               issues, regional restrictions, or unforeseen circumstances.
-              Brandstored shall not be held responsible for delays caused by
+              Store1920 shall not be held responsible for delays caused by
               external factors beyond our control.
             </p>
           </section>
@@ -152,7 +152,7 @@ export default function ShippingPolicyPage() {
               10. International Shipping
             </h2>
             <p className="text-gray-700">
-              Currently, Brandstored delivers products{" "}
+              Currently, Store1920 delivers products{" "}
               <strong>only within the UAE</strong>. International shipping
               is not available at this time.
             </p>
@@ -164,16 +164,16 @@ export default function ShippingPolicyPage() {
               11. Contact Information
             </h2>
             <p className="text-gray-700">
-              <strong>Business Name:</strong> Brandstored
+              <strong>Business Name:</strong> Store1920
             </p>
             <p className="text-gray-700">
-              <strong>Website:</strong> https://www.brandstored.com
+              <strong>Website:</strong> https://www.Store1920.com
             </p>
             <p className="text-gray-700">
-              <strong>Email:</strong> support@brandstored.com
+              <strong>Email:</strong> support@Store1920.com
             </p>
             <p className="text-gray-700">
-              <strong>Customer Support:</strong> support@brandstored.com
+              <strong>Customer Support:</strong> support@Store1920.com
             </p>
           </section>
 

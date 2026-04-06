@@ -7,7 +7,7 @@ export default function PaymentAndPricingPolicyPage() {
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Payment & Pricing Policy</h1>
         <p className="text-gray-600 mb-8">
           Details about accepted payment methods, pricing, taxes, billing, and security for purchases made on
-          brandstored.com in the UAE.
+          store1920.com in the UAE.
         </p>
 
         <div className="space-y-6 bg-white border border-gray-200 rounded-xl p-6">
@@ -16,7 +16,7 @@ export default function PaymentAndPricingPolicyPage() {
           <section>
             <h2 className="font-semibold text-gray-900 mb-2">1. Accepted Payment Methods</h2>
             <p className="text-gray-700 mb-3">
-              Brandstored supports multiple secure payment options to ensure a smooth checkout experience.
+              store1920 supports multiple secure payment options to ensure a smooth checkout experience.
             </p>
             <ul className="list-disc pl-6 text-gray-700 space-y-1">
               <li>Credit & Debit Cards (Visa, MasterCard, and supported cards)</li>
@@ -31,13 +31,13 @@ export default function PaymentAndPricingPolicyPage() {
           <section>
             <h2 className="font-semibold text-gray-900 mb-2">2. Pricing & Promotions</h2>
             <p className="text-gray-700 mb-3">
-              All prices on brandstored.com are displayed in AED. Product prices may vary based on availability,
+              All prices on store1920.com are displayed in AED. Product prices may vary based on availability,
               location, offers, or stock conditions.
             </p>
             <ul className="list-disc pl-6 text-gray-700 space-y-1">
               <li>Final price (including delivery charges) is shown at checkout.</li>
               <li>Promotional or discounted prices are valid only during the offer period.</li>
-              <li>Brandstored reserves the right to update prices at any time based on market conditions.</li>
+              <li>store1920 reserves the right to update prices at any time based on market conditions.</li>
             </ul>
           </section>
 
@@ -70,7 +70,7 @@ export default function PaymentAndPricingPolicyPage() {
               If you notice any incorrect or duplicate charges, please contact our support team immediately.
             </p>
             <p className="text-gray-700">
-              Email: <strong>support@brandstored.com</strong> <br />
+              Email: <strong>support@store1920.com</strong> <br />
               Please include your order ID, payment reference number, and issue details.
             </p>
             <p className="text-gray-700 mt-3">

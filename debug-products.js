@@ -1,7 +1,12 @@
 const mongoose = require('mongoose');
 const Product = require('./models/Product').default;
 
-const mongoUri = process.env.MONGODB_URI || 'mongodb+srv://sagar143s:sagar@Brandstored.agjjl5t.mongodb.net/Brandstored?retryWrites=true&w=majority';
+const mongoUri = process.env.MONGODB_URI;
+
+if (!mongoUri) {
+  console.error('MONGODB_URI is missing. Please set it in .env');
+  process.exit(1);
+}
 
 mongoose.connect(mongoUri).then(async () => {
   try {

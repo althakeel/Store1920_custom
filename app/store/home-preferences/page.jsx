@@ -5,7 +5,7 @@ import { useAuth } from '@/lib/useAuth'
 import axios from 'axios'
 import { toast } from 'react-hot-toast'
 import Image from 'next/image'
-import { Save, Loader, Package, Palette } from 'lucide-react'
+import { Save, Loader, Package } from 'lucide-react'
 
 export default function HomePreferences() {
     const { getToken } = useAuth()
@@ -16,6 +16,8 @@ export default function HomePreferences() {
     const [saving, setSaving] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
     const [sortBy, setSortBy] = useState('name')
+    const [featuredSectionTitle, setFeaturedSectionTitle] = useState('Craziest sale of the year!')
+    const [featuredSectionSubtitle, setFeaturedSectionSubtitle] = useState('Select products to display in the featured section on your home page')
 
     // Design settings state
     const [designSettings, setDesignSettings] = useState({
@@ -23,7 +25,7 @@ export default function HomePreferences() {
         carouselSlider: { enabled: true, autoPlay: true, interval: 5, showControls: true },
         dealsOfTheDay: { enabled: true, title: "Deals of the Day", discount: 50 },
         sitemapCategories: { enabled: true, columnsPerRow: 4 },
-        homeMenuCategories: { enabled: true, style: "grid", itemsPerRow: 5 },
+        homeMenuCategories: { enabled: true, style: "grid", itemsPerRow: 5, rows: 2 },
         navbarMenu: { enabled: true, position: "top", style: "horizontal" }
     })
 
@@ -44,6 +46,8 @@ export default function HomePreferences() {
                 headers: { Authorization: `Bearer ${token}` }
             })
             setSelectedProducts(featuredData.productIds || [])
+            if (featuredData.sectionTitle) setFeaturedSectionTitle(featuredData.sectionTitle)
+            if (featuredData.sectionDescription) setFeaturedSectionSubtitle(featuredData.sectionDescription)
 
             // Fetch appearance settings
             try {
@@ -60,6 +64,7 @@ export default function HomePreferences() {
                 // Appearance settings not saved yet, use defaults
                 console.log('Using default appearance settings')
             }
+
         } catch (error) {
             toast.error('Failed to load data')
             console.error(error)
@@ -87,9 +92,41 @@ export default function HomePreferences() {
             setSaving(true)
             const token = await getToken()
             await axios.post('/api/store/featured-products',
-                { productIds: selectedProducts },
+                {
+                    productIds: selectedProducts,
+                    sectionTitle: featuredSectionTitle,
+                    sectionDescription: featuredSectionSubtitle
+                },
                 { headers: { Authorization: `Bearer ${token}` } }
             )
+
+            // Save featured products layout settings in the same action.
+            await axios.post('/api/store/appearance/sections',
+                {
+                    ...designSettings,
+                    homeMenuCategories: {
+                        ...designSettings.homeMenuCategories,
+                        itemsPerRow: Number(designSettings.homeMenuCategories?.itemsPerRow || 5),
+                        rows: Number(designSettings.homeMenuCategories?.rows || 2)
+                    }
+                },
+                { headers: { Authorization: `Bearer ${token}` } }
+            )
+
+            if (typeof window !== 'undefined') {
+                const payload = {
+                    sectionTitle: featuredSectionTitle,
+                    sectionDescription: featuredSectionSubtitle,
+                    layout: {
+                        style: designSettings.homeMenuCategories?.style || 'grid',
+                        itemsPerRow: Number(designSettings.homeMenuCategories?.itemsPerRow || 5),
+                        rows: Number(designSettings.homeMenuCategories?.rows || 2)
+                    },
+                    updatedAt: Date.now()
+                }
+                window.localStorage.setItem('featuredSectionLive', JSON.stringify(payload))
+                window.dispatchEvent(new CustomEvent('featuredSectionLiveUpdate', { detail: payload }))
+            }
             toast.success('Featured products saved successfully')
         } catch (error) {
             toast.error('Failed to save featured products')
@@ -157,17 +194,6 @@ export default function HomePreferences() {
                     <Package size={20} />
                     Featured Products
                 </button>
-                <button
-                    onClick={() => setActiveTab('design')}
-                    className={`flex items-center gap-2 px-6 py-3 font-medium border-b-2 transition-all ${
-                        activeTab === 'design'
-                            ? 'border-blue-600 text-blue-600'
-                            : 'border-transparent text-slate-600 hover:text-slate-900'
-                    }`}
-                >
-                    <Palette size={20} />
-                    Design Settings
-                </button>
             </div>
 
             {/* Tab Content */}
@@ -175,8 +201,82 @@ export default function HomePreferences() {
                 <div>
                     {/* Products Tab Header */}
                     <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-                        <h2 className="text-lg font-semibold text-blue-900 mb-1">Craziest sale of the year!</h2>
-                        <p className="text-sm text-blue-700">Select products to display in the featured section on your home page</p>
+                        <h2 className="text-lg font-semibold text-blue-900 mb-1">{featuredSectionTitle}</h2>
+                        <p className="text-sm text-blue-700">{featuredSectionSubtitle}</p>
+                    </div>
+
+                    <div className="bg-white border rounded-lg p-4 mb-4 shadow-sm">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-2">Featured section title</label>
+                                <input
+                                    type="text"
+                                    value={featuredSectionTitle}
+                                    onChange={(e) => setFeaturedSectionTitle(e.target.value)}
+                                    placeholder="Craziest sale of the year!"
+                                    className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-2">Featured section subtitle</label>
+                                <input
+                                    type="text"
+                                    value={featuredSectionSubtitle}
+                                    onChange={(e) => setFeaturedSectionSubtitle(e.target.value)}
+                                    placeholder="Select products to display in the featured section on your home page"
+                                    className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="bg-white border rounded-lg p-4 mb-4 shadow-sm">
+                        <h3 className="text-sm font-semibold text-slate-900 mb-3">Featured Products Layout</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-2">Display Style</label>
+                                <select
+                                    value={designSettings.homeMenuCategories.style}
+                                    onChange={e => setDesignSettings({
+                                        ...designSettings,
+                                        homeMenuCategories: { ...designSettings.homeMenuCategories, style: e.target.value }
+                                    })}
+                                    className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                >
+                                    <option value="grid">Grid</option>
+                                    <option value="list">List</option>
+                                    <option value="carousel">Carousel</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-2">Items Per Row</label>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max="10"
+                                    value={designSettings.homeMenuCategories.itemsPerRow}
+                                    onChange={e => setDesignSettings({
+                                        ...designSettings,
+                                        homeMenuCategories: { ...designSettings.homeMenuCategories, itemsPerRow: parseInt(e.target.value) }
+                                    })}
+                                    className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-2">Rows to Show</label>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max="6"
+                                    value={designSettings.homeMenuCategories.rows || 2}
+                                    onChange={e => setDesignSettings({
+                                        ...designSettings,
+                                        homeMenuCategories: { ...designSettings.homeMenuCategories, rows: parseInt(e.target.value) }
+                                    })}
+                                    className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                            </div>
+                        </div>
                     </div>
 
                     {/* Controls */}
@@ -472,61 +572,6 @@ export default function HomePreferences() {
                                         placeholder="Section Title"
                                         className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     />
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Home Menu Categories */}
-                        <div className="bg-white border border-slate-200 rounded-lg p-6">
-                            <div className="flex items-center justify-between mb-4">
-                                <div>
-                                    <h3 className="font-semibold text-slate-900">Home Menu Categories</h3>
-                                    <p className="text-sm text-slate-500">Configure category display style</p>
-                                </div>
-                                <label className="relative inline-flex items-center cursor-pointer">
-                                    <input
-                                        type="checkbox"
-                                        checked={designSettings.homeMenuCategories.enabled}
-                                        onChange={e => setDesignSettings({
-                                            ...designSettings,
-                                            homeMenuCategories: { ...designSettings.homeMenuCategories, enabled: e.target.checked }
-                                        })}
-                                        className="sr-only peer"
-                                    />
-                                    <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
-                                </label>
-                            </div>
-                            {designSettings.homeMenuCategories.enabled && (
-                                <div className="space-y-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-slate-700 mb-2">Display Style</label>
-                                        <select
-                                            value={designSettings.homeMenuCategories.style}
-                                            onChange={e => setDesignSettings({
-                                                ...designSettings,
-                                                homeMenuCategories: { ...designSettings.homeMenuCategories, style: e.target.value }
-                                            })}
-                                            className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                        >
-                                            <option value="grid">Grid</option>
-                                            <option value="list">List</option>
-                                            <option value="carousel">Carousel</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-slate-700 mb-2">Items Per Row</label>
-                                        <input
-                                            type="number"
-                                            min="1"
-                                            max="10"
-                                            value={designSettings.homeMenuCategories.itemsPerRow}
-                                            onChange={e => setDesignSettings({
-                                                ...designSettings,
-                                                homeMenuCategories: { ...designSettings.homeMenuCategories, itemsPerRow: parseInt(e.target.value) }
-                                            })}
-                                            className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                        />
-                                    </div>
                                 </div>
                             )}
                         </div>

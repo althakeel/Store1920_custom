@@ -470,6 +470,14 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
         toast.success("Review added ✅")
     }
 
+    const variantImageOptions = Object.entries(images)
+        .filter(([, img]) => img && (img.preview || typeof img === 'string'))
+        .map(([slot, img]) => ({
+            slot,
+            preview: img.preview || img,
+            persistentUrl: typeof img === 'string' ? img : ''
+        }))
+
     const removeReview = (index) => {
         setProductInfo(prev => ({ ...prev, reviews: prev.reviews.filter((_, i) => i !== index) }))
     }
@@ -1156,13 +1164,52 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                                             </div>
                                         </div>
 
-                                        {/* Image URL */}
-                                        <div>
-                                            <label className="block text-xs font-medium text-gray-600 mb-1">Image URL (Optional)</label>
-                                            <input className="w-full border rounded px-3 py-2" placeholder="https://example.com/image.jpg"
+                                        {/* Variant Image */}
+                                        <div className="space-y-2">
+                                            <label className="block text-xs font-medium text-gray-600 mb-1">Variant Image (Select from uploaded product images)</label>
+                                            <select
+                                                className="w-full border rounded px-3 py-2 bg-white"
+                                                value={v.options?.imageSlot || ''}
+                                                onChange={(e)=>{
+                                                    const slot = e.target.value;
+                                                    const selected = variantImageOptions.find(opt => opt.slot === slot);
+                                                    const nextOptions = { ...(v.options || {}), imageSlot: slot };
+                                                    if (selected?.persistentUrl) {
+                                                        nextOptions.image = selected.persistentUrl;
+                                                    } else if (slot && nextOptions.image) {
+                                                        // Keep existing URL for edit mode unless explicitly cleared.
+                                                    } else if (!slot) {
+                                                        delete nextOptions.image;
+                                                    }
+                                                    const nv=[...variants];
+                                                    nv[idx]={...v, options: nextOptions};
+                                                    setVariants(nv);
+                                                }}
+                                            >
+                                                <option value="">None</option>
+                                                {variantImageOptions.map((opt) => (
+                                                    <option key={opt.slot} value={opt.slot}>Image {opt.slot}</option>
+                                                ))}
+                                            </select>
+
+                                            {v.options?.imageSlot && (
+                                                <div className="w-24 h-24 border rounded overflow-hidden bg-white">
+                                                    <Image
+                                                        src={variantImageOptions.find(opt => opt.slot === v.options?.imageSlot)?.preview || 'https://ik.imagekit.io/jrstupuke/placeholder.png'}
+                                                        alt={`Variant ${idx + 1} preview`}
+                                                        width={96}
+                                                        height={96}
+                                                        className="w-full h-full object-cover"
+                                                    />
+                                                </div>
+                                            )}
+
+                                            <input className="w-full border rounded px-3 py-2" placeholder="Or paste image URL (optional)"
                                                 value={v.options?.image || ''}
                                                 onChange={(e)=>{
-                                                    const nv=[...variants]; nv[idx]={...v, options:{...(v.options||{}), image:e.target.value}}; setVariants(nv);
+                                                    const nv=[...variants];
+                                                    nv[idx]={...v, options:{...(v.options||{}), image:e.target.value}};
+                                                    setVariants(nv);
                                                 }} />
                                         </div>
 

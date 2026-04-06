@@ -1,15 +1,15 @@
-export default function BrandstoredCategoryDirectory() {
+export default function Store1920CategoryDirectory() {
   return (
     <>
       <div className="qf-bottom">
         <div className="qf-container">
 
           <h2 className="qf-title">
-            Top Categories on <span>brandstored.com</span>
+            Top Categories on <span>Store1920.com</span>
           </h2>
 
           <div className="qf-section">
-            <h3>Most Searched on Brandstored</h3>
+            <h3>Most Searched on Store1920</h3>
             <p>
               Smart Watches | Wireless Earbuds | Bluetooth Neckband | Gaming Mouse | LED Strip Light | Portable Fan |
               Power Bank | Hair Dryer | Beard Trimmer | Mobile Covers | Smart Fitness Bands | Action Cameras |
@@ -75,7 +75,7 @@ export default function BrandstoredCategoryDirectory() {
           </div>
 
           <div className="qf-footer-text">
-            <h3>Brandstored – UAE’s Fast-Growing Shopping Platform</h3>
+            <h3>Store1920 – UAE’s Fast-Growing Shopping Platform</h3>
             <p>
               Shop the latest products across Electronics, Mobiles, Fashion, Beauty, Home Essentials, Fitness,
               Baby Items, Car Gadgets and more. Enjoy fast delivery, best pricing, secure checkout and daily deals.

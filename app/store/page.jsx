@@ -49,12 +49,25 @@ export default function Dashboard() {
         { title: 'Total Ratings', value: dashboardData.ratings?.length || 0, icon: StarIcon },
     ]
 
+    const withTokenRetry = async (requestFn) => {
+        try {
+            return await requestFn(false);
+        } catch (error) {
+            if (error?.response?.status === 401) {
+                return requestFn(true);
+            }
+            throw error;
+        }
+    }
+
     // Fetch team users
     const fetchTeamUsers = async () => {
         try {
-            const token = await getToken();
-            const { data } = await axios.get('/api/store/users', {
-                headers: { Authorization: `Bearer ${token}` }
+            const { data } = await withTokenRetry(async (forceRefresh) => {
+                const token = await getToken(forceRefresh);
+                return axios.get('/api/store/users', {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
             });
             const allUsers = [...(data.users || []), ...(data.pending || [])];
             setTeamUsers(allUsers);
@@ -74,9 +87,11 @@ export default function Dashboard() {
             }
 
             try {
-                const token = await getToken();
-                const { data } = await axios.get('/api/store/dashboard', {
-                    headers: { Authorization: `Bearer ${token}` }
+                const { data } = await withTokenRetry(async (forceRefresh) => {
+                    const token = await getToken(forceRefresh);
+                    return axios.get('/api/store/dashboard', {
+                        headers: { Authorization: `Bearer ${token}` }
+                    });
                 });
                 setDashboardData(data.dashboardData);
                 
@@ -105,11 +120,13 @@ export default function Dashboard() {
         
         setInviteLoading(true);
         try {
-            const token = await getToken();
-            const { data } = await axios.post('/api/store/users/invite', 
-                { email: inviteEmail }, 
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
+            const { data } = await withTokenRetry(async (forceRefresh) => {
+                const token = await getToken(forceRefresh);
+                return axios.post('/api/store/users/invite', 
+                    { email: inviteEmail }, 
+                    { headers: { Authorization: `Bearer ${token}` } }
+                );
+            });
             
             toast.success(data.message || 'Invitation sent successfully!');
             setInviteEmail('');

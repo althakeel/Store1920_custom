@@ -4,11 +4,11 @@ export default function TermsAndConditions() {
       <div className="max-w-4xl mx-auto py-12 px-4 text-gray-800 min-h-[60vh]">
         <h1 className="text-3xl font-bold mb-3">Terms & Conditions</h1>
         <p className="mb-3">
-          This website is operated by <strong>Brandstored.com</strong>. Throughout the site, the terms “we”, “us” and “our” refer to
-          <strong> Brandstored LLC</strong>. By shopping through this website, you agree to our Terms & Conditions.
+          This website is operated by <strong>Store1920.com</strong>. Throughout the site, the terms “we”, “us” and “our” refer to
+          <strong> Store1920 LLC</strong>. By shopping through this website, you agree to our Terms & Conditions.
         </p>
         <p className="mb-3">
-          Brandstored LLC offers this website, including all products, tools, and services available from this site to you,
+          Store1920 LLC offers this website, including all products, tools, and services available from this site to you,
           conditioned upon your acceptance of all terms, conditions, policies, and notices stated here.
         </p>
         <p className="mb-3">
@@ -56,7 +56,7 @@ export default function TermsAndConditions() {
               <li>You agree not to reproduce, duplicate, copy, sell, resell, or exploit any part of the Service without written permission.</li>
               <li>Headings are for convenience only and do not limit these Terms.</li>
               <li>We may contact customers via WhatsApp or phone for order processing, delivery updates, confirmations, and cancellations.</li>
-              <li>Placing an order on brandstored.com means you agree to these Terms and Conditions.</li>
+              <li>Placing an order on Store1920.com means you agree to these Terms and Conditions.</li>
             </ul>
           </section>
 
@@ -192,7 +192,7 @@ export default function TermsAndConditions() {
               The service and all products/services delivered through it are provided “as is” and “as available” without warranties (express or implied), including merchantability, fitness for a particular purpose, durability, title, and non-infringement.
             </p>
             <p className="mt-2">
-              In no case shall Brandstored LLC, its directors, officers, employees, affiliates, agents, contractors, interns, suppliers, service providers, or licensors be liable for direct or indirect losses, including lost profits, revenue, data, or other consequential damages arising from use of the service or products.
+              In no case shall Store1920 LLC, its directors, officers, employees, affiliates, agents, contractors, interns, suppliers, service providers, or licensors be liable for direct or indirect losses, including lost profits, revenue, data, or other consequential damages arising from use of the service or products.
             </p>
             <p className="mt-2">
               Where jurisdictions do not allow such exclusions, liability is limited to the maximum extent permitted by law.
@@ -202,7 +202,7 @@ export default function TermsAndConditions() {
           <section>
             <h2 className="text-xl font-semibold mb-2">SECTION 14 – INDEMNIFICATION</h2>
             <p>
-              You agree to indemnify, defend, and hold harmless Brandstored LLC and its parent, subsidiaries, affiliates, partners, officers,
+              You agree to indemnify, defend, and hold harmless Store1920 LLC and its parent, subsidiaries, affiliates, partners, officers,
               directors, agents, contractors, licensors, service providers, subcontractors, suppliers, interns, and employees from any claim
               or demand (including reasonable legal fees) arising from your breach of these Terms, violation of law, or violation of third-party rights.
             </p>
@@ -254,7 +254,7 @@ export default function TermsAndConditions() {
           <section>
             <h2 className="text-xl font-semibold mb-2">SECTION 20 – CONTACT INFORMATION</h2>
             <p>
-              Questions about the Terms of Service should be sent to <a href="mailto:support@brandstored.com" className="text-orange-600 underline">support@brandstored.com</a>.
+              Questions about the Terms of Service should be sent to <a href="mailto:support@Store1920.com" className="text-orange-600 underline">support@Store1920.com</a>.
             </p>
           </section>
         </div>

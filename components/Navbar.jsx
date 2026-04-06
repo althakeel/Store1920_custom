@@ -10,14 +10,26 @@ import { getAuth } from "firebase/auth";
 import Image from 'next/image';
 import axios from "axios";
 import toast from "react-hot-toast";
-import Logo from "../assets/logo/logo3.png";
-import LogoWhite from "../assets/logo/logo3.png";
-import LogoMobile from "../assets/logo/logo3.png";
+import Logo from "../assets/logo/logo.png";
+import LogoWhite from "../assets/logo/logo.png";
+import LogoMobile from "../assets/logo/logo.png";
 import Truck from '../assets/delivery.png';
 import WalletIcon from '../assets/common/wallet.svg';
 import SignInModal from './SignInModal';
 import NavbarMenuBar from './NavbarMenuBar';
 import { clearCart, fetchCart, uploadCart } from '@/lib/features/cart/cartSlice';
+
+const getContrastColor = (hexColor) => {
+  const hex = String(hexColor || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return '#ffffff';
+  const red = parseInt(hex.slice(0, 2), 16);
+  const green = parseInt(hex.slice(2, 4), 16);
+  const blue = parseInt(hex.slice(4, 6), 16);
+  const luminance = (0.299 * red + 0.587 * green + 0.114 * blue) / 255;
+  return luminance > 0.65 ? '#111827' : '#ffffff';
+};
+
+const NAVBAR_APPEARANCE_CACHE_KEY = 'navbarAppearanceCacheV1';
 
 const Navbar = () => {
   const dispatch = useDispatch();
@@ -35,6 +47,7 @@ const Navbar = () => {
   const [hoveredCategory, setHoveredCategory] = useState(null);
   const hoverTimer = useRef(null);
   const categoryTimer = useRef(null);
+  const userDropdownRef = useRef(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [wishlistCount, setWishlistCount] = useState(0);
@@ -53,6 +66,12 @@ const Navbar = () => {
   const [signOutContext, setSignOutContext] = useState('desktop');
   const [walletCoins, setWalletCoins] = useState(0);
   const [searchFocused, setSearchFocused] = useState(false);
+  const [navbarAppearance, setNavbarAppearance] = useState({
+    logoUrl: '',
+    logoWidth: 86,
+    logoHeight: 30,
+    backgroundColor: '#8f3404',
+  });
 
   const getShortName = (value) => {
     const name = (value || '').trim();
@@ -71,6 +90,84 @@ const Navbar = () => {
   const router = useRouter();
   const pathname = usePathname();
   const isHomePage = pathname === '/';
+  const navbarTextColor = getContrastColor(navbarAppearance.backgroundColor);
+  const navbarLogoSrc = navbarAppearance.logoUrl || LogoWhite;
+  const mobileLogoSrc = navbarAppearance.logoUrl || LogoMobile;
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = window.localStorage.getItem(NAVBAR_APPEARANCE_CACHE_KEY);
+        if (raw) {
+          const cached = JSON.parse(raw);
+          setNavbarAppearance((prev) => ({
+            ...prev,
+            logoUrl: typeof cached?.logoUrl === 'string' ? cached.logoUrl : prev.logoUrl,
+            logoWidth: Number.isFinite(Number(cached?.logoWidth)) ? Number(cached.logoWidth) : prev.logoWidth,
+            logoHeight: Number.isFinite(Number(cached?.logoHeight)) ? Number(cached.logoHeight) : prev.logoHeight,
+            backgroundColor: typeof cached?.backgroundColor === 'string' ? cached.backgroundColor : prev.backgroundColor,
+          }));
+        }
+      } catch (error) {
+        // Ignore cache parse issues.
+      }
+    }
+
+    const fetchNavbarAppearance = async () => {
+      try {
+        let token = await auth.currentUser?.getIdToken();
+        if (!token) {
+          token = await auth.currentUser?.getIdToken(true);
+        }
+        const response = await fetch('/api/store/navbar-menu', {
+          cache: 'no-store',
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        const nextAppearance = {
+           logoUrl: data.logoUrl || '',
+           logoWidth: data.logoWidth || 86,
+           logoHeight: data.logoHeight || 30,
+           backgroundColor: data.backgroundColor || '#8f3404',
+        };
+        setNavbarAppearance(nextAppearance);
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem(NAVBAR_APPEARANCE_CACHE_KEY, JSON.stringify(nextAppearance));
+        }
+      } catch (error) {
+        console.error('Failed to load navbar appearance:', error);
+      }
+    };
+
+    fetchNavbarAppearance();
+
+    const handleNavbarAppearanceUpdate = (event) => {
+      const detail = event?.detail || {};
+      setNavbarAppearance((prev) => {
+        const next = {
+          logoUrl: typeof detail.logoUrl === 'string' ? detail.logoUrl : prev.logoUrl,
+          logoWidth: typeof detail.logoWidth === 'number' ? detail.logoWidth : prev.logoWidth,
+          logoHeight: typeof detail.logoHeight === 'number' ? detail.logoHeight : prev.logoHeight,
+          backgroundColor: typeof detail.backgroundColor === 'string' ? detail.backgroundColor : prev.backgroundColor,
+        };
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem(NAVBAR_APPEARANCE_CACHE_KEY, JSON.stringify(next));
+        }
+        return next;
+      });
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('navbarAppearanceUpdated', handleNavbarAppearanceUpdate);
+    }
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('navbarAppearanceUpdated', handleNavbarAppearanceUpdate);
+      }
+    };
+  }, [firebaseUser?.uid]);
 
   const openSignOutConfirm = (context = 'desktop') => {
     setSignOutContext(context);
@@ -414,16 +511,12 @@ const Navbar = () => {
         return;
       }
       const token = await auth.currentUser.getIdToken();
-      const { data } = await axios.get('/api/wishlist', {
+      const { data } = await axios.get('/api/wishlist/count', {
         headers: {
           Authorization: `Bearer ${token}`,
         },
       });
-      // Only count wishlist items that have valid products (same filter as wishlist page)
-      const validItems = data.wishlist?.filter(item => {
-        return item && item.productId && item.product;
-      }) || [];
-      setWishlistCount(validItems.length);
+      setWishlistCount(Number(data?.count) || 0);
     } catch (error) {
       if (error?.response?.status !== 401) {
         console.error('Error fetching wishlist count:', error);
@@ -466,12 +559,33 @@ const Navbar = () => {
     }
     router.push("/cart");
   };
+
+  const handleLogoNavigation = () => {
+    setMobileMenuOpen(false);
+    setShowSearchModal(false);
+    setUserDropdownOpen(false);
+    router.push('/');
+  };
   
 
   // Seller approval check (fetch from backend) - Only check, don't show toast
   const [isSeller, setIsSeller] = useState(false);
   const [isSellerLoading, setIsSellerLoading] = useState(false);
   const lastCheckedUidRef = useRef(null);
+
+  // Close user dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (userDropdownRef.current && !userDropdownRef.current.contains(e.target)) {
+        setUserDropdownOpen(false);
+      }
+    };
+    if (userDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [userDropdownOpen]);
+
   useEffect(() => {
     const uid = firebaseUser?.uid || null;
     if (!uid) {
@@ -514,12 +628,12 @@ const Navbar = () => {
   return (
     <>
       {/* Mobile Header */}
-      <nav className="lg:hidden sticky top-0 z-50 bg-[#BE181B] shadow-sm">
-        <div className="flex items-center gap-3 px-3 py-3 bg-[#BE181B]">
-          <Link href="/" className="flex items-center flex-shrink-0">
+      <nav className="lg:hidden sticky top-0 z-50 shadow-sm border-b border-gray-200" style={{ backgroundColor: navbarAppearance.backgroundColor, color: navbarTextColor }}>
+        <div className="flex items-center gap-3 px-3 py-3" style={{ backgroundColor: navbarAppearance.backgroundColor }}>
+          <Link href="/" onClick={handleLogoNavigation} className="flex items-center flex-shrink-0">
             <Image
-              src={LogoMobile}
-              alt="Brandstored"
+              src={mobileLogoSrc}
+              alt="Store1920"
               width={120}
               height={32}
               className="h-8 w-auto object-contain"
@@ -528,7 +642,7 @@ const Navbar = () => {
           </Link>
 
           <form onSubmit={handleSearch} className="flex-1 relative">
-            <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-white/70">
+            <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-gray-200">
               <input
                 type="text"
                 placeholder={searchPlaceholder || "More than"}
@@ -582,292 +696,71 @@ const Navbar = () => {
       </nav>
 
       {/* Original Full Navbar (Desktop only) */}
-      <nav className="relative z-50 shadow-sm hidden lg:block" style={{ backgroundColor: '#BE181B', borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
-      <div className="max-w-[1250px] mx-auto px-4 sm:px-6">
-        <div className="flex items-center justify-between py-3 transition-all">
+      <nav className="relative z-50 hidden lg:block border-b shadow-sm" style={{ backgroundColor: navbarAppearance.backgroundColor, color: navbarTextColor, borderColor: navbarAppearance.backgroundColor }}>
+      <div className="max-w-[1400px] mx-auto px-4 sm:px-6">
+        <div className="flex items-center justify-between py-2 transition-all gap-4">
 
           {/* Left Side - Hamburger (Mobile) + Logo */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3 shrink-0">
             {/* Hamburger Menu - Mobile Only on Home Page */}
             {isHomePage && (
               <button 
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)} 
-                className="lg:hidden p-2 hover:bg-white/10 rounded-full transition"
+                className="lg:hidden p-2 hover:bg-gray-100 rounded-full transition"
               >
-                {mobileMenuOpen ? <X size={24} className="text-white" /> : <Menu size={24} className="text-white" />}
+                {mobileMenuOpen ? <X size={24} className="text-gray-900" /> : <Menu size={24} className="text-gray-900" />}
               </button>
             )}
             
             {/* Logo */}
-            <Link href="/" className="flex items-center gap-2 flex-shrink-0">
-              <Image src={LogoWhite} alt="Qui Logo" width={198} height={56} className="object-contain" priority />
+            <Link href="/" onClick={handleLogoNavigation} className="flex items-center gap-2 flex-shrink-0">
+              <Image
+                src={navbarLogoSrc}
+                alt="Store Logo"
+                width={navbarAppearance.logoWidth}
+                height={navbarAppearance.logoHeight}
+                className="object-contain"
+                priority
+              />
             </Link>
           </div>
 
-          {/* Center - Links and Search */}
-          <div className="hidden lg:flex items-center flex-1 justify-between gap-3 px-4">
-            {/* Left Links */}
-            <div className="flex items-center gap-4 flex-shrink-0">
-              <Link href="/5-star-rated" className="text-sm font-medium text-white hover:text-white/80 transition whitespace-nowrap flex items-center gap-1.5">
-                <StarIcon size={16} className="text-white" fill="white" />
-                5 Star Rated
-              </Link>
-
-              {/* Categories Dropdown */}
-              <div
-                className="relative"
-                onMouseEnter={() => {
-                  if (categoryTimer.current) clearTimeout(categoryTimer.current);
-                  setCategoriesDropdownOpen(true);
-                }}
-                onMouseLeave={() => {
-                  if (categoryTimer.current) clearTimeout(categoryTimer.current);
-                  categoryTimer.current = setTimeout(() => {
-                    setCategoriesDropdownOpen(false);
-                    setHoveredCategory(null);
-                  }, 200);
-                }}
-              >
-                <button className="text-sm font-medium text-white hover:text-white/80 transition whitespace-nowrap flex items-center gap-1">
-                  Categories
-                  <svg className={`w-4 h-4 transition-transform ${categoriesDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-
-                {categoriesDropdownOpen && categories.length > 0 && (
-                  <div className="absolute left-0 top-full mt-2 bg-white rounded-lg shadow-2xl border border-gray-200 z-50 overflow-hidden flex">
-                    {/* Main Categories */}
-                    <div className="w-64 bg-gray-50 border-r border-gray-200">
-                      {categories.filter(cat => !cat.parentId).map((category) => {
-                        const categorySlug = category.slug || category.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-                        return (
-                          <div
-                            key={category._id}
-                            className="relative"
-                            onMouseEnter={() => setHoveredCategory(category._id)}
-                          >
-                            <Link
-                              href={`/shop?category=${categorySlug}`}
-                              className={`flex items-center justify-between px-4 py-3 hover:bg-orange-50 transition ${
-                                hoveredCategory === category._id ? 'bg-orange-50 text-orange-600' : 'text-gray-700'
-                              }`}
-                              onClick={() => {
-                                setCategoriesDropdownOpen(false);
-                                setHoveredCategory(null);
-                              }}
-                            >
-                              <span className="font-medium">{category.name}</span>
-                              {category.children && category.children.length > 0 && (
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                </svg>
-                              )}
-                            </Link>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* Subcategories */}
-                    {hoveredCategory && (
-                      <div className="w-64 bg-white p-4">
-                        {categories
-                          .find(cat => cat._id === hoveredCategory)
-                          ?.children?.map((subcat) => {
-                            const subcatSlug = subcat.slug || subcat.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-                            return (
-                              <Link
-                                key={subcat._id}
-                                href={`/shop?category=${subcatSlug}`}
-                                className="block px-3 py-2 text-sm text-gray-600 hover:text-orange-600 hover:bg-orange-50 rounded transition"
-                                onClick={() => {
-                                  setCategoriesDropdownOpen(false);
-                                  setHoveredCategory(null);
-                                }}
-                              >
-                                {subcat.name}
-                              </Link>
-                            );
-                          })}
-                        {(!categories.find(cat => cat._id === hoveredCategory)?.children?.length) && (
-                          <p className="text-sm text-gray-400 px-3 py-2">No subcategories</p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Search Bar - Flexible and expanded */}
-            <form onSubmit={handleSearch} className="relative flex items-center flex-1 text-sm gap-2 bg-gray-100 px-4 py-2.5 rounded-full border border-gray-200 focus-within:border-orange-300 focus-within:ring-1 focus-within:ring-orange-200 transition min-w-0">
-              <Search size={18} className="text-gray-500 flex-shrink-0" />
-              <input
-                type="text"
-                placeholder={searchPlaceholder || "Search products"}
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                onFocus={() => setSearchFocused(true)}
-                onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
-                className="flex-1 bg-transparent outline-none placeholder-gray-500 text-gray-700 min-w-0"
-                required
-              />
-              {searchFocused && searchSuggestions.length > 0 && (
-                <div className="absolute left-0 right-0 top-full mt-2 bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-hidden">
-                  {searchSuggestions.map((product) => (
-                    <Link
-                      key={product._id || product.slug}
-                      href={`/product/${product.slug || product._id}`}
-                      className="flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
-                      onClick={() => setSearchFocused(false)}
-                    >
-                      <div className="relative h-8 w-8 overflow-hidden rounded-md bg-gray-100 flex-shrink-0">
-                        {product.image || product.images?.[0] ? (
-                          <Image
-                            src={product.image || product.images?.[0]}
-                            alt={product.name || 'Product'}
-                            fill
-                            sizes="32px"
-                            className="object-cover"
-                          />
-                        ) : null}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <span className="font-medium block truncate">{product.name}</span>
-                        {product.brand && (
-                          <span className="text-xs text-gray-500 truncate">{product.brand}</span>
-                        )}
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </form>
+          {/* Desktop Links - Screenshot style */}
+          <div className="hidden lg:flex items-center gap-4 mr-auto text-[13px] font-medium" style={{ color: navbarTextColor }}>
+            <Link href="/top-selling" className="transition whitespace-nowrap hover:opacity-75">Top Selling Items</Link>
+            <Link href="/new-arrivals" className="transition whitespace-nowrap hover:opacity-75">New</Link>
+            <Link href="/shipxpress" className="px-3 py-1 rounded-full border whitespace-nowrap" style={{ borderColor: `${navbarTextColor}55`, color: navbarTextColor }}>ShipXpress</Link>
+            <Link href="/5-star-rated" className="transition whitespace-nowrap hover:opacity-75">5-Star Rated</Link>
+            <button
+              type="button"
+              onClick={() => setCategoriesDropdownOpen((prev) => !prev)}
+              className="transition whitespace-nowrap hover:opacity-75"
+            >
+              Categories
+            </button>
           </div>
 
-          {/* Right Side - Actions */}
-          <div className="hidden lg:flex items-center gap-3 flex-shrink-0">
-            {/* Login/User Button */}
-            {firebaseUser ? (
-              <div
-                className="relative flex items-center gap-2 px-4 py-2 bg-gray-100 rounded-full cursor-pointer group hover:bg-gray-200 transition"
-                onMouseEnter={() => setUserDropdownOpen(true)}
-                onMouseLeave={() => setUserDropdownOpen(false)}
-              >
-                {firebaseUser.photoURL ? (
-                  <Image src={firebaseUser.photoURL} alt="User" width={32} height={32} className="rounded-full object-cover border-2 border-white/20" />
-                ) : (
-                  <span className="w-8 h-8 flex items-center justify-center rounded-full bg-blue-600 text-white font-bold text-lg border-2 border-white/20">
-                    {firebaseUser.displayName?.[0]?.toUpperCase() || firebaseUser.email?.[0]?.toUpperCase() || 'U'}
-                  </span>
-                )}
-                <div className="flex flex-col leading-tight">
-                  <span className="font-medium text-gray-900 text-sm">Hi, {getShortName(firebaseUser.displayName || firebaseUser.email)}</span>
-                  <Link
-                    href="/wallet"
-                    className="mt-0 inline-flex items-center gap-1 px-2 py-0 bg-emerald-500 rounded-full text-white text-[10px] font-bold hover:bg-emerald-600 transition w-fit shadow-sm"
-                  >
-                    <Image src={WalletIcon} alt="Wallet" width={14} height={14} />
-                    <span>Wallet: AED{Number(walletCoins || 0).toLocaleString()}</span>
-                  </Link>
-                </div>
-                {/* Dashboard button for seller */}
-                {isSeller && (
-                  <button
-                    className="ml-2 px-3 py-1 bg-orange-500 hover:bg-orange-600 text-white text-xs rounded-full transition"
-                    onClick={() => router.push('/store')}
-                  >
-                    Dashboard
-                  </button>
-                )}
-                {/* User Dropdown */}
-                {userDropdownOpen && (
-                  <div className="absolute right-0 top-12 min-w-[220px] bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-2">
-                    <Link
-                      href="/dashboard/profile"
-                      className="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm"
-                      onClick={() => setUserDropdownOpen(false)}
-                    >
-                      Profile
-                    </Link>
-                    <Link
-                      href="/dashboard/orders"
-                      className="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm"
-                      onClick={() => setUserDropdownOpen(false)}
-                    >
-                      Orders
-                    </Link>
-                    <Link
-                      href="/dashboard/wishlist"
-                      className="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm"
-                      onClick={() => setUserDropdownOpen(false)}
-                    >
-                      Wishlist
-                    </Link>
-                    <Link
-                      href="/browse-history"
-                      className="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm"
-                      onClick={() => setUserDropdownOpen(false)}
-                    >
-                      Browse History
-                    </Link>
-                    <Link
-                      href="/dashboard/tickets"
-                      className="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm"
-                      onClick={() => setUserDropdownOpen(false)}
-                    >
-                      Support Tickets
-                    </Link>
-                    <Link
-                      href="/dashboard/addresses"
-                      className="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm"
-                      onClick={() => setUserDropdownOpen(false)}
-                    >
-                      Addresses
-                    </Link>
-                    <Link
-                      href="/dashboard/settings"
-                      className="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm"
-                      onClick={() => setUserDropdownOpen(false)}
-                    >
-                      Account Settings
-                    </Link>
-                    <Link
-                      href="/help"
-                      className="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm"
-                      onClick={() => setUserDropdownOpen(false)}
-                    >
-                      Help & Support
-                    </Link>
-                    <div className="my-1 border-t border-gray-200" />
-                    <button
-                      className="block w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm"
-                      onClick={() => openSignOutConfirm('desktop')}
-                    >
-                      Sign Out
-                    </button>
-                  </div>
-                )}
-              </div>
-            ) : (
+          <form onSubmit={handleSearch} className="hidden lg:flex flex-1 max-w-[420px] mx-2">
+            <div className="flex items-center w-full bg-white rounded-full border border-[#d8d8d8] overflow-hidden">
+              <input
+                type="text"
+                placeholder="Search products"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full px-4 py-2 text-[13px] text-slate-800 outline-none"
+              />
               <button
-                type="button"
-                onClick={() => {
-                  setSignInMode('login');
-                  setSignInOpen(true);
-                }}
-                className="px-4 py-2 bg-white hover:bg-gray-100 transition text-black text-xs font-medium rounded-full flex items-center gap-2 shadow-md"
+                type="submit"
+                className="h-8 w-8 mr-1 rounded-full bg-[#0f4a85] text-white grid place-items-center hover:bg-[#0c3f72] transition"
+                aria-label="Search"
               >
-                <User className="w-5 h-5" />
-                <div className="flex flex-col leading-tight text-left">
-                  <span>Login /</span>
-                  <span>Sign Up</span>
-                </div>
+                <Search size={14} />
               </button>
-            )}
+            </div>
+          </form>
 
-            {/* Support Dropdown */}
+          {/* Right Side - Support + Icons */}
+          <div className="hidden lg:flex items-center gap-4 flex-shrink-0 text-[13px]" style={{ color: navbarTextColor }}>
             <div
               className="relative"
               onMouseEnter={() => {
@@ -879,14 +772,7 @@ const Navbar = () => {
                 hoverTimer.current = setTimeout(() => setSupportDropdownOpen(false), 200);
               }}
             >
-              {/* <button
-                onClick={() => setSupportDropdownOpen((v) => !v)}
-                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-full flex items-center gap-2 transition text-sm font-medium"
-                aria-haspopup="menu"
-                aria-expanded={supportDropdownOpen}
-              >
-                <LifeBuoy size={16} /> Support
-              </button> */}
+              <Link href="/support" className="inline-flex items-center gap-1 transition whitespace-nowrap hover:opacity-75"><LifeBuoy size={13} />Support</Link>
               {supportDropdownOpen && (
                 <ul
                   className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-xl border border-gray-200 text-sm text-gray-700 z-50 overflow-hidden"
@@ -909,26 +795,81 @@ const Navbar = () => {
               )}
             </div>
 
-            {/* Wishlist */}
-            <Link href={firebaseUser ? "/dashboard/wishlist" : "/wishlist"} className="relative p-2 hover:bg-white/10 rounded-full transition group">
-              <HeartIcon size={22} className="text-white group-hover:text-white/80 transition" />
-              {wishlistCount > 0 && (
-                <span className="absolute -top-1 -right-1 text-[10px] font-bold text-white bg-orange-500 rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
-                  {wishlistCount}
+            <button type="button" className="transition whitespace-nowrap hover:opacity-75">English</button>
+
+            <button onClick={handleCartClick} className="relative p-1 rounded-full transition hover:opacity-75">
+              <ShoppingCart size={18} style={{ color: navbarTextColor }} />
+              {isClient && cartCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 text-[10px] font-bold text-white bg-blue-600 rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1">
+                  {cartCount}
                 </span>
               )}
-            </Link>
+            </button>
 
-            {/* Cart */}
-            <button onClick={handleCartClick} className="relative p-2 hover:bg-white/10 rounded-full transition group">
-  <ShoppingCart size={22} className="text-white group-hover:text-white/80 transition" />
-  {isClient && cartCount > 0 && (
-    <span className="absolute -top-1 -right-1 text-[10px] font-bold text-white bg-blue-600 rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
-      {cartCount}
-    </span>
-  )}
-</button>
-
+            {firebaseUser ? (
+              <div className="flex items-center gap-2">
+              {isSeller && (
+                <button
+                  onClick={() => router.push('/store')}
+                  className="inline-flex items-center gap-1 bg-amber-400 hover:bg-amber-300 text-gray-900 text-xs font-semibold px-2.5 py-1 rounded-full transition whitespace-nowrap"
+                >
+                  Dashboard
+                </button>
+              )}
+              <div
+                className="relative"
+                ref={userDropdownRef}
+              >
+                <button className="inline-flex items-center gap-1.5 hover:text-amber-200 transition" aria-label="User menu" onClick={() => setUserDropdownOpen(prev => !prev)}>
+                  {firebaseUser.photoURL ? (
+                    <Image src={firebaseUser.photoURL} alt="User" width={22} height={22} className="rounded-full object-cover ring-1 ring-white/50" />
+                  ) : (
+                    <div className="w-[22px] h-[22px] rounded-full bg-amber-400 flex items-center justify-center text-[10px] font-bold text-white">
+                      {(firebaseUser.displayName || firebaseUser.email || '?')[0].toUpperCase()}
+                    </div>
+                  )}
+                  <span>Hi, {getShortName(firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User')}</span>
+                </button>
+                {userDropdownOpen && (
+                  <div className="absolute right-0 top-12 min-w-[220px] bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-2">
+                    {isSeller && (
+                      <button
+                        className="block w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm"
+                        onClick={() => router.push('/store')}
+                      >
+                        Seller Dashboard
+                      </button>
+                    )}
+                    <Link href="/dashboard/profile" className="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm" onClick={() => setUserDropdownOpen(false)}>Profile</Link>
+                    <Link href="/dashboard/orders" className="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm" onClick={() => setUserDropdownOpen(false)}>Orders</Link>
+                    <Link href="/dashboard/wishlist" className="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm" onClick={() => setUserDropdownOpen(false)}>Wishlist</Link>
+                    <Link href="/dashboard/addresses" className="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm" onClick={() => setUserDropdownOpen(false)}>Addresses</Link>
+                    <div className="my-1 border-t border-gray-200" />
+                    <Link href="/dashboard/settings" className="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm" onClick={() => setUserDropdownOpen(false)}>Account Settings</Link>
+                    <button
+                      className="block w-full text-left px-4 py-2 text-red-600 hover:bg-red-50 transition text-sm font-medium"
+                      onClick={() => openSignOutConfirm('desktop')}
+                    >
+                      Sign Out
+                    </button>
+                  </div>
+                )}
+              </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setSignInMode('login');
+                  setSignInOpen(true);
+                }}
+                className="inline-flex items-center gap-1 hover:text-amber-200 transition whitespace-nowrap"
+                aria-label="Sign in"
+              >
+                <User className="w-[15px] h-[15px] text-white" />
+                <span>Sign In / Register</span>
+              </button>
+            )}
           </div>
 
 
@@ -952,9 +893,9 @@ const Navbar = () => {
               ) : (
                 <button
                   onClick={() => setSignInOpen(true)}
-                  className="p-2 hover:bg-white/10 rounded-full transition"
+                  className="p-2 hover:bg-gray-100 rounded-full transition"
                 >
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#111827" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                     <circle cx="12" cy="7" r="4"></circle>
                   </svg>
@@ -962,8 +903,8 @@ const Navbar = () => {
               )
             )}
             
-            <button onClick={handleCartClick} className="relative p-2">
-              <ShoppingCart size={20} className="text-white" />
+            <button onClick={handleCartClick} className="relative p-2 hover:bg-gray-100 rounded-full transition">
+              <ShoppingCart size={20} className="text-gray-900" />
               {isClient && cartCount > 0 && (
                 <span className="absolute -top-1 -right-1 text-[10px] font-bold text-white bg-blue-600 rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
                   {cartCount}
@@ -985,7 +926,9 @@ const Navbar = () => {
             >
               {/* Header with Logo and Close Button */}
               <div className="flex justify-between items-center border-b border-gray-200 pb-4">
-                <Image src={Logo} alt="Brandstored Logo" width={120} height={35} className="object-contain" />
+                <button type="button" onClick={handleLogoNavigation} className="flex items-center">
+                  <Image src={Logo} alt="Store1920 Logo" width={120} height={35} className="object-contain" />
+                </button>
                 <button onClick={() => setMobileMenuOpen(false)} className="p-1 hover:bg-gray-100 rounded-full transition">
                   <X size={24} className="text-gray-600" />
                 </button>

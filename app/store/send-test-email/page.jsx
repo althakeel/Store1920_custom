@@ -200,7 +200,7 @@ export default function SendTestEmailPage() {
               <li>✅ Top 4 best-selling products from your store</li>
               <li>✅ Clickable product cards with images</li>
               <li>✅ Direct links to product pages</li>
-              <li>✅ Professional Brandstored branding</li>
+              <li>✅ Professional Store1920 branding</li>
               <li>✅ Unsubscribe link (required for compliance)</li>
             </ul>
           </div>
@@ -212,7 +212,7 @@ export default function SendTestEmailPage() {
             <ul className="space-y-2 text-sm text-amber-800">
               <li>• Check your spam/junk folder if email doesn't arrive</li>
               <li>• Test emails may take 1-2 minutes to deliver</li>
-              <li>• Emails are sent from marketing@brandstored.com</li>
+              <li>• Emails are sent from marketing@Store1920.com</li>
               <li>• Make sure your store has published products</li>
               <li>• Click product cards to verify links work</li>
               <li>• Test on both desktop and mobile</li>

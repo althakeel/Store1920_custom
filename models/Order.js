@@ -23,6 +23,7 @@ const RazorpaySettlementSchema = new mongoose.Schema({
 
 const OrderSchema = new mongoose.Schema({
   storeId: { type: String, required: true },
+  legacySourceId: { type: String, default: null, index: true },
   userId: String,
   addressId: String,
   total: { type: Number, default: 0 },

@@ -26,7 +26,7 @@ export default function RefundPolicyPage() {
           </section>
           <section>
             <h2 className="font-semibold text-gray-900 mb-2">5. How to Request</h2>
-            <p className="text-gray-700">Submit a return request from your Orders page or contact support@brandstored.com with your order ID and reason. We’ll guide you through the steps.</p>
+            <p className="text-gray-700">Submit a return request from your Orders page or contact support@Store1920.com with your order ID and reason. We’ll guide you through the steps.</p>
           </section>
         </div>
       </div>

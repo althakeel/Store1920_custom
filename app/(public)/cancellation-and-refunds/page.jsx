@@ -5,8 +5,8 @@ export default function CancellationAndRefunds() {
 
       <p className="mb-4">
         This Cancellation & Refund Policy applies to all purchases made on
-        <strong> brandstored.com</strong>, which is owned and operated by
-        <strong> Brandstored</strong>. Brandstored is a UAE-based e-commerce
+        <strong> store1920.com</strong>, which is owned and operated by
+        <strong> store1920</strong>. store1920 is a UAE-based e-commerce
         platform delivering products across the United Arab Emirates.
       </p>
 
@@ -86,17 +86,17 @@ export default function CancellationAndRefunds() {
       </p>
 
       <p className="mb-1">
-        <strong>Business Name:</strong> Brandstored
+        <strong>Business Name:</strong> store1920
       </p>
       <p className="mb-1">
-        <strong>Email:</strong> support@brandstored.com
+        <strong>Email:</strong> support@store1920.com
       </p>
       <p className="mb-1">
-        <strong>Website:</strong> https://www.brandstored.com
+        <strong>Website:</strong> https://www.store1920.com
       </p>
 
       <p className="text-sm text-gray-600 mt-6">
-        Brandstored reserves the right to modify or update this policy at any
+        store1920 reserves the right to modify or update this policy at any
         time in accordance with operational or regulatory requirements in the UAE.
       </p>
     </div>

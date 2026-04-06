@@ -349,7 +349,7 @@ const OrderSummary = ({ totalPrice, items }) => {
                 order_id: rpData.orderId,
                 amount: Math.round(discountedAmount * 100),
                 currency: 'AED',
-                name: 'brandstored',
+                name: 'Store1920',
                 description: 'Prepaid Payment (5% OFF)',
                 image: '/logo.png',
                 handler: async function (response) {
@@ -507,17 +507,6 @@ const OrderSummary = ({ totalPrice, items }) => {
                             />
                             <input
                                 type="text"
-                                placeholder="Postal Code (Optional)"
-                                value={guestInfo.pincode}
-                                onChange={e => {
-                                    const value = e.target.value.slice(0, 20);
-                                    setGuestInfo({...guestInfo, pincode: value});
-                                }}
-                                maxLength={20}
-                                className='border border-slate-300 p-2.5 w-full rounded-lg outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 text-sm'
-                            />
-                            <input
-                                type="text"
                                 placeholder="Country"
                                 value={guestInfo.country}
                                 readOnly
@@ -579,17 +568,6 @@ const OrderSummary = ({ totalPrice, items }) => {
                                 placeholder="State / Emirate *"
                                 value={guestInfo.state}
                                 onChange={e => setGuestInfo({ ...guestInfo, state: e.target.value })}
-                                className='border border-slate-300 p-2.5 w-full rounded-lg outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 text-sm'
-                            />
-                            <input
-                                type="text"
-                                placeholder="Postal Code (Optional)"
-                                value={guestInfo.pincode}
-                                onChange={e => {
-                                    const value = e.target.value.slice(0, 20);
-                                    setGuestInfo({...guestInfo, pincode: value});
-                                }}
-                                maxLength={20}
                                 className='border border-slate-300 p-2.5 w-full rounded-lg outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 text-sm'
                             />
                             <input

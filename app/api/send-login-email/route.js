@@ -27,9 +27,9 @@ export async function POST(req) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'brandstored <noreply@brandstored.com>',
+        from: 'Store1920 <noreply@Store1920.com>',
         to: email,
-        subject: 'Login Alert - brandstored',
+        subject: 'Login Alert - Store1920',
         html: `
           <!DOCTYPE html>
           <html>
@@ -155,7 +155,7 @@ export async function POST(req) {
               <div class="content">
                 <h2 class="greeting">Hi ${name || 'there'}!</h2>
                 <p style="color: #475569; font-size: 16px; margin-bottom: 20px;">
-                  We detected a new login to your brandstored account. Here are the details:
+                  We detected a new login to your Store1920 account. Here are the details:
                 </p>
                 
                 <div class="info-box">
@@ -183,20 +183,20 @@ export async function POST(req) {
                 </div>
 
                 <div class="button-container">
-                  <a href="${process.env.NEXT_PUBLIC_BASE_URL || 'https://brandstored.com'}/profile" class="button">
+                  <a href="${process.env.NEXT_PUBLIC_BASE_URL || 'https://Store1920.com'}/profile" class="button">
                     View Account Settings
                   </a>
                 </div>
 
                 <p style="color: #64748b; font-size: 15px; text-align: center; margin-top: 30px; line-height: 1.8;">
                   <span style="color: #1e293b; font-weight: 500;">💬 Need help?</span><br>
-                  Contact us at <a href="mailto:support@brandstored.com" style="color: #f97316; text-decoration: none; font-weight: 600; border-bottom: 2px solid #f97316;">support@brandstored.com</a>
+                  Contact us at <a href="mailto:support@Store1920.com" style="color: #f97316; text-decoration: none; font-weight: 600; border-bottom: 2px solid #f97316;">support@Store1920.com</a>
                 </p>
               </div>
               <div class="footer">
-                <p><strong>brandstored</strong> - Shop smarter, live better</p>
-                <p>© ${new Date().getFullYear()} brandstored. All rights reserved.</p>
-                <p style="margin-top: 10px; color: #94a3b8;">This is a security notification from brandstored.com</p>
+                <p><strong>Store1920</strong> - Shop smarter, live better</p>
+                <p>© ${new Date().getFullYear()} Store1920. All rights reserved.</p>
+                <p style="margin-top: 10px; color: #94a3b8;">This is a security notification from Store1920.com</p>
               </div>
             </div>
           </body>

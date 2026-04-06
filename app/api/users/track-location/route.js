@@ -45,7 +45,7 @@ export async function POST(request) {
         : `http://ip-api.com/json/${clientIp}?fields=status,city,regionName,country,lat,lon,query`;
 
       const ipResponse = await fetch(ipLookupUrl, {
-        headers: { "User-Agent": "Brandstored-LocationTracker" }
+        headers: { "User-Agent": "Store1920-LocationTracker" }
       });
 
       if (ipResponse.ok) {

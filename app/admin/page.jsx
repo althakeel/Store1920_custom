@@ -48,12 +48,25 @@ export default function AdminDashboard() {
         { title: 'Total Customers', value: dashboardData.customers, icon: UsersIcon },
     ];
 
+    const withTokenRetry = async (requestFn) => {
+        try {
+            return await requestFn(false);
+        } catch (error) {
+            if (error?.response?.status === 401) {
+                return requestFn(true);
+            }
+            throw error;
+        }
+    };
+
     const fetchDashboardData = async () => {
         if (!firebaseUser) return;
         try {
-            const token = await firebaseUser.getIdToken();
-            const { data } = await axios.get('/api/admin/dashboard', {
-                headers: { Authorization: `Bearer ${token}` }
+            const { data } = await withTokenRetry(async (forceRefresh) => {
+                const token = await firebaseUser.getIdToken(forceRefresh);
+                return axios.get('/api/admin/dashboard', {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
             });
             setDashboardData(data.dashboardData);
         } catch (error) {

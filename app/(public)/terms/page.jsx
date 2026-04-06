@@ -5,7 +5,7 @@ export default function TermsPage() {
     <div className="bg-gray-50">
       <div className="max-w-3xl mx-auto px-4 py-10 min-h-[60vh]">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Terms & Conditions</h1>
-        <p className="text-gray-600 mb-8">These Terms & Conditions govern your use of brandstored.com. By accessing or using our website, you agree to these terms.</p>
+        <p className="text-gray-600 mb-8">These Terms & Conditions govern your use of Store1920.com. By accessing or using our website, you agree to these terms.</p>
 
         <div className="space-y-6 bg-white border border-gray-200 rounded-xl p-6">
           <section>
@@ -30,11 +30,11 @@ export default function TermsPage() {
           </section>
           <section>
             <h2 className="font-semibold text-gray-900 mb-2">6. Intellectual Property</h2>
-            <p className="text-gray-700">All content, trademarks, and materials on brandstored.com are owned by or licensed to us and are protected by applicable laws.</p>
+            <p className="text-gray-700">All content, trademarks, and materials on Store1920.com are owned by or licensed to us and are protected by applicable laws.</p>
           </section>
           <section>
             <h2 className="font-semibold text-gray-900 mb-2">7. Liability</h2>
-            <p className="text-gray-700">To the maximum extent permitted by law, brandstored.com is not liable for indirect or consequential losses arising from your use of our website or services.</p>
+            <p className="text-gray-700">To the maximum extent permitted by law, Store1920.com is not liable for indirect or consequential losses arising from your use of our website or services.</p>
           </section>
           <section>
             <h2 className="font-semibold text-gray-900 mb-2">8. Changes</h2>
@@ -42,7 +42,7 @@ export default function TermsPage() {
           </section>
           <section>
             <h2 className="font-semibold text-gray-900 mb-2">9. Contact</h2>
-            <p className="text-gray-700">Questions? Email <a href="mailto:support@brandstored.com" className="text-orange-600 underline">support@brandstored.com</a>.</p>
+            <p className="text-gray-700">Questions? Email <a href="mailto:support@Store1920.com" className="text-orange-600 underline">support@Store1920.com</a>.</p>
           </section>
         </div>
       </div>

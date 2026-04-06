@@ -1,5 +1,5 @@
 {
-  "baseUrl": "https://brandstored.com",
+  "baseUrl": "https://Store1920.com",
   "notes": "All endpoints are under /api and return JSON.",
   "auth": {
     "type": "Firebase ID token",
@@ -411,105 +411,6 @@
           "response": {
             "message": "string",
             "productIds": "array"
-          }
-        }
-      ]
-    },
-    {
-      "path": "/api/store/deals",
-      "methods": [
-        {
-          "method": "GET",
-          "description": "Get all time-based deals for the seller's store.",
-          "auth": "Required",
-          "queryParams": {
-            "includeProducts": "boolean string (optional: 'true'|'false')"
-          },
-          "response": {
-            "deals": "array"
-          }
-        },
-        {
-          "method": "POST",
-          "description": "Create a new time-based deal.",
-          "auth": "Required",
-          "body": {
-            "title": "string (required)",
-            "productIds": "array (required)",
-            "startTime": "ISO datetime string (required)",
-            "endTime": "ISO datetime string (required)",
-            "priority": "number (optional, default 0)"
-          },
-          "response": {
-            "success": "boolean",
-            "deal": "object"
-          }
-        }
-      ]
-    },
-    {
-      "path": "/api/store/deals/{dealId}",
-      "methods": [
-        {
-          "method": "GET",
-          "description": "Get a single deal by ID.",
-          "auth": "Required",
-          "pathParams": {
-            "dealId": "string"
-          },
-          "response": {
-            "deal": "object"
-          }
-        },
-        {
-          "method": "PATCH",
-          "description": "Update a deal.",
-          "auth": "Required",
-          "pathParams": {
-            "dealId": "string"
-          },
-          "body": {
-            "title": "string (optional)",
-            "productIds": "array (optional)",
-            "startTime": "ISO datetime string (optional)",
-            "endTime": "ISO datetime string (optional)",
-            "isActive": "boolean (optional)",
-            "priority": "number (optional)"
-          },
-          "response": {
-            "success": "boolean",
-            "deal": "object"
-          }
-        },
-        {
-          "method": "DELETE",
-          "description": "Delete a deal.",
-          "auth": "Required",
-          "pathParams": {
-            "dealId": "string"
-          },
-          "response": {
-            "success": "boolean",
-            "message": "string"
-          }
-        }
-      ]
-    },
-    {
-      "path": "/api/deals",
-      "methods": [
-        {
-          "method": "GET",
-          "description": "Get active deals (public API for customers/mobile app).",
-          "auth": "None",
-          "queryParams": {
-            "storeId": "string (optional)",
-            "includeProducts": "boolean string (optional: 'true'|'false')",
-            "limit": "number (optional, default 10)"
-          },
-          "response": {
-            "deals": "array (with products and timeRemaining if includeProducts=true)",
-            "count": "number"
           }
         }
       ]

@@ -5,7 +5,7 @@ export default function CookiePolicyPage() {
     <div className="bg-gray-50">
       <div className="max-w-3xl mx-auto px-4 py-10 min-h-[60vh]">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Cookie Policy</h1>
-        <p className="text-gray-600 mb-8">Information about the cookies and similar technologies we use on brandstored.com.</p>
+        <p className="text-gray-600 mb-8">Information about the cookies and similar technologies we use on Store1920.com.</p>
 
         <div className="space-y-6 bg-white border border-gray-200 rounded-xl p-6">
           <section>

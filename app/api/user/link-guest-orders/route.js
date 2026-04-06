@@ -2,32 +2,30 @@ import connectDB from '@/lib/mongodb';
 import GuestUser from '@/models/GuestUser';
 import Order from '@/models/Order';
 import { NextResponse } from "next/server";
-import admin from 'firebase-admin';
+import { getAuth } from '@/lib/firebase-admin';
+
+function parseAuthHeader(request) {
+    const authHeader = request.headers.get('authorization') || request.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return null;
+    }
+
+    return authHeader.split(' ')[1] || null;
+}
 
 // Link guest orders to newly created user account
 export async function POST(request) {
     try {
         await connectDB();
 
-        // Initialize Firebase Admin if not already initialized
-        if (!admin.apps.length) {
-            admin.initializeApp({
-                credential: admin.credential.cert({
-                    projectId: process.env.FIREBASE_PROJECT_ID,
-                    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-                    privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-                })
-            });
-        }
-
-        const authHeader = request.headers.get('authorization');
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        const idToken = parseAuthHeader(request);
+        if (!idToken) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
-        const idToken = authHeader.split('Bearer ')[1];
+
         let decodedToken;
         try {
-            decodedToken = await admin.auth().verifyIdToken(idToken);
+            decodedToken = await getAuth().verifyIdToken(idToken);
         } catch (err) {
             return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 });
         }
@@ -39,7 +37,8 @@ export async function POST(request) {
 
     
         const user = await request.json();
-        const { email, phone } = user;
+        const email = (user?.email || '').toString().trim().toLowerCase();
+        const phone = (user?.phone || '').toString().trim();
 
         if (!email && !phone) {
             return NextResponse.json({ error: "Email or phone required" }, { status: 400 });
@@ -47,8 +46,8 @@ export async function POST(request) {
 
         // Find guest user by email or phone
         const guestUserFilter = [];
-        if (email) guestUserFilter.push({ email: email });
-        if (phone) guestUserFilter.push({ phone: phone });
+        if (email) guestUserFilter.push({ email });
+        if (phone) guestUserFilter.push({ phone });
 
         const guestUser = await GuestUser.findOne({
             $or: guestUserFilter,
@@ -85,13 +84,17 @@ export async function POST(request) {
                 $in: guestOrders.map(order => order._id)
             }
         }, {
-            userId: userId,
-            isGuest: false
+            $set: {
+                userId,
+                isGuest: false
+            }
         });
 
         // Mark guest user account as converted
         await GuestUser.findByIdAndUpdate(guestUser._id, {
-            accountCreated: true
+            accountCreated: true,
+            convertedUserId: userId,
+            convertedAt: new Date()
         });
 
         return NextResponse.json({ 

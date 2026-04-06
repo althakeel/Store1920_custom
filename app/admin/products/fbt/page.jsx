@@ -7,6 +7,8 @@ import { useAuth } from '@/lib/useAuth';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 
+const MAX_FBT_PRODUCTS = 10;
+
 export default function FBTManagement() {
   const [products, setProducts] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -75,6 +77,10 @@ export default function FBTManagement() {
       toast.error('Product already added');
       return;
     }
+    if (selectedFbtProducts.length >= MAX_FBT_PRODUCTS) {
+      toast.error(`Maximum ${MAX_FBT_PRODUCTS} products allowed`);
+      return;
+    }
     if (selectedProduct && product._id === selectedProduct._id) {
       toast.error('Cannot add the same product');
       return;
@@ -98,13 +104,31 @@ export default function FBTManagement() {
       return;
     }
 
+    if (selectedFbtProducts.length > MAX_FBT_PRODUCTS) {
+      toast.error(`You can add up to ${MAX_FBT_PRODUCTS} related products`);
+      return;
+    }
+
+    const parsedBundlePrice = fbtBundlePrice !== '' ? parseFloat(fbtBundlePrice) : null;
+    const parsedBundleDiscount = fbtBundleDiscount !== '' ? parseFloat(fbtBundleDiscount) : null;
+
+    if (parsedBundlePrice !== null && (!Number.isFinite(parsedBundlePrice) || parsedBundlePrice < 0)) {
+      toast.error('Bundle price must be a non-negative number');
+      return;
+    }
+
+    if (parsedBundleDiscount !== null && (!Number.isFinite(parsedBundleDiscount) || parsedBundleDiscount < 0 || parsedBundleDiscount > 100)) {
+      toast.error('Bundle discount must be between 0 and 100');
+      return;
+    }
+
     try {
       setSaving(true);
       await axios.patch(`/api/products/${selectedProduct._id}/fbt`, {
         enableFBT,
         fbtProductIds: selectedFbtProducts.map(p => p._id),
-        fbtBundlePrice: fbtBundlePrice ? parseFloat(fbtBundlePrice) : null,
-        fbtBundleDiscount: fbtBundleDiscount ? parseFloat(fbtBundleDiscount) : null
+        fbtBundlePrice: parsedBundlePrice,
+        fbtBundleDiscount: parsedBundleDiscount
       });
       
       toast.success('FBT configuration saved successfully!');
@@ -226,6 +250,7 @@ export default function FBTManagement() {
                     {/* FBT Products Selection */}
                     <div className="mb-6">
                       <h3 className="text-lg font-semibold text-gray-900 mb-3">Select Products</h3>
+                      <p className="text-xs text-gray-500 mb-2">Maximum {MAX_FBT_PRODUCTS} products</p>
                       
                       <input
                         type="text"
@@ -291,6 +316,9 @@ export default function FBTManagement() {
 
                       {selectedFbtProducts.length === 0 && (
                         <p className="text-sm text-gray-500 italic">No products selected. Search and click to add.</p>
+                      )}
+                      {selectedFbtProducts.length > MAX_FBT_PRODUCTS && (
+                        <p className="text-sm text-red-600">Too many products selected. Remove some before saving.</p>
                       )}
                     </div>
 

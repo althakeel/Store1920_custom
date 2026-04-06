@@ -3,17 +3,42 @@
 
 import Link from "next/link"
 import Image from "next/image";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { LogOut } from "lucide-react";
-import Logo from "../../assets/logo/logo3.png";
+import Logo from "../../assets/logo/logo.png";
 import { useAuth } from "@/lib/useAuth";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 
 
 const StoreNavbar = ({ storeInfo }) => {
-    const { user } = useAuth();
+    const { user, getToken } = useAuth();
     const [showConfirm, setShowConfirm] = useState(false);
+    const [navbarLogo, setNavbarLogo] = useState({ url: '', width: 120, height: 40 });
+
+    useEffect(() => {
+        const fetchLogo = async () => {
+            try {
+                let token = await getToken();
+                if (!token) {
+                    token = await getToken(true);
+                }
+                if (!token) return;
+                const res = await fetch('/api/store/navbar-menu', {
+                    cache: 'no-store',
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (data.logoUrl) {
+                    setNavbarLogo({ url: data.logoUrl, width: data.logoWidth || 120, height: data.logoHeight || 40 });
+                }
+            } catch (e) {
+                // silently fail, fall back to default logo
+            }
+        };
+        if (user) fetchLogo();
+    }, [user]);
 
     const handleLogout = async () => {
         try {
@@ -29,14 +54,22 @@ const StoreNavbar = ({ storeInfo }) => {
     return (
         <div className="flex items-center justify-between px-12 py-3 border-b border-slate-200 transition-all">
             <Link href="/store" className="relative text-4xl font-semibold text-slate-700">
+                {navbarLogo.url ? (
+                  <img
+                    src={navbarLogo.url}
+                    alt={storeInfo?.name || 'Store Logo'}
+                    style={{ width: navbarLogo.width, height: navbarLogo.height, objectFit: 'contain' }}
+                  />
+                ) : (
                   <Image
-                              src={Logo}  
-                              alt="Brandstored Logo"
-                              width={180}
-                              height={48}
-                              className="object-contain"
-                              priority
-                            />
+                    src={Logo}
+                    alt="Store1920 Logo"
+                    width={180}
+                    height={48}
+                    className="object-contain"
+                    priority
+                  />
+                )}
             </Link>
             <div className="flex items-center gap-3">
                 <p>Hi, {storeInfo?.name || user?.displayName || user?.name || user?.email || ''}</p>

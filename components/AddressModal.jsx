@@ -420,19 +420,19 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
                     </div>
 
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Street Address</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Street name, building number, apartment number</label>
                         <input 
                             name="street" 
                             onChange={handleAddressChange} 
                             value={address.street} 
                             className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition" 
                             type="text" 
-                            placeholder="Street" 
+                            placeholder="Street name, building number, apartment number" 
                             required 
                         />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1.5">City</label>
                             <input 
@@ -445,6 +445,21 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
                                 required 
                             />
                         </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1.5">Area/District</label>
+                            <input 
+                                name="district" 
+                                onChange={handleAddressChange} 
+                                value={address.district} 
+                                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition" 
+                                type="text" 
+                                placeholder="Area or district" 
+                                required 
+                            />
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1.5">{address.country === 'United Arab Emirates' ? 'Emirate' : 'State'}</label>
                             {(address.country === 'India' || address.country === 'United Arab Emirates') ? (

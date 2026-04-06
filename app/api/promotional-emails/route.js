@@ -93,7 +93,7 @@ export async function GET(request) {
           fromType: 'marketing',
           tags: [{ name: 'category', value: 'promotional' }],
           headers: {
-            'List-Unsubscribe': `<${process.env.NEXT_PUBLIC_BASE_URL || 'https://brandstored.com'}/settings?unsubscribe=promotional&email=${encodeURIComponent(customer.email)}>`,
+            'List-Unsubscribe': `<${process.env.NEXT_PUBLIC_BASE_URL || 'https://Store1920.com'}/settings?unsubscribe=promotional&email=${encodeURIComponent(customer.email)}>`,
             'X-Campaign': template.id
           }
         });
@@ -272,7 +272,7 @@ export async function POST(request) {
           fromType: 'marketing',
           tags: [{ name: 'category', value: 'promotional' }],
           headers: {
-            'List-Unsubscribe': `<${process.env.NEXT_PUBLIC_BASE_URL || 'https://brandstored.com'}/settings?unsubscribe=promotional&email=${encodeURIComponent(customer.email)}>`,
+            'List-Unsubscribe': `<${process.env.NEXT_PUBLIC_BASE_URL || 'https://Store1920.com'}/settings?unsubscribe=promotional&email=${encodeURIComponent(customer.email)}>`,
             'X-Campaign': template.id
           }
         });

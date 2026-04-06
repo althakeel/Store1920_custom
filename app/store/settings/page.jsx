@@ -160,11 +160,19 @@ export default function SettingsPage() {
             <div className="border-b border-slate-200 px-6 py-4 bg-white">
                 <h2 className="text-2xl font-semibold text-slate-900">Settings</h2>
                 <p className="text-sm text-slate-500">Manage your store and account preferences</p>
+                <div className="mt-3">
+                    <a
+                        href="/store/settings/database-import"
+                        className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                    >
+                        Open Database Import Settings
+                    </a>
+                </div>
             </div>
             
             {/* Tabs */}
             <div className="flex gap-0 border-b border-slate-200 px-6 bg-slate-50 overflow-x-auto">
-                {["profile", "store", "preferences", "dashboardAccess"].map(tab => (
+                {["profile", "store", "preferences", "dashboardAccess", "dataImport"].map(tab => (
                     <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}
@@ -174,7 +182,7 @@ export default function SettingsPage() {
                                 : 'text-slate-600 border-transparent hover:text-slate-800'
                         }`}
                     >
-                        {tab === "dashboardAccess" ? "Dashboard Access" : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                        {tab === "dashboardAccess" ? "Dashboard Access" : tab === "dataImport" ? "Data Import" : tab.charAt(0).toUpperCase() + tab.slice(1)}
                     </button>
                 ))}
             </div>
@@ -444,10 +452,33 @@ export default function SettingsPage() {
                             </div>
                         </div>
                     )}
+
+                    {activeTab === "dataImport" && (
+                        <div className="space-y-4">
+                            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
+                                <p className="text-sm text-emerald-900">
+                                    <span className="font-semibold">Legacy Database Import:</span> Upload your old WordPress or WooCommerce SQL schema and configure migration settings for the new store database.
+                                </p>
+                            </div>
+
+                            <div className="rounded-lg border border-slate-200 bg-white p-5 space-y-3">
+                                <h3 className="font-semibold text-slate-900">Open the import settings screen</h3>
+                                <p className="text-sm text-slate-600">
+                                    The dedicated import page lets you upload a `.sql` file, preview detected tables, set the table prefix, and choose which data domains to migrate.
+                                </p>
+                                <a
+                                    href="/store/settings/database-import"
+                                    className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-blue-700"
+                                >
+                                    Go to Database Import Settings
+                                </a>
+                            </div>
+                        </div>
+                    )}
                     
                     {/* Buttons */}
                     <div className="flex flex-col gap-2 pt-4 border-t border-slate-200">
-                        {activeTab !== "dashboardAccess" && (
+                        {activeTab !== "dashboardAccess" && activeTab !== "dataImport" && (
                             <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg font-medium transition" disabled={saving}>
                                 {saving ? "Saving..." : "Save Changes"}
                             </button>

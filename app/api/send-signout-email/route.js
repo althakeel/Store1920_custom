@@ -39,9 +39,9 @@ export async function POST(req) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'brandstored <noreply@brandstored.com>',
+        from: 'Store1920 <noreply@Store1920.com>',
         to: email,
-        subject: 'You have been signed out - brandstored',
+        subject: 'You have been signed out - Store1920',
         html: `
           <!DOCTYPE html>
           <html>
@@ -98,7 +98,7 @@ export async function POST(req) {
             <div class="content">
               <p>Hi ${name || 'there'},</p>
               
-              <p>You have been successfully signed out from your <strong>brandstored</strong> account.</p>
+              <p>You have been successfully signed out from your <strong>Store1920</strong> account.</p>
               
               <div class="security-tip">
                 <strong>🔒 Security Tip:</strong> If you didn't sign out, please sign in immediately and change your password.
@@ -107,7 +107,7 @@ export async function POST(req) {
               <p>Want to continue shopping? Sign back in to access your account:</p>
               
               <div style="text-align: center;">
-                <a href="${process.env.NEXT_PUBLIC_BASE_URL || 'https://brandstored.com'}" class="button">
+                <a href="${process.env.NEXT_PUBLIC_BASE_URL || 'https://Store1920.com'}" class="button">
                   Sign In Again
                 </a>
               </div>
@@ -115,11 +115,11 @@ export async function POST(req) {
               <p>We hope to see you again soon!</p>
               
               <p>Best regards,<br>
-              <strong>The brandstored Team</strong></p>
+              <strong>The Store1920 Team</strong></p>
             </div>
             <div class="footer">
-              <p>This is an automated message from brandstored.com</p>
-              <p>Need help? Contact us at support@brandstored.com</p>
+              <p>This is an automated message from Store1920.com</p>
+              <p>Need help? Contact us at support@Store1920.com</p>
             </div>
           </body>
           </html>

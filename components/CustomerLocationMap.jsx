@@ -8,7 +8,7 @@ export default function CustomerLocationMap({ locations = [] }) {
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
   const { isLoaded } = useJsApiLoader({
-    id: 'brandstored-google-maps',
+    id: 'Store1920-google-maps',
     googleMapsApiKey: apiKey || '',
   });
 

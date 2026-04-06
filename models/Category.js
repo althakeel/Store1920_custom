@@ -9,6 +9,11 @@ const categorySchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  legacySourceId: {
+    type: String,
+    default: null,
+    index: true,
+  },
   slug: {
     type: String,
     required: true,

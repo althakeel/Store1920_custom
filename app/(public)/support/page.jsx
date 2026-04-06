@@ -272,7 +272,7 @@ export default function SupportPage() {
                     <span className="text-2xl">📧</span>
                     <div>
                       <p className="font-medium text-slate-800">Email</p>
-                      <a href="mailto:support@brandstored.com" className="text-blue-600 hover:underline">support@brandstored.com</a>
+                      <a href="mailto:support@Store1920.com" className="text-blue-600 hover:underline">support@Store1920.com</a>
                       <p className="text-sm text-slate-600 mt-1">We reply within 24 hours</p>
                     </div>
                   </div>

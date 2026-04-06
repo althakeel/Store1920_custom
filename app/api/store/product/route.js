@@ -319,10 +319,10 @@ export async function PUT(request) {
                 return NextResponse.json({ error: "Product ID required or invalid format" }, { status: 400 });
             }
 
-            const product = await Product.findById(productId)
-              .select('_id name slug price mrp AED')
+                        const product = await Product.findById(productId)
+                            .select('_id storeId images')
               .lean();
-            if (!product || product.storeId !== storeId) {
+                        if (!product || String(product.storeId) !== String(storeId)) {
                 return NextResponse.json({ error: "Not authorized" }, { status: 401 });
             }
 
@@ -379,14 +379,14 @@ export async function PUT(request) {
 
         let product;
         try {
-            product = await Product.findById(productId)
-              .select('_id name slug price mrp AED images description')
+                        product = await Product.findById(productId)
+                            .select('_id storeId name slug price AED images description variants attributes inStock shortDescription imageAspectRatio categories category hasVariants freeShippingEligible fastDelivery stockQuantity sku')
               .lean();
         } catch (err) {
             console.error('Product.findById error:', err, 'productId:', productId);
             return NextResponse.json({ error: "Invalid productId format" }, { status: 400 });
         }
-        if (!product || product.storeId !== storeId) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
+                if (!product || String(product.storeId) !== String(storeId)) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
 
         let imagesUrl = product.images;
         // If images are all strings (URLs), treat as full replacement (for deletion)

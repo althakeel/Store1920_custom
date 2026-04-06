@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 
 const RatingSchema = new mongoose.Schema({
+  legacySourceId: { type: String, default: null, index: true },
   productId: { type: String, required: true },
   userId: { type: mongoose.Schema.Types.Mixed, required: true, ref: 'User' }, // Accepts ObjectId or String (for guest reviews)
   orderId: String,

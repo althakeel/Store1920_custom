@@ -23,10 +23,10 @@ export default function SupportBar() {
               Email Support
             </span>
             <a
-              href="mailto:support@brandstored.com"
+              href="mailto:support@Store1920.com"
               className="font-bold text-sm md:text-base text-gray-800 hover:underline leading-tight"
             >
-              support@brandstored.com
+              support@Store1920.com
             </a>
           </div>
         </div>

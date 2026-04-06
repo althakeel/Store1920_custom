@@ -5,7 +5,7 @@ export default function WalletDetailsPage() {
         <div className="bg-white border border-slate-200 rounded-xl p-6 mb-6">
           <h1 className="text-2xl font-semibold text-slate-900 mb-2">Wallet Details</h1>
           <p className="text-slate-600 text-sm">
-            Earn and redeem brandstored Wallet coins on every order.
+            Earn and redeem Store1920 Wallet coins on every order.
           </p>
         </div>
 

@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 
 const HomeSectionSchema = new mongoose.Schema({
   section: String,
+  sectionType: { type: String, default: "manual" },
   category: String,
   tag: String,
   productIds: [String],

@@ -17,7 +17,7 @@ export default function CareersPage() {
 
   return (
     <div className="max-w-2xl mx-auto py-16 px-4">
-      <h1 className="text-3xl font-bold mb-6">Careers at brandstored.com</h1>
+      <h1 className="text-3xl font-bold mb-6">Careers at Store1920.com</h1>
       <p className="mb-8 text-lg text-gray-700">We're always looking for passionate, talented, and driven individuals. Submit your details and we'll get in touch if there's a fit!</p>
       {submitted ? (
         <div className="bg-green-100 border border-green-300 text-green-800 rounded-lg p-6 text-center">

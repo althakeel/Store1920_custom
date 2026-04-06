@@ -16,6 +16,7 @@ const publicEndpoints = [
   '/api/store/featured-products', // Allow GET requests to view featured products (public)
   '/api/store/carousel-products', // Allow GET requests to view carousel products (public)
   '/api/store/home-menu-categories', // Allow GET requests to view home menu categories (public)
+  '/api/store/appearance/sections/public', // Allow GET requests to view public appearance settings
   '/api/store/navbar-menu', // Allow GET requests to view navbar menu (public)
   '/api/store/download-image', // Allow authenticated downloads (checks token in route)
   '/api/store/sitemap-settings/public', // Allow GET requests to view sitemap settings (public)

@@ -5,7 +5,7 @@ export default function ReturnPolicyPage() {
     <div className="bg-gray-50 max-w-[1450px] mx-auto">
       <div className="max-w-3xl mx-auto px-4 py-10 min-h-[60vh]">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Return, Refund & Exchange Policy</h1>
-        <p className="text-gray-600 mb-8">At BrandStore, your satisfaction is our priority. Please read the policy below before requesting a return or refund.</p>
+        <p className="text-gray-600 mb-8">At Store1920, your satisfaction is our priority. Please read the policy below before requesting a return or refund.</p>
 
         <div className="space-y-6 bg-white border border-gray-200 rounded-xl p-6">
           <section>
@@ -16,7 +16,7 @@ export default function ReturnPolicyPage() {
               <li>Orders that arrive incomplete (not total order)</li>
             </ul>
             <p className="text-gray-700 mt-3">All returns must be in original packaging and in the same condition in which they were received.</p>
-            <p className="text-gray-700 mt-2">For returns, contact: <a href="mailto:brandstored65@gmail.com" className="text-orange-600 underline">brandstored65@gmail.com</a></p>
+            <p className="text-gray-700 mt-2">For returns, contact: <a href="mailto:Store192065@gmail.com" className="text-orange-600 underline">Store192065@gmail.com</a></p>
           </section>
 
           <section>
@@ -69,7 +69,7 @@ export default function ReturnPolicyPage() {
               <li>Contact your credit card company; posting can take time.</li>
               <li>Contact your bank; processing times can vary.</li>
             </ul>
-            <p className="text-gray-700 mt-2">If you still have not received your refund, contact: <a href="mailto:brandstored65@gmail.com" className="text-orange-600 underline">brandstored65@gmail.com</a></p>
+            <p className="text-gray-700 mt-2">If you still have not received your refund, contact: <a href="mailto:Store192065@gmail.com" className="text-orange-600 underline">Store192065@gmail.com</a></p>
           </section>
 
           <section>
@@ -89,7 +89,7 @@ export default function ReturnPolicyPage() {
 
           <section>
             <h2 className="font-semibold text-gray-900 mb-2">11. Shipping for Returns</h2>
-            <p className="text-gray-700">To return your product, contact customer service at <a href="mailto:support@brandstored.com" className="text-orange-600 underline">support@brandstored.com</a>.</p>
+            <p className="text-gray-700">To return your product, contact customer service at <a href="mailto:support@Store1920.com" className="text-orange-600 underline">support@Store1920.com</a>.</p>
             <p className="text-gray-700 mt-2">You are responsible for paying return shipping costs. Shipping costs are non-refundable. If a refund is issued, return shipping cost will be deducted from your refund.</p>
             <p className="text-gray-700 mt-2">Delivery times for returned/replaced products may vary depending on your location.</p>
           </section>

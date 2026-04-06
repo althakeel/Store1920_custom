@@ -171,7 +171,7 @@ export default function HomeCategories() {
 
   if (loading && categories.length === 0) {
     return (
-      <div className="relative w-full max-w-[1250px] mx-auto bg-white py-4 px-2">
+      <div className="relative w-full max-w-[1400px] mx-auto bg-white py-4 px-4 sm:px-6">
         <div className="flex gap-4 md:gap-6 overflow-x-auto scrollbar-hide px-12 md:px-4 md:justify-between">
           {Array(10).fill(0).map((_, idx) => (
             <div key={idx} className="flex flex-col items-center flex-shrink-0 w-24 md:flex-1 p-2 md:p-3">
@@ -187,7 +187,7 @@ export default function HomeCategories() {
   // Show error if we have one and no categories
   if (error && categories.length === 0) {
     return (
-      <div className="relative w-full max-w-[1250px] mx-auto bg-white py-4 px-2">
+      <div className="relative w-full max-w-[1400px] mx-auto bg-white py-4 px-4 sm:px-6">
         <div className="text-center py-8 text-gray-500 text-sm">
           {error}
         </div>
@@ -201,7 +201,7 @@ export default function HomeCategories() {
   }
 
   return (
-    <div className="relative w-full max-w-[1250px] mx-auto bg-white py-4 px-2">
+    <div className="relative w-full max-w-[1400px] mx-auto bg-white py-4 px-4 sm:px-6">
       {/* Left Arrow */}
       <button
         className="md:hidden absolute left-2 top-1/2 -translate-y-1/2 bg-white shadow-md rounded-full p-2 z-10 hover:bg-gray-100 transition"

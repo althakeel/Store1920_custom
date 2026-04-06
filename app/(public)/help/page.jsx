@@ -27,7 +27,7 @@ export default function HelpPage() {
         answer: 'Go to the login page and click "Forgot Password?". Enter your email, and we\'ll send you a link to reset your password within minutes.'
       },
       {
-        question: 'Can I use Brandstored without an account?',
+        question: 'Can I use store1920 without an account?',
         answer: 'You can browse products without an account, but you need to create one to make a purchase or track orders.'
       }
     ],
@@ -217,8 +217,8 @@ export default function HelpPage() {
               <div className="text-4xl mb-3">📧</div>
               <h3 className="font-bold text-slate-800 mb-2">Email Support</h3>
               <p className="text-slate-600 mb-4">Get help within 24 hours</p>
-              <a href="mailto:support@brandstored.com" className="text-blue-600 hover:underline font-medium">
-                support@brandstored.com
+              <a href="mailto:support@store1920.com" className="text-blue-600 hover:underline font-medium">
+                support@store1920.com
               </a>
             </div>
             <div>

@@ -8,7 +8,7 @@ import ClientLayout from "./ClientLayout";
 const outfit = Outfit({ subsets: ["latin"], weight: ["400", "500", "600"] });
 
 export const metadata = {
-  title: "brandstored - Shop smarter",
+  title: "store1920 - Shop smarter",
   description:
     "Discover trending gadgets, fashion, home essentials & more at the best price. Fast delivery, secure checkout, and deals you don't want to miss.",
   icons: {

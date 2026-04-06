@@ -1,48 +1,42 @@
 import { NextResponse } from "next/server";
 import dbConnect from "@/lib/mongodb";
+import { getAuth } from "@/lib/firebase-admin";
 import WishlistItem from "@/models/WishlistItem";
 import Product from "@/models/Product";
+
+function parseAuthHeader(request) {
+    const authHeader = request.headers.get('authorization') || request.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return null;
+    }
+
+    return authHeader.split(' ')[1] || null;
+}
+
+async function getUserIdFromRequest(request) {
+    const idToken = parseAuthHeader(request);
+    if (!idToken) {
+        return null;
+    }
+
+    try {
+        const decodedToken = await getAuth().verifyIdToken(idToken);
+        return decodedToken?.uid || null;
+    } catch {
+        return null;
+    }
+}
 
 // GET - Fetch user's wishlist
 export async function GET(request) {
     try {
-        // Firebase Auth: Extract token from Authorization header
-        const authHeader = request.headers.get('authorization');
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-        const idToken = authHeader.split('Bearer ')[1];
-        if (!idToken) {
-            return NextResponse.json({ error: 'Invalid authorization header' }, { status: 401 });
-        }
-        
-        // Import admin SDK dynamically to avoid SSR issues
-        const { getAuth } = await import('firebase-admin/auth');
-        const { initializeApp, cert, getApps } = await import('firebase-admin/app');
-        
-        try {
-            if (getApps().length === 0) {
-                const serviceAccountKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-                if (!serviceAccountKey) {
-                    return NextResponse.json({ error: 'Firebase not configured' }, { status: 500 });
-                }
-                const serviceAccount = JSON.parse(serviceAccountKey);
-                initializeApp({ credential: cert(serviceAccount) });
-            }
-        } catch (initError) {
-            console.error('Firebase initialization error:', initError);
-            return NextResponse.json({ error: 'Firebase initialization failed' }, { status: 500 });
-        }
-        let decodedToken;
-        try {
-            decodedToken = await getAuth().verifyIdToken(idToken);
-        } catch (e) {
-            return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
-        }
-        const userId = decodedToken.uid;
+        const userId = await getUserIdFromRequest(request);
         if (!userId) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
+
+        const { searchParams } = new URL(request.url);
+        const view = searchParams.get('view');
         
         // Connect to database
         try {
@@ -54,6 +48,11 @@ export async function GET(request) {
                 details: dbError?.message 
             }, { status: 500 });
         }
+
+        if (view === 'count') {
+            const count = await WishlistItem.countDocuments({ userId });
+            return NextResponse.json({ count });
+        }
         
         const wishlistItems = await WishlistItem.find({ userId }).sort({ createdAt: -1 }).lean();
 
@@ -64,11 +63,17 @@ export async function GET(request) {
                 .filter(pid => typeof pid === 'string' && /^[a-fA-F0-9]{24}$/.test(pid))
         )];
 
-        const products = validProductIds.length
-            ? await Product.find({ _id: { $in: validProductIds } })
-                .select('_id name slug price mrp AED images inStock stockQuantity')
-                .lean()
-            : [];
+        let products = [];
+
+        if (validProductIds.length) {
+            try {
+                products = await Product.find({ _id: { $in: validProductIds } })
+                    .select('_id name slug price mrp AED images inStock stockQuantity')
+                    .lean();
+            } catch (productError) {
+                console.error('Error fetching wishlist products:', productError);
+            }
+        }
 
         const productMap = new Map(products.map(p => [String(p._id), p]));
 
@@ -91,40 +96,7 @@ export async function GET(request) {
 // POST - Add/Remove product from wishlist
 export async function POST(request) {
     try {
-        // Firebase Auth: Extract token from Authorization header
-        const authHeader = request.headers.get('authorization');
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-        const idToken = authHeader.split('Bearer ')[1];
-        if (!idToken) {
-            return NextResponse.json({ error: 'Invalid authorization header' }, { status: 401 });
-        }
-        
-        const { getAuth } = await import('firebase-admin/auth');
-        const { initializeApp, cert, getApps } = await import('firebase-admin/app');
-        
-        try {
-            if (getApps().length === 0) {
-                const serviceAccountKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-                if (!serviceAccountKey) {
-                    return NextResponse.json({ error: 'Firebase not configured' }, { status: 500 });
-                }
-                const serviceAccount = JSON.parse(serviceAccountKey);
-                initializeApp({ credential: cert(serviceAccount) });
-            }
-        } catch (initError) {
-            console.error('Firebase initialization error:', initError);
-            return NextResponse.json({ error: 'Firebase initialization failed' }, { status: 500 });
-        }
-        
-        let decodedToken;
-        try {
-            decodedToken = await getAuth().verifyIdToken(idToken);
-        } catch (e) {
-            return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
-        }
-        const userId = decodedToken.uid;
+        const userId = await getUserIdFromRequest(request);
         if (!userId) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
