@@ -5,7 +5,7 @@ import Footer from "@/components/Footer";
 import GoogleOneTap from "@/components/GoogleOneTap";
 import SupportBar from "@/components/SupportBar";
 import { Toaster } from "react-hot-toast";
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import axios from "axios";
 
@@ -52,7 +52,9 @@ export default function ClientLayout({ children }) {
     <ReduxProvider>
       <Navbar />
       <Toaster />
-      <GoogleOneTap />
+      <Suspense fallback={null}>
+        <GoogleOneTap />
+      </Suspense>
       <InitializeApp>{children}</InitializeApp>
       <SupportBar />
       <Footer />

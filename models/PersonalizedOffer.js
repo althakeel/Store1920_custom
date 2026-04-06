@@ -47,7 +47,6 @@ const PersonalizedOfferSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // Indexes for performance
-PersonalizedOfferSchema.index({ offerToken: 1 });
 PersonalizedOfferSchema.index({ customerEmail: 1, productId: 1 });
 PersonalizedOfferSchema.index({ expiresAt: 1, isActive: 1 });
 PersonalizedOfferSchema.index({ storeId: 1, isActive: 1 });

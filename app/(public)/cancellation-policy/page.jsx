@@ -1,5 +1,3 @@
-'use client'
-
 export default function CancellationPolicyPage() {
   return (
     <div className="bg-gray-50">
