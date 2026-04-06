@@ -9,6 +9,9 @@
     "start": "next start",
     "lint": "next lint"
   },
+  "engines": {
+    "node": "22.x"
+  },
   "dependencies": {
     "@emailjs/nodejs": "^5.0.2",
     "@google/generative-ai": "^0.24.1",
