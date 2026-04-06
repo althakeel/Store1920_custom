@@ -6,6 +6,7 @@ import {
   LayoutTemplate,
   Palette,
   PanelsTopLeft,
+  Menu,
   Rows3,
   Images,
   Sparkles,
@@ -38,6 +39,12 @@ const designPages = [
     description: 'Manage navbar links, upload a logo, and change the navbar background color.',
     href: '/store/navbar-menu',
     icon: PanelsTopLeft,
+  },
+  {
+    title: 'Navbar Menu',
+    description: 'Configure navbar layout, sticky behavior, and menu visibility settings.',
+    href: '/store/storefront/navbar-menu',
+    icon: Menu,
   },
   {
     title: 'Home Categories',

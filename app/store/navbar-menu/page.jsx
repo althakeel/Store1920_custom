@@ -5,6 +5,12 @@ import { useAuth } from '@/lib/useAuth';
 import toast from 'react-hot-toast';
 
 const NAVBAR_APPEARANCE_CACHE_KEY = 'navbarAppearanceCacheV1';
+const MAX_MENU_ITEMS = 20;
+
+const createMenuItem = () => ({
+  label: '',
+  url: '',
+});
 
 export default function NavbarMenuSettingsPage() {
   const { user, getToken, loading: authLoading } = useAuth();
@@ -16,6 +22,7 @@ export default function NavbarMenuSettingsPage() {
     logoWidth: '',
     logoHeight: '',
     backgroundColor: '#8f3404',
+    items: [],
   });
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const logoWidthRef = useRef(null);
@@ -124,6 +131,12 @@ export default function NavbarMenuSettingsPage() {
           logoWidth: nextWidth == null ? '' : String(nextWidth),
           logoHeight: nextHeight == null ? '' : String(nextHeight),
           backgroundColor: data.backgroundColor || '#8f3404',
+          items: Array.isArray(data.items)
+            ? data.items.map((item) => ({
+                label: item?.label || '',
+                url: item?.url || '',
+              }))
+            : [],
         });
       } catch (error) {
         console.error('Navbar menu fetch error:', error);
@@ -139,6 +152,44 @@ export default function NavbarMenuSettingsPage() {
       isActive = false;
     };
   }, [authLoading, user?.uid]);
+
+  const handleItemChange = (index, field, value) => {
+    setForm((prev) => ({
+      ...prev,
+      items: prev.items.map((item, itemIndex) => (itemIndex === index ? { ...item, [field]: value } : item)),
+    }));
+  };
+
+  const handleAddItem = () => {
+    setForm((prev) => {
+      if (prev.items.length >= MAX_MENU_ITEMS) return prev;
+      return {
+        ...prev,
+        items: [...prev.items, createMenuItem()],
+      };
+    });
+  };
+
+  const handleRemoveItem = (index) => {
+    setForm((prev) => ({
+      ...prev,
+      items: prev.items.filter((_, itemIndex) => itemIndex !== index),
+    }));
+  };
+
+  const handleMoveItem = (index, direction) => {
+    setForm((prev) => {
+      const targetIndex = index + direction;
+      if (targetIndex < 0 || targetIndex >= prev.items.length) return prev;
+      const nextItems = [...prev.items];
+      const [movedItem] = nextItems.splice(index, 1);
+      nextItems.splice(targetIndex, 0, movedItem);
+      return {
+        ...prev,
+        items: nextItems,
+      };
+    });
+  };
 
   const handleSave = async () => {
     if (!user) {
@@ -156,6 +207,21 @@ export default function NavbarMenuSettingsPage() {
     }
     const nextBackgroundColor = String(form.backgroundColor || '').trim() || '#8f3404';
     const nextLogoUrl = String(form.logoUrl || '').trim();
+    const nextItems = form.items.map((item) => ({
+      label: String(item?.label || '').trim(),
+      url: String(item?.url || '').trim(),
+    }));
+
+    if (nextItems.length > MAX_MENU_ITEMS) {
+      toast.error(`Maximum ${MAX_MENU_ITEMS} menu items allowed`);
+      return;
+    }
+
+    const invalidItemIndex = nextItems.findIndex((item) => !item.label || !item.url);
+    if (invalidItemIndex !== -1) {
+      toast.error(`Menu item ${invalidItemIndex + 1} needs both label and URL`);
+      return;
+    }
 
     setForm((prev) => ({
       ...prev,
@@ -163,6 +229,7 @@ export default function NavbarMenuSettingsPage() {
       logoWidth: String(nextWidth),
       logoHeight: String(nextHeight),
       backgroundColor: nextBackgroundColor,
+      items: nextItems,
     }));
 
     setSaving(true);
@@ -180,7 +247,7 @@ export default function NavbarMenuSettingsPage() {
         logoWidth: nextWidth,
         logoHeight: nextHeight,
         backgroundColor: nextBackgroundColor,
-        items: [],
+        items: nextItems,
       };
 
       let response = await fetch('/api/store/navbar-menu', {
@@ -224,6 +291,9 @@ export default function NavbarMenuSettingsPage() {
       let verifiedLogoUrl = data?.data?.logoUrl || nextLogoUrl;
       let verifiedBackgroundColor = data?.data?.backgroundColor || nextBackgroundColor;
       let verifiedEnabled = data?.data?.enabled ?? form.enabled;
+      let verifiedItems = Array.isArray(data?.data?.items)
+        ? data.data.items.map((item) => ({ label: item?.label || '', url: item?.url || '' }))
+        : nextItems;
 
       if (verifyResponse.ok) {
         const verified = await verifyResponse.json();
@@ -234,6 +304,9 @@ export default function NavbarMenuSettingsPage() {
         verifiedLogoUrl = verified.logoUrl || verifiedLogoUrl;
         verifiedBackgroundColor = verified.backgroundColor || verifiedBackgroundColor;
         verifiedEnabled = verified.enabled ?? verifiedEnabled;
+        verifiedItems = Array.isArray(verified.items)
+          ? verified.items.map((item) => ({ label: item?.label || '', url: item?.url || '' }))
+          : verifiedItems;
       }
 
       setForm((prev) => ({
@@ -243,6 +316,7 @@ export default function NavbarMenuSettingsPage() {
         logoWidth: verifiedWidth == null ? '' : String(verifiedWidth),
         logoHeight: verifiedHeight == null ? '' : String(verifiedHeight),
         backgroundColor: verifiedBackgroundColor,
+        items: verifiedItems,
       }));
 
       if (typeof window !== 'undefined') {
@@ -437,6 +511,87 @@ export default function NavbarMenuSettingsPage() {
             />
           </div>
           <div className="h-11 rounded-xl border border-slate-200" style={{ backgroundColor: form.backgroundColor }} />
+        </div>
+      </div>
+
+      <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold text-slate-800">Menu items</h2>
+            <p className="mt-1 text-sm text-slate-500">Add the links shown in the front navbar strip.</p>
+          </div>
+          <button
+            type="button"
+            onClick={handleAddItem}
+            disabled={form.items.length >= MAX_MENU_ITEMS}
+            className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Add menu item
+          </button>
+        </div>
+
+        <div className="mt-4 space-y-3">
+          {form.items.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+              No menu items added yet.
+            </div>
+          ) : null}
+
+          {form.items.map((item, index) => (
+            <div key={`menu-item-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-slate-700">Menu item {index + 1}</p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleMoveItem(index, -1)}
+                    disabled={index === 0}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Move up
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleMoveItem(index, 1)}
+                    disabled={index === form.items.length - 1}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Move down
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveItem(index)}
+                    className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-500">Label</label>
+                  <input
+                    type="text"
+                    value={item.label}
+                    onChange={(e) => handleItemChange(index, 'label', e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                    placeholder="Fast Delivery"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-500">URL</label>
+                  <input
+                    type="text"
+                    value={item.url}
+                    onChange={(e) => handleItemChange(index, 'url', e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                    placeholder="/fast-delivery"
+                  />
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 

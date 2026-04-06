@@ -1,7 +1,7 @@
 'use client'
 
 import { useDispatch, useSelector } from 'react-redux'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import axios from 'axios'
 import Image from 'next/image'
 import Link from 'next/link'
@@ -298,10 +298,15 @@ const BestSelling = () => {
   const [sectionTitle, setSectionTitle] = useState('Craziest sale of the year!')
   const [sectionDescription, setSectionDescription] = useState("Grab the best deals before they're gone!")
   const [layoutSettings, setLayoutSettings] = useState({ style: 'grid', itemsPerRow: 5, rows: 2 })
+  const fetchControllerRef = useRef(null)
 
   const visibleCount = Math.max(1, Math.min(40, Number(layoutSettings.itemsPerRow || 5) * Number(layoutSettings.rows || 2)))
 
   const fetchFeaturedAndSectionText = useCallback(async () => {
+      fetchControllerRef.current?.abort()
+      const controller = new AbortController()
+      fetchControllerRef.current = controller
+
       try {
         setIsLoading(true)
         setError(null)
@@ -319,19 +324,27 @@ const BestSelling = () => {
         const appearanceRequest = headers
           ? axios.get('/api/store/appearance/sections', {
               params: { t: Date.now() },
-              headers
+              headers,
+              signal: controller.signal,
+              timeout: 10000
             })
           : axios.get('/api/store/appearance/sections/public', {
-              params: { t: Date.now() }
+              params: { t: Date.now() },
+              signal: controller.signal,
+              timeout: 10000
             })
 
         const [{ data: featuredData }, { data: appearanceData }] = await Promise.all([
           axios.get('/api/store/featured-products', {
             params: { t: Date.now() },
-            headers
+            headers,
+            signal: controller.signal,
+            timeout: 10000
           }),
           appearanceRequest.catch(() => ({ data: {} }))
         ])
+
+        if (controller.signal.aborted) return
 
         const homeMenu = appearanceData?.homeMenuCategories || {}
         setLayoutSettings((prev) => ({
@@ -355,18 +368,39 @@ const BestSelling = () => {
         }
 
         // Fetch actual product documents
-        const { data: productsData } = await axios.post('/api/products/batch', { productIds })
+        const { data: productsData } = await axios.post('/api/products/batch', { productIds }, {
+          signal: controller.signal,
+          timeout: 10000
+        })
+        if (controller.signal.aborted) return
         const products = productsData.products || []
 
         setFeaturedProducts(products)
       } catch (err) {
-        console.error('Failed to load featured products', err)
+        if (axios.isCancel(err) || err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError') {
+          return
+        }
+
+        if (process.env.NODE_ENV !== 'production') {
+          console.warn('Failed to load featured products', err)
+        }
         setError('Could not load featured products')
         setFeaturedProducts([])
       } finally {
-        setIsLoading(false)
+        if (fetchControllerRef.current === controller) {
+          fetchControllerRef.current = null
+          if (!controller.signal.aborted) {
+            setIsLoading(false)
+          }
+        }
       }
     }, [getToken])
+
+  useEffect(() => {
+    return () => {
+      fetchControllerRef.current?.abort()
+    }
+  }, [])
 
   useEffect(() => {
     // Wait for auth resolution so logged-in sellers don't get stuck on public fallback data.

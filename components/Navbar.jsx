@@ -29,8 +29,6 @@ const getContrastColor = (hexColor) => {
   return luminance > 0.65 ? '#111827' : '#ffffff';
 };
 
-const NAVBAR_APPEARANCE_CACHE_KEY = 'navbarAppearanceCacheV1';
-
 const Navbar = () => {
   const dispatch = useDispatch();
 
@@ -72,6 +70,7 @@ const Navbar = () => {
     logoHeight: 30,
     backgroundColor: '#8f3404',
   });
+  const [navbarAppearanceLoading, setNavbarAppearanceLoading] = useState(true);
 
   const getShortName = (value) => {
     const name = (value || '').trim();
@@ -95,24 +94,6 @@ const Navbar = () => {
   const mobileLogoSrc = navbarAppearance.logoUrl || LogoMobile;
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const raw = window.localStorage.getItem(NAVBAR_APPEARANCE_CACHE_KEY);
-        if (raw) {
-          const cached = JSON.parse(raw);
-          setNavbarAppearance((prev) => ({
-            ...prev,
-            logoUrl: typeof cached?.logoUrl === 'string' ? cached.logoUrl : prev.logoUrl,
-            logoWidth: Number.isFinite(Number(cached?.logoWidth)) ? Number(cached.logoWidth) : prev.logoWidth,
-            logoHeight: Number.isFinite(Number(cached?.logoHeight)) ? Number(cached.logoHeight) : prev.logoHeight,
-            backgroundColor: typeof cached?.backgroundColor === 'string' ? cached.backgroundColor : prev.backgroundColor,
-          }));
-        }
-      } catch (error) {
-        // Ignore cache parse issues.
-      }
-    }
-
     const fetchNavbarAppearance = async () => {
       try {
         let token = await auth.currentUser?.getIdToken();
@@ -132,11 +113,12 @@ const Navbar = () => {
            backgroundColor: data.backgroundColor || '#8f3404',
         };
         setNavbarAppearance(nextAppearance);
-        if (typeof window !== 'undefined') {
-          window.localStorage.setItem(NAVBAR_APPEARANCE_CACHE_KEY, JSON.stringify(nextAppearance));
-        }
       } catch (error) {
-        console.error('Failed to load navbar appearance:', error);
+        if (process.env.NODE_ENV !== 'production') {
+          console.warn('Failed to load navbar appearance:', error);
+        }
+      } finally {
+        setNavbarAppearanceLoading(false);
       }
     };
 
@@ -145,17 +127,14 @@ const Navbar = () => {
     const handleNavbarAppearanceUpdate = (event) => {
       const detail = event?.detail || {};
       setNavbarAppearance((prev) => {
-        const next = {
+        return {
           logoUrl: typeof detail.logoUrl === 'string' ? detail.logoUrl : prev.logoUrl,
           logoWidth: typeof detail.logoWidth === 'number' ? detail.logoWidth : prev.logoWidth,
           logoHeight: typeof detail.logoHeight === 'number' ? detail.logoHeight : prev.logoHeight,
           backgroundColor: typeof detail.backgroundColor === 'string' ? detail.backgroundColor : prev.backgroundColor,
         };
-        if (typeof window !== 'undefined') {
-          window.localStorage.setItem(NAVBAR_APPEARANCE_CACHE_KEY, JSON.stringify(next));
-        }
-        return next;
       });
+      setNavbarAppearanceLoading(false);
     };
 
     if (typeof window !== 'undefined') {
@@ -625,8 +604,42 @@ const Navbar = () => {
     checkSeller();
   }, [firebaseUser?.uid]);
 
+  const navbarSkeleton = (
+    <>
+      <div className="lg:hidden sticky top-0 z-50 border-b border-gray-200 bg-white shadow-sm">
+        <div className="flex items-center gap-3 px-3 py-3">
+          <div className="h-8 w-28 animate-pulse rounded-md bg-gray-200" />
+          <div className="h-10 flex-1 animate-pulse rounded-lg bg-gray-100" />
+          <div className="h-10 w-10 animate-pulse rounded-full bg-gray-200" />
+        </div>
+      </div>
+
+      <div className="relative z-50 hidden lg:block border-b border-gray-200 bg-white shadow-sm">
+        <div className="mx-auto flex max-w-[1400px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
+          <div className="h-9 w-32 animate-pulse rounded-md bg-gray-200" />
+          <div className="flex items-center gap-3">
+            <div className="h-4 w-28 animate-pulse rounded-full bg-gray-100" />
+            <div className="h-4 w-16 animate-pulse rounded-full bg-gray-100" />
+            <div className="h-8 w-24 animate-pulse rounded-full bg-gray-100" />
+            <div className="h-4 w-20 animate-pulse rounded-full bg-gray-100" />
+          </div>
+          <div className="h-10 w-full max-w-[420px] animate-pulse rounded-full bg-gray-100" />
+          <div className="flex items-center gap-3">
+            <div className="h-4 w-16 animate-pulse rounded-full bg-gray-100" />
+            <div className="h-9 w-9 animate-pulse rounded-full bg-gray-100" />
+            <div className="h-9 w-28 animate-pulse rounded-full bg-gray-100" />
+          </div>
+        </div>
+      </div>
+
+      <NavbarMenuBar />
+    </>
+  );
+
   return (
     <>
+      {navbarAppearanceLoading ? navbarSkeleton : (
+        <>
       {/* Mobile Header */}
       <nav className="lg:hidden sticky top-0 z-50 shadow-sm border-b border-gray-200" style={{ backgroundColor: navbarAppearance.backgroundColor, color: navbarTextColor }}>
         <div className="flex items-center gap-3 px-3 py-3" style={{ backgroundColor: navbarAppearance.backgroundColor }}>
@@ -1196,6 +1209,8 @@ const Navbar = () => {
     </div>
   </nav>
   <NavbarMenuBar />
+        </>
+      )}
     </>
   );
 };

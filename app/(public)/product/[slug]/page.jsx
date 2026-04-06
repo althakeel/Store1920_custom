@@ -108,6 +108,75 @@ export default function ProductBySlug() {
     const [loadingReviews, setLoadingReviews] = useState(false);
     const products = useSelector(state => state.product.list);
 
+    const resolveCategoryNames = (item) => {
+        const candidates = [
+            item?.category,
+            ...(Array.isArray(item?.categories) ? item.categories : []),
+        ];
+
+        return [...new Set(candidates
+            .map((value) => {
+                if (!value) return null;
+                if (typeof value === 'string') return value.trim();
+                if (typeof value === 'object') return value.name || value.slug || null;
+                return null;
+            })
+            .filter(Boolean))];
+    };
+
+    const hasCategoryOverlap = (candidate, categoryNames) => {
+        if (!categoryNames.length) return false;
+        const candidateCategories = resolveCategoryNames(candidate).map((name) => name.toLowerCase());
+        return categoryNames.some((name) => candidateCategories.includes(name.toLowerCase()));
+    };
+
+    const buildLocalRecommendations = (currentProduct, sourceProducts) => {
+        if (!currentProduct || !Array.isArray(sourceProducts) || sourceProducts.length === 0) return [];
+
+        const currentCategories = resolveCategoryNames(currentProduct);
+        const sameCategory = sourceProducts.filter((candidate) => (
+            candidate?.slug !== currentProduct.slug &&
+            candidate?.inStock &&
+            hasCategoryOverlap(candidate, currentCategories)
+        ));
+
+        if (sameCategory.length > 0) {
+            return sameCategory.slice(0, 5);
+        }
+
+        return sourceProducts
+            .filter((candidate) => candidate?.slug !== currentProduct.slug && candidate?.inStock)
+            .slice(0, 5);
+    };
+
+    const fetchApiRecommendations = async (currentProduct) => {
+        const currentCategories = resolveCategoryNames(currentProduct);
+
+        for (const categoryName of currentCategories) {
+            try {
+                const { data } = await axios.get(`/api/products?category=${encodeURIComponent(categoryName)}&limit=12`);
+                const matches = Array.isArray(data?.products)
+                    ? data.products.filter((candidate) => candidate?.slug !== currentProduct.slug && candidate?.inStock).slice(0, 5)
+                    : [];
+
+                if (matches.length > 0) {
+                    return matches;
+                }
+            } catch (error) {
+                // Ignore category recommendation fetch failure and try fallback options.
+            }
+        }
+
+        try {
+            const { data } = await axios.get('/api/products?limit=12');
+            return Array.isArray(data?.products)
+                ? data.products.filter((candidate) => candidate?.slug !== currentProduct.slug && candidate?.inStock).slice(0, 5)
+                : [];
+        } catch (error) {
+            return [];
+        }
+    };
+
     const fetchProduct = async () => {
         setLoading(true);
         try {
@@ -130,24 +199,22 @@ export default function ProductBySlug() {
             }
             
             setProduct(found);
-            
-            // Build recommendations from Redux if available
-            if (found && products.length > 0) {
-                const sameCategory = products
-                    .filter(p => p.slug !== slug && p.category === found.category && p.inStock)
-                    .slice(0, 5);
 
-                const fallback = products
-                    .filter(p => p.slug !== slug && p.inStock)
-                    .slice(0, 5);
-
-                setRecommendedProducts(sameCategory.length > 0 ? sameCategory : fallback);
+            if (found) {
+                const localRecommendations = buildLocalRecommendations(found, products);
+                if (localRecommendations.length > 0) {
+                    setRecommendedProducts(localRecommendations);
+                } else {
+                    const apiRecommendations = await fetchApiRecommendations(found);
+                    setRecommendedProducts(apiRecommendations);
+                }
             } else {
                 setRecommendedProducts([]);
             }
         } catch (error) {
             console.error('Error fetching product:', error);
             setProduct(null);
+            setRecommendedProducts([]);
         } finally {
             setLoading(false);
         }

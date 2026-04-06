@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 
-const MAX_ITEMS = 12;
+const MAX_ITEMS = 20;
 const SKELETON_ITEMS = Array.from({ length: 8 });
-const NAVBAR_APPEARANCE_CACHE_KEY = 'navbarAppearanceCacheV1';
+const FULL_WIDTH_MAX_ITEMS = 14;
 
 const getContrastColor = (hexColor) => {
   const hex = String(hexColor || '').replace('#', '');
@@ -27,24 +27,6 @@ export default function NavbarMenuBar() {
   const [textColor, setTextColor] = useState('#1f2937');
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const raw = window.localStorage.getItem(NAVBAR_APPEARANCE_CACHE_KEY);
-        if (raw) {
-          const cached = JSON.parse(raw);
-          if (typeof cached?.backgroundColor === 'string' && cached.backgroundColor.trim()) {
-            setBackgroundColor(cached.backgroundColor);
-            setTextColor(getContrastColor(cached.backgroundColor));
-          }
-          if (typeof cached?.logoUrl === 'string') setLogoUrl(cached.logoUrl);
-          if (Number.isFinite(Number(cached?.logoWidth))) setLogoWidth(Number(cached.logoWidth));
-          if (Number.isFinite(Number(cached?.logoHeight))) setLogoHeight(Number(cached.logoHeight));
-        }
-      } catch (error) {
-        // Ignore cache parse issues.
-      }
-    }
-
     const fetchMenu = async () => {
       try {
         const response = await fetch('/api/store/navbar-menu', { cache: 'no-store' });
@@ -62,17 +44,6 @@ export default function NavbarMenuBar() {
         const nextBackgroundColor = data.backgroundColor || '#ffffff';
         setBackgroundColor(nextBackgroundColor);
         setTextColor(getContrastColor(nextBackgroundColor));
-        if (typeof window !== 'undefined') {
-          window.localStorage.setItem(
-            NAVBAR_APPEARANCE_CACHE_KEY,
-            JSON.stringify({
-              logoUrl: data.logoUrl || '',
-              logoWidth: data.logoWidth ?? 120,
-              logoHeight: data.logoHeight ?? 40,
-              backgroundColor: nextBackgroundColor,
-            })
-          );
-        }
       } catch (error) {
         console.error('Navbar menu fetch error:', error);
         setItems([]);
@@ -92,15 +63,6 @@ export default function NavbarMenuBar() {
       if (typeof detail.logoUrl === 'string') setLogoUrl(detail.logoUrl);
       if (detail.logoWidth) setLogoWidth(detail.logoWidth);
       if (detail.logoHeight) setLogoHeight(detail.logoHeight);
-      if (typeof window !== 'undefined') {
-        const next = {
-          logoUrl: typeof detail.logoUrl === 'string' ? detail.logoUrl : logoUrl,
-          logoWidth: detail.logoWidth || logoWidth,
-          logoHeight: detail.logoHeight || logoHeight,
-          backgroundColor: typeof detail.backgroundColor === 'string' && detail.backgroundColor.trim() ? detail.backgroundColor : backgroundColor,
-        };
-        window.localStorage.setItem(NAVBAR_APPEARANCE_CACHE_KEY, JSON.stringify(next));
-      }
     };
 
     if (typeof window !== 'undefined') {
@@ -122,19 +84,37 @@ export default function NavbarMenuBar() {
     return '/shop';
   };
 
+  const menuEntries = [
+    { label: 'All', url: '/shop', isAll: true },
+    ...items.map((item) => ({
+      label: item.label || item.name || 'Menu',
+      url: normalizeUrl(item),
+      isAll: false,
+    })),
+  ];
+
+  const gridStyle = useMemo(() => {
+    if (menuEntries.length <= FULL_WIDTH_MAX_ITEMS) {
+      return {
+        gridTemplateColumns: `repeat(${menuEntries.length}, minmax(0, 1fr))`,
+        width: '100%',
+      };
+    }
+
+    const minColumnWidth = 88;
+    return {
+      gridTemplateColumns: `repeat(${menuEntries.length}, minmax(${minColumnWidth}px, 1fr))`,
+      minWidth: `${menuEntries.length * minColumnWidth}px`,
+    };
+  }, [menuEntries.length]);
+
   return (
-    <div className="w-full border-b border-gray-200" style={{ backgroundColor, color: textColor }}>
+    <div className="w-full" style={{ backgroundColor, color: textColor }}>
       <div className="max-w-[1240px] mx-auto px-4 py-2.5">
         <div
-          className="flex items-center justify-start gap-3 overflow-x-auto whitespace-nowrap"
+          className="overflow-x-auto"
           style={{ WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}
         >
-          <Link
-            href="/shop"
-            className="flex items-center gap-2 text-[13px] font-semibold tracking-[0.02em] uppercase transition whitespace-nowrap opacity-95 hover:opacity-75"
-          >
-          <span>All</span>
-          </Link>
           {loading && (
             <div className="flex items-center gap-3">
               {SKELETON_ITEMS.map((_, idx) => (
@@ -145,17 +125,32 @@ export default function NavbarMenuBar() {
               ))}
             </div>
           )}
-          {!loading && items.map((item, index) => (
-            <div key={`${item.label || item.name || 'menu'}-${index}`} className="flex items-center flex-shrink-0">
-              <span className="mx-2 opacity-50">|</span>
-              <Link
-                href={normalizeUrl(item)}
-                className="text-[13px] font-semibold tracking-[0.01em] transition whitespace-nowrap opacity-95 hover:opacity-75"
-              >
-                {item.label || item.name || 'Menu'}
-              </Link>
+          {!loading && (
+            <div
+              className="grid w-full items-center"
+              style={gridStyle}
+            >
+              {menuEntries.map((item, index) => (
+                <div
+                  key={`${item.label}-${index}`}
+                  className="relative flex min-w-0 items-center justify-center px-3 py-1.5 text-center"
+                >
+                  {index > 0 ? (
+                    <span className="pointer-events-none absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 opacity-50">|</span>
+                  ) : null}
+                  <Link
+                    href={item.url}
+                    className={item.isAll
+                      ? 'relative block w-full max-w-full truncate text-center text-[13px] font-semibold uppercase tracking-[0.02em] opacity-95 transition hover:opacity-100 after:absolute after:bottom-[-4px] after:left-1/2 after:h-[1.5px] after:w-0 after:-translate-x-1/2 after:rounded-full after:bg-current after:transition-all hover:after:w-4'
+                      : 'relative block w-full max-w-full truncate text-center text-[13px] font-semibold tracking-[0.01em] opacity-95 transition hover:opacity-100 after:absolute after:bottom-[-4px] after:left-1/2 after:h-[1.5px] after:w-0 after:-translate-x-1/2 after:rounded-full after:bg-current after:transition-all hover:after:w-4'}
+                    title={item.label}
+                  >
+                    {item.label}
+                  </Link>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
         </div>
       </div>
     </div>

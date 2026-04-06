@@ -3,7 +3,7 @@ import NavbarMenuSettings from '@/models/NavbarMenuSettings';
 import { NextResponse } from 'next/server';
 import { getAuth } from '@/lib/firebase-admin';
 
-const MAX_ITEMS = 12;
+const MAX_ITEMS = 20;
 
 function toFiniteNumber(value) {
   if (value == null) return null;
