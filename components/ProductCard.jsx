@@ -8,6 +8,7 @@ import { useDispatch, useSelector } from 'react-redux'
 
 import { useAuth } from '@/lib/useAuth'
 import { addToCart, uploadCart } from '@/lib/features/cart/cartSlice'
+import { useStorefrontMarket } from '@/lib/useStorefrontMarket'
 
 import toast from 'react-hot-toast'
 
@@ -49,9 +50,9 @@ const getAEDPrice = (product) => parseAmount(
 )
 
 const ProductCard = ({ product }) => {
-    const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || 'AED'
     const dispatch = useDispatch()
     const { getToken } = useAuth()
+    const { market, convertPrice } = useStorefrontMarket()
     const cartItems = useSelector(state => state.cart.cartItems)
     const itemQuantity = cartItems[product._id] || 0
 
@@ -120,6 +121,8 @@ const ProductCard = ({ product }) => {
         : explicitDiscount > 0
             ? Math.round(explicitDiscount)
             : 0
+    const convertedPrice = convertPrice(priceNum)
+    const convertedAED = convertPrice(AEDNum)
 
     const hasFastDelivery = Boolean(
         product.fastDelivery || product.fast_delivery ||
@@ -237,11 +240,11 @@ const ProductCard = ({ product }) => {
                     {showPrice && (
                         <div className="flex items-center gap-1.5">
                             {priceNum > 0 && (
-                                <p className="text-sm sm:text-base font-bold text-gray-900">{currency} {priceNum.toFixed(2)}</p>
+                                <p className="text-sm sm:text-base font-bold text-gray-900">{market.currency} {convertedPrice.toFixed(2)}</p>
                             )}
                             {AEDNum > 0 && AEDNum > priceNum && priceNum > 0 && (
                                 <div className="flex items-center gap-1.5">
-                                    <p className="text-[10px] sm:text-xs text-gray-400 line-through">{currency} {AEDNum.toFixed(2)}</p>
+                                    <p className="text-[10px] sm:text-xs text-gray-400 line-through">{market.currency} {convertedAED.toFixed(2)}</p>
                                     {discount > 0 && (
                                         <span className="text-[10px] sm:text-xs font-semibold text-green-600">
                                             {discount}% off

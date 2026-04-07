@@ -1,16 +1,18 @@
 import dbConnect from "@/lib/mongodb";
 import Product from "@/models/Product";
 import { NextResponse } from "next/server";
+import { localizeRecord, resolveStorefrontLanguage } from "@/lib/storefrontLanguage";
 
 export async function GET(request) {
     await dbConnect();
+    const language = resolveStorefrontLanguage(request);
     const { searchParams } = new URL(request.url);
     const slug = searchParams.get("slug");
     if (!slug) {
         return NextResponse.json({ error: "Missing slug" }, { status: 400 });
     }
     // Only select needed fields for performance
-    const selectFields = 'name slug description shortDescription AED price images category categories sku inStock stockQuantity hasVariants variants attributes hasBulkPricing bulkPricing fastDelivery freeShippingEligible allowReturn allowReplacement storeId imageAspectRatio createdAt updatedAt';
+    const selectFields = 'name nameAr slug description descriptionAr shortDescription shortDescriptionAr brand brandAr AED price images category categories sku inStock stockQuantity hasVariants variants attributes hasBulkPricing bulkPricing fastDelivery freeShippingEligible allowReturn allowReplacement storeId imageAspectRatio createdAt updatedAt';
     let product = await Product.findOne({ slug })
         .select(selectFields)
         .lean();
@@ -24,5 +26,7 @@ export async function GET(request) {
     if (!product) {
         return NextResponse.json({ error: "Product not found" }, { status: 404 });
     }
-    return NextResponse.json({ product });
+    return NextResponse.json({
+        product: localizeRecord(product, language, ['name', 'description', 'shortDescription', 'brand']),
+    });
 }

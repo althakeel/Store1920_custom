@@ -42,13 +42,16 @@ export default function EditHomeSection(){
       const section = s.selection || s.section
       setForm({
         title: section.title || section.section || '',
+        titleAr: section.titleAr || '',
         subtitle: section.subtitle || '',
+        subtitleAr: section.subtitleAr || '',
         section: section.section || '',
         category: section.category || '',
         tag: section.tag || '',
         productIds: section.productIds || [],
         slides: section.slides || [],
         bannerCtaText: section.bannerCtaText || '',
+        bannerCtaTextAr: section.bannerCtaTextAr || '',
         bannerCtaLink: section.bannerCtaLink || '',
         layout: section.layout || 'deals_with_banner',
         isActive: typeof section.isActive==='boolean' ? section.isActive : true,
@@ -124,6 +127,10 @@ export default function EditHomeSection(){
             <input className='w-full border rounded-lg px-3 py-2' value={form.title} onChange={e=>setForm({...form,title:e.target.value})} required/>
           </div>
           <div>
+            <label className='block text-sm text-gray-600'>Title (Arabic)</label>
+            <input className='w-full border rounded-lg px-3 py-2' value={form.titleAr} onChange={e=>setForm({...form,titleAr:e.target.value})} dir='rtl' placeholder='عنوان القسم بالعربية'/>
+          </div>
+          <div>
             <label className='block text-sm text-gray-600'>Section Key</label>
             <input className='w-full border rounded-lg px-3 py-2' value={form.section} onChange={e=>setForm({...form,section:e.target.value})}/>
           </div>
@@ -131,6 +138,10 @@ export default function EditHomeSection(){
         <div>
           <label className='block text-sm text-gray-600'>Subtitle</label>
           <input className='w-full border rounded-lg px-3 py-2' value={form.subtitle} onChange={e=>setForm({...form,subtitle:e.target.value})}/>
+        </div>
+        <div>
+          <label className='block text-sm text-gray-600'>Subtitle (Arabic)</label>
+          <input className='w-full border rounded-lg px-3 py-2' value={form.subtitleAr} onChange={e=>setForm({...form,subtitleAr:e.target.value})} dir='rtl' placeholder='العنوان الفرعي بالعربية'/>
         </div>
 
         <div className='grid grid-cols-1 md:grid-cols-3 gap-4'>
@@ -202,6 +213,10 @@ export default function EditHomeSection(){
           <div>
             <label className='block text-sm text-gray-600'>CTA Text</label>
             <input className='w-full border rounded-lg px-3 py-2' value={form.bannerCtaText} onChange={e=>setForm({...form,bannerCtaText:e.target.value})}/>
+          </div>
+          <div>
+            <label className='block text-sm text-gray-600'>CTA Text (Arabic)</label>
+            <input className='w-full border rounded-lg px-3 py-2' value={form.bannerCtaTextAr} onChange={e=>setForm({...form,bannerCtaTextAr:e.target.value})} dir='rtl' placeholder='نص الزر بالعربية'/>
           </div>
           <div>
             <label className='block text-sm text-gray-600'>CTA Link</label>

@@ -10,6 +10,7 @@ import axios from 'axios'
 
 import { addToCart, uploadCart } from '@/lib/features/cart/cartSlice'
 import { useAuth } from '@/lib/useAuth'
+import { useStorefrontMarket } from '@/lib/useStorefrontMarket'
 
 import toast from 'react-hot-toast'
 import Title from './Title'
@@ -29,6 +30,7 @@ const ProductCard = ({ product }) => {
   const [hovered, setHovered] = useState(false)
   const dispatch = useDispatch()
   const { getToken } = useAuth()
+  const { market, convertPrice } = useStorefrontMarket()
   const cartItems = useSelector(state => state.cart.cartItems)
   const itemQuantity = cartItems[product._id] || 0
 
@@ -44,6 +46,8 @@ const ProductCard = ({ product }) => {
     product.AED && product.AED > product.price
       ? Math.round(((product.AED - product.price) / product.AED) * 100)
       : 0
+  const convertedPrice = convertPrice(product.price)
+  const convertedAED = convertPrice(product.AED)
 
   // Review fetching logic
   const [reviews, setReviews] = useState([]);
@@ -173,13 +177,13 @@ const ProductCard = ({ product }) => {
           <div className="flex flex-col gap-0.5">
             {Number(product.price) > 0 && (
               <p className="text-sm sm:text-base font-bold text-black">
-                AED{Number(product.price).toFixed(2)}
+                {market.currency}{Number(convertedPrice).toFixed(2)}
               </p>
             )}
             {Number(product.AED) > 0 && Number(product.AED) > Number(product.price) && (
               <div className="flex items-center gap-1.5">
                 <p className="text-xs sm:text-sm text-gray-400 line-through">
-                  AED{Number(product.AED).toFixed(2)}
+                  {market.currency}{Number(convertedAED).toFixed(2)}
                 </p>
                 {discount > 0 && (
                   <span className="text-[10px] sm:text-xs font-semibold text-green-600">

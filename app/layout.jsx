@@ -2,8 +2,13 @@ import { Outfit } from "next/font/google";
 import "./globals.css";
 import Script from "next/script";
 import React from "react";
+import { cookies } from "next/headers";
 import SocialProofPopup from "@/components/SocialProofPopup";
 import ClientLayout from "./ClientLayout";
+import {
+  STOREFRONT_LANGUAGE_COOKIE,
+  STOREFRONT_LANGUAGE_KEY,
+} from "@/lib/storefrontLanguage";
 
 const outfit = Outfit({ subsets: ["latin"], weight: ["400", "500", "600"] });
 
@@ -29,7 +34,10 @@ export const viewport = {
   viewportFit: 'cover',
 };
 
-export default function RootLayout({ children }) {
+export default async function RootLayout({ children }) {
+  const cookieStore = await cookies();
+  const storefrontLanguage = cookieStore.get(STOREFRONT_LANGUAGE_COOKIE)?.value === 'ar' ? 'ar' : 'en';
+  const isArabic = storefrontLanguage === 'ar';
   const ik = process.env.IMAGEKIT_URL_ENDPOINT;
   let ikOrigin = null;
   try {
@@ -37,8 +45,15 @@ export default function RootLayout({ children }) {
   } catch {}
 
   return (
-    <html lang="en">
+    <html lang={storefrontLanguage} dir={isArabic ? 'rtl' : 'ltr'}>
       <head>
+        <Script
+          id="document-direction-init"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var match=document.cookie.match(/(?:^|; )${STOREFRONT_LANGUAGE_COOKIE}=([^;]+)/);var language=match&&match[1]==='ar'?'ar':'en';var root=document.documentElement;var isArabic=language==='ar';root.setAttribute('lang',isArabic?'ar':'en');root.setAttribute('dir',isArabic?'rtl':'ltr');localStorage.setItem('${STOREFRONT_LANGUAGE_KEY}',language);}catch(e){}})();`,
+          }}
+        />
         {/* ImageKit Optimization */}
         {ikOrigin && (
           <>

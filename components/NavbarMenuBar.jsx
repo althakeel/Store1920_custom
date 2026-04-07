@@ -109,8 +109,11 @@ export default function NavbarMenuBar() {
   }, [menuEntries.length]);
 
   return (
-    <div className="w-full" style={{ backgroundColor, color: textColor }}>
-      <div className="max-w-[1240px] mx-auto px-4 py-2.5">
+    <div
+      className="hidden lg:block w-full border-t"
+      style={{ backgroundColor, color: textColor, borderColor: `${textColor}14` }}
+    >
+      <div className="max-w-[1400px] mx-auto px-4 py-1.5 sm:px-6">
         <div
           className="overflow-x-auto"
           style={{ WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}
@@ -119,7 +122,6 @@ export default function NavbarMenuBar() {
             <div className="flex items-center gap-3">
               {SKELETON_ITEMS.map((_, idx) => (
                 <div key={`skeleton-${idx}`} className="flex items-center flex-shrink-0">
-                  <span className="mx-2 text-gray-400">|</span>
                   <div className="h-4 w-20 rounded-full bg-gray-200 animate-pulse" />
                 </div>
               ))}
@@ -133,16 +135,21 @@ export default function NavbarMenuBar() {
               {menuEntries.map((item, index) => (
                 <div
                   key={`${item.label}-${index}`}
-                  className="relative flex min-w-0 items-center justify-center px-3 py-1.5 text-center"
+                  className="relative flex min-w-0 items-center justify-center px-2 py-0.5 text-center"
                 >
                   {index > 0 ? (
-                    <span className="pointer-events-none absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 opacity-50">|</span>
+                    <span
+                      className="pointer-events-none absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[11px] font-medium"
+                      style={{ color: `${textColor}80` }}
+                    >
+                      |
+                    </span>
                   ) : null}
                   <Link
                     href={item.url}
                     className={item.isAll
-                      ? 'relative block w-full max-w-full truncate text-center text-[13px] font-semibold uppercase tracking-[0.02em] opacity-95 transition hover:opacity-100 after:absolute after:bottom-[-4px] after:left-1/2 after:h-[1.5px] after:w-0 after:-translate-x-1/2 after:rounded-full after:bg-current after:transition-all hover:after:w-4'
-                      : 'relative block w-full max-w-full truncate text-center text-[13px] font-semibold tracking-[0.01em] opacity-95 transition hover:opacity-100 after:absolute after:bottom-[-4px] after:left-1/2 after:h-[1.5px] after:w-0 after:-translate-x-1/2 after:rounded-full after:bg-current after:transition-all hover:after:w-4'}
+                      ? 'relative block w-full max-w-full truncate rounded-full px-3 py-1 text-center text-[12px] font-semibold uppercase tracking-[0.02em] transition hover:bg-white/14'
+                      : 'relative block w-full max-w-full truncate rounded-full px-3 py-1 text-center text-[12px] font-medium transition hover:bg-white/10'}
                     title={item.label}
                   >
                     {item.label}

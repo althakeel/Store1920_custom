@@ -1,14 +1,16 @@
 import React from "react";
 import { useRouter } from "next/navigation";
+import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
 
 export default function CartSummaryBox({ subtotal, shipping, total, checkoutDisabled = false, checkoutNote = "", showShipping = true }) {
   const router = useRouter();
+  const { market, formatAmount } = useStorefrontMarket();
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 w-full">
       <div className="mb-4">
         <div className="flex justify-between text-sm text-gray-500 mb-2">
           <span>Items</span>
-          <span>AED {subtotal.toLocaleString()}</span>
+          <span>{market.currency} {formatAmount(subtotal)}</span>
         </div>
         {showShipping && (
           <div className="flex justify-between text-sm mb-2">
@@ -16,14 +18,14 @@ export default function CartSummaryBox({ subtotal, shipping, total, checkoutDisa
               Shipping &amp; handling
             </span>
             <span className={shipping === 0 ? 'text-green-600 font-semibold' : 'text-gray-400'}>
-              {shipping === 0 ? 'FREE' : `AED ${shipping.toLocaleString()}`}
+              {shipping === 0 ? 'FREE' : `${market.currency} ${formatAmount(shipping)}`}
             </span>
           </div>
         )}
         <hr className="my-2" />
         <div className="flex justify-between font-bold text-base text-gray-800">
           <span>Total</span>
-          <span>AED {total.toLocaleString()}</span>
+          <span>{market.currency} {formatAmount(total)}</span>
         </div>
       </div>
       {checkoutNote && (

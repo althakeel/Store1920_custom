@@ -5,6 +5,10 @@ const Section4Schema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  titleAr: {
+    type: String,
+    default: '',
+  },
   category: {
     type: String,
     required: true,

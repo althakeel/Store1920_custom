@@ -9,6 +9,10 @@ const categorySchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  nameAr: {
+    type: String,
+    default: ''
+  },
   legacySourceId: {
     type: String,
     default: null,
@@ -20,6 +24,10 @@ const categorySchema = new mongoose.Schema({
     unique: true
   },
   description: String,
+  descriptionAr: {
+    type: String,
+    default: ''
+  },
   image: String,
   url: {
     type: String,

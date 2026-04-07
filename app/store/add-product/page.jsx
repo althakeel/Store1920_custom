@@ -89,7 +89,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
         const [isSlugManuallyEdited, setIsSlugManuallyEdited] = useState(false);
         const [images, setImages] = useState({ "1": null, "2": null, "3": null, "4": null, "5": null, "6": null, "7": null, "8": null });
         const [productInfo, setProductInfo] = useState({
-            name: '', slug: '', brand: '', shortDescription: '', description: '', AED: '', price: '', category: '', sku: '', stockQuantity: 0, colors: [], sizes: [], fastDelivery: false, freeShippingEligible: false, allowReturn: true, allowReplacement: true, reviews: [], badges: [], imageAspectRatio: '1:1', tags: [], deliveredBy: '', soldBy: '', paymentInfo: ''
+            name: '', nameAr: '', slug: '', brand: '', brandAr: '', shortDescription: '', shortDescriptionAr: '', description: '', descriptionAr: '', AED: '', price: '', category: '', sku: '', stockQuantity: 0, colors: [], sizes: [], fastDelivery: false, freeShippingEligible: false, allowReturn: true, allowReplacement: true, reviews: [], badges: [], imageAspectRatio: '1:1', tags: [], deliveredBy: '', soldBy: '', paymentInfo: ''
         });
         const [tagInput, setTagInput] = useState('');
         const [loading, setLoading] = useState(false);
@@ -313,10 +313,14 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
             console.log('Initializing form with product:', product._id)
             setProductInfo({
                 name: product.name || "",
+                nameAr: product.nameAr || "",
                 slug: product.slug || "",
                 brand: product.brand || "",
+                brandAr: product.brandAr || "",
                 shortDescription: product.shortDescription || "",
+                shortDescriptionAr: product.shortDescriptionAr || "",
                 description: product.description || "",
+                descriptionAr: product.descriptionAr || "",
                 AED: product.AED || "",
                 price: product.price || "",
                 category: product.category?._id || product.category || "",
@@ -649,6 +653,10 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                         <input name="name" value={productInfo.name} onChange={onChangeHandler} className="w-full border-2 border-blue-200 rounded px-3 py-2 focus:ring-2 focus:ring-blue-300" placeholder="Enter product name" />
                     </div>
                     <div>
+                        <label className="block text-sm font-medium mb-1 text-blue-800">Product Name (Arabic)</label>
+                        <input name="nameAr" value={productInfo.nameAr} onChange={onChangeHandler} dir="rtl" className="w-full border-2 border-blue-100 rounded px-3 py-2 focus:ring-2 focus:ring-blue-300" placeholder="أدخل اسم المنتج بالعربية" />
+                    </div>
+                    <div>
                         <label className="block text-sm font-medium mb-1 text-blue-800">Product Slug <span className="text-xs text-green-600">(auto-generated, editable)</span></label>
                         <input 
                             name="slug" 
@@ -661,6 +669,10 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                     <div>
                         <label className="block text-sm font-medium mb-1 text-blue-800">Brand</label>
                         <input name="brand" value={productInfo.brand} onChange={onChangeHandler} className="w-full border-2 border-blue-100 rounded px-3 py-2" placeholder="Brand (optional)" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium mb-1 text-blue-800">Brand (Arabic)</label>
+                        <input name="brandAr" value={productInfo.brandAr} onChange={onChangeHandler} dir="rtl" className="w-full border-2 border-blue-100 rounded px-3 py-2" placeholder="العلامة التجارية بالعربية" />
                     </div>
                     <div className="md:col-span-2">
                         <label className="block text-sm font-medium mb-2 text-blue-800">Categories (Select Multiple)</label>
@@ -766,6 +778,16 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 <div>
                     <label className="block text-sm font-medium mb-1">Short Description</label>
                     <input name="shortDescription" value={productInfo.shortDescription || ''} onChange={onChangeHandler} className="w-full border rounded px-3 py-2" placeholder="One-liner overview" />
+                </div>
+
+                <div>
+                    <label className="block text-sm font-medium mb-1">Short Description (Arabic)</label>
+                    <input name="shortDescriptionAr" value={productInfo.shortDescriptionAr || ''} onChange={onChangeHandler} dir="rtl" className="w-full border rounded px-3 py-2" placeholder="وصف مختصر بالعربية" />
+                </div>
+
+                <div>
+                    <label className="block text-sm font-medium mb-1">Description (Arabic)</label>
+                    <textarea name="descriptionAr" value={productInfo.descriptionAr || ''} onChange={onChangeHandler} dir="rtl" rows={6} className="w-full border rounded px-3 py-2" placeholder="تفاصيل المنتج بالعربية" />
                 </div>
 
 

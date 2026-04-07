@@ -10,6 +10,7 @@ import { ShoppingCartIcon } from 'lucide-react'
 
 import { addToCart, uploadCart } from '@/lib/features/cart/cartSlice'
 import { useAuth } from '@/lib/useAuth'
+import { useStorefrontMarket } from '@/lib/useStorefrontMarket'
 
 import toast from 'react-hot-toast'
 import Title from './Title'
@@ -67,6 +68,7 @@ const ProductCard = ({ product }) => {
   const [hovered, setHovered] = useState(false)
   const dispatch = useDispatch()
   const { getToken } = useAuth()
+  const { market, convertPrice } = useStorefrontMarket()
   const cartItems = useSelector(state => state.cart.cartItems)
   const itemQuantity = cartItems[product._id] || 0
 
@@ -116,6 +118,8 @@ const ProductCard = ({ product }) => {
       : explicitDiscount > 0
         ? Math.round(explicitDiscount)
         : 0
+  const convertedPrice = convertPrice(priceNum)
+  const convertedAED = convertPrice(AEDNum)
 
   // Review fetching logic (axios, like product page)
   const [reviews, setReviews] = useState([]);
@@ -233,12 +237,12 @@ const ProductCard = ({ product }) => {
             <div className="flex items-center gap-1 flex-wrap">
               {priceNum > 0 && (
                 <p className="text-base sm:text-lg font-extrabold text-slate-900 leading-none">
-                  AED{priceNum.toFixed(0)}
+                  {market.currency}{convertedPrice.toFixed(0)}
                 </p>
               )}
               {AEDNum > 0 && AEDNum > priceNum && (
                 <p className="text-[10px] sm:text-xs text-slate-400 line-through leading-none mt-0.5">
-                  AED{AEDNum.toFixed(0)}
+                  {market.currency}{convertedAED.toFixed(0)}
                 </p>
               )}
               {discount > 0 && (

@@ -13,11 +13,13 @@ import MobileProductActions from "./MobileProductActions";
 import ProductDescription from "./ProductDescription";
 import { useAuth } from '@/lib/useAuth';
 import { trackMetaEvent } from "@/lib/metaPixelClient";
+import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
 
 const ProductDetails = ({ product, reviews = [], loadingReviews = false, onReviewAdded, hideTitle = false, offerData = null }) => {
   // Assume product loading state from redux if available
   const loading = useSelector(state => state.product?.status === 'loading');
-  const currency = 'AED';
+  const { market, convertPrice } = useStorefrontMarket();
+  const currency = market.currency;
   const getDeliveryRangeText = () => {
     const startDate = new Date();
     const endDate = new Date();
@@ -308,6 +310,8 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const discountPercent = effAED > effPrice
     ? Math.round(((effAED - effPrice) / effAED) * 100)
     : 0;
+  const convertedEffPrice = convertPrice(effPrice);
+  const convertedEffAED = convertPrice(effAED);
 
   const deliveredByText = String(
     product?.attributes?.deliveredBy ??
@@ -1194,13 +1198,13 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
               <div className="flex items-end gap-1 flex-wrap">
                 {effAED > effPrice && (
                   <span className="text-gray-800 text-[20px] leading-none line-through decoration-[1.5px]">
-                    {Number(effAED).toFixed(2)}
+                    {currency} {Number(convertedEffAED).toFixed(2)}
                   </span>
                 )}
 
                 <span className={`${isSpecialOffer ? 'text-green-600' : 'text-gray-900'} inline-flex items-end leading-none tracking-[-0.01em]`}>
                   <span className="text-[18px] font-semibold mr-0.5 pb-[3px]">{currency}</span>
-                  <span className="text-[44px] font-semibold">{Number(effPrice).toFixed(2)}</span>
+                  <span className="text-[44px] font-semibold">{Number(convertedEffPrice).toFixed(2)}</span>
                 </span>
 
                 {effAED > effPrice && (
@@ -1222,7 +1226,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 onClick={() => setShowPayLaterModal(true)}
                 className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition"
               >
-                <span>4 interest-free installments of {currency}{(Number(effPrice || 0) / 4).toFixed(2)} with</span>
+                <span>4 interest-free installments of {currency}{(Number(convertedEffPrice || 0) / 4).toFixed(2)} with</span>
                 <img
                   src="https://levantine.ae/wp-content/uploads/2023/03/tabby-badge.png"
                   alt="Tabby"
@@ -1318,6 +1322,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                     const price = Number(v.price);
                     const AED = Number(v.AED ?? v.price);
                     const save = AED > price ? (AED - price) : 0;
+                    const convertedBundlePrice = convertPrice(price);
                     const tag = v.tag || v.options?.tag || '';
                     const label = v.options?.title?.trim() || (qty === 1 ? 'Buy 1' : `Bundle of ${qty}`);
                     
@@ -1352,7 +1357,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                             </div>
                           </div>
                           <div className="text-right">
-                            <div className="text-base font-bold text-gray-900">{currency} {price.toFixed(2)}</div>
+                            <div className="text-base font-bold text-gray-900">{currency} {convertedBundlePrice.toFixed(2)}</div>
                           </div>
                         </button>
                       </div>

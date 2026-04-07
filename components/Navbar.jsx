@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, ShoppingCart, LifeBuoy, Menu, X, HeartIcon, StarIcon, ArrowLeft, LogOut, User } from "lucide-react";
+import { Search, ShoppingCart, LifeBuoy, Menu, X, HeartIcon, StarIcon, ArrowLeft, LogOut, User, MapPin, Package, ChevronDown, Check } from "lucide-react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { useState, useEffect, useRef, useMemo } from "react";
@@ -16,8 +16,19 @@ import LogoMobile from "../assets/logo/logo.png";
 import Truck from '../assets/delivery.png';
 import WalletIcon from '../assets/common/wallet.svg';
 import SignInModal from './SignInModal';
+import AddressModal from './AddressModal';
 import NavbarMenuBar from './NavbarMenuBar';
 import { clearCart, fetchCart, uploadCart } from '@/lib/features/cart/cartSlice';
+import { fetchAddress } from '@/lib/features/address/addressSlice';
+import {
+  STOREFRONT_LANGUAGE_COOKIE,
+  STOREFRONT_LANGUAGE_EVENT,
+  STOREFRONT_LANGUAGE_KEY,
+} from '@/lib/storefrontLanguage';
+import { GCC_MARKETS } from '@/lib/storefrontMarket';
+import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
+
+const NAVBAR_SELECTED_ADDRESS_KEY = 'navbarSelectedAddressId';
 
 const getContrastColor = (hexColor) => {
   const hex = String(hexColor || '').replace('#', '');
@@ -44,11 +55,14 @@ const Navbar = () => {
   const [categoriesDropdownOpen, setCategoriesDropdownOpen] = useState(false);
   const [hoveredCategory, setHoveredCategory] = useState(null);
   const hoverTimer = useRef(null);
+  const marketHoverTimer = useRef(null);
   const categoryTimer = useRef(null);
   const userDropdownRef = useRef(null);
+  const marketDropdownRef = useRef(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [wishlistCount, setWishlistCount] = useState(0);
+  const addressList = useSelector((state) => state.address?.list || []);
   const cartItems = useSelector((state) => state.cart.cartItems || {});
   const cartCount = useMemo(() => {
     return Object.values(cartItems || {}).reduce((acc, entry) => {
@@ -64,6 +78,10 @@ const Navbar = () => {
   const [signOutContext, setSignOutContext] = useState('desktop');
   const [walletCoins, setWalletCoins] = useState(0);
   const [searchFocused, setSearchFocused] = useState(false);
+  const [showAddressModal, setShowAddressModal] = useState(false);
+  const [selectedAddressId, setSelectedAddressId] = useState(null);
+  const [storefrontLanguage, setStorefrontLanguage] = useState('en');
+  const [marketDropdownOpen, setMarketDropdownOpen] = useState(false);
   const [navbarAppearance, setNavbarAppearance] = useState({
     logoUrl: '',
     logoWidth: 86,
@@ -71,6 +89,7 @@ const Navbar = () => {
     backgroundColor: '#8f3404',
   });
   const [navbarAppearanceLoading, setNavbarAppearanceLoading] = useState(true);
+  const { market: storefrontMarket, setMarketCode } = useStorefrontMarket();
 
   const getShortName = (value) => {
     const name = (value || '').trim();
@@ -92,6 +111,55 @@ const Navbar = () => {
   const navbarTextColor = getContrastColor(navbarAppearance.backgroundColor);
   const navbarLogoSrc = navbarAppearance.logoUrl || LogoWhite;
   const mobileLogoSrc = navbarAppearance.logoUrl || LogoMobile;
+  const selectedDeliveryAddress = useMemo(() => {
+    if (!addressList.length) return null;
+    return addressList.find((address) => address?._id === selectedAddressId) || addressList[0] || null;
+  }, [addressList, selectedAddressId]);
+  const selectedDeliveryLabel = useMemo(() => {
+    if (!firebaseUser) return 'Sign in to choose';
+    if (!selectedDeliveryAddress) return addressList.length ? 'Select address' : 'Add address';
+
+    const primary = [selectedDeliveryAddress.city, selectedDeliveryAddress.state]
+      .filter(Boolean)
+      .join(' . ');
+
+    return primary || selectedDeliveryAddress.country || 'Select address';
+  }, [addressList.length, firebaseUser, selectedDeliveryAddress]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    try {
+      const savedAddressId = window.localStorage.getItem(NAVBAR_SELECTED_ADDRESS_KEY);
+      if (savedAddressId) {
+        setSelectedAddressId(savedAddressId);
+      }
+      const savedLanguage = window.localStorage.getItem(STOREFRONT_LANGUAGE_KEY);
+      if (savedLanguage === 'ar' || savedLanguage === 'en') {
+        setStorefrontLanguage(savedLanguage);
+      }
+    } catch {
+      // Ignore storage read failures.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+
+    const isArabic = storefrontLanguage === 'ar';
+    document.documentElement.setAttribute('lang', isArabic ? 'ar' : 'en');
+    document.documentElement.setAttribute('dir', isArabic ? 'rtl' : 'ltr');
+
+    try {
+      window.localStorage.setItem(STOREFRONT_LANGUAGE_KEY, storefrontLanguage);
+      document.cookie = `${STOREFRONT_LANGUAGE_COOKIE}=${isArabic ? 'ar' : 'en'}; path=/; max-age=31536000; SameSite=Lax`;
+      window.dispatchEvent(new CustomEvent(STOREFRONT_LANGUAGE_EVENT, {
+        detail: { language: storefrontLanguage },
+      }));
+    } catch {
+      // Ignore storage write failures.
+    }
+  }, [storefrontLanguage]);
 
   useEffect(() => {
     const fetchNavbarAppearance = async () => {
@@ -147,6 +215,35 @@ const Navbar = () => {
       }
     };
   }, [firebaseUser?.uid]);
+
+  useEffect(() => {
+    if (!firebaseUser) {
+      setShowAddressModal(false);
+      setSelectedAddressId(null);
+      return;
+    }
+
+    dispatch(fetchAddress({ getToken: async () => firebaseUser.getIdToken() }));
+  }, [firebaseUser, dispatch]);
+
+  useEffect(() => {
+    if (!firebaseUser || !addressList.length) return;
+
+    const hasSelectedAddress = addressList.some((address) => address?._id === selectedAddressId);
+    const nextSelectedAddressId = hasSelectedAddress ? selectedAddressId : addressList[0]?._id || null;
+
+    if (nextSelectedAddressId && nextSelectedAddressId !== selectedAddressId) {
+      setSelectedAddressId(nextSelectedAddressId);
+    }
+
+    if (nextSelectedAddressId && typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(NAVBAR_SELECTED_ADDRESS_KEY, nextSelectedAddressId);
+      } catch {
+        // Ignore storage write failures.
+      }
+    }
+  }, [addressList, firebaseUser, selectedAddressId]);
 
   const openSignOutConfirm = (context = 'desktop') => {
     setSignOutContext(context);
@@ -545,6 +642,33 @@ const Navbar = () => {
     setUserDropdownOpen(false);
     router.push('/');
   };
+
+  const handleDeliveryLocationClick = () => {
+    if (!firebaseUser) {
+      setSignInMode('login');
+      setSignInOpen(true);
+      return;
+    }
+
+    dispatch(fetchAddress({ getToken: async () => firebaseUser.getIdToken() }));
+    setShowAddressModal(true);
+  };
+
+  const handleDeliveryAddressSelect = (addressId) => {
+    setSelectedAddressId(addressId);
+
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(NAVBAR_SELECTED_ADDRESS_KEY, addressId);
+      } catch {
+        // Ignore storage write failures.
+      }
+    }
+  };
+
+  const handleLanguageToggle = () => {
+    setStorefrontLanguage((currentLanguage) => currentLanguage === 'ar' ? 'en' : 'ar');
+  };
   
 
   // Seller approval check (fetch from backend) - Only check, don't show toast
@@ -558,12 +682,15 @@ const Navbar = () => {
       if (userDropdownRef.current && !userDropdownRef.current.contains(e.target)) {
         setUserDropdownOpen(false);
       }
+      if (marketDropdownRef.current && !marketDropdownRef.current.contains(e.target)) {
+        setMarketDropdownOpen(false);
+      }
     };
-    if (userDropdownOpen) {
+    if (userDropdownOpen || marketDropdownOpen) {
       document.addEventListener('mousedown', handleClickOutside);
     }
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [userDropdownOpen]);
+  }, [marketDropdownOpen, userDropdownOpen]);
 
   useEffect(() => {
     const uid = firebaseUser?.uid || null;
@@ -709,12 +836,15 @@ const Navbar = () => {
       </nav>
 
       {/* Original Full Navbar (Desktop only) */}
-      <nav className="relative z-50 hidden lg:block border-b shadow-sm" style={{ backgroundColor: navbarAppearance.backgroundColor, color: navbarTextColor, borderColor: navbarAppearance.backgroundColor }}>
+      <nav
+        className="relative z-50 hidden lg:block border-b shadow-[0_12px_28px_rgba(15,23,42,0.06)] before:absolute before:inset-x-0 before:top-0 before:h-1"
+        style={{ backgroundColor: navbarAppearance.backgroundColor, color: navbarTextColor, borderColor: `${navbarTextColor}18` }}
+      >
       <div className="max-w-[1400px] mx-auto px-4 sm:px-6">
-        <div className="flex items-center justify-between py-2 transition-all gap-4">
+        <div className="flex items-center py-2.5 transition-all gap-3">
 
           {/* Left Side - Hamburger (Mobile) + Logo */}
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-3 shrink-0 min-w-0">
             {/* Hamburger Menu - Mobile Only on Home Page */}
             {isHomePage && (
               <button 
@@ -726,7 +856,11 @@ const Navbar = () => {
             )}
             
             {/* Logo */}
-            <Link href="/" onClick={handleLogoNavigation} className="flex items-center gap-2 flex-shrink-0">
+            <Link
+              href="/"
+              onClick={handleLogoNavigation}
+              className="flex items-center gap-2 flex-shrink-0"
+            >
               <Image
                 src={navbarLogoSrc}
                 alt="Store Logo"
@@ -736,35 +870,35 @@ const Navbar = () => {
                 priority
               />
             </Link>
-          </div>
 
-          {/* Desktop Links - Screenshot style */}
-          <div className="hidden lg:flex items-center gap-4 mr-auto text-[13px] font-medium" style={{ color: navbarTextColor }}>
-            <Link href="/top-selling" className="transition whitespace-nowrap hover:opacity-75">Top Selling Items</Link>
-            <Link href="/new-arrivals" className="transition whitespace-nowrap hover:opacity-75">New</Link>
-            <Link href="/shipxpress" className="px-3 py-1 rounded-full border whitespace-nowrap" style={{ borderColor: `${navbarTextColor}55`, color: navbarTextColor }}>ShipXpress</Link>
-            <Link href="/5-star-rated" className="transition whitespace-nowrap hover:opacity-75">5-Star Rated</Link>
             <button
               type="button"
-              onClick={() => setCategoriesDropdownOpen((prev) => !prev)}
-              className="transition whitespace-nowrap hover:opacity-75"
+              onClick={handleDeliveryLocationClick}
+              className="flex items-center gap-2 rounded-xl border px-3 py-1.5 text-left transition"
+              style={{ borderColor: `${navbarTextColor}18`, backgroundColor: 'rgba(255,255,255,0.1)', color: navbarTextColor }}
             >
-              Categories
+              <span className="flex h-7 w-7 items-center justify-center rounded-full shadow-sm" style={{ backgroundColor: 'rgba(255,255,255,0.92)', color: '#111827' }}>
+                <MapPin size={14} />
+              </span>
+              <span className="flex flex-col leading-tight min-w-0">
+                <span className="text-[10px] font-medium uppercase tracking-[0.08em] opacity-70">Deliver to</span>
+                <span className="max-w-[130px] truncate text-xs font-semibold">{selectedDeliveryLabel}</span>
+              </span>
             </button>
           </div>
 
-          <form onSubmit={handleSearch} className="hidden lg:flex flex-1 max-w-[420px] mx-2">
-            <div className="flex items-center w-full bg-white rounded-full border border-[#d8d8d8] overflow-hidden">
+          <form onSubmit={handleSearch} className="hidden lg:flex flex-1 max-w-[620px] mx-2">
+            <div className="flex items-center w-full rounded-full border border-[#d1d5db] overflow-hidden bg-white shadow-sm">
               <input
                 type="text"
-                placeholder="Search products"
+                placeholder={searchPlaceholder || 'Search for "Fragrances"'}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full px-4 py-2 text-[13px] text-slate-800 outline-none"
+                className="w-full px-5 py-2.5 text-[13px] text-slate-800 outline-none bg-transparent"
               />
               <button
                 type="submit"
-                className="h-8 w-8 mr-1 rounded-full bg-[#0f4a85] text-white grid place-items-center hover:bg-[#0c3f72] transition"
+                className="mr-1.5 flex h-8 w-8 items-center justify-center rounded-full bg-white text-[#111827] transition hover:bg-[#f3f4f6]"
                 aria-label="Search"
               >
                 <Search size={14} />
@@ -773,58 +907,14 @@ const Navbar = () => {
           </form>
 
           {/* Right Side - Support + Icons */}
-          <div className="hidden lg:flex items-center gap-4 flex-shrink-0 text-[13px]" style={{ color: navbarTextColor }}>
-            <div
-              className="relative"
-              onMouseEnter={() => {
-                if (hoverTimer.current) clearTimeout(hoverTimer.current);
-                setSupportDropdownOpen(true);
-              }}
-              onMouseLeave={() => {
-                if (hoverTimer.current) clearTimeout(hoverTimer.current);
-                hoverTimer.current = setTimeout(() => setSupportDropdownOpen(false), 200);
-              }}
-            >
-              <Link href="/support" className="inline-flex items-center gap-1 transition whitespace-nowrap hover:opacity-75"><LifeBuoy size={13} />Support</Link>
-              {supportDropdownOpen && (
-                <ul
-                  className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-xl border border-gray-200 text-sm text-gray-700 z-50 overflow-hidden"
-                  onMouseEnter={() => {
-                    if (hoverTimer.current) clearTimeout(hoverTimer.current);
-                    setSupportDropdownOpen(true);
-                  }}
-                  onMouseLeave={() => {
-                    if (hoverTimer.current) clearTimeout(hoverTimer.current);
-                    hoverTimer.current = setTimeout(() => setSupportDropdownOpen(false), 200);
-                  }}
-                  role="menu"
-                >
-                  <li><Link href="/faq" className="block px-4 py-2.5 hover:bg-gray-50 transition">FAQ</Link></li>
-                  <li><Link href="/support" className="block px-4 py-2.5 hover:bg-gray-50 transition">Support</Link></li>
-                  <li><Link href="/terms" className="block px-4 py-2.5 hover:bg-gray-50 transition">Terms & Conditions</Link></li>
-                  <li><Link href="/privacy-policy" className="block px-4 py-2.5 hover:bg-gray-50 transition">Privacy Policy</Link></li>
-                  <li><Link href="/return-policy" className="block px-4 py-2.5 hover:bg-gray-50 transition">Return Policy</Link></li>
-                </ul>
-              )}
-            </div>
-
-            <button type="button" className="transition whitespace-nowrap hover:opacity-75">English</button>
-
-            <button onClick={handleCartClick} className="relative p-1 rounded-full transition hover:opacity-75">
-              <ShoppingCart size={18} style={{ color: navbarTextColor }} />
-              {isClient && cartCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 text-[10px] font-bold text-white bg-blue-600 rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1">
-                  {cartCount}
-                </span>
-              )}
-            </button>
-
+          <div className="hidden lg:flex ml-auto items-center gap-0.5 flex-shrink-0 text-[12px]" style={{ color: navbarTextColor }}>
             {firebaseUser ? (
               <div className="flex items-center gap-2">
               {isSeller && (
                 <button
                   onClick={() => router.push('/store')}
-                  className="inline-flex items-center gap-1 bg-amber-400 hover:bg-amber-300 text-gray-900 text-xs font-semibold px-2.5 py-1 rounded-full transition whitespace-nowrap"
+                  className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[11px] font-semibold transition whitespace-nowrap"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.9)', color: '#7c4a03' }}
                 >
                   Dashboard
                 </button>
@@ -833,7 +923,12 @@ const Navbar = () => {
                 className="relative"
                 ref={userDropdownRef}
               >
-                <button className="inline-flex items-center gap-1.5 hover:text-amber-200 transition" aria-label="User menu" onClick={() => setUserDropdownOpen(prev => !prev)}>
+                <button
+                  className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 transition hover:bg-white/8"
+                  style={{ borderColor: `${navbarTextColor}20` }}
+                  aria-label="User menu"
+                  onClick={() => setUserDropdownOpen(prev => !prev)}
+                >
                   {firebaseUser.photoURL ? (
                     <Image src={firebaseUser.photoURL} alt="User" width={22} height={22} className="rounded-full object-cover ring-1 ring-white/50" />
                   ) : (
@@ -876,13 +971,165 @@ const Navbar = () => {
                   setSignInMode('login');
                   setSignInOpen(true);
                 }}
-                className="inline-flex items-center gap-1 hover:text-amber-200 transition whitespace-nowrap"
+                className="inline-flex items-center gap-1 rounded-full border px-3 py-1.5 transition whitespace-nowrap hover:bg-white/8"
+                style={{ borderColor: `${navbarTextColor}20` }}
                 aria-label="Sign in"
               >
-                <User className="w-[15px] h-[15px] text-white" />
+                <User className="w-[15px] h-[15px]" style={{ color: navbarTextColor }} />
                 <span>Sign In / Register</span>
               </button>
             )}
+
+            <div
+              className="relative"
+              onMouseEnter={() => {
+                if (hoverTimer.current) clearTimeout(hoverTimer.current);
+                setSupportDropdownOpen(true);
+              }}
+              onMouseLeave={() => {
+                if (hoverTimer.current) clearTimeout(hoverTimer.current);
+                hoverTimer.current = setTimeout(() => setSupportDropdownOpen(false), 200);
+              }}
+            >
+              <Link href="/support" className="inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 transition whitespace-nowrap hover:bg-white/8"><LifeBuoy size={13} />Support</Link>
+              {supportDropdownOpen && (
+                <ul
+                  className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-xl border border-gray-200 text-sm text-gray-700 z-50 overflow-hidden"
+                  onMouseEnter={() => {
+                    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+                    setSupportDropdownOpen(true);
+                  }}
+                  onMouseLeave={() => {
+                    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+                    hoverTimer.current = setTimeout(() => setSupportDropdownOpen(false), 200);
+                  }}
+                  role="menu"
+                >
+                  <li><Link href="/faq" className="block px-4 py-2.5 hover:bg-gray-50 transition">FAQ</Link></li>
+                  <li><Link href="/support" className="block px-4 py-2.5 hover:bg-gray-50 transition">Support</Link></li>
+                  <li><Link href="/terms" className="block px-4 py-2.5 hover:bg-gray-50 transition">Terms & Conditions</Link></li>
+                  <li><Link href="/privacy-policy" className="block px-4 py-2.5 hover:bg-gray-50 transition">Privacy Policy</Link></li>
+                  <li><Link href="/return-policy" className="block px-4 py-2.5 hover:bg-gray-50 transition">Return Policy</Link></li>
+                </ul>
+              )}
+            </div>
+
+            <div
+              ref={marketDropdownRef}
+              className="relative"
+              onMouseEnter={() => {
+                if (marketHoverTimer.current) clearTimeout(marketHoverTimer.current);
+                setMarketDropdownOpen(true);
+              }}
+              onMouseLeave={() => {
+                if (marketHoverTimer.current) clearTimeout(marketHoverTimer.current);
+                marketHoverTimer.current = setTimeout(() => setMarketDropdownOpen(false), 200);
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setMarketDropdownOpen((currentValue) => !currentValue)}
+                className="inline-flex items-center gap-2 rounded-full px-2.5 py-1.5 transition whitespace-nowrap hover:bg-white/8"
+              >
+                <span className="text-sm leading-none">{storefrontMarket.flag}</span>
+                <span>{storefrontLanguage === 'ar' ? 'العربية' : 'English'}</span>
+                <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold tracking-[0.08em]">
+                  {storefrontMarket.currency}
+                </span>
+                <ChevronDown size={13} />
+              </button>
+
+              {marketDropdownOpen && (
+                <div
+                  className="absolute right-0 mt-2 w-[280px] overflow-hidden rounded-2xl border border-gray-200 bg-white text-gray-900 shadow-2xl z-50"
+                  onMouseEnter={() => {
+                    if (marketHoverTimer.current) clearTimeout(marketHoverTimer.current);
+                    setMarketDropdownOpen(true);
+                  }}
+                  onMouseLeave={() => {
+                    if (marketHoverTimer.current) clearTimeout(marketHoverTimer.current);
+                    marketHoverTimer.current = setTimeout(() => setMarketDropdownOpen(false), 200);
+                  }}
+                >
+                  <div className="px-4 py-3 border-b border-gray-100">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Language</p>
+                    <div className="mt-3 space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => setStorefrontLanguage('ar')}
+                        className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm transition ${storefrontLanguage === 'ar' ? 'bg-orange-50 text-orange-700' : 'hover:bg-gray-50'}`}
+                      >
+                        <span className={`h-3 w-3 rounded-full border ${storefrontLanguage === 'ar' ? 'border-orange-500 bg-orange-500' : 'border-gray-400'}`} />
+                        <span>العربية</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setStorefrontLanguage('en')}
+                        className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm transition ${storefrontLanguage === 'en' ? 'bg-orange-50 text-orange-700' : 'hover:bg-gray-50'}`}
+                      >
+                        <span className={`h-3 w-3 rounded-full border ${storefrontLanguage === 'en' ? 'border-orange-500 bg-orange-500' : 'border-gray-400'}`} />
+                        <span>English</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="px-4 py-3 border-b border-gray-100">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Shop In</p>
+                    <div className="mt-3 grid gap-2">
+                      {GCC_MARKETS.map((marketOption) => {
+                        const isSelected = marketOption.code === storefrontMarket.code;
+                        return (
+                          <button
+                            key={marketOption.code}
+                            type="button"
+                            onClick={() => setMarketCode(marketOption.code)}
+                            className={`flex items-center justify-between rounded-xl border px-3 py-2 text-left transition ${isSelected ? 'border-orange-200 bg-orange-50 text-orange-700' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}
+                          >
+                            <span className="flex items-center gap-3 min-w-0">
+                              <span className="text-base leading-none">{marketOption.flag}</span>
+                              <span className="min-w-0">
+                                <span className="block text-sm font-semibold leading-tight">{marketOption.countryName}</span>
+                                <span className="block text-xs text-gray-500">{marketOption.currency}</span>
+                              </span>
+                            </span>
+                            {isSelected && <Check size={15} className="shrink-0" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="px-4 py-3 text-sm text-gray-600">
+                    <p className="font-semibold text-gray-800">Currency: {storefrontMarket.currency}</p>
+                    <p className="mt-1">You are shopping in {storefrontMarket.countryName}.</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <Link href="/dashboard/orders" className="inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 transition whitespace-nowrap hover:bg-white/8">
+              <Package size={14} />
+              Orders
+            </Link>
+
+            <Link href="/dashboard/wishlist" className="inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 transition whitespace-nowrap hover:bg-white/8">
+              <HeartIcon size={14} />
+              Wishlist
+            </Link>
+
+            <button
+              onClick={handleCartClick}
+              className="relative inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 transition hover:bg-white/8"
+              aria-label="Cart"
+            >
+              <ShoppingCart size={18} style={{ color: navbarTextColor }} />
+              <span className="text-[13px] font-medium">Cart</span>
+              {isClient && cartCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 text-[10px] font-bold text-white bg-blue-600 rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1">
+                  {cartCount}
+                </span>
+              )}
+            </button>
           </div>
 
 
@@ -1204,6 +1451,25 @@ const Navbar = () => {
           onClose={() => setSignInOpen(false)}
           defaultMode={signInMode}
           bonusMessage="Register now and get 20 coins free bonus!"
+        />
+      )}
+      {showAddressModal && firebaseUser && (
+        <AddressModal
+          open={showAddressModal}
+          setShowAddressModal={setShowAddressModal}
+          addressList={addressList}
+          selectedAddressId={selectedAddressId}
+          onSelectAddress={handleDeliveryAddressSelect}
+          onAddressAdded={(address) => {
+            const nextId = address?._id || address?.id || null;
+            if (nextId) {
+              handleDeliveryAddressSelect(nextId);
+            }
+            dispatch(fetchAddress({ getToken: async () => firebaseUser.getIdToken() }));
+          }}
+          onAddressUpdated={() => {
+            dispatch(fetchAddress({ getToken: async () => firebaseUser.getIdToken() }));
+          }}
         />
       )}
     </div>

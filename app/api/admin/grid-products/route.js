@@ -25,6 +25,7 @@ export async function POST(request) {
           { index: i },
           {
             title: s.title || '',
+            titleAr: s.titleAr || '',
             path: s.path || '',
             productIds: s.productIds || [],
             index: i,
@@ -50,13 +51,13 @@ export async function GET() {
     return NextResponse.json({ sections: _cache.sections });
   }
   await dbConnect();
-  const dbSections = await GridSection.find({}, { title: 1, path: 1, productIds: 1, index: 1 }).sort({ index: 1 }).lean();
+  const dbSections = await GridSection.find({}, { title: 1, titleAr: 1, path: 1, productIds: 1, index: 1 }).sort({ index: 1 }).lean();
   // Always return 3 slots for UI
   const sections = [0, 1, 2].map(i => {
     const s = dbSections.find(x => x.index === i);
     return s
-      ? { title: s.title, path: s.path, productIds: s.productIds }
-      : { title: '', path: '', productIds: [] };
+      ? { title: s.title, titleAr: s.titleAr || '', path: s.path, productIds: s.productIds }
+      : { title: '', titleAr: '', path: '', productIds: [] };
   });
   _cache.sections = sections;
   _cache.lastFetch = now;

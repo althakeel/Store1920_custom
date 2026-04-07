@@ -4,6 +4,7 @@ import { getAuth } from '@/lib/firebase-admin'
 import authSeller from '@/middlewares/authSeller'
 import Store from '@/models/Store'
 import Product from '@/models/Product'
+import { localizeRecord, resolveStorefrontLanguage } from '@/lib/storefrontLanguage'
 
 const DEFAULT_FEATURED_RESPONSE = {
     productIds: [],
@@ -35,6 +36,7 @@ async function getUserIdFromAuthHeader(request) {
 export async function GET(request) {
     try {
         await connectDB()
+        const language = resolveStorefrontLanguage(request)
 
         const { searchParams } = new URL(request.url)
         const includeProducts = searchParams.get('includeProducts') === 'true'
@@ -82,9 +84,9 @@ export async function GET(request) {
         }
 
         const productsRaw = await Product.find({ _id: { $in: productIds } })
-            .select('_id name slug price mrp AED images category inStock stockQuantity')
+            .select('_id name nameAr slug price mrp AED images category inStock stockQuantity')
             .lean()
-        const productMap = new Map(productsRaw.map((product) => [product._id.toString(), product]))
+        const productMap = new Map(productsRaw.map((product) => [product._id.toString(), localizeRecord(product, language, ['name'])]))
         let products = productIds.map((id) => productMap.get(id)).filter(Boolean)
 
         if (limit > 0) {

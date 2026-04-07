@@ -44,10 +44,12 @@ export async function PUT(request, { params }) {
       id,
       {
         name: data.name,
+        nameAr: data.nameAr || '',
         slug: data.slug,
         image: data.image,
         url: data.url,
         description: data.description,
+        descriptionAr: data.descriptionAr || '',
       },
       { new: true }
     );

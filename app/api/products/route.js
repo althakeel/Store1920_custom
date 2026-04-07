@@ -4,6 +4,7 @@ import Rating from "@/models/Rating";
 import Category from "@/models/Category";
 import { NextResponse } from "next/server";
 import { getCachedData, setCachedData, generateCacheKey } from "@/lib/cache";
+import { localizeRecord, resolveStorefrontLanguage } from "@/lib/storefrontLanguage";
 
 function isMongoConnectionError(error) {
     const message = error?.message || '';
@@ -83,6 +84,7 @@ export async function POST(request) {
 
 
 export async function GET(request){
+    const language = resolveStorefrontLanguage(request);
     const { searchParams } = new URL(request.url);
     const sortBy = searchParams.get('sortBy');
     const fetchAll = searchParams.get('all') === 'true';
@@ -145,15 +147,17 @@ export async function GET(request){
             const categoryDoc = await Category.findOne({
                 $or: [
                     { slug: categoryParam },
-                    { name: new RegExp(`^${escapedName}$`, 'i') }
+                    { name: new RegExp(`^${escapedName}$`, 'i') },
+                    { nameAr: new RegExp(`^${escapedName}$`, 'i') }
                 ]
-            }).select('_id name slug').lean();
+            }).select('_id name nameAr slug').lean();
 
             matchStage.$or = [
                 // ObjectId matches (in case category is stored as ObjectId)
                 ...(categoryDoc?._id ? [{ category: categoryDoc._id }, { categories: categoryDoc._id }] : []),
                 // Exact string matches
                 ...(categoryDoc?.name ? [{ category: categoryDoc.name }, { categories: categoryDoc.name }] : []),
+                ...(categoryDoc?.nameAr ? [{ category: categoryDoc.nameAr }, { categories: categoryDoc.nameAr }] : []),
                 ...(categoryDoc?.slug ? [{ category: categoryDoc.slug }, { categories: categoryDoc.slug }] : []),
                 { category: categoryParam },
                 { categories: categoryParam },
@@ -168,9 +172,9 @@ export async function GET(request){
         let products = [];
         try {
             products = await Product.find(matchStage)
-                .select('name slug description shortDescription price mrp AED images category categories sku hasVariants variants attributes fastDelivery freeShippingEligible stockQuantity imageAspectRatio createdAt')
-                .populate('category', 'name slug')
-                .populate('categories', 'name slug')
+                .select('name nameAr slug description descriptionAr shortDescription shortDescriptionAr brand brandAr price mrp AED images category categories sku hasVariants variants attributes fastDelivery freeShippingEligible stockQuantity imageAspectRatio createdAt')
+                .populate('category', 'name nameAr slug')
+                .populate('categories', 'name nameAr slug')
                 .sort({ createdAt: -1 })
                 .skip(offset)
                 .limit(limit)
@@ -179,7 +183,7 @@ export async function GET(request){
         } catch (populateError) {
             console.error('Products populate error:', populateError);
             products = await Product.find(matchStage)
-                .select('name slug description shortDescription price mrp AED images category categories sku hasVariants variants attributes fastDelivery freeShippingEligible stockQuantity imageAspectRatio createdAt')
+                .select('name nameAr slug description descriptionAr shortDescription shortDescriptionAr brand brandAr price mrp AED images category categories sku hasVariants variants attributes fastDelivery freeShippingEligible stockQuantity imageAspectRatio createdAt')
                 .sort({ createdAt: -1 })
                 .skip(offset)
                 .limit(limit)
@@ -188,16 +192,29 @@ export async function GET(request){
         }
 
         // Normalize category/categories and calculate discount
-        products = products.map(p => ({
-            ...p,
-            category: p.category?.name || p.category || null,
-            categories: Array.isArray(p.categories) 
-                ? p.categories.map(cat => cat?.name || cat)
+        products = products.map((product) => {
+            const localizedProduct = localizeRecord(product, language, [
+                'name',
+                'description',
+                'shortDescription',
+                'brand',
+            ]);
+
+            return {
+            ...localizedProduct,
+            category: product.category && typeof product.category === 'object'
+                ? (language === 'ar' && product.category.nameAr ? product.category.nameAr : (product.category.name || product.category.slug || null))
+                : (product.category || null),
+            categories: Array.isArray(product.categories)
+                ? product.categories.map((cat) => {
+                    if (!cat || typeof cat !== 'object') return cat;
+                    return language === 'ar' && cat.nameAr ? cat.nameAr : (cat.name || cat.slug || cat);
+                })
                 : [],
-            discount: (p.AED && p.price && p.AED > p.price) 
-                ? Math.round(((p.AED - p.price) / p.AED) * 100)
+            discount: (product.AED && product.price && product.AED > product.price) 
+                ? Math.round(((product.AED - product.price) / product.AED) * 100)
                 : null
-        }));
+        }});
 
         // FIX N+1: Batch fetch all ratings in ONE query
         const ratingsMap = {};

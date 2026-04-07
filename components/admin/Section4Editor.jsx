@@ -8,6 +8,7 @@ import { toast } from 'react-hot-toast'
 export default function Section4Editor({ section, onSave, onClose }) {
   const [formData, setFormData] = useState({
     title: section?.title || '',
+    titleAr: section?.titleAr || '',
     category: section?.category || '',
     gridSize: section?.gridSize || 6,
     products: section?.products || [],
@@ -156,6 +157,18 @@ export default function Section4Editor({ section, onSave, onClose }) {
               onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               placeholder="e.g., Fashion's Top Deals"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">Section Title (Arabic)</label>
+            <input
+              type="text"
+              value={formData.titleAr}
+              onChange={(e) => setFormData(prev => ({ ...prev, titleAr: e.target.value }))}
+              dir="rtl"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              placeholder="عنوان القسم بالعربية"
             />
           </div>
 

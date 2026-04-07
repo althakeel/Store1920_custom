@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Product from '@/models/Product';
+import { localizeRecord, resolveStorefrontLanguage } from '@/lib/storefrontLanguage';
 
 const MAX_FBT_PRODUCTS = 10;
 
@@ -25,6 +26,7 @@ const hasPositiveStock = (p) => {
 export async function GET(request, { params }) {
   try {
     await dbConnect();
+    const language = resolveStorefrontLanguage(request);
     
     // Handle async params in Next.js 15
     const resolvedParams = await params;
@@ -53,7 +55,7 @@ export async function GET(request, { params }) {
     // Fetch the FBT products and filter out invalid references
     const rawFbtProducts = await Product.find({
       _id: { $in: product.fbtProductIds }
-    }).select('name price images slug hasVariants variants inStock stockQuantity');
+    }).select('name nameAr price images slug hasVariants variants inStock stockQuantity');
 
     const byId = new Map(rawFbtProducts.map((p) => [String(p._id), p]));
     const fbtProducts = product.fbtProductIds
@@ -64,7 +66,7 @@ export async function GET(request, { params }) {
 
     return NextResponse.json({
       enableFBT: product.enableFBT && fbtProducts.length > 0,
-      products: fbtProducts,
+      products: fbtProducts.map((fbtProduct) => localizeRecord(fbtProduct.toObject ? fbtProduct.toObject() : fbtProduct, language, ['name'])),
       bundlePrice: product.fbtBundlePrice,
       bundleDiscount: product.fbtBundleDiscount || 0
     });

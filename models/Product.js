@@ -2,11 +2,15 @@ import mongoose from "mongoose";
 
 const ProductSchema = new mongoose.Schema({
   name: String,
+  nameAr: { type: String, default: '' },
   legacySourceId: { type: String, default: null, index: true },
   slug: { type: String, unique: true },
   brand: { type: String, default: '' },
+  brandAr: { type: String, default: '' },
   description: String,
+  descriptionAr: { type: String, default: '' },
   shortDescription: String,
+  shortDescriptionAr: { type: String, default: '' },
   AED: Number,
   price: Number,
   costPrice: { type: Number, default: 0 }, // Actual cost/purchase price for profit calculation

@@ -18,10 +18,12 @@ export default function CategoriesManager() {
 
   const [formData, setFormData] = useState({
     name: '',
+    nameAr: '',
     slug: '',
     image: '',
     url: '',
     description: '',
+    descriptionAr: '',
   });
 
   const [imageFile, setImageFile] = useState(null);
@@ -138,7 +140,7 @@ export default function CategoriesManager() {
         toast.success('Category created');
       }
 
-      setFormData({ name: '', slug: '', image: '', url: '', description: '' });
+      setFormData({ name: '', nameAr: '', slug: '', image: '', url: '', description: '', descriptionAr: '' });
       setImageFile(null);
       setImagePreview('');
       setShowForm(false);
@@ -154,10 +156,12 @@ export default function CategoriesManager() {
   const handleEdit = (category) => {
     setFormData({
       name: category.name,
+      nameAr: category.nameAr || '',
       slug: category.slug,
       image: category.image,
       url: category.url,
       description: category.description || '',
+      descriptionAr: category.descriptionAr || '',
     });
     setImagePreview(category.image);
     setEditingId(category._id);
@@ -183,7 +187,7 @@ export default function CategoriesManager() {
   const handleCancel = () => {
     setShowForm(false);
     setEditingId(null);
-    setFormData({ name: '', slug: '', image: '', url: '', description: '' });
+    setFormData({ name: '', nameAr: '', slug: '', image: '', url: '', description: '', descriptionAr: '' });
     setImageFile(null);
     setImagePreview('');
   };
@@ -229,6 +233,20 @@ export default function CategoriesManager() {
                   />
                 </div>
 
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Category Name (Arabic)
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.nameAr}
+                    onChange={(e) => setFormData(prev => ({ ...prev, nameAr: e.target.value }))}
+                    placeholder="مثال: أزياء نسائية"
+                    dir="rtl"
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+
                 {/* Slug */}
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-2">
@@ -270,6 +288,20 @@ export default function CategoriesManager() {
                     onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
                     placeholder="Optional description"
                     rows="3"
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Description (Arabic)
+                  </label>
+                  <textarea
+                    value={formData.descriptionAr}
+                    onChange={(e) => setFormData(prev => ({ ...prev, descriptionAr: e.target.value }))}
+                    placeholder="وصف القسم باللغة العربية"
+                    rows="3"
+                    dir="rtl"
                     className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                   />
                 </div>

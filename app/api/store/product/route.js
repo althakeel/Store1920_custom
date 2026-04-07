@@ -71,7 +71,9 @@ export async function POST(request) {
 
         // FormData successfully parsed - proceed with multipart/form-data path
         const name = formData.get("name");
+        const nameAr = formData.get("nameAr") || '';
         const description = formData.get("description");
+        const descriptionAr = formData.get("descriptionAr") || '';
         const category = formData.get("category"); // Kept for backward compatibility
         const categoriesRaw = formData.get("categories"); // New: JSON array of category IDs
         
@@ -83,6 +85,10 @@ export async function POST(request) {
         });
         
         const sku = formData.get("sku") || null;
+        const brand = formData.get("brand") || '';
+        const brandAr = formData.get("brandAr") || '';
+        const shortDescriptionRaw = formData.get("shortDescription");
+        const shortDescriptionArRaw = formData.get("shortDescriptionAr");
         const images = formData.getAll("images");
         const stockQuantity = formData.get("stockQuantity") ? Number(formData.get("stockQuantity")) : 0;
         // New: variants support
@@ -194,6 +200,7 @@ export async function POST(request) {
         // Parse attributes optionally
         let attributes = {};
         let shortDescription = null;
+        let shortDescriptionAr = shortDescriptionArRaw || '';
         if (attributesRaw) {
             try {
                 attributes = JSON.parse(attributesRaw) || {};
@@ -206,6 +213,10 @@ export async function POST(request) {
             }
         }
 
+        if (typeof shortDescriptionRaw === 'string' && shortDescriptionRaw.trim()) {
+            shortDescription = shortDescriptionRaw;
+        }
+
         console.log('DEBUG: About to create product with categories:', categories);
         console.log('DEBUG: categories isArray?', Array.isArray(categories));
         console.log('DEBUG: categories length:', categories.length);
@@ -213,9 +224,14 @@ export async function POST(request) {
         
         const product = await Product.create({
             name,
+            nameAr,
             slug,
+            brand,
+            brandAr,
             description,
+            descriptionAr,
             shortDescription,
+            shortDescriptionAr,
             AED: finalAED,
             price: finalPrice,
             category: categories[0], // Keep first category for backward compatibility
@@ -350,10 +366,16 @@ export async function PUT(request) {
         console.log('PUT /api/store/product formData:', debugFormData);
         const productId = formData.get("productId");
         const name = formData.get("name");
+        const nameAr = formData.get("nameAr") || undefined;
         const description = formData.get("description");
+        const descriptionAr = formData.get("descriptionAr") || undefined;
         const category = formData.get("category"); // Kept for backward compatibility
         const categoriesRaw = formData.get("categories"); // New: JSON array of category IDs
         const sku = formData.get("sku");
+        const brand = formData.get("brand") || undefined;
+        const brandAr = formData.get("brandAr") || undefined;
+        const shortDescriptionRaw = formData.get("shortDescription");
+        const shortDescriptionArRaw = formData.get("shortDescriptionAr");
         const images = formData.getAll("images");
         const stockQuantity = formData.get("stockQuantity") ? Number(formData.get("stockQuantity")) : undefined;
         // Variants support
@@ -421,7 +443,8 @@ export async function PUT(request) {
             if (AED !== undefined) finalAED = AED;
         }
 
-        let shortDescription = product.shortDescription;
+        let shortDescription = typeof shortDescriptionRaw === 'string' ? shortDescriptionRaw : product.shortDescription;
+        let shortDescriptionAr = typeof shortDescriptionArRaw === 'string' ? shortDescriptionArRaw : product.shortDescriptionAr;
         if (attributesRaw) {
             try {
                 attributes = JSON.parse(attributesRaw) || attributes;
@@ -462,8 +485,13 @@ export async function PUT(request) {
         // If slug is provided and changed, check uniqueness
         let updateData = {
             name,
+            ...(nameAr !== undefined ? { nameAr } : {}),
             description,
+            ...(descriptionAr !== undefined ? { descriptionAr } : {}),
             shortDescription,
+            shortDescriptionAr,
+            ...(brand !== undefined ? { brand } : {}),
+            ...(brandAr !== undefined ? { brandAr } : {}),
             AED: finalAED,
             price: finalPrice,
             category: categories[0], // Keep first category for backward compatibility
