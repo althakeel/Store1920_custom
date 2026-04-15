@@ -227,6 +227,62 @@ const ProductCard = ({ product }) => {
           />
         )}
 
+        {itemQuantity > 0 ? (
+          <div
+            className="absolute bottom-3 right-3 z-20 inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 shadow-md"
+            style={{ backgroundColor: '#2563eb' }}
+          >
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                dispatch(removeFromCart({ productId: product._id }))
+                dispatch(uploadCart({ getToken }))
+              }}
+              className="inline-flex items-center justify-center text-white/95 hover:opacity-80 transition"
+              title="Remove"
+            >
+              <Trash2 size={14} />
+            </button>
+            <span className="min-w-[18px] text-center text-xs font-semibold text-white">{itemQuantity}</span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                dispatch(addToCart({ productId: product._id }))
+                dispatch(uploadCart({ getToken }))
+              }}
+              className="inline-flex items-center justify-center text-white/95 hover:opacity-80 transition"
+              title="Add more"
+            >
+              <Plus size={14} />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={handleAddToCart}
+            disabled={isOutOfStock}
+            className='absolute bottom-3 right-3 z-20 inline-flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-[10px] border shadow-md transition-all duration-300 disabled:cursor-not-allowed'
+            style={{
+              backgroundColor: isOutOfStock ? '#e5e7eb' : 'rgba(255,255,255,0.95)',
+              borderColor: '#d1d5db'
+            }}
+            onMouseEnter={(e) => {
+              if (isOutOfStock) return
+              e.currentTarget.style.backgroundColor = '#f3f4f6'
+            }}
+            onMouseLeave={(e) => {
+              if (isOutOfStock) return
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.95)'
+            }}
+            aria-label={t('common.addToCart')}
+          >
+            <Plus size={16} className={isOutOfStock ? 'text-gray-400' : 'text-slate-600'} strokeWidth={2.4} />
+          </button>
+        )}
+
         <div className="absolute inset-x-0 bottom-0 z-10 h-16 sm:h-20 bg-gradient-to-t from-black/45 via-black/15 to-transparent pointer-events-none" />
       </div>
 
@@ -255,62 +311,6 @@ const ProductCard = ({ product }) => {
                 </span>
               )}
             </div>
-
-            {itemQuantity > 0 ? (
-              <div
-                className="relative z-20 inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 shadow-md flex-shrink-0"
-                style={{ backgroundColor: '#2563eb' }}
-              >
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    dispatch(removeFromCart({ productId: product._id }))
-                    dispatch(uploadCart({ getToken }))
-                  }}
-                  className="inline-flex items-center justify-center text-white/95 hover:opacity-80 transition"
-                  title="Remove"
-                >
-                  <Trash2 size={14} />
-                </button>
-                <span className="min-w-[18px] text-center text-xs font-semibold text-white">{itemQuantity}</span>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    dispatch(addToCart({ productId: product._id }))
-                    dispatch(uploadCart({ getToken }))
-                  }}
-                  className="inline-flex items-center justify-center text-white/95 hover:opacity-80 transition"
-                  title="Add more"
-                >
-                  <Plus size={14} />
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={handleAddToCart}
-                disabled={isOutOfStock}
-                className='relative z-20 inline-flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-[10px] border shadow-md transition-all duration-300 flex-shrink-0 disabled:cursor-not-allowed'
-                style={{
-                  backgroundColor: isOutOfStock ? '#e5e7eb' : 'rgba(255,255,255,0.95)',
-                  borderColor: '#d1d5db'
-                }}
-                onMouseEnter={(e) => {
-                  if (isOutOfStock) return
-                  e.currentTarget.style.backgroundColor = '#f3f4f6'
-                }}
-                onMouseLeave={(e) => {
-                  if (isOutOfStock) return
-                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.95)'
-                }}
-                aria-label={t('common.addToCart')}
-              >
-                <Plus size={16} className={isOutOfStock ? 'text-gray-400' : 'text-slate-600'} strokeWidth={2.4} />
-              </button>
-            )}
           </div>
 
           <div className="flex items-center min-w-0">

@@ -302,6 +302,101 @@ const HorizontalSlider = ({ section, router, allProducts }) => {
                         </div>
                       )}
 
+                      {(() => {
+                        const productId = product._id || product.id
+                        const rawCartEntry = cartItems[productId] || cartItems[String(productId)] || 0
+                        const count = typeof rawCartEntry === 'number'
+                          ? rawCartEntry
+                          : (rawCartEntry?.quantity || 0)
+                        const isOutOfStock = isOutOfStockProduct(product)
+
+                        if (isOutOfStock) {
+                          return (
+                            <div className="absolute bottom-3 right-3 z-20 flex-shrink-0 px-3 py-1.5 rounded-full bg-gray-200 text-gray-600 text-xs font-semibold">
+                              Out of Stock
+                            </div>
+                          )
+                        }
+
+                        if (count > 0) {
+                          return (
+                            <div
+                              className="absolute bottom-3 right-3 z-20 inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 shadow-md"
+                              style={{ backgroundColor: '#2563eb' }}
+                            >
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  dispatch(removeFromCart({ productId: String(productId) }))
+                                  if (getToken && typeof getToken === 'function') {
+                                    dispatch(uploadCart({ getToken })).catch(() => {
+                                      // Cart sync failed silently
+                                    })
+                                  }
+                                }}
+                                className="inline-flex items-center justify-center text-white/95 hover:opacity-80 transition"
+                                title="Remove"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                              <span className="min-w-[18px] text-center text-xs font-semibold text-white">{count}</span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  dispatch(addToCart({ productId: String(productId) }))
+                                  if (getToken && typeof getToken === 'function') {
+                                    dispatch(uploadCart({ getToken })).catch(() => {
+                                      // Cart sync failed silently
+                                    })
+                                  }
+                                }}
+                                className="inline-flex items-center justify-center text-white/95 hover:opacity-80 transition"
+                                title="Add more"
+                              >
+                                <Plus size={14} />
+                              </button>
+                            </div>
+                          )
+                        }
+
+                        return (
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+
+                              if (!productId) {
+                                toast.error('Cannot add product - no ID')
+                                return
+                              }
+
+                              dispatch(addToCart({ productId: String(productId) }))
+                              toast.success('Added to cart')
+
+                              if (getToken && typeof getToken === 'function') {
+                                dispatch(uploadCart({ getToken })).catch(() => {
+                                  // Cart sync failed silently
+                                })
+                              }
+                            }}
+                            className="absolute bottom-3 right-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-[10px] border border-[#d1d5db] bg-white/95 shadow-md transition-all active:scale-95"
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = '#f3f4f6'
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.95)'
+                            }}
+                            aria-label="Add to cart"
+                          >
+                            <Plus size={16} className="text-slate-600" strokeWidth={2.4} />
+                          </button>
+                        )
+                      })()}
+
                     </>
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-gray-400">
@@ -360,102 +455,6 @@ const HorizontalSlider = ({ section, router, allProducts }) => {
                         ) : null
                       })()}
                     </div>
-
-                    {/* Out of stock / Add to cart */}
-                    {(() => {
-                      const productId = product._id || product.id
-                      const rawCartEntry = cartItems[productId] || cartItems[String(productId)] || 0
-                      const count = typeof rawCartEntry === 'number'
-                        ? rawCartEntry
-                        : (rawCartEntry?.quantity || 0)
-                      const isOutOfStock = isOutOfStockProduct(product)
-
-                      if (isOutOfStock) {
-                        return (
-                          <div className="flex-shrink-0 px-3 py-1.5 rounded-full bg-gray-200 text-gray-600 text-xs font-semibold">
-                            Out of Stock
-                          </div>
-                        )
-                      }
-
-                      if (count > 0) {
-                        return (
-                          <div
-                            className="relative flex-shrink-0 inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 shadow-md"
-                            style={{ backgroundColor: '#2563eb' }}
-                          >
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault()
-                                e.stopPropagation()
-                                dispatch(removeFromCart({ productId: String(productId) }))
-                                if (getToken && typeof getToken === 'function') {
-                                  dispatch(uploadCart({ getToken })).catch(() => {
-                                    // Cart sync failed silently
-                                  })
-                                }
-                              }}
-                              className="inline-flex items-center justify-center text-white/95 hover:opacity-80 transition"
-                              title="Remove"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                            <span className="min-w-[18px] text-center text-xs font-semibold text-white">{count}</span>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault()
-                                e.stopPropagation()
-                                dispatch(addToCart({ productId: String(productId) }))
-                                if (getToken && typeof getToken === 'function') {
-                                  dispatch(uploadCart({ getToken })).catch(() => {
-                                    // Cart sync failed silently
-                                  })
-                                }
-                              }}
-                              className="inline-flex items-center justify-center text-white/95 hover:opacity-80 transition"
-                              title="Add more"
-                            >
-                              <Plus size={14} />
-                            </button>
-                          </div>
-                        )
-                      }
-
-                      return (
-                        <button
-                          onClick={(e) => {
-                            e.preventDefault()
-                            e.stopPropagation()
-
-                            if (!productId) {
-                              toast.error('Cannot add product - no ID')
-                              return
-                            }
-
-                            dispatch(addToCart({ productId: String(productId) }))
-                            toast.success('Added to cart')
-
-                            if (getToken && typeof getToken === 'function') {
-                              dispatch(uploadCart({ getToken })).catch(() => {
-                                // Cart sync failed silently
-                              })
-                            }
-                          }}
-                          className="relative flex-shrink-0 inline-flex h-9 w-9 items-center justify-center rounded-[10px] border border-[#d1d5db] bg-white/95 shadow-md transition-all active:scale-95"
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = '#f3f4f6'
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.95)'
-                          }}
-                          aria-label="Add to cart"
-                        >
-                          <Plus size={16} className="text-slate-600" strokeWidth={2.4} />
-                        </button>
-                      )
-                    })()}
                   </div>
                 </div>
               </Link>

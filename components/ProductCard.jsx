@@ -413,7 +413,7 @@ const ProductCard = ({ product }) => {
                 </div>
 
                 <div className="flex flex-1 flex-col px-4 pb-4 pt-3">
-                    <h3 className="min-h-[66px] text-[15px] font-semibold leading-6 text-slate-900 line-clamp-3">
+                    <h3 className="min-h-[48px] text-[15px] font-semibold leading-6 text-slate-900 line-clamp-2">
                         {displayName}
                     </h3>
 
@@ -443,22 +443,22 @@ const ProductCard = ({ product }) => {
                         </div>
                     )}
 
-                    <div className="mt-2 min-h-[20px] text-[13px] text-slate-500">
-                        {supportLabel ? (
+                    {supportLabel ? (
+                        <div className="mt-2 text-[13px] text-slate-500">
                             <span className="inline-flex items-center gap-1.5">
                                 <ShoppingCartIcon size={12} className="text-[#5b89ff]" />
                                 <span>{supportLabel}</span>
                             </span>
-                        ) : null}
-                    </div>
+                        </div>
+                    ) : null}
 
-                    <div className="mt-auto pt-3">
-                        {footerTag ? (
+                    {footerTag ? (
+                        <div className="mt-3">
                             <span className="inline-flex rounded-[7px] bg-[#ffeb3b] px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.02em] text-[#1f2b52]">
                                 {footerTag}
                             </span>
-                        ) : null}
-                    </div>
+                        </div>
+                    ) : null}
                 </div>
             </div>
         </Link>
