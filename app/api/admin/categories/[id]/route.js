@@ -2,7 +2,6 @@ import dbConnect from '@/lib/mongodb';
 import Category from '@/models/Category';
 import { getAuth } from '@/lib/firebase-admin';
 import { NextResponse } from 'next/server';
-import mongoose from 'mongoose';
 
 function parseAuthHeader(req) {
   const auth = req.headers.get('authorization') || req.headers.get('Authorization');
@@ -30,7 +29,7 @@ export async function PUT(request, { params }) {
     if (data.slug) {
       const existingCategory = await Category.findOne({
         slug: data.slug,
-        _id: { $ne: new mongoose.Types.ObjectId(id) },
+        _id: { $ne: id },
       });
       if (existingCategory) {
         return NextResponse.json(
@@ -50,6 +49,7 @@ export async function PUT(request, { params }) {
         url: data.url,
         description: data.description,
         descriptionAr: data.descriptionAr || '',
+        parentId: data.parentId || null,
       },
       { new: true }
     );

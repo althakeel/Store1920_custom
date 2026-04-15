@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/useAuth';
 export const dynamic = 'force-dynamic'
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { useDispatch } from "react-redux"
 import { fetchProducts as fetchProductsAction } from "@/lib/features/product/productSlice"
 import { toast } from "react-hot-toast"

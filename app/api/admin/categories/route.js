@@ -53,6 +53,7 @@ export async function POST(request) {
       url: data.url,
       description: data.description,
       descriptionAr: data.descriptionAr || '',
+      parentId: data.parentId || null,
     });
 
     await category.save();

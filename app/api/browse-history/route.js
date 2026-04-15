@@ -37,7 +37,7 @@ export async function GET(request) {
         ...h,
         product: product || null
       };
-    }).filter(h => h.product !== null); // Filter out deleted products
+    }).filter(h => h.product !== null && h.product.name); // Filter out deleted products and invalid entries
 
     return NextResponse.json({ 
       success: true, 

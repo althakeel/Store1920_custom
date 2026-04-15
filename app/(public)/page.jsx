@@ -12,6 +12,7 @@ import HeroBannerSlider from "@/components/HeroBannerSlider";
 import RecentSearchProducts from "@/components/RecentSearchProducts";
 import RecommendedProducts from "@/components/RecommendedProducts";
 import ShopShowcaseSection from "@/components/ShopShowcaseSection";
+import CategoryInterestSection from "@/components/CategoryInterestSection";
 
 
 // Below-the-fold components - lazy load
@@ -47,6 +48,7 @@ export default function Home() {
     const [section4Data, setSection4Data] = useState([]);
     const [homeSections, setHomeSections] = useState([]);
     const [sectionsLoading, setSectionsLoading] = useState(true);
+    const [exploreInterestsEnabled, setExploreInterestsEnabled] = useState(true);
 
     // Track customer location
     useLocationTracking();
@@ -55,16 +57,23 @@ export default function Home() {
         const fetchData = async () => {
             setSectionsLoading(true);
             try {
-                const [featuredRes, homeSectionsRes] = await Promise.all([
+                const [featuredRes, homeSectionsRes, appearanceRes] = await Promise.all([
                     axios.get('/api/public/featured-sections').catch(() => ({ data: { sections: [] } })),
                     axios.get('/api/admin/home-sections').catch(() => ({ data: { sections: [] } })),
+                    axios.get('/api/store/appearance/sections/public').catch(() => ({ data: {} })),
                 ]);
                 setSection4Data(featuredRes.data.sections || []);
                 setHomeSections(homeSectionsRes.data.sections || []);
+                setExploreInterestsEnabled(
+                    typeof appearanceRes?.data?.exploreYourInterests?.enabled === 'boolean'
+                        ? appearanceRes.data.exploreYourInterests.enabled
+                        : true
+                );
             } catch (error) {
                 console.error('Error fetching data:', error);
                 setSection4Data([]);
                 setHomeSections([]);
+                setExploreInterestsEnabled(true);
             } finally {
                 setSectionsLoading(false);
             }
@@ -106,6 +115,8 @@ export default function Home() {
     <Section4 sections={section4Data} loading={homeDataLoading} />
   </div>
 )}
+
+                {<CategoryInterestSection />}
 
                 {/* Personalized sections for returning customers */}
                 <RecentSearchProducts />

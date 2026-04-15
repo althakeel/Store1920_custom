@@ -320,8 +320,17 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '' }
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4">
       <div 
-        className="bg-white w-full sm:max-w-lg max-h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+        className="bg-white w-full sm:max-w-lg max-h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col relative"
       >
+        <button
+          type="button"
+          className="absolute top-3 right-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-gray-700 shadow-md ring-1 ring-black/10 transition hover:bg-white hover:text-black"
+          onClick={onClose}
+          aria-label="Close"
+        >
+          <X size={20} />
+        </button>
+
         {/* Top Section - Image */}
         <div className="w-full bg-gradient-to-br from-amber-200 via-amber-100 to-yellow-100 relative overflow-hidden h-32 sm:h-40 flex-shrink-0">
           {/* Image Container - Continuous Scrolling */}
@@ -384,14 +393,6 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '' }
               -ms-overflow-style: none;
             }
           `}</style>
-          <button
-            className="absolute top-2 right-2 p-1 rounded-full hover:bg-gray-100"
-            onClick={onClose}
-            aria-label="Close"
-          >
-            <X size={20} />
-          </button>
-
           <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-1">Hala! Let's get started</h2>
           <p className="text-gray-600 text-xs sm:text-sm mb-3 sm:mb-4">Create account or sign in to your account</p>
 

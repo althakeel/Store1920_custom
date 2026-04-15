@@ -3,10 +3,12 @@ import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import Logo from "../assets/logo/logo.png";
+import { useStorefrontI18n } from '@/lib/useStorefrontI18n';
 
 const NAVBAR_APPEARANCE_CACHE_KEY = 'navbarAppearanceCacheV1';
 
 const Footer = () => {
+    const { t } = useStorefrontI18n();
 
     const [footerLogo, setFooterLogo] = useState({
         logoUrl: '',
@@ -88,43 +90,43 @@ const Footer = () => {
 
     const linkSections = [
         {
-            title: "SHOP",
+            title: t('footer.shop'),
             links: [
-                { text: "All Products", path: '/products', icon: null },
-                { text: "Top Selling", path: '/top-selling', icon: null },
-                { text: "New Arrivals", path: '/new', icon: null },
-                { text: "Categories", path: '/categories', icon: null },
+                { text: t('footer.allProducts'), path: '/products', icon: null },
+                { text: t('footer.topSelling'), path: '/top-selling', icon: null },
+                { text: t('footer.newArrivals'), path: '/new', icon: null },
+                { text: t('footer.categories'), path: '/categories', icon: null },
             ]
         },
         {
-            title: "CUSTOMER CARE",
+            title: t('footer.customerCare'),
             links: [
-                { text: "Track Order", path: '/track-order', icon: null },
-                { text: "My Orders", path: '/orders', icon: null },
-                { text: "My Wishlist", path: '/wishlist', icon: null },
-                { text: "FAQ", path: '/faq', icon: null },
-                { text: "Support", path: '/support', icon: null },
+                { text: t('footer.trackOrder'), path: '/track-order', icon: null },
+                { text: t('footer.myOrders'), path: '/orders', icon: null },
+                { text: t('footer.myWishlist'), path: '/wishlist', icon: null },
+                { text: t('footer.faq'), path: '/faq', icon: null },
+                { text: t('footer.support'), path: '/support', icon: null },
             ]
         },
         {
-            title: "LEGAL & INFO",
+            title: t('footer.legalInfo'),
             links: [
-                { text: "Terms & Conditions", path: '/terms-and-conditions', icon: null },
-                { text: "Terms of Sale", path: '/terms-of-sale', icon: null },
-                { text: "Shipping Policy", path: '/shipping-policy', icon: null },
-                { text: "Privacy Policy", path: '/privacy-policy', icon: null },
-                { text: "Cancellation & Refunds", path: '/cancellation-and-refunds', icon: null },
-                { text: "Contact Us", path: '/contact-us', icon: null },
-                { text: "Sitemap", path: '/sitemap', icon: null },
+                { text: t('footer.termsAndConditions'), path: '/terms-and-conditions', icon: null },
+                { text: t('footer.termsOfSale'), path: '/terms-of-sale', icon: null },
+                { text: t('footer.shippingPolicy'), path: '/shipping-policy', icon: null },
+                { text: t('footer.privacyPolicy'), path: '/privacy-policy', icon: null },
+                { text: t('footer.cancellationRefunds'), path: '/cancellation-and-refunds', icon: null },
+                { text: t('footer.contactUs'), path: '/contact-us', icon: null },
+                { text: t('footer.sitemap'), path: '/sitemap', icon: null },
             ]
         },
         {
-            title: "ABOUT Store1920",
+            title: t('footer.aboutStore'),
             links: [
-                { text: "About Us", path: '/about-us', icon: null },
-                { text: "Create Your Store", path: '/create-store', icon: null },
-                { text: "Become a Seller", path: '/create-store', icon: null },
-                { text: "Careers", path: '/careers', icon: null },
+                { text: t('footer.aboutUs'), path: '/about-us', icon: null },
+                { text: t('footer.createYourStore'), path: '/create-store', icon: null },
+                { text: t('footer.becomeSeller'), path: '/create-store', icon: null },
+                { text: t('footer.careers'), path: '/careers', icon: null },
             ]
         }
     ];
@@ -152,7 +154,7 @@ const Footer = () => {
                             />
                         </Link>
                         <p className="text-sm text-slate-400 leading-relaxed mb-6 max-w-sm">
-                            Your ultimate destination for the latest gadgets and electronics. Quality products, fast delivery, and exceptional service.
+                            {t('footer.description')}
                         </p>
                         {/* Contact Info */}
                         <div className="space-y-3 mb-6">
@@ -164,7 +166,7 @@ const Footer = () => {
                             </div>
                             <div className="flex items-center gap-2 text-sm">
                                 <MapPinIcon />
-                                <span className="text-slate-400">United Arab Emirates</span>
+                                <span className="text-slate-400">{t('footer.uae')}</span>
                             </div>
                         </div>
                         {/* Social Icons removed from brand section to avoid duplication */}
@@ -206,7 +208,7 @@ const Footer = () => {
                             ))}
                         </div>
                     <p className="text-sm text-slate-500 text-center w-full">
-    © {new Date().getFullYear()} Store1920. All rights reserved.
+    © {new Date().getFullYear()} Store1920. {t('footer.allRightsReserved')}
 </p>
 
                     </div>

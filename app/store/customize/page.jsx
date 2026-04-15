@@ -13,6 +13,7 @@ import {
   Grid2x2,
   Package,
   Shapes,
+  Compass,
 } from 'lucide-react'
 
 const designPages = [
@@ -84,6 +85,12 @@ const selectionPages = [
     description: 'Select featured products for homepage merchandising.',
     href: '/store/featured-products',
     icon: Package,
+  },
+  {
+    title: 'Explore Interests',
+    description: 'Enable the section and manually choose recommended products.',
+    href: '/store/explore-interests',
+    icon: Compass,
   },
 ]
 

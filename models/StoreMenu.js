@@ -6,6 +6,18 @@ const CategorySchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  systemCategoryId: {
+    type: String,
+    default: null
+  },
+  parentId: {
+    type: String,
+    default: null
+  },
+  parentName: {
+    type: String,
+    default: ''
+  },
   name: {
     type: String,
     required: true
@@ -21,11 +33,17 @@ const CategorySchema = new mongoose.Schema({
   children: [
     new mongoose.Schema({
       id: String,
+      systemCategoryId: { type: String, default: null },
+      parentId: { type: String, default: null },
+      parentName: { type: String, default: '' },
       name: String,
       image: String,
       url: String,
       children: [new mongoose.Schema({
         id: String,
+        systemCategoryId: { type: String, default: null },
+        parentId: { type: String, default: null },
+        parentName: { type: String, default: '' },
         name: String,
         image: String,
         url: String,

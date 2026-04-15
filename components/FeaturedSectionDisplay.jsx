@@ -5,11 +5,13 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useSelector } from 'react-redux';
+import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
 
 export default function FeaturedSectionDisplay({ section }) {
   const scrollRef = useRef(null);
   const products = useSelector(state => state.product.list);
   const [sectionProducts, setSectionProducts] = useState([]);
+  const { market, convertPrice } = useStorefrontMarket();
 
   useEffect(() => {
     // Get products for this section - normalize product IDs for matching
@@ -100,11 +102,11 @@ export default function FeaturedSectionDisplay({ section }) {
                 {/* Price */}
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-lg font-bold text-gray-900">
-                    AED{product.basePrice?.toLocaleString()}
+                    {market.currency}{convertPrice(Number(product.basePrice || product.price || 0)).toLocaleString()}
                   </span>
                   {product.originalPrice && (
                     <span className="text-sm text-gray-500 line-through">
-                      AED{product.originalPrice?.toLocaleString()}
+                      {market.currency}{convertPrice(Number(product.originalPrice || 0)).toLocaleString()}
                     </span>
                   )}
                 </div>

@@ -9,7 +9,8 @@ const DEFAULT_APPEARANCE = {
   dealsOfTheDay: { enabled: true, title: 'Deals of the Day', discount: 50 },
   sitemapCategories: { enabled: true, columnsPerRow: 4 },
   homeMenuCategories: { enabled: true, style: 'grid', itemsPerRow: 5, rows: 2 },
-  navbarMenu: { enabled: true, position: 'top', style: 'horizontal' }
+  navbarMenu: { enabled: true, position: 'top', style: 'horizontal' },
+  exploreYourInterests: { enabled: true, productIds: [] }
 }
 
 async function getUserIdFromRequest(request) {
@@ -42,6 +43,7 @@ function normalizeAppearance(data = {}) {
   const sitemapCategories = data.sitemapCategories || {}
   const homeMenuCategories = data.homeMenuCategories || {}
   const navbarMenu = data.navbarMenu || {}
+  const exploreYourInterests = data.exploreYourInterests || {}
 
   return {
     categorySliders: {
@@ -76,6 +78,21 @@ function normalizeAppearance(data = {}) {
       enabled: typeof navbarMenu.enabled === 'boolean' ? navbarMenu.enabled : DEFAULT_APPEARANCE.navbarMenu.enabled,
       position: ['top', 'bottom', 'sticky'].includes(navbarMenu.position) ? navbarMenu.position : DEFAULT_APPEARANCE.navbarMenu.position,
       style: ['horizontal', 'vertical', 'minimal'].includes(navbarMenu.style) ? navbarMenu.style : DEFAULT_APPEARANCE.navbarMenu.style
+    },
+    exploreYourInterests: {
+      enabled:
+        typeof exploreYourInterests.enabled === 'boolean'
+          ? exploreYourInterests.enabled
+          : DEFAULT_APPEARANCE.exploreYourInterests.enabled,
+      productIds: Array.isArray(exploreYourInterests.productIds)
+        ? Array.from(
+            new Set(
+              exploreYourInterests.productIds
+                .map((id) => String(id || '').trim())
+                .filter(Boolean)
+            )
+          )
+        : DEFAULT_APPEARANCE.exploreYourInterests.productIds
     }
   }
 }
@@ -112,9 +129,15 @@ export async function POST(request) {
     if (!storeId) return NextResponse.json({ error: 'Not authorized' }, { status: 401 })
 
     const body = await request.json()
-    const appearanceSections = normalizeAppearance(body)
 
     await connectDB()
+
+    const existingPreference = await StorePreference.findOne({ storeId }).lean()
+    const mergedPayload = {
+      ...(existingPreference?.appearanceSections || {}),
+      ...(body || {})
+    }
+    const appearanceSections = normalizeAppearance(mergedPayload)
 
     await StorePreference.findOneAndUpdate(
       { storeId },

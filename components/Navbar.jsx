@@ -10,9 +10,6 @@ import { getAuth } from "firebase/auth";
 import Image from 'next/image';
 import axios from "axios";
 import toast from "react-hot-toast";
-import Logo from "../assets/logo/logo.png";
-import LogoWhite from "../assets/logo/logo.png";
-import LogoMobile from "../assets/logo/logo.png";
 import Truck from '../assets/delivery.png';
 import WalletIcon from '../assets/common/wallet.svg';
 import SignInModal from './SignInModal';
@@ -27,6 +24,7 @@ import {
 } from '@/lib/storefrontLanguage';
 import { GCC_MARKETS } from '@/lib/storefrontMarket';
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
+import { translateStaticText } from '@/lib/useStorefrontI18n';
 
 const NAVBAR_SELECTED_ADDRESS_KEY = 'navbarSelectedAddressId';
 
@@ -84,12 +82,13 @@ const Navbar = () => {
   const [marketDropdownOpen, setMarketDropdownOpen] = useState(false);
   const [navbarAppearance, setNavbarAppearance] = useState({
     logoUrl: '',
-    logoWidth: 86,
-    logoHeight: 30,
+    logoWidth: 120,
+    logoHeight: 40,
     backgroundColor: '#8f3404',
   });
   const [navbarAppearanceLoading, setNavbarAppearanceLoading] = useState(true);
   const { market: storefrontMarket, setMarketCode } = useStorefrontMarket();
+  const t = (key, replacements = {}) => translateStaticText(key, storefrontLanguage, replacements);
 
   const getShortName = (value) => {
     const name = (value || '').trim();
@@ -97,34 +96,39 @@ const Navbar = () => {
     return name.length > 6 ? `${name.slice(0, 6)}..` : name;
   };
 
-  // Show sign-in modal automatically on mobile for guest users
-  useEffect(() => {
-    if (typeof window !== 'undefined' && window.innerWidth < 1024 && !firebaseUser) {
-      setSignInOpen(true);
-    }
-  }, [firebaseUser]);
   const [isClient, setIsClient] = useState(false);
   useEffect(() => { setIsClient(true); }, []);
   const router = useRouter();
   const pathname = usePathname();
   const isHomePage = pathname === '/';
   const navbarTextColor = getContrastColor(navbarAppearance.backgroundColor);
-  const navbarLogoSrc = navbarAppearance.logoUrl || LogoWhite;
-  const mobileLogoSrc = navbarAppearance.logoUrl || LogoMobile;
+  const navbarLogoSrc = navbarAppearance.logoUrl && navbarAppearance.logoUrl.trim() ? navbarAppearance.logoUrl : null;
+  const mobileLogoSrc = navbarAppearance.logoUrl && navbarAppearance.logoUrl.trim() ? navbarAppearance.logoUrl : null;
+
+  useEffect(() => {
+    if (!navbarAppearanceLoading) {
+      console.log('[Navbar] Logo Debug:', {
+        navbarAppearance_logoUrl: navbarAppearance.logoUrl || '(empty)',
+        navbarLogoSrc: navbarLogoSrc || '(null)',
+        willShowLogo: !!navbarLogoSrc
+      });
+    }
+  }, [navbarAppearance.logoUrl, navbarLogoSrc, navbarAppearanceLoading]);
+
   const selectedDeliveryAddress = useMemo(() => {
     if (!addressList.length) return null;
     return addressList.find((address) => address?._id === selectedAddressId) || addressList[0] || null;
   }, [addressList, selectedAddressId]);
   const selectedDeliveryLabel = useMemo(() => {
-    if (!firebaseUser) return 'Sign in to choose';
-    if (!selectedDeliveryAddress) return addressList.length ? 'Select address' : 'Add address';
+    if (!firebaseUser) return t('navbar.signInToChoose');
+    if (!selectedDeliveryAddress) return addressList.length ? t('navbar.selectAddress') : t('navbar.addAddress');
 
     const primary = [selectedDeliveryAddress.city, selectedDeliveryAddress.state]
       .filter(Boolean)
       .join(' . ');
 
-    return primary || selectedDeliveryAddress.country || 'Select address';
-  }, [addressList.length, firebaseUser, selectedDeliveryAddress]);
+    return primary || selectedDeliveryAddress.country || t('navbar.selectAddress');
+  }, [addressList.length, firebaseUser, selectedDeliveryAddress, storefrontLanguage]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -134,13 +138,42 @@ const Navbar = () => {
       if (savedAddressId) {
         setSelectedAddressId(savedAddressId);
       }
-      const savedLanguage = window.localStorage.getItem(STOREFRONT_LANGUAGE_KEY);
-      if (savedLanguage === 'ar' || savedLanguage === 'en') {
-        setStorefrontLanguage(savedLanguage);
-      }
     } catch {
       // Ignore storage read failures.
     }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const readLanguage = () => {
+      try {
+        const savedLanguage = window.localStorage.getItem(STOREFRONT_LANGUAGE_KEY);
+        setStorefrontLanguage(savedLanguage === 'ar' ? 'ar' : 'en');
+      } catch {
+        setStorefrontLanguage('en');
+      }
+    };
+
+    const handleLanguageChange = (event) => {
+      const nextLanguage = event?.detail?.language;
+      setStorefrontLanguage(nextLanguage === 'ar' ? 'ar' : 'en');
+    };
+
+    const handleStorage = (event) => {
+      if (!event || event.key === STOREFRONT_LANGUAGE_KEY) {
+        readLanguage();
+      }
+    };
+
+    readLanguage();
+    window.addEventListener(STOREFRONT_LANGUAGE_EVENT, handleLanguageChange);
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      window.removeEventListener(STOREFRONT_LANGUAGE_EVENT, handleLanguageChange);
+      window.removeEventListener('storage', handleStorage);
+    };
   }, []);
 
   useEffect(() => {
@@ -164,27 +197,47 @@ const Navbar = () => {
   useEffect(() => {
     const fetchNavbarAppearance = async () => {
       try {
-        let token = await auth.currentUser?.getIdToken();
-        if (!token) {
-          token = await auth.currentUser?.getIdToken(true);
-        }
-        const response = await fetch('/api/store/navbar-menu', {
+        // Add timestamp to bypass any caching
+        const cacheBuster = `?t=${Date.now()}`;
+
+        const response = await fetch('/api/store/navbar-menu' + cacheBuster, {
           cache: 'no-store',
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          // Always use public storefront navbar appearance.
+          // Passing auth headers can switch to user-scoped settings and clear the logo.
+          headers: {},
+          next: { revalidate: 0 }
         });
-        if (!response.ok) return;
+        if (!response.ok) {
+          console.warn('[Navbar] API returned status:', response.status);
+          return;
+        }
         const data = await response.json();
+        console.log('[Navbar] Backend Response:', { 
+          logoUrl: data.logoUrl || '(empty - will use default)', 
+          logoWidth: data.logoWidth, 
+          logoHeight: data.logoHeight, 
+          backgroundColor: data.backgroundColor 
+        });
+        
         const nextAppearance = {
            logoUrl: data.logoUrl || '',
-           logoWidth: data.logoWidth || 86,
-           logoHeight: data.logoHeight || 30,
+           logoWidth: data.logoWidth ?? 120,
+           logoHeight: data.logoHeight ?? 40,
            backgroundColor: data.backgroundColor || '#8f3404',
         };
+        
         setNavbarAppearance(nextAppearance);
+        console.log('[Navbar] Applied Appearance:', { 
+          usingCustomLogo: !!data.logoUrl, 
+          dims: `${nextAppearance.logoWidth}x${nextAppearance.logoHeight}` 
+        });
       } catch (error) {
-        if (process.env.NODE_ENV !== 'production') {
-          console.warn('Failed to load navbar appearance:', error);
+        // Ignore AbortError on cleanup
+        if (error?.name === 'AbortError' || error?.message?.includes('abort')) {
+          console.log('[Navbar] Fetch cancelled (cleanup)');
+          return;
         }
+        console.error('[Navbar] Failed to load appearance:', error?.message || error);
       } finally {
         setNavbarAppearanceLoading(false);
       }
@@ -194,12 +247,25 @@ const Navbar = () => {
 
     const handleNavbarAppearanceUpdate = (event) => {
       const detail = event?.detail || {};
+      console.log('[Navbar] Event received:', { logoUrl: detail.logoUrl || '(empty)', source: 'navbarAppearanceUpdated' });
+      
+      // Only apply event if it has meaningful data (preserve existing logo if empty event received)
+      const hasValidLogoUrl = typeof detail.logoUrl === 'string' && detail.logoUrl.trim();
+      const hasValidDimensions = (typeof detail.logoWidth === 'number' && detail.logoWidth > 0) || 
+                                 (typeof detail.logoHeight === 'number' && detail.logoHeight > 0);
+      const hasValidBgColor = typeof detail.backgroundColor === 'string' && detail.backgroundColor.trim();
+      
+      if (!hasValidLogoUrl && !hasValidDimensions && !hasValidBgColor) {
+        console.log('[Navbar] Ignoring empty appearance update event (preserving current logo)');
+        return;
+      }
+      
       setNavbarAppearance((prev) => {
         return {
-          logoUrl: typeof detail.logoUrl === 'string' ? detail.logoUrl : prev.logoUrl,
-          logoWidth: typeof detail.logoWidth === 'number' ? detail.logoWidth : prev.logoWidth,
-          logoHeight: typeof detail.logoHeight === 'number' ? detail.logoHeight : prev.logoHeight,
-          backgroundColor: typeof detail.backgroundColor === 'string' ? detail.backgroundColor : prev.backgroundColor,
+          logoUrl: hasValidLogoUrl ? detail.logoUrl : prev.logoUrl,
+          logoWidth: (typeof detail.logoWidth === 'number' && detail.logoWidth > 0) ? detail.logoWidth : prev.logoWidth,
+          logoHeight: (typeof detail.logoHeight === 'number' && detail.logoHeight > 0) ? detail.logoHeight : prev.logoHeight,
+          backgroundColor: hasValidBgColor ? detail.backgroundColor : prev.backgroundColor,
         };
       });
       setNavbarAppearanceLoading(false);
@@ -363,18 +429,31 @@ const Navbar = () => {
   }, []);
 
   // Product names for animated placeholder
-  const productNames = [
-    "Wireless Headphones",
-    "Smart Watch",
-    "Running Shoes",
-    "Coffee Maker",
-    "Gaming Mouse",
-    "Yoga Mat",
-    "Sunglasses",
-    "Laptop Bag",
-    "Water Bottle",
-    "Phone Case"
-  ];
+  const productNames = storefrontLanguage === 'ar'
+    ? [
+        'سماعات لاسلكية',
+        'ساعة ذكية',
+        'حذاء رياضي',
+        'ماكينة قهوة',
+        'فأرة ألعاب',
+        'حصيرة يوغا',
+        'نظارات شمسية',
+        'حقيبة لابتوب',
+        'زجاجة ماء',
+        'غطاء هاتف',
+      ]
+    : [
+        'Wireless Headphones',
+        'Smart Watch',
+        'Running Shoes',
+        'Coffee Maker',
+        'Gaming Mouse',
+        'Yoga Mat',
+        'Sunglasses',
+        'Laptop Bag',
+        'Water Bottle',
+        'Phone Case',
+      ];
 
   // Typewriter effect for search placeholder
   useEffect(() => {
@@ -594,6 +673,17 @@ const Navbar = () => {
       });
       setWishlistCount(Number(data?.count) || 0);
     } catch (error) {
+      const isRequestCanceled =
+        axios.isCancel(error) ||
+        error?.name === 'CanceledError' ||
+        error?.name === 'AbortError' ||
+        error?.code === 'ERR_CANCELED' ||
+        String(error?.message || '').toLowerCase().includes('aborted');
+
+      if (isRequestCanceled) {
+        return;
+      }
+
       if (error?.response?.status !== 401) {
         console.error('Error fetching wishlist count:', error);
         if (error?.response?.data) {
@@ -627,7 +717,7 @@ const Navbar = () => {
   const handleCartClick = (e) => {
     e.preventDefault();
     if (!cartCount || cartCount === 0) {
-      toast.error("Your cart is empty. Add some products to get started!", {
+      toast.error(t('navbar.emptyCartToast'), {
         duration: 3000,
         icon: '🛒',
       });
@@ -770,22 +860,25 @@ const Navbar = () => {
       {/* Mobile Header */}
       <nav className="lg:hidden sticky top-0 z-50 shadow-sm border-b border-gray-200" style={{ backgroundColor: navbarAppearance.backgroundColor, color: navbarTextColor }}>
         <div className="flex items-center gap-3 px-3 py-3" style={{ backgroundColor: navbarAppearance.backgroundColor }}>
-          <Link href="/" onClick={handleLogoNavigation} className="flex items-center flex-shrink-0">
-            <Image
-              src={mobileLogoSrc}
-              alt="Store1920"
-              width={120}
-              height={32}
-              className="h-8 w-auto object-contain"
-              priority
-            />
-          </Link>
+          {mobileLogoSrc && (
+            <Link href="/" onClick={handleLogoNavigation} className="flex items-center flex-shrink-0">
+              <Image
+                src={mobileLogoSrc}
+                alt="Store Logo"
+                width={navbarAppearance.logoWidth}
+                height={navbarAppearance.logoHeight}
+                className="h-8 sm:h-10 w-auto object-contain"
+                style={{ maxHeight: '40px', maxWidth: '200px' }}
+                priority
+              />
+            </Link>
+          )}
 
           <form onSubmit={handleSearch} className="flex-1 relative">
             <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-gray-200">
               <input
                 type="text"
-                placeholder={searchPlaceholder || "More than"}
+                placeholder={searchPlaceholder || t('navbar.searchFragrances')}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 onFocus={() => setSearchFocused(true)}
@@ -856,20 +949,23 @@ const Navbar = () => {
             )}
             
             {/* Logo */}
-            <Link
-              href="/"
-              onClick={handleLogoNavigation}
-              className="flex items-center gap-2 flex-shrink-0"
-            >
-              <Image
-                src={navbarLogoSrc}
-                alt="Store Logo"
-                width={navbarAppearance.logoWidth}
-                height={navbarAppearance.logoHeight}
-                className="object-contain"
-                priority
-              />
-            </Link>
+            {navbarLogoSrc && (
+              <Link
+                href="/"
+                onClick={handleLogoNavigation}
+                className="flex items-center gap-2 flex-shrink-0"
+              >
+                <Image
+                  src={navbarLogoSrc}
+                  alt="Store Logo"
+                  width={navbarAppearance.logoWidth}
+                  height={navbarAppearance.logoHeight}
+                  className="w-auto object-contain flex-shrink-0"
+                  style={{ maxHeight: '50px', maxWidth: '250px' }}
+                  priority
+                />
+              </Link>
+            )}
 
             <button
               type="button"
@@ -881,7 +977,7 @@ const Navbar = () => {
                 <MapPin size={14} />
               </span>
               <span className="flex flex-col leading-tight min-w-0">
-                <span className="text-[10px] font-medium uppercase tracking-[0.08em] opacity-70">Deliver to</span>
+                <span className="text-[10px] font-medium uppercase tracking-[0.08em] opacity-70">{t('navbar.deliverTo')}</span>
                 <span className="max-w-[130px] truncate text-xs font-semibold">{selectedDeliveryLabel}</span>
               </span>
             </button>
@@ -891,7 +987,7 @@ const Navbar = () => {
             <div className="flex items-center w-full rounded-full border border-[#d1d5db] overflow-hidden bg-white shadow-sm">
               <input
                 type="text"
-                placeholder={searchPlaceholder || 'Search for "Fragrances"'}
+                placeholder={searchPlaceholder || t('navbar.searchFragrances')}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full px-5 py-2.5 text-[13px] text-slate-800 outline-none bg-transparent"
@@ -916,7 +1012,7 @@ const Navbar = () => {
                   className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[11px] font-semibold transition whitespace-nowrap"
                   style={{ backgroundColor: 'rgba(255,255,255,0.9)', color: '#7c4a03' }}
                 >
-                  Dashboard
+                  {t('navbar.dashboard')}
                 </button>
               )}
               <div
@@ -936,7 +1032,7 @@ const Navbar = () => {
                       {(firebaseUser.displayName || firebaseUser.email || '?')[0].toUpperCase()}
                     </div>
                   )}
-                  <span>Hi, {getShortName(firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User')}</span>
+                  <span>{t('navbar.hiUser', { name: getShortName(firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User') })}</span>
                 </button>
                 {userDropdownOpen && (
                   <div className="absolute right-0 top-12 min-w-[220px] bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-2">
@@ -945,20 +1041,20 @@ const Navbar = () => {
                         className="block w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm"
                         onClick={() => router.push('/store')}
                       >
-                        Seller Dashboard
+                        {t('navbar.sellerDashboard')}
                       </button>
                     )}
-                    <Link href="/dashboard/profile" className="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm" onClick={() => setUserDropdownOpen(false)}>Profile</Link>
-                    <Link href="/dashboard/orders" className="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm" onClick={() => setUserDropdownOpen(false)}>Orders</Link>
-                    <Link href="/dashboard/wishlist" className="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm" onClick={() => setUserDropdownOpen(false)}>Wishlist</Link>
-                    <Link href="/dashboard/addresses" className="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm" onClick={() => setUserDropdownOpen(false)}>Addresses</Link>
+                    <Link href="/dashboard/profile" className="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm" onClick={() => setUserDropdownOpen(false)}>{t('navbar.profile')}</Link>
+                    <Link href="/dashboard/orders" className="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm" onClick={() => setUserDropdownOpen(false)}>{t('navbar.orders')}</Link>
+                    <Link href="/dashboard/wishlist" className="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm" onClick={() => setUserDropdownOpen(false)}>{t('navbar.wishlist')}</Link>
+                    <Link href="/dashboard/addresses" className="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm" onClick={() => setUserDropdownOpen(false)}>{t('navbar.addresses')}</Link>
                     <div className="my-1 border-t border-gray-200" />
-                    <Link href="/dashboard/settings" className="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm" onClick={() => setUserDropdownOpen(false)}>Account Settings</Link>
+                    <Link href="/dashboard/settings" className="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm" onClick={() => setUserDropdownOpen(false)}>{t('navbar.accountSettings')}</Link>
                     <button
                       className="block w-full text-left px-4 py-2 text-red-600 hover:bg-red-50 transition text-sm font-medium"
                       onClick={() => openSignOutConfirm('desktop')}
                     >
-                      Sign Out
+                      {t('navbar.signOut')}
                     </button>
                   </div>
                 )}
@@ -976,7 +1072,7 @@ const Navbar = () => {
                 aria-label="Sign in"
               >
                 <User className="w-[15px] h-[15px]" style={{ color: navbarTextColor }} />
-                <span>Sign In / Register</span>
+                <span>{t('navbar.signInRegister')}</span>
               </button>
             )}
 
@@ -991,7 +1087,7 @@ const Navbar = () => {
                 hoverTimer.current = setTimeout(() => setSupportDropdownOpen(false), 200);
               }}
             >
-              <Link href="/support" className="inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 transition whitespace-nowrap hover:bg-white/8"><LifeBuoy size={13} />Support</Link>
+              <Link href="/support" className="inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 transition whitespace-nowrap hover:bg-white/8"><LifeBuoy size={13} />{t('navbar.support')}</Link>
               {supportDropdownOpen && (
                 <ul
                   className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-xl border border-gray-200 text-sm text-gray-700 z-50 overflow-hidden"
@@ -1005,11 +1101,11 @@ const Navbar = () => {
                   }}
                   role="menu"
                 >
-                  <li><Link href="/faq" className="block px-4 py-2.5 hover:bg-gray-50 transition">FAQ</Link></li>
-                  <li><Link href="/support" className="block px-4 py-2.5 hover:bg-gray-50 transition">Support</Link></li>
-                  <li><Link href="/terms" className="block px-4 py-2.5 hover:bg-gray-50 transition">Terms & Conditions</Link></li>
-                  <li><Link href="/privacy-policy" className="block px-4 py-2.5 hover:bg-gray-50 transition">Privacy Policy</Link></li>
-                  <li><Link href="/return-policy" className="block px-4 py-2.5 hover:bg-gray-50 transition">Return Policy</Link></li>
+                  <li><Link href="/faq" className="block px-4 py-2.5 hover:bg-gray-50 transition">{t('navbar.faq')}</Link></li>
+                  <li><Link href="/support" className="block px-4 py-2.5 hover:bg-gray-50 transition">{t('navbar.support')}</Link></li>
+                  <li><Link href="/terms" className="block px-4 py-2.5 hover:bg-gray-50 transition">{t('navbar.termsAndConditions')}</Link></li>
+                  <li><Link href="/privacy-policy" className="block px-4 py-2.5 hover:bg-gray-50 transition">{t('navbar.privacyPolicy')}</Link></li>
+                  <li><Link href="/return-policy" className="block px-4 py-2.5 hover:bg-gray-50 transition">{t('navbar.returnPolicy')}</Link></li>
                 </ul>
               )}
             </div>
@@ -1052,7 +1148,7 @@ const Navbar = () => {
                   }}
                 >
                   <div className="px-4 py-3 border-b border-gray-100">
-                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Language</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">{t('navbar.language')}</p>
                     <div className="mt-3 space-y-2">
                       <button
                         type="button"
@@ -1074,7 +1170,7 @@ const Navbar = () => {
                   </div>
 
                   <div className="px-4 py-3 border-b border-gray-100">
-                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Shop In</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">{t('navbar.shopIn')}</p>
                     <div className="mt-3 grid gap-2">
                       {GCC_MARKETS.map((marketOption) => {
                         const isSelected = marketOption.code === storefrontMarket.code;
@@ -1100,21 +1196,16 @@ const Navbar = () => {
                   </div>
 
                   <div className="px-4 py-3 text-sm text-gray-600">
-                    <p className="font-semibold text-gray-800">Currency: {storefrontMarket.currency}</p>
-                    <p className="mt-1">You are shopping in {storefrontMarket.countryName}.</p>
+                    <p className="font-semibold text-gray-800">{t('navbar.currency')}: {storefrontMarket.currency}</p>
+                    <p className="mt-1">{t('navbar.shoppingIn', { country: storefrontMarket.countryName })}</p>
                   </div>
                 </div>
               )}
             </div>
 
-            <Link href="/dashboard/orders" className="inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 transition whitespace-nowrap hover:bg-white/8">
-              <Package size={14} />
-              Orders
-            </Link>
-
             <Link href="/dashboard/wishlist" className="inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 transition whitespace-nowrap hover:bg-white/8">
               <HeartIcon size={14} />
-              Wishlist
+              {t('navbar.wishlist')}
             </Link>
 
             <button
@@ -1123,7 +1214,7 @@ const Navbar = () => {
               aria-label="Cart"
             >
               <ShoppingCart size={18} style={{ color: navbarTextColor }} />
-              <span className="text-[13px] font-medium">Cart</span>
+              <span className="text-[13px] font-medium">{t('navbar.cart')}</span>
               {isClient && cartCount > 0 && (
                 <span className="absolute -top-1.5 -right-1.5 text-[10px] font-bold text-white bg-blue-600 rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1">
                   {cartCount}
@@ -1206,8 +1297,8 @@ const Navbar = () => {
                 >
                   <User className="w-5 h-5" />
                   <div className="flex flex-col leading-tight text-left">
-                    <span>Login /</span>
-                    <span>Sign Up</span>
+                    <span>{t('navbar.login')} /</span>
+                    <span>{t('navbar.signUp')}</span>
                   </div>
                 </button>
               ) : (
@@ -1244,7 +1335,7 @@ const Navbar = () => {
                   className="w-full px-4 py-3 bg-amber-50 text-amber-800 text-sm font-semibold rounded-full mb-4 flex items-center gap-2"
                 >
                   <Image src={WalletIcon} alt="Wallet" width={20} height={20} />
-                  <span>Wallet</span>
+                  <span>{t('navbar.wallet')}</span>
                 </button>
               )}
 
@@ -1257,7 +1348,7 @@ const Navbar = () => {
                       className="flex items-center gap-3 px-4 py-3 hover:bg-gray-100 rounded-lg transition text-gray-700 font-medium"
                       onClick={() => setMobileMenuOpen(false)}
                     >
-                      <span>Profile</span>
+                      <span>{t('navbar.profile')}</span>
                     </Link>
                     <Link 
                       href="/dashboard/orders" 
@@ -1265,14 +1356,14 @@ const Navbar = () => {
                       onClick={() => setMobileMenuOpen(false)}
                     >
                       <PackageIcon size={18} className="text-gray-600" />
-                      <span>My Orders</span>
+                      <span>{t('navbar.myOrders')}</span>
                     </Link>
                     <Link 
                       href="/browse-history" 
                       className="flex items-center gap-3 px-4 py-3 hover:bg-gray-100 rounded-lg transition text-gray-700 font-medium"
                       onClick={() => setMobileMenuOpen(false)}
                     >
-                      <span>Browse History</span>
+                      <span>{t('navbar.browseHistory')}</span>
                     </Link>
                     <div className="px-4"><div className="h-px bg-gray-200 my-2" /></div>
                   </>
@@ -1282,14 +1373,14 @@ const Navbar = () => {
                   className="flex items-center gap-3 px-4 py-3 hover:bg-gray-100 rounded-lg transition text-gray-700 font-medium"
                   onClick={() => setMobileMenuOpen(false)}
                 >
-                  Top Selling Items
+                  {t('navbar.topSellingItems')}
                 </Link>
                 <Link 
                   href="/new" 
                   className="flex items-center gap-3 px-4 py-3 hover:bg-gray-100 rounded-lg transition text-gray-700 font-medium"
                   onClick={() => setMobileMenuOpen(false)}
                 >
-                  New Arrivals
+                  {t('navbar.newArrivals')}
                 </Link>
 
                 <Link 
@@ -1298,7 +1389,7 @@ const Navbar = () => {
                   onClick={() => setMobileMenuOpen(false)}
                 >
                   <StarIcon size={18} className="text-white" fill="white" />
-                  5 Star Rated
+                  {t('navbar.fiveStarRated')}
                 </Link>
 
                 <Link 
@@ -1310,7 +1401,7 @@ const Navbar = () => {
                     <path d="M8 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM15 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" />
                     <path d="M3 4a1 1 0 00-1 1v10a1 1 0 001 1h1.05a2.5 2.5 0 014.9 0H10a1 1 0 001-1V5a1 1 0 00-1-1H3zM14 7a1 1 0 00-1 1v6.05A2.5 2.5 0 0115.95 16H17a1 1 0 001-1v-5a1 1 0 00-.293-.707l-2-2A1 1 0 0015 7h-1z" />
                   </svg>
-                  Fast Delivery
+                  {t('navbar.fastDelivery')}
                 </Link>
 
                 <Link 
@@ -1320,7 +1411,7 @@ const Navbar = () => {
                 >
                   <div className="flex items-center gap-3">
                     <HeartIcon size={18} className="text-orange-500" />
-                    <span>Wishlist</span>
+                    <span>{t('navbar.wishlist')}</span>
                   </div>
                   {wishlistCount > 0 && (
                     <span className="bg-orange-500 text-white text-xs font-bold px-2 py-1 rounded-full">
@@ -1335,7 +1426,7 @@ const Navbar = () => {
                 >
                   <div className="flex items-center gap-3">
                     <ShoppingCart size={18} className="text-blue-600" />
-                    <span>Cart</span>
+                    <span>{t('navbar.cart')}</span>
                   </div>
                   {isClient && cartCount > 0 && (
                     <span className="bg-blue-600 text-white text-xs font-bold px-2 py-1 rounded-full">
@@ -1350,48 +1441,48 @@ const Navbar = () => {
                     onClick={() => setMobileMenuOpen(false)}
                   >
                     <span className="bg-orange-500 text-white text-xs font-bold px-2 py-1 rounded-full">Seller</span>
-                    <span>Dashboard</span>
+                    <span>{t('navbar.dashboard')}</span>
                   </Link>
                 )}
               </div>
 
               {/* Support Section */}
               <div className="mt-auto pt-4 border-t border-gray-200">
-                <p className="text-xs font-semibold text-gray-500 uppercase mb-2 px-4">Support</p>
+                <p className="text-xs font-semibold text-gray-500 uppercase mb-2 px-4">{t('navbar.support')}</p>
                 <Link 
                   href="/faq" 
                   className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-100 rounded-lg transition text-gray-700 text-sm"
                   onClick={() => setMobileMenuOpen(false)}
                 >
-                  FAQ
+                  {t('navbar.faq')}
                 </Link>
                 <Link 
                   href="/support" 
                   className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-100 rounded-lg transition text-gray-700 text-sm"
                   onClick={() => setMobileMenuOpen(false)}
                 >
-                  Support
+                  {t('navbar.support')}
                 </Link>
                 <Link 
                   href="/terms" 
                   className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-100 rounded-lg transition text-gray-700 text-sm"
                   onClick={() => setMobileMenuOpen(false)}
                 >
-                  Terms & Conditions
+                  {t('navbar.termsAndConditions')}
                 </Link>
                 <Link 
                   href="/privacy-policy" 
                   className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-100 rounded-lg transition text-gray-700 text-sm"
                   onClick={() => setMobileMenuOpen(false)}
                 >
-                  Privacy Policy
+                  {t('navbar.privacyPolicy')}
                 </Link>
                 <Link 
                   href="/return-policy" 
                   className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-100 rounded-lg transition text-gray-700 text-sm"
                   onClick={() => setMobileMenuOpen(false)}
                 >
-                  Return Policy
+                  {t('navbar.returnPolicy')}
                 </Link>
                 
                 {/* Sign Out Button - At Bottom */}
@@ -1400,7 +1491,7 @@ const Navbar = () => {
                     className="w-full text-left px-4 py-3 bg-red-50 hover:bg-red-100 rounded-lg transition text-red-600 font-medium mt-4"
                     onClick={() => openSignOutConfirm('mobile')}
                   >
-                    Sign Out
+                    {t('navbar.signOut')}
                   </button>
                 )}
               </div>
@@ -1422,20 +1513,20 @@ const Navbar = () => {
                   <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-rose-50 text-rose-600">
                     <LogOut size={26} />
                   </div>
-                  <h3 className="text-xl font-semibold text-slate-900 text-center">Ready to sign out?</h3>
-                  <p className="mt-2 text-sm text-slate-600 text-center">We will save your cart and wishlist. You can jump back in anytime.</p>
+                  <h3 className="text-xl font-semibold text-slate-900 text-center">{t('navbar.readyToSignOut')}</h3>
+                  <p className="mt-2 text-sm text-slate-600 text-center">{t('navbar.saveCartWishlist')}</p>
                   <div className="mt-6 grid grid-cols-2 gap-3">
                     <button
                       className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 hover:border-slate-300 hover:bg-slate-50 transition"
                       onClick={() => setSignOutConfirmOpen(false)}
                     >
-                      Stay Signed In
+                      {t('navbar.staySignedIn')}
                     </button>
                     <button
                       className="w-full rounded-xl bg-gradient-to-r from-rose-500 to-orange-400 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-orange-200/50 hover:brightness-105 transition"
                       onClick={handleSignOut}
                     >
-                      Sign Out
+                      {t('navbar.signOut')}
                     </button>
                   </div>
                 </div>

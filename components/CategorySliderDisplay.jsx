@@ -5,11 +5,13 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useSelector } from 'react-redux';
+import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
 
 export default function CategorySliderDisplay({ slider }) {
   const scrollRef = useRef(null);
   const products = useSelector(state => state.product.list);
   const [sliderProducts, setSliderProducts] = useState([]);
+  const { market, convertPrice } = useStorefrontMarket();
 
   useEffect(() => {
     const normalizeId = (value) => {
@@ -118,11 +120,11 @@ export default function CategorySliderDisplay({ slider }) {
                 {/* Price */}
                 <div className="qf-card__price-row">
                   <span className="qf-card__price">
-                    AED{product.basePrice?.toLocaleString()}
+                    {market.currency}{convertPrice(Number(product.basePrice || product.price || 0)).toLocaleString()}
                   </span>
                   {product.originalPrice && (
                     <span className="qf-card__strike">
-                      AED{product.originalPrice?.toLocaleString()}
+                      {market.currency}{convertPrice(Number(product.originalPrice || 0)).toLocaleString()}
                     </span>
                   )}
                 </div>

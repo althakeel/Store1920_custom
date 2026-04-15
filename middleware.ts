@@ -20,6 +20,9 @@ const publicEndpoints = [
   '/api/store/navbar-menu', // Allow GET requests to view navbar menu (public)
   '/api/store/download-image', // Allow authenticated downloads (checks token in route)
   '/api/store/sitemap-settings/public', // Allow GET requests to view sitemap settings (public)
+  '/api/store/explore-interests/public', // Allow GET requests to view explore interests (public)
+  '/api/store/explore-interests/debug-raw', // Debug endpoint
+  '/api/store/explore-interests/check', // Debug endpoint
 ];
 
 

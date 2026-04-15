@@ -16,6 +16,7 @@ export default function NavbarMenuSettingsPage() {
   const { user, getToken, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
   const [form, setForm] = useState({
     enabled: true,
     logoUrl: '',
@@ -25,6 +26,7 @@ export default function NavbarMenuSettingsPage() {
     items: [],
   });
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [logoLoading, setLogoLoading] = useState(false);
   const logoWidthRef = useRef(null);
   const logoHeightRef = useRef(null);
 
@@ -51,7 +53,13 @@ export default function NavbarMenuSettingsPage() {
   };
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || !isInitialized) return;
+
+    // Only dispatch event if there's a meaningful custom logo (not empty)
+    if (!form.logoUrl || !form.logoUrl.trim()) {
+      console.log('[Navbar Admin] Not dispatching event - no custom logo set');
+      return;
+    }
 
     window.localStorage.setItem(
       NAVBAR_APPEARANCE_CACHE_KEY,
@@ -73,12 +81,14 @@ export default function NavbarMenuSettingsPage() {
         },
       })
     );
-  }, [form.logoUrl, form.backgroundColor, previewWidth, previewHeight]);
+    console.log('[Navbar Admin] Dispatched event:', { logoUrl: form.logoUrl, source: 'form change with valid logo' });
+  }, [form.logoUrl, form.backgroundColor, previewWidth, previewHeight, isInitialized]);
 
   useEffect(() => {
     if (authLoading) return;
     if (!user) {
       setLoading(false);
+      setIsInitialized(true);
       return;
     }
 
@@ -90,7 +100,10 @@ export default function NavbarMenuSettingsPage() {
         if (!token) token = await getAuthToken(true);
         if (!token) {
           toast.error('Could not authenticate to load saved settings');
-          if (isActive) setLoading(false);
+          if (isActive) {
+            setLoading(false);
+            setIsInitialized(true);
+          }
           return;
         }
 
@@ -118,11 +131,19 @@ export default function NavbarMenuSettingsPage() {
             // ignore JSON parse errors
           }
           toast.error(message);
-          if (isActive) setLoading(false);
+          if (isActive) {
+            setLoading(false);
+            setIsInitialized(true);
+          }
           return;
         }
         const data = await response.json();
         if (!isActive) return;
+        console.log('[Navbar Admin] Fetched settings:', { 
+          logoUrl: data.logoUrl || '(empty)', 
+          logoWidth: data.logoWidth, 
+          logoHeight: data.logoHeight 
+        });
         const nextWidth = normalizeLogoWidth(data.logoWidth);
         const nextHeight = normalizeLogoHeight(data.logoHeight);
         setForm({
@@ -138,9 +159,11 @@ export default function NavbarMenuSettingsPage() {
               }))
             : [],
         });
+        setIsInitialized(true);
       } catch (error) {
         console.error('Navbar menu fetch error:', error);
         toast.error('Failed to load navbar menu');
+        if (isActive) setIsInitialized(true);
       } finally {
         if (isActive) setLoading(false);
       }
@@ -250,6 +273,12 @@ export default function NavbarMenuSettingsPage() {
         items: nextItems,
       };
 
+      console.log('[Navbar Admin] Saving with payload:', { 
+        logoUrl: nextLogoUrl || '(empty - will use default)', 
+        logoWidth: nextWidth, 
+        logoHeight: nextHeight 
+      });
+
       let response = await fetch('/api/store/navbar-menu', {
         method: 'POST',
         headers: {
@@ -278,6 +307,12 @@ export default function NavbarMenuSettingsPage() {
       if (!response.ok) {
         throw new Error(data?.error || 'Failed to save menu');
       }
+
+      console.log('[Navbar Admin] Save Response:', {
+        logoUrl: data?.data?.logoUrl || '(empty)',
+        logoWidth: data?.data?.logoWidth,
+        logoHeight: data?.data?.logoHeight
+      });
 
       const verifyResponse = await fetch('/api/store/navbar-menu', {
         cache: 'no-store',
@@ -319,7 +354,8 @@ export default function NavbarMenuSettingsPage() {
         items: verifiedItems,
       }));
 
-      if (typeof window !== 'undefined') {
+      // Only dispatch event if there's a custom logo
+      if (typeof window !== 'undefined' && verifiedLogoUrl && verifiedLogoUrl.trim()) {
         window.dispatchEvent(
           new CustomEvent('navbarAppearanceUpdated', {
             detail: {
@@ -330,6 +366,9 @@ export default function NavbarMenuSettingsPage() {
             },
           })
         );
+        console.log('[Navbar Admin] Post-save event dispatched:', { logoUrl: verifiedLogoUrl });
+      } else if (typeof window !== 'undefined') {
+        console.log('[Navbar Admin] Skipped post-save event - no custom logo');
       }
 
       const savedAt = data?.meta?.updatedAt ? ` (saved: ${new Date(data.meta.updatedAt).toLocaleTimeString()})` : '';
@@ -337,8 +376,9 @@ export default function NavbarMenuSettingsPage() {
       const sentHeight = data?.meta?.receivedLogoHeight;
       const savedWidth = data?.meta?.savedLogoWidth;
       const savedHeight = data?.meta?.savedLogoHeight;
+      const logoStatus = data?.data?.logoUrl ? '✓ Custom logo' : '(using default logo)';
       toast.success(
-        `Navbar menu updated${savedAt} sent:${sentWidth}x${sentHeight} saved:${savedWidth}x${savedHeight} verify:${verifiedWidth}x${verifiedHeight}`
+        `Navbar menu updated ${logoStatus}${savedAt}`
       );
       if (!verifyResponse.ok) {
         toast('Saved, but live verify request failed. Refresh once to confirm.', { icon: '⚠️' });
@@ -360,6 +400,7 @@ export default function NavbarMenuSettingsPage() {
     }
 
     setUploadingLogo(true);
+    setLogoLoading(true);
     try {
       let token = await getAuthToken(false);
       if (!token) token = await getAuthToken(true);
@@ -383,9 +424,13 @@ export default function NavbarMenuSettingsPage() {
         throw new Error(data?.error || 'Failed to upload logo');
       }
 
+      console.log('[Navbar Admin] Logo uploaded:', { url: data.url });
       setForm((prev) => ({ ...prev, logoUrl: data.url || '' }));
+      setLogoLoading(false);
       toast.success('Navbar logo uploaded');
     } catch (error) {
+      console.error('[Navbar Admin] Logo upload error:', error);
+      setLogoLoading(false);
       toast.error(error.message || 'Failed to upload logo');
     } finally {
       setUploadingLogo(false);
@@ -445,11 +490,18 @@ export default function NavbarMenuSettingsPage() {
           </div>
           {form.logoUrl ? (
             <div className="rounded-xl border border-slate-200 bg-white p-3">
-              <img
-                src={form.logoUrl}
-                alt="Navbar logo preview"
-                style={{ width: previewWidth ?? undefined, height: previewHeight ?? undefined, objectFit: 'contain' }}
-              />
+              {logoLoading ? (
+                <div className="flex items-center justify-center rounded-lg bg-slate-100 animate-pulse" style={{ aspectRatio: '1/1', width: previewWidth ?? 120, height: previewWidth ?? 120 }}>
+                  <div className="text-slate-400 text-sm">Loading...</div>
+                </div>
+              ) : (
+                <img
+                  src={form.logoUrl}
+                  alt="Navbar logo preview"
+                  onLoad={() => setLogoLoading(false)}
+                  style={{ width: previewWidth ?? undefined, height: previewHeight ?? undefined, objectFit: 'contain', aspectRatio: previewWidth && previewHeight ? `${previewWidth}/${previewHeight}` : '1/1' }}
+                />
+              )}
             </div>
           ) : (
             <p className="text-xs text-slate-500">If empty, the default site logo will be used.</p>

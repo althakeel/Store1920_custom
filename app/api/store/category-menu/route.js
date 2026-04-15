@@ -16,6 +16,23 @@ function buildCategoryUrl(name = '') {
   return slug ? `/${slug}` : '/';
 }
 
+function normalizeMenuCategory(category, fallbackIndex = 0) {
+  const normalizedChildren = Array.isArray(category?.children)
+    ? category.children.map((child, childIndex) => normalizeMenuCategory(child, childIndex))
+    : [];
+
+  return {
+    ...category,
+    id: category?.id || category?._id || category?.systemCategoryId || slugify(category?.name || '') || `category-${fallbackIndex + 1}`,
+    systemCategoryId: category?.systemCategoryId || category?.id || category?._id || null,
+    parentId: category?.parentId || null,
+    parentName: category?.parentName || '',
+    name: (category?.name || '').trim(),
+    url: category?.url || buildCategoryUrl(category?.name || ''),
+    children: normalizedChildren,
+  };
+}
+
 function parseAuthHeader(req) {
   const auth = req.headers.get('authorization') || req.headers.get('Authorization');
   if (!auth) return null;
@@ -76,12 +93,7 @@ export async function POST(request) {
       );
     }
 
-    const normalizedCategories = categories.map((category, index) => ({
-      ...category,
-      id: category?.id || category?._id || slugify(category?.name || '') || `category-${index + 1}`,
-      name: (category?.name || '').trim(),
-      url: category?.url || buildCategoryUrl(category?.name || ''),
-    }));
+    const normalizedCategories = categories.map((category, index) => normalizeMenuCategory(category, index));
 
     const storeMenu = await StoreMenu.findOneAndUpdate(
       { storeId: userId },

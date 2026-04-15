@@ -1,4 +1,4 @@
-import ImageKit from "@imagekit/nodejs";
+import ImageKit, { toFile } from "@imagekit/nodejs";
 
 // Lazy initialize ImageKit to avoid build-time crashes when env vars are missing
 let _imagekit = null;
@@ -17,13 +17,28 @@ export function ensureImageKit() {
     return _imagekit;
 }
 
-// Default export preserves existing imports; methods resolve to the instance on first use
-const imagekit = new Proxy({}, {
-    get(_target, prop) {
-        const ik = ensureImageKit();
-        // @ts-ignore - dynamic property access on ImageKit instance
-        return ik[prop];
-    }
-});
+const imagekit = {
+    async upload(options = {}, ...rest) {
+        const normalizedOptions = { ...(options || {}) };
+        const rawFile = normalizedOptions.file;
+
+        if (Buffer.isBuffer(rawFile) || rawFile instanceof Uint8Array) {
+            normalizedOptions.file = await toFile(rawFile, normalizedOptions.fileName || 'upload-file');
+        }
+
+        return ensureImageKit().files.upload(normalizedOptions, ...rest);
+    },
+    url(options = {}) {
+        const { path, src, ...rest } = options || {};
+        return ensureImageKit().helper.buildSrc({
+            urlEndpoint: process.env.IMAGEKIT_URL_ENDPOINT,
+            src: src || path || '',
+            ...rest,
+        });
+    },
+    getAuthenticationParameters(...args) {
+        return ensureImageKit().helper.getAuthenticationParameters(...args);
+    },
+};
 
 export default imagekit;

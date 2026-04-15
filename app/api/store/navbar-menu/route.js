@@ -35,9 +35,31 @@ export async function GET(req) {
     if (token) {
       try {
         const decoded = await getAuth().verifyIdToken(token);
+        console.log('[API GET /store/navbar-menu] Authenticated user:', decoded.uid);
         const settingsDocs = await NavbarMenuSettings.find({ storeId: decoded.uid })
           .sort({ updatedAt: -1, _id: -1 })
           .lean();
+
+        console.log('[API GET /store/navbar-menu] Found docs:', settingsDocs.length);
+        if (settingsDocs.length > 0) {
+          console.log('[API GET /store/navbar-menu] All docs found:', settingsDocs.map(doc => ({
+            _id: doc._id.toString().slice(-8),
+            storeId: doc.storeId,
+            logoUrl: doc?.logoUrl ? '(has URL)' : '(empty)',
+            logoUrl_value: doc?.logoUrl || '(null/empty)'
+          })));
+          console.log('[API GET /store/navbar-menu] First doc details:', {
+            _id: settingsDocs[0]._id,
+            storeId: settingsDocs[0].storeId,
+            enabled: settingsDocs[0].enabled,
+            logoUrl: settingsDocs[0]?.logoUrl || '(empty)',
+            logoWidth: settingsDocs[0]?.logoWidth,
+            logoHeight: settingsDocs[0]?.logoHeight,
+            backgroundColor: settingsDocs[0]?.backgroundColor
+          });
+        } else {
+          console.log('[API GET /store/navbar-menu] NO DOCUMENTS FOUND for storeId:', decoded.uid);
+        }
 
         const settings = settingsDocs[0] || null;
         let resolvedWidth = toFiniteNumber(settings?.logoWidth);
@@ -62,23 +84,29 @@ export async function GET(req) {
           }
         }
 
-        return NextResponse.json(
-          {
-            enabled: settings?.enabled ?? true,
-            logoUrl: settings?.logoUrl || '',
-            logoWidth: resolvedWidth,
-            logoHeight: resolvedHeight,
-            backgroundColor: settings?.backgroundColor || '#8f3404',
-            items: settings?.items || [],
-          },
-          { status: 200, headers: { 'Cache-Control': 'no-store' } }
-        );
+        const response = {
+          enabled: settings?.enabled ?? true,
+          logoUrl: settings?.logoUrl || '',
+          logoWidth: resolvedWidth ?? 120,
+          logoHeight: resolvedHeight ?? 40,
+          backgroundColor: settings?.backgroundColor || '#8f3404',
+          items: settings?.items || [],
+        };
+
+        console.log('[API GET /store/navbar-menu] Sending response:', {
+          logoUrl: response.logoUrl || '(empty)',
+          logoWidth: response.logoWidth,
+          logoHeight: response.logoHeight
+        });
+
+        return NextResponse.json(response, { status: 200, headers: { 'Cache-Control': 'no-store' } });
       } catch (error) {
-        console.warn('[API /store/navbar-menu GET] token verify failed:', error?.message || error);
+        console.warn('[API GET /store/navbar-menu] token verify failed:', error?.message || error);
         return NextResponse.json({ error: 'Invalid token' }, { status: 401, headers: { 'Cache-Control': 'no-store' } });
       }
     }
 
+    console.log('[API GET /store/navbar-menu] No auth token - fetching public settings');
     const settings = await NavbarMenuSettings.findOne({
       enabled: true,
     })
@@ -104,17 +132,17 @@ export async function GET(req) {
       {
         enabled: settings?.enabled ?? false,
         logoUrl: settings?.logoUrl || '',
-        logoWidth: resolvedWidth,
-        logoHeight: resolvedHeight,
+        logoWidth: resolvedWidth ?? 120,
+        logoHeight: resolvedHeight ?? 40,
         backgroundColor: settings?.backgroundColor || '#8f3404',
         items: settings?.items || [],
       },
       { status: 200, headers: { 'Cache-Control': 'no-store' } }
     );
   } catch (error) {
-    console.error('[API /store/navbar-menu GET] error:', error);
+    console.error('[API GET /store/navbar-menu] error:', error);
     return NextResponse.json(
-      { enabled: false, logoUrl: '', logoWidth: null, logoHeight: null, backgroundColor: '#8f3404', items: [] },
+      { enabled: false, logoUrl: '', logoWidth: 120, logoHeight: 40, backgroundColor: '#8f3404', items: [] },
       { status: 200, headers: { 'Cache-Control': 'no-store' } }
     );
   }
@@ -177,6 +205,13 @@ export async function POST(req) {
     const nextBackgroundColor = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(String(backgroundColor || '').trim())
       ? String(backgroundColor).trim()
       : '#8f3404';
+    
+    console.log('[API /store/navbar-menu POST] Saving:', {
+      userId,
+      logoUrl: String(logoUrl || '').trim() || '(empty)',
+      logoWidth: nextLogoWidth,
+      logoHeight: nextLogoHeight
+    });
 
     await NavbarMenuSettings.findOneAndUpdate(
       { storeId: userId },
@@ -199,8 +234,10 @@ export async function POST(req) {
       { storeId: userId },
       {
         $set: {
+          logoUrl: String(logoUrl || '').trim(),
           logoWidth: nextLogoWidth,
           logoHeight: nextLogoHeight,
+          backgroundColor: nextBackgroundColor,
         },
       }
     );
@@ -208,6 +245,12 @@ export async function POST(req) {
     let settings = await NavbarMenuSettings.findOne({ storeId: userId })
       .sort({ updatedAt: -1, _id: -1 })
       .lean();
+    
+    console.log('[API /store/navbar-menu POST] DB Settings after save:', {
+      logoUrl: settings?.logoUrl || '(empty)',
+      logoWidth: settings?.logoWidth,
+      logoHeight: settings?.logoHeight
+    });
 
     // Self-heal legacy/malformed docs that may miss explicit dimensions.
     const afterSaveWidth = toFiniteNumber(settings?.logoWidth);

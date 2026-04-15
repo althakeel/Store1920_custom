@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 import Link from 'next/link'
 import Image from 'next/image'
+import { useStorefrontMarket } from '@/lib/useStorefrontMarket'
 
 function formatCountdown(target) {
   if (!target) return null
@@ -35,15 +36,16 @@ function getProductImage(product) {
   return ''
 }
 
-function formatPrice(product) {
-  const amount = Number(product?.price ?? product?.AED ?? 0)
-  return `AED ${amount.toFixed(2)}`
-}
-
 export default function ShopShowcaseSection() {
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState({ config: null, sectionProducts: [], products: [], categories: [] })
   const [tick, setTick] = useState(0)
+  const { market, convertPrice } = useStorefrontMarket()
+
+  const formatPrice = (product) => {
+    const amount = Number(product?.price ?? product?.AED ?? 0)
+    return `${market.currency} ${convertPrice(amount).toFixed(2)}`
+  }
 
   useEffect(() => {
     const load = async () => {
@@ -234,7 +236,7 @@ export default function ShopShowcaseSection() {
                   </p>
 
                   <div className="mt-2 flex items-end justify-between gap-2">
-                    <p className="text-[20px] font-black leading-none text-rose-600">AED {Number(product.price || 0).toFixed(2)}</p>
+                    <p className="text-[20px] font-black leading-none text-rose-600">{market.currency} {convertPrice(Number(product.price || 0)).toFixed(2)}</p>
                     <p className="pb-0.5 text-[9px] font-semibold uppercase tracking-wider text-slate-500">Offer</p>
                   </div>
 

@@ -26,6 +26,8 @@ const normalizeText = (value) => String(value || '')
 
 const normalizeLookupValue = (value = '') => String(value || '').trim().toLowerCase();
 
+const buildNameParentKey = (name = '', parentId = null) => `${normalizeLookupValue(name)}::${String(parentId || '')}`;
+
 const buildCategoryUrl = (name = '', slug = '') => {
   const resolvedSlug = slugify(slug || name);
   return resolvedSlug ? `/${resolvedSlug}` : '/';
@@ -47,6 +49,73 @@ const getFirstPresentValue = (...values) => {
   }
 
   return '';
+};
+
+const splitHierarchyPath = (value = '') => String(value || '')
+  .split(/\s*(?:>|›|»|→|\|)\s*/)
+  .map((segment) => String(segment || '').trim())
+  .filter(Boolean);
+
+const getHierarchySegmentsFromRow = (row = {}) => {
+  const pathValue = getFirstPresentValue(
+    row['Category Path'],
+    row.categoryPath,
+    row.Path,
+    row.path,
+    row.Hierarchy,
+    row.hierarchy,
+    row.Breadcrumb,
+    row.breadcrumb,
+    row['Full Path'],
+    row.fullPath,
+    row.Tree,
+    row.tree
+  );
+
+  if (String(pathValue || '').trim()) {
+    return splitHierarchyPath(pathValue);
+  }
+
+  return [
+    getFirstPresentValue(row['Main Category'], row.mainCategory, row['Level 1'], row.level1, row['Category Level 1'], row.categoryLevel1),
+    getFirstPresentValue(row.Subcategory, row['Subcategory 1'], row.subcategory, row.subcategory1, row['Sub Category'], row.subCategory, row['Level 2'], row.level2, row['Category Level 2'], row.categoryLevel2),
+    getFirstPresentValue(row['Sub Subcategory'], row.subSubcategory, row['Sub Sub Category'], row.subSubCategory, row['Subcategory 2'], row.subcategory2, row['Level 3'], row.level3, row['Category Level 3'], row.categoryLevel3),
+    getFirstPresentValue(row['Sub Sub Subcategory'], row.subSubSubcategory, row['Sub Sub Sub Category'], row.subSubSubCategory, row['Subcategory 3'], row.subcategory3, row['Level 4'], row.level4, row['Category Level 4'], row.categoryLevel4),
+    getFirstPresentValue(row['Subcategory 4'], row.subcategory4, row['Level 5'], row.level5, row['Category Level 5'], row.categoryLevel5),
+    getFirstPresentValue(row['Subcategory 5'], row.subcategory5, row['Level 6'], row.level6, row['Category Level 6'], row.categoryLevel6),
+  ]
+    .map((segment) => String(segment || '').trim())
+    .filter(Boolean);
+};
+
+const resolveCategorySlug = ({ name = '', requestedSlug = '', parentId = null, categoriesBySlug, categoriesByNameAndParent }) => {
+  const baseSlug = slugify(requestedSlug || name);
+  if (!baseSlug) {
+    return `category-${Date.now()}`;
+  }
+
+  const exactMatch = categoriesByNameAndParent.get(buildNameParentKey(name, parentId));
+  if (exactMatch?.slug) {
+    return String(exactMatch.slug);
+  }
+
+  let candidate = baseSlug;
+  let counter = 2;
+
+  while (categoriesBySlug.has(candidate)) {
+    const existing = categoriesBySlug.get(candidate);
+    if (
+      normalizeLookupValue(existing?.name) === normalizeLookupValue(name) &&
+      String(existing?.parentId || '') === String(parentId || '')
+    ) {
+      return candidate;
+    }
+
+    candidate = `${baseSlug}-${counter}`;
+    counter += 1;
+  }
+
+  return candidate;
 };
 
 const normalizeHeaderRow = (headerRow = []) => {
@@ -221,6 +290,9 @@ export async function POST(request) {
     const categoriesBySlug = new Map(allCategories.map((category) => [String(category.slug || ''), category]));
     const categoriesById = new Map(allCategories.map((category) => [String(category._id), category]));
     const categoriesByName = new Map(allCategories.map((category) => [normalizeLookupValue(category.name), category]));
+    const categoriesByNameAndParent = new Map(
+      allCategories.map((category) => [buildNameParentKey(category.name, category.parentId), category])
+    );
     const categoriesByLegacyId = new Map(
       allCategories
         .filter((category) => category.legacySourceId)
@@ -232,7 +304,7 @@ export async function POST(request) {
     let skippedCount = 0;
 
     rows.forEach((row, index) => {
-      const name = String(getFirstPresentValue(
+      const nameValue = String(getFirstPresentValue(
         row.Name,
         row.name,
         row.Category,
@@ -241,18 +313,30 @@ export async function POST(request) {
         row.title
       ) || '').trim();
 
-      if (!name) {
+      const hierarchySegments = getHierarchySegmentsFromRow(row);
+      const finalName = hierarchySegments.length
+        ? (nameValue && normalizeLookupValue(nameValue) === normalizeLookupValue(hierarchySegments[hierarchySegments.length - 1])
+            ? hierarchySegments[hierarchySegments.length - 1]
+            : nameValue || hierarchySegments[hierarchySegments.length - 1])
+        : nameValue;
+
+      const normalizedHierarchy = hierarchySegments.length
+        ? [...hierarchySegments.slice(0, -1), finalName].filter(Boolean)
+        : (finalName ? [finalName] : []);
+
+      if (!finalName) {
         skippedCount += 1;
         return;
       }
 
-      const slug = slugify(getFirstPresentValue(row.Slug, row.slug, name));
+      const slugInput = String(getFirstPresentValue(row.Slug, row.slug) || '').trim();
       const parentValue = String(getFirstPresentValue(row.Parent, row.parent) || '').trim();
 
       preparedRows.push({
         rowNumber: index + 2,
-        name,
-        slug,
+        name: finalName,
+        slug: slugInput,
+        hierarchySegments: normalizedHierarchy,
         description: normalizeText(getFirstPresentValue(row.Description, row.description, row['Short Description'], row.shortDescription)),
         image: String(getFirstPresentValue(row.Image, row.image, row['Image URL'], row.imageUrl, row['Image Url']) || '').trim(),
         url: String(getFirstPresentValue(row.URL, row.Url, row.url) || '').trim(),
@@ -274,23 +358,87 @@ export async function POST(request) {
     let updatedCount = 0;
     let mirroredImageCount = 0;
 
+    const registerCategory = (category) => {
+      categoriesBySlug.set(String(category.slug || ''), category);
+      categoriesById.set(String(category._id), category);
+      categoriesByName.set(normalizeLookupValue(category.name), category);
+      categoriesByNameAndParent.set(buildNameParentKey(category.name, category.parentId), category);
+      if (category.legacySourceId) {
+        categoriesByLegacyId.set(String(category.legacySourceId), category);
+      }
+    };
+
+    const ensureHierarchyCategories = async (segments = []) => {
+      let resolvedParent = null;
+
+      for (const segment of segments) {
+        const segmentName = String(segment || '').trim();
+        if (!segmentName) continue;
+
+        const existingByParent = categoriesByNameAndParent.get(buildNameParentKey(segmentName, resolvedParent?._id || null));
+        if (existingByParent) {
+          resolvedParent = existingByParent;
+          continue;
+        }
+
+        const hierarchySlug = resolveCategorySlug({
+          name: segmentName,
+          parentId: resolvedParent?._id || null,
+          categoriesBySlug,
+          categoriesByNameAndParent,
+        });
+
+        const createdCategory = await Category.create({
+          name: segmentName,
+          slug: hierarchySlug,
+          description: null,
+          image: null,
+          url: buildCategoryUrl(segmentName, hierarchySlug),
+          parentId: resolvedParent ? String(resolvedParent._id) : null,
+          storeId: authContext.userId,
+        });
+
+        const normalizedCategory = createdCategory.toObject();
+        registerCategory(normalizedCategory);
+        createdCount += 1;
+        resolvedParent = normalizedCategory;
+      }
+
+      return resolvedParent;
+    };
+
     while (pendingRows.length) {
       const deferredRows = [];
       let progressed = false;
 
       for (const row of pendingRows) {
-        const hasParentReference = Boolean(row.parentId || row.parentSlug || row.parentName);
-        const resolvedParent =
-          categoriesById.get(row.parentId) ||
-          categoriesBySlug.get(row.parentSlug) ||
-          categoriesByName.get(normalizeLookupValue(row.parentName));
+        const hierarchyParentSegments = Array.isArray(row.hierarchySegments) && row.hierarchySegments.length > 1
+          ? row.hierarchySegments.slice(0, -1)
+          : [];
+        const hasParentReference = Boolean(hierarchyParentSegments.length || row.parentId || row.parentSlug || row.parentName);
+        let resolvedParent = null;
+
+        if (hierarchyParentSegments.length) {
+          resolvedParent = await ensureHierarchyCategories(hierarchyParentSegments);
+        } else {
+          resolvedParent =
+            categoriesById.get(row.parentId) ||
+            categoriesBySlug.get(row.parentSlug) ||
+            categoriesByName.get(normalizeLookupValue(row.parentName));
+        }
 
         if (hasParentReference && !resolvedParent) {
           deferredRows.push(row);
           continue;
         }
 
-        const finalSlug = row.slug || slugify(row.name) || `category-${Date.now()}-${results.length + 1}`;
+        const finalSlug = resolveCategorySlug({
+          name: row.name,
+          requestedSlug: row.slug,
+          parentId: resolvedParent?._id || null,
+          categoriesBySlug,
+          categoriesByNameAndParent,
+        });
         let finalImage = row.image;
 
         if (shouldMirrorImageUrl(finalImage)) {
@@ -318,6 +466,7 @@ export async function POST(request) {
 
         const existingCategory =
           (row.legacySourceId ? categoriesByLegacyId.get(row.legacySourceId) : null) ||
+          categoriesByNameAndParent.get(buildNameParentKey(row.name, resolvedParent?._id || null)) ||
           categoriesBySlug.get(finalSlug);
 
         const savedCategory = existingCategory
@@ -325,13 +474,7 @@ export async function POST(request) {
           : await Category.create(payload);
 
         const normalizedCategory = savedCategory.toObject();
-
-        categoriesBySlug.set(normalizedCategory.slug, normalizedCategory);
-        categoriesById.set(String(normalizedCategory._id), normalizedCategory);
-        categoriesByName.set(normalizeLookupValue(normalizedCategory.name), normalizedCategory);
-        if (normalizedCategory.legacySourceId) {
-          categoriesByLegacyId.set(String(normalizedCategory.legacySourceId), normalizedCategory);
-        }
+        registerCategory(normalizedCategory);
 
         results.push({
           category: normalizedCategory,
@@ -355,7 +498,13 @@ export async function POST(request) {
         for (const row of deferredRows) {
           warnings.push(`Row ${row.rowNumber}: parent category was not found, so the category was imported at the top level.`);
 
-          const finalSlug = row.slug || slugify(row.name) || `category-${Date.now()}-${results.length + 1}`;
+          const finalSlug = resolveCategorySlug({
+            name: row.name,
+            requestedSlug: row.slug,
+            parentId: null,
+            categoriesBySlug,
+            categoriesByNameAndParent,
+          });
           let finalImage = row.image;
 
           if (shouldMirrorImageUrl(finalImage)) {
@@ -383,6 +532,7 @@ export async function POST(request) {
 
           const existingCategory =
             (row.legacySourceId ? categoriesByLegacyId.get(row.legacySourceId) : null) ||
+            categoriesByNameAndParent.get(buildNameParentKey(row.name, null)) ||
             categoriesBySlug.get(finalSlug);
 
           const savedCategory = existingCategory
@@ -390,13 +540,7 @@ export async function POST(request) {
             : await Category.create(payload);
 
           const normalizedCategory = savedCategory.toObject();
-
-          categoriesBySlug.set(normalizedCategory.slug, normalizedCategory);
-          categoriesById.set(String(normalizedCategory._id), normalizedCategory);
-          categoriesByName.set(normalizeLookupValue(normalizedCategory.name), normalizedCategory);
-          if (normalizedCategory.legacySourceId) {
-            categoriesByLegacyId.set(String(normalizedCategory.legacySourceId), normalizedCategory);
-          }
+          registerCategory(normalizedCategory);
 
           results.push({
             category: normalizedCategory,
@@ -480,6 +624,11 @@ export async function POST(request) {
       supportedColumns: [
         'Name',
         'Slug',
+        'Category Path',
+        'Main Category',
+        'Subcategory',
+        'Sub Subcategory',
+        'Level 1-6',
         'Description',
         'Image',
         'Image URL',

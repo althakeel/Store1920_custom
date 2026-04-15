@@ -23,6 +23,95 @@ function buildCategoryUrl(name = '') {
   return slug ? `/${slug}` : '/';
 }
 
+function buildSystemCategoryMenuUrl(category = {}) {
+  if (category?.slug) {
+    return `/shop?category=${category.slug}`;
+  }
+
+  return category?.url || buildCategoryUrl(category?.name || '');
+}
+
+function getMenuCategoryIdentifier(category = {}) {
+  return String(category?.id || category?._id || category?.url || slugify(category?.name || ''));
+}
+
+function buildCategoryTree(categories = [], parentId = null) {
+  return categories
+    .filter((category) => String(category.parentId || '') === String(parentId || ''))
+    .map((category) => ({
+      ...category,
+      children: buildCategoryTree(categories, category._id),
+    }));
+}
+
+function flattenCategoryIds(categories = []) {
+  return categories.flatMap((category) => [
+    String(category._id),
+    ...flattenCategoryIds(category.children || []),
+  ]);
+}
+
+function flattenCategoryOptions(categories = [], depth = 0) {
+  return categories.flatMap((category) => [
+    {
+      id: String(category._id),
+      name: category.name,
+      depth,
+    },
+    ...flattenCategoryOptions(category.children || [], depth + 1),
+  ]);
+}
+
+function getCategoryLevelMeta(depth = 0) {
+  if (depth === 0) {
+    return {
+      label: 'Main Category',
+      badgeClassName: 'bg-emerald-600 text-white',
+      cardClassName: 'border-emerald-100 bg-gradient-to-r from-emerald-50 to-emerald-100',
+      selectClassName: 'bg-emerald-700 text-white',
+      useClassName: 'bg-emerald-600 text-white hover:bg-emerald-700',
+    };
+  }
+
+  if (depth === 1) {
+    return {
+      label: 'Sub Category',
+      badgeClassName: 'bg-blue-600 text-white',
+      cardClassName: 'border-blue-100 bg-blue-50',
+      selectClassName: 'bg-blue-600 text-white',
+      useClassName: 'bg-blue-600 text-white hover:bg-blue-700',
+    };
+  }
+
+  if (depth === 2) {
+    return {
+      label: 'Child Category',
+      badgeClassName: 'bg-violet-600 text-white',
+      cardClassName: 'border-violet-100 bg-violet-50',
+      selectClassName: 'bg-violet-600 text-white',
+      useClassName: 'bg-violet-600 text-white hover:bg-violet-700',
+    };
+  }
+
+  if (depth === 3) {
+    return {
+      label: 'Grandchild Category',
+      badgeClassName: 'bg-fuchsia-600 text-white',
+      cardClassName: 'border-fuchsia-100 bg-fuchsia-50',
+      selectClassName: 'bg-fuchsia-600 text-white',
+      useClassName: 'bg-fuchsia-600 text-white hover:bg-fuchsia-700',
+    };
+  }
+
+  return {
+    label: `Nested Level ${depth + 1}`,
+    badgeClassName: 'bg-slate-700 text-white',
+    cardClassName: 'border-slate-200 bg-slate-50',
+    selectClassName: 'bg-slate-700 text-white',
+    useClassName: 'bg-slate-700 text-white hover:bg-slate-800',
+  };
+}
+
 export default function StoreCategoryMenu() {
   const { user, getToken } = useAuth();
   const [categories, setCategories] = useState([]);
@@ -32,14 +121,20 @@ export default function StoreCategoryMenu() {
   const [editingIdx, setEditingIdx] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [importingCategories, setImportingCategories] = useState(false);
+  const [addingSelected, setAddingSelected] = useState(false);
+  const [deletingBrowseSelected, setDeletingBrowseSelected] = useState(false);
+  const [deletingSelected, setDeletingSelected] = useState(false);
   const [activeTab, setActiveTab] = useState('my-categories');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState([]);
+  const [selectedMenuCategoryIds, setSelectedMenuCategoryIds] = useState([]);
   const categoryImportInputRef = useRef(null);
 
   const [formData, setFormData] = useState({
     name: '',
     image: '',
     url: '',
+    parentId: '',
   });
 
   const [imageFile, setImageFile] = useState(null);
@@ -156,7 +251,16 @@ export default function StoreCategoryMenu() {
     try {
       setUploading(true);
       const token = await getToken();
+
+      if (!token) {
+        toast.error('Please login again and retry');
+        return;
+      }
+
       let imageUrl = formData.image;
+      const selectedParentId = String(formData.parentId || '').trim();
+      const existingCategoryById = new Map(existingCategories.map((category) => [String(category._id), category]));
+      const selectedParent = selectedParentId ? existingCategoryById.get(selectedParentId) : null;
 
       // Upload image if new file selected
       if (imageFile) {
@@ -164,7 +268,6 @@ export default function StoreCategoryMenu() {
         uploadFormData.append('files', imageFile);
         const uploadRes = await axios.post('/api/upload', uploadFormData, {
           headers: {
-            'Content-Type': 'multipart/form-data',
             Authorization: `Bearer ${token}`,
           },
         });
@@ -177,26 +280,60 @@ export default function StoreCategoryMenu() {
       }
 
       const generatedUrl = buildCategoryUrl(formData.name);
+      const currentMenuCategory = editingIdx !== null ? categories[editingIdx] : null;
+      const existingSystemCategoryId = String(currentMenuCategory?.systemCategoryId || currentMenuCategory?.id || '').trim();
+      const matchingSystemCategory = existingCategories.find((category) => category.slug === slugify(formData.name));
+
+      let syncedCategory = null;
+
+      try {
+        if (existingSystemCategoryId) {
+          const updateResponse = await axios.put(`/api/store/categories/${existingSystemCategoryId}`, {
+            name: formData.name.trim(),
+            image: imageUrl,
+            parentId: selectedParentId || null,
+          }, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          syncedCategory = updateResponse.data?.category || null;
+        } else if (matchingSystemCategory) {
+          syncedCategory = matchingSystemCategory;
+        } else {
+          const createResponse = await axios.post('/api/store/categories', {
+            name: formData.name.trim(),
+            image: imageUrl,
+            parentId: selectedParentId || null,
+          }, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          syncedCategory = createResponse.data?.category || null;
+        }
+      } catch (syncError) {
+        toast.error(syncError?.response?.data?.error || 'Failed to sync category taxonomy');
+        return;
+      }
+
+      const menuCategory = {
+        id: String(syncedCategory?._id || existingSystemCategoryId || matchingSystemCategory?._id || slugify(formData.name)),
+        systemCategoryId: String(syncedCategory?._id || existingSystemCategoryId || matchingSystemCategory?._id || ''),
+        parentId: selectedParentId || null,
+        parentName: selectedParent?.name || syncedCategory?.parent?.name || '',
+        name: formData.name.trim(),
+        image: imageUrl,
+        url: syncedCategory?.slug ? `/shop?category=${syncedCategory.slug}` : generatedUrl,
+      };
 
       let updatedCategories;
       if (editingIdx !== null) {
         // Update existing category
         updatedCategories = [...categories];
-        updatedCategories[editingIdx] = {
-          name: formData.name.trim(),
-          image: imageUrl,
-          url: generatedUrl,
-        };
+        updatedCategories[editingIdx] = menuCategory;
         toast.success('Category updated!');
       } else {
         // Add new category
         updatedCategories = [
           ...categories,
-          {
-            name: formData.name.trim(),
-            image: imageUrl,
-            url: generatedUrl,
-          },
+          menuCategory,
         ];
         toast.success('Category added!');
       }
@@ -206,21 +343,8 @@ export default function StoreCategoryMenu() {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      // Ensure category also exists in product taxonomy (used by Add Product page)
-      try {
-        await axios.post('/api/store/categories', {
-          name: formData.name.trim(),
-        }, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-      } catch (syncError) {
-        const message = syncError?.response?.data?.error || '';
-        if (!message.toLowerCase().includes('already exists')) {
-          console.warn('Category taxonomy sync failed:', syncError);
-        }
-      }
-
       setCategories(updatedCategories);
+      await fetchCategories();
       handleCancel();
     } catch (error) {
       toast.error(error?.response?.data?.error || 'Failed to save category');
@@ -256,6 +380,7 @@ export default function StoreCategoryMenu() {
       name: cat.name,
       image: cat.image,
       url: cat.url,
+      parentId: cat.parentId || '',
     });
     setImagePreview(cat.image);
     setEditingIdx(idx);
@@ -266,18 +391,231 @@ export default function StoreCategoryMenu() {
   const handleCancel = () => {
     setShowForm(false);
     setEditingIdx(null);
-    setFormData({ name: '', image: '', url: '' });
+    setFormData({ name: '', image: '', url: '', parentId: '' });
     setImageFile(null);
     setImagePreview('');
   };
 
-  // Organize categories by parent-child relationships
-  const organizeCategoriesByParent = (categories) => {
-    const parentCategories = categories.filter(cat => !cat.parentId);
-    return parentCategories.map(parent => ({
-      ...parent,
-      children: categories.filter(cat => cat.parentId === parent._id)
-    }));
+  const toggleMenuCategorySelection = (categoryId) => {
+    setSelectedMenuCategoryIds((current) => (
+      current.includes(categoryId)
+        ? current.filter((id) => id !== categoryId)
+        : [...current, categoryId]
+    ));
+  };
+
+  const toggleCategorySelection = (categoryId) => {
+    setSelectedCategoryIds((current) => (
+      current.includes(categoryId)
+        ? current.filter((id) => id !== categoryId)
+        : [...current, categoryId]
+    ));
+  };
+
+  const handleAddSelectedCategories = async () => {
+    if (!selectedCategoryIds.length) {
+      toast.error('Select at least one category');
+      return;
+    }
+
+    try {
+      setAddingSelected(true);
+      const token = await getToken();
+      const existingIdentifiers = new Set(
+        categories.flatMap((category) => [
+          String(category.id || ''),
+          String(category.url || ''),
+          slugify(category.name || ''),
+        ]).filter(Boolean)
+      );
+
+      const selectedCategories = existingCategories.filter((category) =>
+        selectedCategoryIds.includes(String(category._id))
+      );
+
+      const uniqueSelections = selectedCategories.filter((category) => {
+        const menuUrl = buildSystemCategoryMenuUrl(category);
+        return !existingIdentifiers.has(String(category._id))
+          && !existingIdentifiers.has(menuUrl)
+          && !existingIdentifiers.has(slugify(category.name || ''));
+      });
+
+      const categoriesWithImages = uniqueSelections.filter((category) => category.image);
+      const skippedForImage = uniqueSelections.length - categoriesWithImages.length;
+      const remainingSlots = Math.max(0, MAX_CATEGORIES - categories.length);
+
+      if (!remainingSlots) {
+        toast.error(`Maximum ${MAX_CATEGORIES} categories allowed`);
+        return;
+      }
+
+      const categoriesToAdd = categoriesWithImages.slice(0, remainingSlots).map((category) => ({
+        id: String(category._id),
+        systemCategoryId: String(category._id),
+        parentId: category.parentId || null,
+        parentName: existingCategories.find((entry) => String(entry._id) === String(category.parentId || ''))?.name || '',
+        name: category.name,
+        image: category.image,
+        url: buildSystemCategoryMenuUrl(category),
+        children: [],
+      }));
+
+      if (!categoriesToAdd.length) {
+        toast.error(skippedForImage ? 'Selected categories need images before they can be added' : 'Selected categories are already in your store');
+        return;
+      }
+
+      const updatedCategories = [...categories, ...categoriesToAdd];
+
+      await axios.post('/api/store/category-menu', { categories: updatedCategories }, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      setCategories(updatedCategories);
+      setSelectedCategoryIds([]);
+      setActiveTab('my-categories');
+
+      const skippedDuplicates = selectedCategories.length - uniqueSelections.length;
+      const skippedForLimit = categoriesWithImages.length - categoriesToAdd.length;
+      const notes = [
+        skippedDuplicates ? `${skippedDuplicates} already existed` : '',
+        skippedForImage ? `${skippedForImage} had no image` : '',
+        skippedForLimit ? `${skippedForLimit} exceeded the ${MAX_CATEGORIES} category limit` : '',
+      ].filter(Boolean);
+
+      toast.success(
+        notes.length
+          ? `Added ${categoriesToAdd.length} categories. ${notes.join('. ')}.`
+          : `Added ${categoriesToAdd.length} categories.`
+      );
+    } catch (error) {
+      toast.error(error?.response?.data?.error || 'Failed to add selected categories');
+    } finally {
+      setAddingSelected(false);
+    }
+  };
+
+  const handleDeleteSelectedSystemCategories = async () => {
+    if (!selectedCategoryIds.length) {
+      toast.error('Select categories to delete');
+      return;
+    }
+
+    if (!confirm(`Delete ${selectedCategoryIds.length} selected system categor${selectedCategoryIds.length === 1 ? 'y' : 'ies'}?`)) {
+      return;
+    }
+
+    try {
+      setDeletingBrowseSelected(true);
+      const token = await getToken();
+      const categoryById = new Map(existingCategories.map((category) => [String(category._id), category]));
+      const getDepth = (categoryId) => {
+        let depth = 0;
+        let current = categoryById.get(String(categoryId));
+
+        while (current?.parentId) {
+          depth += 1;
+          current = categoryById.get(String(current.parentId));
+        }
+
+        return depth;
+      };
+
+      const idsToDelete = [...selectedCategoryIds].sort((left, right) => getDepth(right) - getDepth(left));
+      const deletedIds = [];
+      const failedMessages = [];
+
+      for (const categoryId of idsToDelete) {
+        try {
+          await axios.delete(`/api/store/categories/${categoryId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          deletedIds.push(categoryId);
+        } catch (error) {
+          const categoryName = categoryById.get(categoryId)?.name || 'Category';
+          failedMessages.push(`${categoryName}: ${error?.response?.data?.error || 'delete failed'}`);
+        }
+      }
+
+      if (deletedIds.length) {
+        const updatedMenuCategories = categories.filter((category) => !deletedIds.includes(String(category.id || category._id)));
+
+        if (updatedMenuCategories.length !== categories.length) {
+          await axios.post('/api/store/category-menu', { categories: updatedMenuCategories }, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          setCategories(updatedMenuCategories);
+        }
+      }
+
+      await fetchCategories();
+      setSelectedCategoryIds((current) => current.filter((id) => !deletedIds.includes(id)));
+
+      if (deletedIds.length) {
+        toast.success(`Deleted ${deletedIds.length} system categor${deletedIds.length === 1 ? 'y' : 'ies'}`);
+      }
+
+      if (failedMessages.length) {
+        toast.error(failedMessages[0]);
+      }
+    } catch (error) {
+      toast.error(error?.response?.data?.error || 'Failed to delete selected system categories');
+    } finally {
+      setDeletingBrowseSelected(false);
+    }
+  };
+
+  const handleSelectAllBrowseCategories = () => {
+    setSelectedCategoryIds((current) => {
+      const allSelected = browseVisibleCategoryIds.length > 0 && browseVisibleCategoryIds.every((id) => current.includes(id));
+      if (allSelected) {
+        return current.filter((id) => !browseVisibleCategoryIds.includes(id));
+      }
+
+      return Array.from(new Set([...current, ...browseVisibleCategoryIds]));
+    });
+  };
+
+  const handleSelectAllMenuCategories = () => {
+    setSelectedMenuCategoryIds((current) => {
+      const allSelected = categories.length > 0 && categories.every((category) => current.includes(getMenuCategoryIdentifier(category)));
+      if (allSelected) {
+        return [];
+      }
+
+      return categories.map((category) => getMenuCategoryIdentifier(category));
+    });
+  };
+
+  const handleDeleteSelectedCategories = async () => {
+    if (!selectedMenuCategoryIds.length) {
+      toast.error('Select categories to delete');
+      return;
+    }
+
+    if (!confirm(`Delete ${selectedMenuCategoryIds.length} selected categor${selectedMenuCategoryIds.length === 1 ? 'y' : 'ies'}?`)) {
+      return;
+    }
+
+    try {
+      setDeletingSelected(true);
+      const token = await getToken();
+      const updatedCategories = categories.filter(
+        (category) => !selectedMenuCategoryIds.includes(getMenuCategoryIdentifier(category))
+      );
+
+      await axios.post('/api/store/category-menu', { categories: updatedCategories }, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      setCategories(updatedCategories);
+      setSelectedMenuCategoryIds([]);
+      toast.success('Selected categories deleted');
+    } catch (error) {
+      toast.error(error?.response?.data?.error || 'Failed to delete selected categories');
+    } finally {
+      setDeletingSelected(false);
+    }
   };
 
   const filteredExistingCategories = existingCategories.filter(cat =>
@@ -285,7 +623,124 @@ export default function StoreCategoryMenu() {
     cat.slug?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const hierarchicalCategories = organizeCategoriesByParent(filteredExistingCategories);
+  const hierarchicalCategories = buildCategoryTree(filteredExistingCategories);
+  const categoryOptions = flattenCategoryOptions(buildCategoryTree(existingCategories));
+  const editingMenuCategory = editingIdx !== null ? categories[editingIdx] : null;
+  const selectableParentOptions = categoryOptions.filter((category) => category.id !== String(editingMenuCategory?.systemCategoryId || ''));
+  const browseVisibleCategoryIds = flattenCategoryIds(hierarchicalCategories);
+  const selectedCategorySet = new Set(selectedCategoryIds);
+  const selectedMenuCategorySet = new Set(selectedMenuCategoryIds);
+  const allBrowseVisibleSelected = browseVisibleCategoryIds.length > 0 && browseVisibleCategoryIds.every((id) => selectedCategorySet.has(id));
+  const allMenuCategoriesSelected = categories.length > 0 && categories.every((category) => selectedMenuCategorySet.has(getMenuCategoryIdentifier(category)));
+
+  const openSystemCategory = (category) => {
+    setFormData({
+      name: category.name,
+      image: category.image || '',
+      url: buildSystemCategoryMenuUrl(category),
+      parentId: category.parentId || '',
+    });
+    setImagePreview(category.image || '');
+    setShowForm(true);
+    setActiveTab('my-categories');
+  };
+
+  const renderSystemCategoryNode = (category, depth = 0) => {
+    const meta = getCategoryLevelMeta(depth);
+    const isSelected = selectedCategorySet.has(String(category._id));
+    const hasChildren = Array.isArray(category.children) && category.children.length > 0;
+
+    return (
+      <div key={String(category._id)} className={`rounded-2xl border shadow-sm ${meta.cardClassName} ${isSelected ? 'ring-2 ring-blue-100 border-blue-500' : ''}`}>
+        <div className="p-5">
+          <div className="flex items-start gap-4">
+            <button
+              type="button"
+              onClick={() => toggleCategorySelection(String(category._id))}
+              className={`mt-1 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md border-2 transition ${
+                isSelected
+                  ? 'border-blue-600 bg-blue-600 text-white'
+                  : 'border-slate-300 bg-white text-transparent hover:border-blue-400'
+              }`}
+              aria-label={`Select ${category.name}`}
+            >
+              <FiCheckCircle size={14} />
+            </button>
+
+            <div className="relative h-20 w-20 flex-shrink-0 overflow-hidden rounded-xl border border-white/70 bg-white shadow-sm">
+              {category.image && (
+                <img
+                  src={category.image}
+                  alt={category.name}
+                  className="h-full w-full object-cover"
+                />
+              )}
+              <div className={`absolute left-2 top-2 rounded-full px-2 py-0.5 text-[10px] font-bold ${meta.badgeClassName}`}>
+                {meta.label}
+              </div>
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0 flex-1">
+                  <h3 className={`font-bold text-slate-900 ${depth === 0 ? 'text-2xl' : depth === 1 ? 'text-xl' : 'text-lg'}`}>{category.name}</h3>
+                  {category.slug && (
+                    <p className="mt-2 inline-block rounded-lg bg-white px-3 py-1 text-xs font-mono text-slate-700">
+                      Slug: {category.slug}
+                    </p>
+                  )}
+                  {category.description && (
+                    <p className="mt-2 text-sm text-slate-600">{category.description}</p>
+                  )}
+                  <p className="mt-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    {hasChildren
+                      ? `${meta.label} with ${category.children.length} nested ${category.children.length === 1 ? 'category' : 'categories'}`
+                      : `${meta.label} with no nested categories`}
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-2 lg:items-end">
+                  <button
+                    type="button"
+                    onClick={() => toggleCategorySelection(String(category._id))}
+                    className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+                      isSelected
+                        ? meta.selectClassName
+                        : 'border border-white/80 bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    {isSelected ? 'Selected' : 'Select'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openSystemCategory(category)}
+                    className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${meta.useClassName}`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <FiCheckCircle />
+                      Use
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {hasChildren ? (
+          <div className="border-t border-white/70 bg-white/70 p-4">
+            <div className="space-y-4 pl-2 md:pl-6">
+              {category.children.map((child) => renderSystemCategoryNode(child, depth + 1))}
+            </div>
+          </div>
+        ) : (
+          <div className="border-t border-white/70 bg-white/70 px-4 py-5 text-center text-sm italic text-slate-500">
+            No nested categories
+          </div>
+        )}
+      </div>
+    );
+  };
 
   if (loading) return <Loading />;
   if (!user) return <div className="p-6 text-red-500">Please login</div>;
@@ -414,11 +869,30 @@ export default function StoreCategoryMenu() {
                   onChange={handleImportCategories}
                   className="hidden"
                 />
+
+                <button
+                  type="button"
+                  onClick={handleSelectAllMenuCategories}
+                  disabled={!categories.length}
+                  className="w-full md:w-auto flex items-center justify-center gap-3 px-8 py-4 bg-white text-slate-800 rounded-xl border border-slate-200 hover:shadow-lg transition-all duration-200 font-semibold text-lg disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {allMenuCategoriesSelected ? 'Unselect All' : 'Select All'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleDeleteSelectedCategories}
+                  disabled={!selectedMenuCategoryIds.length || deletingSelected}
+                  className="w-full md:w-auto flex items-center justify-center gap-3 px-8 py-4 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-all duration-200 font-semibold text-lg disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {deletingSelected ? 'Deleting...' : `Delete Selected${selectedMenuCategoryIds.length ? ` (${selectedMenuCategoryIds.length})` : ''}`}
+                </button>
               </div>
 
               <div className="max-w-xl rounded-2xl border border-blue-100 bg-white/80 px-5 py-4 text-sm text-slate-600 shadow-sm">
                 <p className="font-semibold text-slate-900">Spreadsheet import</p>
-                <p className="mt-1">Supported columns: Name, Slug, Description, Image or Image URL, URL, Parent, Parent Slug, Parent ID, Include In Menu, Legacy Source ID.</p>
+                <p className="mt-1">Supported columns: Name, Slug, Description, Image or Image URL, URL, Parent, Parent Slug, Parent ID, Category Path, Main Category, Subcategory, Sub Subcategory, Level 1-6, Include In Menu, Legacy Source ID.</p>
+                <p className="mt-2 text-xs text-slate-500">Use either a single Category Path like Home &gt; Decor &gt; Lamps, or separate hierarchy columns like Main Category, Subcategory, and Sub Subcategory.</p>
               </div>
             </div>
 
@@ -461,6 +935,27 @@ export default function StoreCategoryMenu() {
                       <div className="w-full px-5 py-3 border-2 border-slate-200 rounded-xl bg-slate-50 text-slate-600">
                         {buildCategoryUrl(formData.name)}
                       </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-3 uppercase tracking-wide">
+                        Parent Category
+                      </label>
+                      <select
+                        value={formData.parentId}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, parentId: e.target.value }))}
+                        className="w-full px-5 py-3 border-2 border-slate-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition text-slate-900"
+                      >
+                        <option value="">None (top-level category)</option>
+                        {selectableParentOptions.map((category) => (
+                          <option key={category.id} value={category.id}>
+                            {`${'-- '.repeat(category.depth)}${category.name}`}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-2 text-xs text-slate-500">
+                        Choose a parent to make this a subcategory or grandchild category.
+                      </p>
                     </div>
 
                     {/* Image Upload */}
@@ -547,9 +1042,21 @@ export default function StoreCategoryMenu() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {categories.map((cat, idx) => (
-                  <div key={idx} className="group bg-white rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden border border-slate-100">
+                  <div key={idx} className={`group bg-white rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden border ${selectedMenuCategorySet.has(getMenuCategoryIdentifier(cat)) ? 'border-blue-500 ring-2 ring-blue-100' : 'border-slate-100'}`}>
                     {/* Image */}
                     <div className="relative h-48 overflow-hidden bg-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => toggleMenuCategorySelection(getMenuCategoryIdentifier(cat))}
+                        className={`absolute left-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-md border-2 shadow-sm transition ${
+                          selectedMenuCategorySet.has(getMenuCategoryIdentifier(cat))
+                            ? 'border-blue-600 bg-blue-600 text-white'
+                            : 'border-white/80 bg-white text-transparent hover:border-blue-300'
+                        }`}
+                        aria-label={`Select ${cat.name}`}
+                      >
+                        <FiCheckCircle size={16} />
+                      </button>
                       <img
                         src={cat.image}
                         alt={cat.name}
@@ -561,7 +1068,22 @@ export default function StoreCategoryMenu() {
                     {/* Content */}
                     <div className="p-6">
                       <h3 className="font-bold text-lg text-slate-900 mb-2 line-clamp-1">{cat.name}</h3>
+                      <p className="text-xs text-slate-500 mb-2 line-clamp-1">
+                        {cat.parentName ? `Subcategory of ${cat.parentName}` : 'Top-level category'}
+                      </p>
                       <p className="text-xs text-blue-600 mb-4 line-clamp-1 font-mono bg-blue-50 p-2 rounded-lg">{cat.url}</p>
+
+                      <button
+                        type="button"
+                        onClick={() => toggleMenuCategorySelection(getMenuCategoryIdentifier(cat))}
+                        className={`mb-4 w-full rounded-lg py-2 text-sm font-semibold transition ${
+                          selectedMenuCategorySet.has(getMenuCategoryIdentifier(cat))
+                            ? 'bg-blue-600 text-white hover:bg-blue-700'
+                            : 'border border-blue-200 text-blue-600 hover:bg-blue-50'
+                        }`}
+                      >
+                        {selectedMenuCategorySet.has(getMenuCategoryIdentifier(cat)) ? 'Selected' : 'Select'}
+                      </button>
 
                       {/* Actions */}
                       <div className="flex gap-2">
@@ -586,6 +1108,50 @@ export default function StoreCategoryMenu() {
           </>
         ) : (
           <>
+            <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Select system categories</p>
+                <p className="mt-1 text-xs text-slate-500">Choose categories here, then add all selected items to your store in one step.</p>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <span className="rounded-full bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">
+                  {selectedCategoryIds.length} selected
+                </span>
+                <button
+                  type="button"
+                  onClick={handleSelectAllBrowseCategories}
+                  disabled={!browseVisibleCategoryIds.length || addingSelected}
+                  className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {allBrowseVisibleSelected ? 'Unselect All' : 'Select All'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedCategoryIds([])}
+                  disabled={!selectedCategoryIds.length || addingSelected}
+                  className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAddSelectedCategories}
+                  disabled={!selectedCategoryIds.length || addingSelected || deletingBrowseSelected}
+                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {addingSelected ? 'Adding...' : 'Add Selected'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteSelectedSystemCategories}
+                  disabled={!selectedCategoryIds.length || deletingBrowseSelected || addingSelected}
+                  className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {deletingBrowseSelected ? 'Deleting...' : 'Delete Selected'}
+                </button>
+              </div>
+            </div>
+
             {/* Search Bar */}
             <div className="mb-8">
               <div className="relative">
@@ -608,133 +1174,7 @@ export default function StoreCategoryMenu() {
               </div>
             ) : (
               <div className="space-y-8">
-                {hierarchicalCategories.map((parent, parentIdx) => (
-                  <div key={parentIdx} className="bg-white rounded-2xl shadow-lg border border-emerald-100 overflow-hidden">
-                    {/* Parent Category */}
-                    <div className="bg-gradient-to-r from-emerald-50 to-emerald-100 border-b border-emerald-200">
-                      <div className="p-6">
-                        <div className="flex items-start gap-6">
-                          {/* Parent Image */}
-                          <div className="relative w-24 h-24 flex-shrink-0 overflow-hidden rounded-xl border-2 border-emerald-300 shadow-md">
-                            {parent.image && (
-                              <img
-                                src={parent.image}
-                                alt={parent.name}
-                                className="w-full h-full object-cover"
-                              />
-                            )}
-                            <div className="absolute top-1 right-1 bg-emerald-600 text-white px-2 py-0.5 rounded-full text-xs font-bold">
-                              Parent
-                            </div>
-                          </div>
-
-                          {/* Parent Info */}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-start justify-between gap-4">
-                              <div className="flex-1">
-                                <h3 className="text-2xl font-bold text-slate-900 mb-2">{parent.name}</h3>
-                                {parent.slug && (
-                                  <p className="text-sm text-slate-700 font-mono bg-white px-3 py-1 rounded-lg inline-block mb-2">
-                                    Slug: {parent.slug}
-                                  </p>
-                                )}
-                                {parent.description && (
-                                  <p className="text-sm text-slate-700 mt-2">{parent.description}</p>
-                                )}
-                                {parent.children && parent.children.length > 0 && (
-                                  <p className="text-xs text-emerald-700 font-semibold mt-3 flex items-center gap-2">
-                                    <span className="bg-emerald-200 px-2 py-1 rounded-full">{parent.children.length} subcategories</span>
-                                  </p>
-                                )}
-                              </div>
-
-                              {/* Use Parent Button */}
-                              <button
-                                onClick={() => {
-                                  setFormData({
-                                    name: parent.name,
-                                    image: parent.image || '',
-                                    url: `/shop?category=${parent.slug}`,
-                                  });
-                                  setImagePreview(parent.image || '');
-                                  setShowForm(true);
-                                  setActiveTab('my-categories');
-                                }}
-                                className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition font-semibold text-sm whitespace-nowrap flex items-center gap-2"
-                              >
-                                <FiCheckCircle /> Use
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Child Categories */}
-                    {parent.children && parent.children.length > 0 && (
-                      <div className="p-6 bg-white">
-                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Subcategories:</p>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                          {parent.children.map((child, childIdx) => (
-                            <div key={childIdx} className="group bg-slate-50 rounded-xl border border-slate-200 hover:border-emerald-300 hover:shadow-md transition-all duration-300 overflow-hidden">
-                              {/* Child Image */}
-                              <div className="relative h-32 overflow-hidden bg-slate-100">
-                                {child.image && (
-                                  <img
-                                    src={child.image}
-                                    alt={child.name}
-                                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
-                                  />
-                                )}
-                                <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition duration-300" />
-                                <div className="absolute top-2 right-2 bg-blue-500 text-white px-2 py-0.5 rounded-full text-xs font-bold">
-                                  Child
-                                </div>
-                              </div>
-
-                              {/* Child Content */}
-                              <div className="p-4">
-                                <h4 className="font-bold text-slate-900 mb-2 line-clamp-1 text-sm">{child.name}</h4>
-                                {child.slug && (
-                                  <p className="text-xs text-slate-600 mb-3 font-mono bg-white p-1.5 rounded">
-                                    {child.slug}
-                                  </p>
-                                )}
-                                {child.description && (
-                                  <p className="text-xs text-slate-600 mb-3 line-clamp-2">{child.description}</p>
-                                )}
-
-                                {/* Use Child Button */}
-                                <button
-                                  onClick={() => {
-                                    setFormData({
-                                      name: child.name,
-                                      image: child.image || '',
-                                      url: `/shop?category=${child.slug}`,
-                                    });
-                                    setImagePreview(child.image || '');
-                                    setShowForm(true);
-                                    setActiveTab('my-categories');
-                                  }}
-                                  className="w-full py-2 text-blue-600 font-semibold hover:bg-blue-50 rounded-lg transition text-xs flex items-center justify-center gap-1"
-                                >
-                                  <FiCheckCircle size={14} /> Use This
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* No Children Message */}
-                    {(!parent.children || parent.children.length === 0) && (
-                      <div className="p-6 bg-slate-50 border-t border-slate-200">
-                        <p className="text-sm text-slate-500 italic text-center">No subcategories</p>
-                      </div>
-                    )}
-                  </div>
-                ))}
+                {hierarchicalCategories.map((category) => renderSystemCategoryNode(category))}
               </div>
             )}
           </>

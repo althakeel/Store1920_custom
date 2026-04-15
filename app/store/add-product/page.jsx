@@ -79,6 +79,169 @@ const slugifyValue = (value = '') => {
         .replace(/^-+|-+$/g, '')
 }
 
+function RichTextDescriptionEditor({
+    label,
+    value,
+    onChange,
+    placeholder,
+    getAuthTokenOrThrow,
+    dir = 'ltr',
+}) {
+    const editor = useEditor({
+        extensions: [
+            StarterKit,
+            TiptapImage.configure({
+                inline: true,
+                allowBase64: true,
+            }),
+            Video,
+            Link.configure({ openOnClick: false }),
+            TextAlign.configure({ types: ['heading', 'paragraph'] }),
+            TextStyle,
+            Color,
+            Table.configure({
+                resizable: true,
+            }),
+            TableRow,
+            TableHeader,
+            TableCell,
+            Placeholder.configure({ placeholder })
+        ],
+        content: value || '',
+        immediatelyRender: false,
+        onUpdate: ({ editor: activeEditor }) => {
+            onChange(activeEditor.getHTML())
+        }
+    })
+
+    useEffect(() => {
+        if (!editor) return
+
+        const nextValue = value || ''
+        const currentValue = editor.getHTML()
+
+        if (nextValue && currentValue !== nextValue) {
+            editor.commands.setContent(nextValue)
+            return
+        }
+
+        if (!nextValue && currentValue !== '<p></p>') {
+            editor.commands.clearContent()
+        }
+    }, [value, editor])
+
+    return (
+        <div dir={dir}>
+            <label className="block text-sm font-medium mb-1">{label}</label>
+
+            <div className="border border-gray-300 rounded-t bg-white p-3 flex flex-wrap gap-1.5 shadow-sm">
+                <button type="button" onClick={() => editor?.chain().focus().toggleBold().run()} className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${editor?.isActive('bold') ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 hover:bg-gray-200'}`} title="Bold"><strong>B</strong></button>
+                <button type="button" onClick={() => editor?.chain().focus().toggleItalic().run()} className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${editor?.isActive('italic') ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 hover:bg-gray-200'}`} title="Italic"><em>I</em></button>
+                <button type="button" onClick={() => editor?.chain().focus().toggleStrike().run()} className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${editor?.isActive('strike') ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 hover:bg-gray-200'}`} title="Strikethrough"><s>S</s></button>
+                <div className="w-px h-6 bg-gray-300 self-center mx-1"></div>
+                <button type="button" onClick={() => editor?.chain().focus().toggleHeading({ level: 1 }).run()} className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${editor?.isActive('heading', { level: 1 }) ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 hover:bg-gray-200'}`} title="Heading 1">H1</button>
+                <button type="button" onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()} className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${editor?.isActive('heading', { level: 2 }) ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 hover:bg-gray-200'}`} title="Heading 2">H2</button>
+                <button type="button" onClick={() => editor?.chain().focus().toggleHeading({ level: 3 }).run()} className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${editor?.isActive('heading', { level: 3 }) ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 hover:bg-gray-200'}`} title="Heading 3">H3</button>
+                <div className="w-px h-6 bg-gray-300 self-center mx-1"></div>
+                <button type="button" onClick={() => editor?.chain().focus().toggleBulletList().run()} className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${editor?.isActive('bulletList') ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 hover:bg-gray-200'}`} title="Bullet List">• List</button>
+                <button type="button" onClick={() => editor?.chain().focus().toggleOrderedList().run()} className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${editor?.isActive('orderedList') ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 hover:bg-gray-200'}`} title="Numbered List">1. List</button>
+                <div className="w-px h-6 bg-gray-300 self-center mx-1"></div>
+                <button type="button" onClick={() => editor?.chain().focus().insertTable({ rows: 2, cols: 2, withHeaderRow: false }).run()} className="px-3 py-1.5 rounded text-sm font-medium bg-gray-100 hover:bg-gray-200 transition-all" title="Insert Table">📊 <span className="hidden sm:inline">Table</span></button>
+                <button type="button" onClick={() => editor?.chain().focus().addColumnAfter().run()} disabled={!editor?.can().addColumnAfter()} className="px-2 py-1.5 rounded text-xs font-medium bg-gray-100 hover:bg-gray-200 transition-all disabled:opacity-30" title="Add Column">+ Col</button>
+                <button type="button" onClick={() => editor?.chain().focus().deleteColumn().run()} disabled={!editor?.can().deleteColumn()} className="px-2 py-1.5 rounded text-xs font-medium bg-gray-100 hover:bg-gray-200 transition-all disabled:opacity-30" title="Delete Column">- Col</button>
+                <button type="button" onClick={() => editor?.chain().focus().addRowAfter().run()} disabled={!editor?.can().addRowAfter()} className="px-2 py-1.5 rounded text-xs font-medium bg-gray-100 hover:bg-gray-200 transition-all disabled:opacity-30" title="Add Row">+ Row</button>
+                <button type="button" onClick={() => editor?.chain().focus().deleteRow().run()} disabled={!editor?.can().deleteRow()} className="px-2 py-1.5 rounded text-xs font-medium bg-gray-100 hover:bg-gray-200 transition-all disabled:opacity-30" title="Delete Row">- Row</button>
+                <button type="button" onClick={() => editor?.chain().focus().deleteTable().run()} disabled={!editor?.can().deleteTable()} className="px-2 py-1.5 rounded text-xs font-medium bg-red-100 hover:bg-red-200 transition-all disabled:opacity-30" title="Delete Table">🗑️</button>
+                <div className="w-px h-6 bg-gray-300 self-center mx-1"></div>
+                <button type="button" onClick={() => editor?.chain().focus().setTextAlign('left').run()} className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${editor?.isActive({ textAlign: 'left' }) ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 hover:bg-gray-200'}`} title="Align Left">⬅</button>
+                <button type="button" onClick={() => editor?.chain().focus().setTextAlign('center').run()} className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${editor?.isActive({ textAlign: 'center' }) ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 hover:bg-gray-200'}`} title="Align Center">↔</button>
+                <button type="button" onClick={() => editor?.chain().focus().setTextAlign('right').run()} className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${editor?.isActive({ textAlign: 'right' }) ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 hover:bg-gray-200'}`} title="Align Right">➡</button>
+                <div className="w-px h-6 bg-gray-300 self-center mx-1"></div>
+                <label className="px-3 py-1.5 rounded text-sm font-medium bg-green-100 hover:bg-green-200 transition-all cursor-pointer flex items-center gap-1" title="Upload Image">
+                    🖼️ <span className="hidden sm:inline">Image</span>
+                    <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={async (e) => {
+                            const file = e.target.files?.[0]
+                            if (!file) return
+                            if (file.size > 5 * 1024 * 1024) {
+                                toast.error('Single image must be 5MB or smaller')
+                                e.target.value = ''
+                                return
+                            }
+
+                            try {
+                                const formData = new FormData()
+                                formData.append('image', file)
+
+                                const token = await getAuthTokenOrThrow()
+                                const { data } = await axios.post('/api/store/upload-image', formData, {
+                                    headers: { Authorization: `Bearer ${token}` }
+                                })
+
+                                editor?.chain().focus().setImage({ src: data.url }).run()
+                                toast.success('Image uploaded!')
+                            } catch (error) {
+                                toast.error('Failed to upload image')
+                            }
+                            e.target.value = ''
+                        }}
+                    />
+                </label>
+                <label className="px-3 py-1.5 rounded text-sm font-medium bg-purple-100 hover:bg-purple-200 transition-all cursor-pointer flex items-center gap-1" title="Upload Video">
+                    🎥 <span className="hidden sm:inline">Video</span>
+                    <input
+                        type="file"
+                        accept="video/*"
+                        className="hidden"
+                        onChange={async (e) => {
+                            const file = e.target.files?.[0]
+                            if (!file) return
+
+                            if (file.size > 50 * 1024 * 1024) {
+                                toast.error('Video file too large (max 50MB)')
+                                return
+                            }
+
+                            try {
+                                toast.loading('Uploading video...')
+                                const formData = new FormData()
+                                formData.append('image', file)
+
+                                const token = await getAuthTokenOrThrow()
+                                const { data } = await axios.post('/api/store/upload-image', formData, {
+                                    headers: { Authorization: `Bearer ${token}` }
+                                })
+
+                                editor?.chain().focus().setVideo({ src: data.url }).run()
+                                toast.dismiss()
+                                toast.success('Video uploaded!')
+                            } catch (error) {
+                                toast.dismiss()
+                                toast.error('Failed to upload video')
+                            }
+                            e.target.value = ''
+                        }}
+                    />
+                </label>
+                <button type="button" onClick={() => {
+                    const url = prompt('Enter link URL:')
+                    if (url) editor?.chain().focus().setLink({ href: url }).run()
+                }} className="px-3 py-1.5 rounded text-sm font-medium bg-gray-100 hover:bg-gray-200 transition-all" title="Add Link">🔗 <span className="hidden sm:inline">Link</span></button>
+                <input type="color" onChange={(e) => editor?.chain().focus().setColor(e.target.value).run()} className="w-10 h-8 rounded border-2 cursor-pointer hover:border-blue-400 transition-all" title="Text Color" />
+            </div>
+
+            <EditorContent
+                editor={editor}
+                className={`border border-t-0 border-gray-300 rounded-b bg-white p-4 min-h-[250px] max-h-[500px] overflow-y-auto prose prose-slate max-w-none focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 transition-all [&_video]:max-w-full [&_video]:rounded [&_video]:my-4 [&_img]:max-w-full [&_img]:rounded [&_img]:my-2 ${dir === 'rtl' ? '[&_p]:text-right [&_h1]:text-right [&_h2]:text-right [&_h3]:text-right [&_li]:text-right' : ''}`}
+            />
+            <p className="text-xs text-gray-500 mt-1">💡 You can upload images and videos (max 50MB) directly into the description</p>
+        </div>
+    )
+}
+
 export default function ProductForm({ product = null, onClose, onSubmitSuccess }) {
         // MISSING STATE HOOKS (add these at the top of ProductForm)
         const [dbCategories, setDbCategories] = useState([]);
@@ -271,42 +434,6 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
             fetchFbtConfig();
         }
     }, [product?._id]);
-    const editor = useEditor({
-        extensions: [
-            StarterKit,
-            TiptapImage.configure({
-                inline: true,
-                allowBase64: true,
-            }),
-            Video,
-            Link.configure({ openOnClick: false }),
-            TextAlign.configure({ types: ['heading', 'paragraph'] }),
-            TextStyle,
-            Color,
-            Table.configure({
-                resizable: true,
-            }),
-            TableRow,
-            TableHeader,
-            TableCell,
-            Placeholder.configure({
-                placeholder: 'Write a detailed product description... Use the toolbar to format text, add images, videos, links, tables and more!'
-            })
-        ],
-        content: productInfo.description,
-        immediatelyRender: false,
-        onUpdate: ({ editor }) => {
-            setProductInfo(prev => ({ ...prev, description: editor.getHTML() }))
-        }
-    })
-
-    // Update editor content when product changes
-    useEffect(() => {
-        if (editor && product?.description && editor.getHTML() !== product.description) {
-            editor.commands.setContent(product.description)
-        }
-    }, [product?.description, editor])
-
     // Prefill form when editing
     useEffect(() => {
         if (product && !isFormInitialized) {
@@ -785,10 +912,14 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                     <input name="shortDescriptionAr" value={productInfo.shortDescriptionAr || ''} onChange={onChangeHandler} dir="rtl" className="w-full border rounded px-3 py-2" placeholder="وصف مختصر بالعربية" />
                 </div>
 
-                <div>
-                    <label className="block text-sm font-medium mb-1">Description (Arabic)</label>
-                    <textarea name="descriptionAr" value={productInfo.descriptionAr || ''} onChange={onChangeHandler} dir="rtl" rows={6} className="w-full border rounded px-3 py-2" placeholder="تفاصيل المنتج بالعربية" />
-                </div>
+                <RichTextDescriptionEditor
+                    label="Description (Arabic)"
+                    value={productInfo.descriptionAr || ''}
+                    onChange={(nextValue) => setProductInfo(prev => ({ ...prev, descriptionAr: nextValue }))}
+                    placeholder="اكتب وصفًا تفصيليًا للمنتج بالعربية... يمكنك استخدام الأدوات للتنسيق وإضافة الصور والفيديو والروابط والجداول وأكثر"
+                    getAuthTokenOrThrow={getAuthTokenOrThrow}
+                    dir="rtl"
+                />
 
 
 
@@ -877,117 +1008,13 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                     <p className="text-xs text-gray-500">Select badges to display on the product page</p>
                 </div>
 
-                <div>
-                    <label className="block text-sm font-medium mb-1">Description (Rich Text)</label>
-                    
-                    {/* Toolbar */}
-                    <div className="border border-gray-300 rounded-t bg-white p-3 flex flex-wrap gap-1.5 shadow-sm">
-                        <button type="button" onClick={() => editor?.chain().focus().toggleBold().run()} className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${editor?.isActive('bold') ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 hover:bg-gray-200'}`} title="Bold"><strong>B</strong></button>
-                        <button type="button" onClick={() => editor?.chain().focus().toggleItalic().run()} className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${editor?.isActive('italic') ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 hover:bg-gray-200'}`} title="Italic"><em>I</em></button>
-                        <button type="button" onClick={() => editor?.chain().focus().toggleStrike().run()} className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${editor?.isActive('strike') ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 hover:bg-gray-200'}`} title="Strikethrough"><s>S</s></button>
-                        <div className="w-px h-6 bg-gray-300 self-center mx-1"></div>
-                        <button type="button" onClick={() => editor?.chain().focus().toggleHeading({ level: 1 }).run()} className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${editor?.isActive('heading', { level: 1 }) ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 hover:bg-gray-200'}`} title="Heading 1">H1</button>
-                        <button type="button" onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()} className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${editor?.isActive('heading', { level: 2 }) ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 hover:bg-gray-200'}`} title="Heading 2">H2</button>
-                        <button type="button" onClick={() => editor?.chain().focus().toggleHeading({ level: 3 }).run()} className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${editor?.isActive('heading', { level: 3 }) ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 hover:bg-gray-200'}`} title="Heading 3">H3</button>
-                        <div className="w-px h-6 bg-gray-300 self-center mx-1"></div>
-                        <button type="button" onClick={() => editor?.chain().focus().toggleBulletList().run()} className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${editor?.isActive('bulletList') ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 hover:bg-gray-200'}`} title="Bullet List">• List</button>
-                        <button type="button" onClick={() => editor?.chain().focus().toggleOrderedList().run()} className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${editor?.isActive('orderedList') ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 hover:bg-gray-200'}`} title="Numbered List">1. List</button>
-                        <div className="w-px h-6 bg-gray-300 self-center mx-1"></div>
-                        <button type="button" onClick={() => editor?.chain().focus().insertTable({ rows: 2, cols: 2, withHeaderRow: false }).run()} className="px-3 py-1.5 rounded text-sm font-medium bg-gray-100 hover:bg-gray-200 transition-all" title="Insert Table">📊 <span className="hidden sm:inline">Table</span></button>
-                        <button type="button" onClick={() => editor?.chain().focus().addColumnAfter().run()} disabled={!editor?.can().addColumnAfter()} className="px-2 py-1.5 rounded text-xs font-medium bg-gray-100 hover:bg-gray-200 transition-all disabled:opacity-30" title="Add Column">+ Col</button>
-                        <button type="button" onClick={() => editor?.chain().focus().deleteColumn().run()} disabled={!editor?.can().deleteColumn()} className="px-2 py-1.5 rounded text-xs font-medium bg-gray-100 hover:bg-gray-200 transition-all disabled:opacity-30" title="Delete Column">- Col</button>
-                        <button type="button" onClick={() => editor?.chain().focus().addRowAfter().run()} disabled={!editor?.can().addRowAfter()} className="px-2 py-1.5 rounded text-xs font-medium bg-gray-100 hover:bg-gray-200 transition-all disabled:opacity-30" title="Add Row">+ Row</button>
-                        <button type="button" onClick={() => editor?.chain().focus().deleteRow().run()} disabled={!editor?.can().deleteRow()} className="px-2 py-1.5 rounded text-xs font-medium bg-gray-100 hover:bg-gray-200 transition-all disabled:opacity-30" title="Delete Row">- Row</button>
-                        <button type="button" onClick={() => editor?.chain().focus().deleteTable().run()} disabled={!editor?.can().deleteTable()} className="px-2 py-1.5 rounded text-xs font-medium bg-red-100 hover:bg-red-200 transition-all disabled:opacity-30" title="Delete Table">🗑️</button>
-                        <div className="w-px h-6 bg-gray-300 self-center mx-1"></div>
-                        <button type="button" onClick={() => editor?.chain().focus().setTextAlign('left').run()} className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${editor?.isActive({ textAlign: 'left' }) ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 hover:bg-gray-200'}`} title="Align Left">⬅</button>
-                        <button type="button" onClick={() => editor?.chain().focus().setTextAlign('center').run()} className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${editor?.isActive({ textAlign: 'center' }) ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 hover:bg-gray-200'}`} title="Align Center">↔</button>
-                        <button type="button" onClick={() => editor?.chain().focus().setTextAlign('right').run()} className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${editor?.isActive({ textAlign: 'right' }) ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 hover:bg-gray-200'}`} title="Align Right">➡</button>
-                        <div className="w-px h-6 bg-gray-300 self-center mx-1"></div>
-                        <label className="px-3 py-1.5 rounded text-sm font-medium bg-green-100 hover:bg-green-200 transition-all cursor-pointer flex items-center gap-1" title="Upload Image">
-                            🖼️ <span className="hidden sm:inline">Image</span>
-                            <input 
-                                type="file" 
-                                accept="image/*" 
-                                className="hidden" 
-                                onChange={async (e) => {
-                                    const file = e.target.files?.[0]
-                                    if (!file) return
-                                    if (file.size > 5 * 1024 * 1024) {
-                                        toast.error('Single image must be 5MB or smaller')
-                                        e.target.value = ''
-                                        return
-                                    }
-                                    
-                                    try {
-                                        const formData = new FormData()
-                                        formData.append('image', file)
-                                        
-                                        const token = await getAuthTokenOrThrow()
-                                        const { data } = await axios.post('/api/store/upload-image', formData, {
-                                            headers: { Authorization: `Bearer ${token}` }
-                                        })
-                                        
-                                        editor?.chain().focus().setImage({ src: data.url }).run()
-                                        toast.success('Image uploaded!')
-                                    } catch (error) {
-                                        toast.error('Failed to upload image')
-                                    }
-                                    e.target.value = ''
-                                }}
-                            />
-                        </label>
-                        <label className="px-3 py-1.5 rounded text-sm font-medium bg-purple-100 hover:bg-purple-200 transition-all cursor-pointer flex items-center gap-1" title="Upload Video">
-                            🎥 <span className="hidden sm:inline">Video</span>
-                            <input 
-                                type="file" 
-                                accept="video/*" 
-                                className="hidden" 
-                                onChange={async (e) => {
-                                    const file = e.target.files?.[0]
-                                    if (!file) return
-                                    
-                                    // Check file size (max 50MB)
-                                    if (file.size > 50 * 1024 * 1024) {
-                                        toast.error('Video file too large (max 50MB)')
-                                        return
-                                    }
-                                    
-                                    try {
-                                        toast.loading('Uploading video...')
-                                        const formData = new FormData()
-                                        formData.append('image', file) // Using same endpoint
-                                        
-                                        const token = await getAuthTokenOrThrow()
-                                        const { data } = await axios.post('/api/store/upload-image', formData, {
-                                            headers: { Authorization: `Bearer ${token}` }
-                                        })
-                                        
-                                        editor?.chain().focus().setVideo({ src: data.url }).run()
-                                        toast.dismiss()
-                                        toast.success('Video uploaded!')
-                                    } catch (error) {
-                                        toast.dismiss()
-                                        toast.error('Failed to upload video')
-                                    }
-                                    e.target.value = ''
-                                }}
-                            />
-                        </label>
-                        <button type="button" onClick={() => {
-                            const url = prompt('Enter link URL:')
-                            if (url) editor?.chain().focus().setLink({ href: url }).run()
-                        }} className="px-3 py-1.5 rounded text-sm font-medium bg-gray-100 hover:bg-gray-200 transition-all" title="Add Link">🔗 <span className="hidden sm:inline">Link</span></button>
-                        <input type="color" onChange={(e) => editor?.chain().focus().setColor(e.target.value).run()} className="w-10 h-8 rounded border-2 cursor-pointer hover:border-blue-400 transition-all" title="Text Color" />
-                    </div>
-                    
-                    {/* Editor */}
-                    <EditorContent 
-                        editor={editor} 
-                        className="border border-t-0 border-gray-300 rounded-b bg-white p-4 min-h-[250px] max-h-[500px] overflow-y-auto prose prose-slate max-w-none focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 transition-all [&_video]:max-w-full [&_video]:rounded [&_video]:my-4 [&_img]:max-w-full [&_img]:rounded [&_img]:my-2"
-                    />
-                    <p className="text-xs text-gray-500 mt-1">💡 You can upload images and videos (max 50MB) directly into the description</p>
-                </div>
+                <RichTextDescriptionEditor
+                    label="Description (Rich Text)"
+                    value={productInfo.description || ''}
+                    onChange={(nextValue) => setProductInfo(prev => ({ ...prev, description: nextValue }))}
+                    placeholder="Write a detailed product description... Use the toolbar to format text, add images, videos, links, tables and more!"
+                    getAuthTokenOrThrow={getAuthTokenOrThrow}
+                />
 
                 {/* Images */}
                 <div>

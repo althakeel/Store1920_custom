@@ -7,6 +7,7 @@ import axios from 'axios';
 import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
 import ProductCard from '@/components/ProductCard';
+import { useMemo } from 'react';
 
 export default function RecommendedProducts() {
   const products = useSelector(state => state.product.list);
@@ -14,6 +15,100 @@ export default function RecommendedProducts() {
   const [viewedProducts, setViewedProducts] = useState([]);
   const [recommendedProducts, setRecommendedProducts] = useState([]);
   const [isNewCustomer, setIsNewCustomer] = useState(true);
+  const [manualRecommendedIds, setManualRecommendedIds] = useState([]);
+  const [manualRecommendedProducts, setManualRecommendedProducts] = useState([]);
+
+  const fallbackManualProducts = useMemo(() => {
+    if (!Array.isArray(manualRecommendedIds) || manualRecommendedIds.length === 0) {
+      return [];
+    }
+
+    const productMap = new Map(products.map((product) => [String(product?._id || product?.id || ''), product]));
+    return manualRecommendedIds
+      .map((id) => productMap.get(String(id || '').trim()))
+      .filter(Boolean)
+      .slice(0, 10);
+  }, [manualRecommendedIds, products]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchManualRecommendations = async () => {
+      try {
+        let privateResponse = null;
+        let publicResponse = null;
+
+        if (user?.uid) {
+          const token = await getToken().catch(() => null);
+          if (token) {
+            privateResponse = await axios.get('/api/store/explore-interests', {
+              params: { t: Date.now() },
+              headers: { Authorization: `Bearer ${token}` },
+              timeout: 7000
+            }).catch(() => null);
+          }
+        }
+
+        publicResponse = await axios.get('/api/store/explore-interests/public', {
+          params: { t: Date.now() },
+          timeout: 7000
+        }).catch(() => null);
+
+        if (!isMounted) return;
+
+        const privateCount = Array.isArray(privateResponse?.data?.productIds) ? privateResponse.data.productIds.length : 0;
+        const publicCount = Array.isArray(publicResponse?.data?.productIds) ? publicResponse.data.productIds.length : 0;
+        const chosen = privateCount >= publicCount ? (privateResponse || publicResponse) : (publicResponse || privateResponse);
+
+        const ids = Array.isArray(chosen?.data?.productIds)
+          ? chosen.data.productIds.map((id) => String(id || '').trim()).filter(Boolean)
+          : [];
+        setManualRecommendedIds(ids);
+      } catch {
+        if (isMounted) {
+          setManualRecommendedIds([]);
+        }
+      }
+    };
+
+    fetchManualRecommendations();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.uid, getToken]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchManualProducts = async () => {
+      if (!Array.isArray(manualRecommendedIds) || manualRecommendedIds.length === 0) {
+        setManualRecommendedProducts([]);
+        return;
+      }
+
+      try {
+        const response = await axios.post('/api/products/batch', {
+          productIds: manualRecommendedIds,
+        }, {
+          timeout: 7000,
+        });
+
+        if (!isMounted) return;
+        setManualRecommendedProducts(Array.isArray(response?.data?.products) ? response.data.products.slice(0, 10) : []);
+      } catch {
+        if (isMounted) {
+          setManualRecommendedProducts([]);
+        }
+      }
+    };
+
+    fetchManualProducts();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [manualRecommendedIds]);
 
   useEffect(() => {
     const fetchRecentlyViewed = async () => {
@@ -111,8 +206,10 @@ export default function RecommendedProducts() {
     fetchRecentlyViewed();
   }, [products, user, getToken]);
 
-  
-  if (isNewCustomer || recommendedProducts.length === 0) {
+  const productsToRender = manualRecommendedProducts.length > 0 ? manualRecommendedProducts : fallbackManualProducts;
+  const hasManualRecommendations = productsToRender.length > 0;
+
+  if (!hasManualRecommendations || productsToRender.length === 0) {
     return null;
   }
 
@@ -124,7 +221,7 @@ export default function RecommendedProducts() {
           <div>
             <span className="text-xs font-bold text-blue-600 uppercase tracking-wider">Personalized</span>
             <h2 className="text-2xl font-bold text-gray-900 mt-1">Recommended for You</h2>
-            <p className="text-sm text-gray-500 mt-1">Based on products you've viewed</p>
+            <p className="text-sm text-gray-500 mt-1">Curated manually from store settings</p>
           </div>
           <Link
             href="/recommended"
@@ -137,7 +234,7 @@ export default function RecommendedProducts() {
 
         {/* Product Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 px-4">
-          {recommendedProducts.map(product => (
+          {productsToRender.map(product => (
             <ProductCard key={product._id || product.id} product={product} />
           ))}
         </div>

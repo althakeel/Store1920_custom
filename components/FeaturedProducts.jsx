@@ -5,12 +5,13 @@ import { useEffect, useState, useMemo } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { FaStar } from 'react-icons/fa'
-import { ShoppingCartIcon } from 'lucide-react'
+import { Plus, Trash2 } from 'lucide-react'
 import axios from 'axios'
 
-import { addToCart, uploadCart } from '@/lib/features/cart/cartSlice'
+import { addToCart, uploadCart, removeFromCart } from '@/lib/features/cart/cartSlice'
 import { useAuth } from '@/lib/useAuth'
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket'
+import { useStorefrontI18n } from '@/lib/useStorefrontI18n'
 
 import toast from 'react-hot-toast'
 import Title from './Title'
@@ -31,8 +32,10 @@ const ProductCard = ({ product }) => {
   const dispatch = useDispatch()
   const { getToken } = useAuth()
   const { market, convertPrice } = useStorefrontMarket()
+  const { t } = useStorefrontI18n()
   const cartItems = useSelector(state => state.cart.cartItems)
-  const itemQuantity = cartItems[product._id] || 0
+  const cartEntry = cartItems[product._id]
+  const itemQuantity = typeof cartEntry === 'number' ? cartEntry : (cartEntry?.quantity || 0)
 
   const primaryImage = getImageSrc(product, 0)
   const secondaryImage = getImageSrc(product, 1)
@@ -100,13 +103,13 @@ const ProductCard = ({ product }) => {
     e.preventDefault()
     e.stopPropagation()
     if (isOutOfStock) {
-      toast.error('Out of stock')
+      toast.error(t('common.outOfStock'))
       return
     }
     pushDataLayerAddToCart()
     dispatch(addToCart({ productId: product._id }))
     dispatch(uploadCart({ getToken }))
-    toast.success('Added to cart')
+    toast.success(t('common.addedToCart'))
   }
 
   return (
@@ -120,7 +123,7 @@ const ProductCard = ({ product }) => {
       <div className="relative w-full h-32 sm:h-56 overflow-hidden bg-gray-50 aspect-square sm:aspect-auto">
         {product.fastDelivery && (
           <span className="absolute top-2 left-2 text-white text-[10px] sm:text-[8px] lg:text-[12px] font-bold px-1.5 py-1 sm:px-1 sm:py-0.5 lg:px-2 lg:py-1.5 rounded-full shadow-md z-10" style={{ backgroundColor: '#006644' }}>
-            Fast Delivery
+            {t('common.fastDelivery')}
           </span>
         )}
         <Image
@@ -168,7 +171,7 @@ const ProductCard = ({ product }) => {
               />
             ))}
             <span className="text-gray-500 text-[8px] sm:text-xs ml-1 truncate">
-              {reviewCount > 0 ? `(${reviewCount})` : 'No reviews yet'}
+              {reviewCount > 0 ? `(${reviewCount})` : t('common.noReviewsYet')}
             </span>
           </div>
         </div>
@@ -187,34 +190,68 @@ const ProductCard = ({ product }) => {
                 </p>
                 {discount > 0 && (
                   <span className="text-[10px] sm:text-xs font-semibold text-green-600">
-                    {discount}% off
+                    {t('common.offPercent', { discount })}
                   </span>
                 )}
               </div>
             )}
           </div>
           
-          <button 
-            onClick={handleAddToCart}
-            disabled={isOutOfStock}
-            className='w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center shadow-lg transition-all duration-300 relative'
-            style={{ backgroundColor: isOutOfStock ? '#9CA3AF' : (itemQuantity > 0 ? '#262626' : '#DC013C') }}
-            onMouseEnter={(e) => {
-              if (isOutOfStock) return
-              e.currentTarget.style.backgroundColor = itemQuantity > 0 ? '#1a1a1a' : '#b8012f'
-            }}
-            onMouseLeave={(e) => {
-              if (isOutOfStock) return
-              e.currentTarget.style.backgroundColor = itemQuantity > 0 ? '#262626' : '#DC013C'
-            }}
-          >
-            <ShoppingCartIcon className='text-white' size={16} />
-            {itemQuantity > 0 && (
-              <span className='absolute -top-1 -right-1 text-white text-[10px] font-bold w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center shadow-md' style={{ backgroundColor: '#DC013C' }}>
-                {itemQuantity}
-              </span>
-            )}
-          </button>
+          {itemQuantity > 0 ? (
+            <div
+              className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 shadow-md"
+              style={{ backgroundColor: '#2563eb' }}
+            >
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  dispatch(removeFromCart({ productId: product._id }))
+                  dispatch(uploadCart({ getToken }))
+                }}
+                className="inline-flex items-center justify-center text-white/95 hover:opacity-80 transition"
+                title="Remove"
+              >
+                <Trash2 size={14} />
+              </button>
+              <span className="min-w-[18px] text-center text-xs font-semibold text-white">{itemQuantity}</span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  dispatch(addToCart({ productId: product._id }))
+                  dispatch(uploadCart({ getToken }))
+                }}
+                className="inline-flex items-center justify-center text-white/95 hover:opacity-80 transition"
+                title="Add more"
+              >
+                <Plus size={14} />
+              </button>
+            </div>
+          ) : (
+            <button 
+              onClick={handleAddToCart}
+              disabled={isOutOfStock}
+              className='inline-flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-[10px] border shadow-md transition-all duration-300 disabled:cursor-not-allowed'
+              style={{
+                backgroundColor: isOutOfStock ? '#e5e7eb' : 'rgba(255,255,255,0.95)',
+                borderColor: '#d1d5db'
+              }}
+              onMouseEnter={(e) => {
+                if (isOutOfStock) return
+                e.currentTarget.style.backgroundColor = '#f3f4f6'
+              }}
+              onMouseLeave={(e) => {
+                if (isOutOfStock) return
+                e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.95)'
+              }}
+              aria-label={t('common.addToCart')}
+            >
+              <Plus size={16} className={isOutOfStock ? 'text-gray-400' : 'text-slate-600'} strokeWidth={2.4} />
+            </button>
+          )}
         </div>
       </div>
     </Link>
@@ -225,6 +262,7 @@ const ProductCard = ({ product }) => {
 const FeaturedProducts = () => {
   const dispatch = useDispatch()
   const { getToken } = useAuth()
+  const { t } = useStorefrontI18n()
   const [featuredProducts, setFeaturedProducts] = useState([])
   const [isLoading, setIsLoading] = useState(true)
 
@@ -264,8 +302,8 @@ const FeaturedProducts = () => {
     return (
       <div className="px-4 py-6 max-w-screen-2xl mx-auto">
         <Title
-          title="Featured Selection"
-          description="Handpicked products just for you"
+          title={t('featured.title')}
+          description={t('featured.description')}
           visibleButton={false}
         />
         <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 sm:gap-4">
@@ -298,8 +336,8 @@ const FeaturedProducts = () => {
   return (
     <div className="px-4 py-6 max-w-screen-2xl mx-auto">
       <Title
-        title="Featured Selection"
-        description="Handpicked products just for you"
+        title={t('featured.title')}
+        description={t('featured.description')}
         visibleButton={false}
       />
 

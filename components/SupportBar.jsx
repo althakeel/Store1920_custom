@@ -1,6 +1,9 @@
 import { MailIcon, InfoIcon } from "lucide-react";
+import { useStorefrontI18n } from '@/lib/useStorefrontI18n';
 
 export default function SupportBar() {
+  const { t } = useStorefrontI18n();
+
   return (
     <div className="w-full bg-[#f7f8fa] border-t border-gray-200 py-4 md:py-6 px-2 text-gray-700 text-sm">
       <div className="max-w-[1240px] mx-auto flex flex-col md:flex-row items-center justify-between gap-4 md:gap-0">
@@ -8,10 +11,10 @@ export default function SupportBar() {
         {/* Left Text (Hidden on Mobile) */}
         <div className="hidden md:block">
           <div className="font-semibold text-lg text-gray-800 mb-1">
-            We're Always Here To Help
+            {t('support.title')}
           </div>
           <div className="text-gray-500 text-sm">
-            Reach out to us through our support email
+            {t('support.subtitle')}
           </div>
         </div>
 
@@ -20,7 +23,7 @@ export default function SupportBar() {
           <MailIcon size={20} className="text-gray-400 flex-shrink-0" />
           <div className="flex flex-col">
             <span className="text-xs text-gray-500 uppercase font-medium tracking-wide">
-              Email Support
+              {t('support.emailLabel')}
             </span>
             <a
               href="mailto:support@Store1920.com"

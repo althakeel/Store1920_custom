@@ -1,4 +1,5 @@
 import imagekit from "@/configs/imageKit";
+import { getAuth } from '@/lib/firebase-admin';
 
 export const config = {
   api: {
@@ -8,16 +9,22 @@ export const config = {
 
 export async function POST(request) {
   try {
-    // Get userId from Authorization header (Firebase ID token)
-    const authHeader = request.headers.get('authorization') || '';
-    let userId = null;
-    if (authHeader.startsWith('Bearer ')) {
-      const token = authHeader.replace('Bearer ', '');
-      // Decode Firebase token to get userId (sub)
-      const base64Payload = token.split('.')[1];
-      const payload = JSON.parse(Buffer.from(base64Payload, 'base64').toString());
-      userId = payload.user_id || payload.sub || null;
+    const authHeader = request.headers.get('authorization') || request.headers.get('Authorization') || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.replace('Bearer ', '') : null;
+
+    if (!token) {
+      return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    let decoded;
+    try {
+      decoded = await getAuth().verifyIdToken(token);
+    } catch {
+      return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const userId = decoded.uid || decoded.user_id || decoded.sub || null;
+
     if (!userId) {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }

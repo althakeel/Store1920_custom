@@ -3,7 +3,7 @@ import Loading from "@/components/Loading"
 
 
 import axios from "axios"
-import { CircleDollarSignIcon, ShoppingBasketIcon, StarIcon, TagsIcon, UsersIcon, ShoppingCartIcon, UserPlusIcon, UploadCloudIcon } from "lucide-react"
+import { CircleDollarSignIcon, ShoppingBasketIcon, StarIcon, TagsIcon, UsersIcon, ShoppingCartIcon, UserPlusIcon, UploadCloudIcon, FolderTreeIcon } from "lucide-react"
 import ContactMessagesSeller from "./ContactMessagesSeller.jsx";
 import dynamic from "next/dynamic";
 import Image from "next/image"
@@ -153,6 +153,13 @@ export default function Dashboard() {
             <div className="flex items-center justify-between mb-4">
                 <h1 className="text-2xl">Seller <span className="text-slate-800 font-medium">Dashboard</span></h1>
                 <div className="flex items-center gap-2">
+                    <Link
+                        href="/store/categories"
+                        className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg transition shadow-sm"
+                    >
+                        <FolderTreeIcon size={18} />
+                        <span>Import Categories</span>
+                    </Link>
                     <Link
                         href="/store/bulk-import"
                         className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg transition shadow-sm"

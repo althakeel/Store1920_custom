@@ -83,7 +83,15 @@ export default function RecentSearchProducts() {
       // Map IDs to products from Redux
       if (viewedProductIds.length > 0 && products.length > 0) {
         const viewed = viewedProductIds
-          .map(id => products.find(p => (p._id || p.id) === id))
+          .map(id => {
+            const p = products.find(p => (p._id || p.id) === id);
+            if (!p || !p.name || !p.slug) return null;
+            if (p.quantity !== undefined && typeof p.quantity === 'number' && !p.images) {
+              console.warn('[RecentSearchProducts] Skipping cart item:', p);
+              return null;
+            }
+            return p;
+          })
           .filter(Boolean)
           .slice(0, 8);
         
@@ -136,6 +144,46 @@ export default function RecentSearchProducts() {
     return null;
   }
 
+  // Final safety check: filter out any object that looks like a cart item
+  const safeProducts = recentProducts.filter(product => {
+    // Reject if missing any core product field
+    if (!product || typeof product !== 'object') {
+      console.error('[RecentSearchProducts] Rejected non-object:', product);
+      return false;
+    }
+    
+    if (!product.name || !product.slug) {
+      console.error('[RecentSearchProducts] Rejected - missing name/slug:', { name: product.name, slug: product.slug, keys: Object.keys(product) });
+      return false;
+    }
+    
+    if (!Array.isArray(product.images) || product.images.length === 0) {
+      console.error('[RecentSearchProducts] Rejected - invalid images:', { images: product.images, keys: Object.keys(product) });
+      return false;
+    }
+    
+    // Reject if it has cart-specific keys (strong signal it's a cart item)
+    if (product.hasOwnProperty('quantity') && product.hasOwnProperty('price') && product.hasOwnProperty('variantOptions')) {
+      console.error('[RecentSearchProducts] Rejected - has cart item keys:', product);
+      return false;
+    }
+
+    // Reject if quantity is a number (cart signature)
+    if (typeof product.quantity === 'number') {
+      console.error('[RecentSearchProducts] Rejected - quantity is a number:', product);
+      return false;
+    }
+
+    return true;
+  });
+
+  console.log('[RecentSearchProducts] Safe products after filter:', safeProducts.length, 'from', recentProducts.length);
+  if (safeProducts.length > 0) console.log('[RecentSearchProducts] First safe product:', safeProducts[0]);
+
+  if (safeProducts.length === 0) {
+    return null;
+  }
+
   return (
     <section className="w-full bg-white py-8 mb-6">
       <div className="max-w-[1400px] mx-auto">
@@ -157,7 +205,7 @@ export default function RecentSearchProducts() {
 
         {/* Product Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 px-4">
-          {recentProducts.map(product => (
+          {safeProducts.map(product => (
             <ProductCard key={product._id || product.id} product={product} />
           ))}
         </div>

@@ -6,8 +6,8 @@ import axios from 'axios'
 import Image from 'next/image'
 import Link from 'next/link'
 import { FaStar } from 'react-icons/fa'
-import { ShoppingCartIcon } from 'lucide-react'
-import { addToCart, uploadCart } from '@/lib/features/cart/cartSlice'
+import { Plus, Trash2 } from 'lucide-react'
+import { addToCart, uploadCart, removeFromCart } from '@/lib/features/cart/cartSlice'
 import { useAuth } from '@/lib/useAuth'
 
 import toast from 'react-hot-toast'
@@ -29,7 +29,8 @@ const ProductCard = ({ product }) => {
   const dispatch = useDispatch()
   const { getToken } = useAuth()
   const cartItems = useSelector(state => state.cart.cartItems)
-  const itemQuantity = cartItems[product._id] || 0
+  const cartEntry = cartItems[product._id]
+  const itemQuantity = typeof cartEntry === 'number' ? cartEntry : (cartEntry?.quantity || 0)
 
   const pushDataLayerAddToCart = () => {
     if (typeof window === 'undefined') return
@@ -191,20 +192,48 @@ const ProductCard = ({ product }) => {
         <div className="absolute bottom-4 right-4 px-3 py-1.5 rounded-full bg-gray-200 text-gray-600 text-xs font-semibold z-10">
           Out of Stock
         </div>
+      ) : itemQuantity > 0 ? (
+        <div
+          className="absolute bottom-4 right-4 z-10 inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 shadow-md"
+          style={{ backgroundColor: '#2563eb' }}
+        >
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              dispatch(removeFromCart({ productId: product._id }))
+              dispatch(uploadCart({ getToken }))
+            }}
+            className="inline-flex items-center justify-center text-white/95 hover:opacity-80 transition"
+            title="Remove"
+          >
+            <Trash2 size={14} />
+          </button>
+          <span className="min-w-[18px] text-center text-xs font-semibold text-white">{itemQuantity}</span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              dispatch(addToCart({ productId: product._id }))
+              dispatch(uploadCart({ getToken }))
+            }}
+            className="inline-flex items-center justify-center text-white/95 hover:opacity-80 transition"
+            title="Add more"
+          >
+            <Plus size={14} />
+          </button>
+        </div>
       ) : (
         <button 
           onClick={handleAddToCart}
-          className='absolute bottom-4 right-4 w-10 h-10 rounded-full flex items-center justify-center shadow-lg transition-all duration-300 cursor-pointer z-10'
-          style={{ backgroundColor: itemQuantity > 0 ? '#262626' : '#DC013C' }}
-          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = itemQuantity > 0 ? '#1a1a1a' : '#b8012f'}
-          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = itemQuantity > 0 ? '#262626' : '#DC013C'}
+          className="absolute bottom-4 right-4 z-10 inline-flex h-9 w-9 items-center justify-center rounded-[10px] border border-[#d1d5db] bg-white/95 shadow-md transition"
+          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f3f4f6' }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.95)' }}
+          aria-label="Add to cart"
         >
-          <ShoppingCartIcon className='text-white' size={18} />
-          {itemQuantity > 0 && (
-            <span className='absolute -top-1 -right-1 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center shadow-md' style={{ backgroundColor: '#DC013C' }}>
-              {itemQuantity}
-            </span>
-          )}
+          <Plus size={18} className="text-slate-600" strokeWidth={2.4} />
         </button>
       )}
     </Link>

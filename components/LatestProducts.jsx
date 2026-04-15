@@ -6,11 +6,12 @@ import axios from 'axios'
 import Image from 'next/image'
 import Link from 'next/link'
 import { FaStar } from 'react-icons/fa'
-import { ShoppingCartIcon } from 'lucide-react'
+import { Plus, Trash2 } from 'lucide-react'
 
-import { addToCart, uploadCart } from '@/lib/features/cart/cartSlice'
+import { addToCart, uploadCart, removeFromCart } from '@/lib/features/cart/cartSlice'
 import { useAuth } from '@/lib/useAuth'
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket'
+import { useStorefrontI18n } from '@/lib/useStorefrontI18n'
 
 import toast from 'react-hot-toast'
 import Title from './Title'
@@ -69,8 +70,10 @@ const ProductCard = ({ product }) => {
   const dispatch = useDispatch()
   const { getToken } = useAuth()
   const { market, convertPrice } = useStorefrontMarket()
+  const { t } = useStorefrontI18n()
   const cartItems = useSelector(state => state.cart.cartItems)
-  const itemQuantity = cartItems[product._id] || 0
+  const cartEntry = cartItems[product._id]
+  const itemQuantity = typeof cartEntry === 'number' ? cartEntry : (cartEntry?.quantity || 0)
 
   const primaryImage = getImageSrc(product, 0)
   const secondaryImage = getImageSrc(product, 1)
@@ -146,9 +149,10 @@ const ProductCard = ({ product }) => {
     ? reviews.length
     : (product.ratingCount || 0);
 
-  const productName = (product.name || product.title || 'Untitled Product').length > 30
-    ? (product.name || product.title || 'Untitled Product').slice(0, 23) + '...'
-    : (product.name || product.title || 'Untitled Product')
+  const fallbackName = product.name || product.title || t('common.untitledProduct')
+  const productName = fallbackName.length > 30
+    ? fallbackName.slice(0, 23) + '...'
+    : fallbackName
 
   const pushDataLayerAddToCart = () => {
     if (typeof window === 'undefined') return
@@ -172,13 +176,13 @@ const ProductCard = ({ product }) => {
     e.preventDefault()
     e.stopPropagation()
     if (isOutOfStock) {
-      toast.error('Out of stock')
+      toast.error(t('common.outOfStock'))
       return
     }
     pushDataLayerAddToCart()
     dispatch(addToCart({ productId: product._id }))
     dispatch(uploadCart({ getToken }))
-    toast.success('Added to cart')
+    toast.success(t('common.addedToCart'))
   }
 
   return (
@@ -192,7 +196,7 @@ const ProductCard = ({ product }) => {
       <div className="relative w-full h-36 sm:h-64 overflow-hidden bg-gray-50 aspect-square sm:aspect-auto">
         {hasFastDelivery && (
           <span className="absolute top-2 right-2 z-20 pointer-events-none inline-flex items-center gap-1 text-white text-[10px] sm:text-[8px] lg:text-[12px] font-bold px-2 py-1 sm:px-1.5 sm:py-0.5 lg:px-2.5 lg:py-1.5 rounded-full shadow-md" style={{ backgroundColor: '#006644' }}>
-            Fast Delivery
+            {t('common.fastDelivery')}
           </span>
         )}
         <Image
@@ -247,32 +251,66 @@ const ProductCard = ({ product }) => {
               )}
               {discount > 0 && (
                 <span className="ml-1 rounded bg-emerald-50 text-emerald-700 text-[10px] sm:text-xs font-semibold px-1.5 py-0.5 leading-none">
-                  {discount}% OFF
+                  {t('common.offPercent', { discount })}
                 </span>
               )}
             </div>
 
-            <button
-              onClick={handleAddToCart}
-              disabled={isOutOfStock}
-              className='relative z-20 w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center shadow-md transition-all duration-300 flex-shrink-0'
-              style={{ backgroundColor: isOutOfStock ? '#9CA3AF' : (itemQuantity > 0 ? '#262626' : '#DC013C') }}
-              onMouseEnter={(e) => {
-                if (isOutOfStock) return
-                e.currentTarget.style.backgroundColor = itemQuantity > 0 ? '#1a1a1a' : '#b8012f'
-              }}
-              onMouseLeave={(e) => {
-                if (isOutOfStock) return
-                e.currentTarget.style.backgroundColor = itemQuantity > 0 ? '#262626' : '#DC013C'
-              }}
-            >
-              <ShoppingCartIcon className='text-white' size={15} />
-              {itemQuantity > 0 && (
-                <span className='absolute -top-1 -right-1 text-white text-[10px] font-bold w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center shadow-md' style={{ backgroundColor: '#DC013C' }}>
-                  {itemQuantity}
-                </span>
-              )}
-            </button>
+            {itemQuantity > 0 ? (
+              <div
+                className="relative z-20 inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 shadow-md flex-shrink-0"
+                style={{ backgroundColor: '#2563eb' }}
+              >
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    dispatch(removeFromCart({ productId: product._id }))
+                    dispatch(uploadCart({ getToken }))
+                  }}
+                  className="inline-flex items-center justify-center text-white/95 hover:opacity-80 transition"
+                  title="Remove"
+                >
+                  <Trash2 size={14} />
+                </button>
+                <span className="min-w-[18px] text-center text-xs font-semibold text-white">{itemQuantity}</span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    dispatch(addToCart({ productId: product._id }))
+                    dispatch(uploadCart({ getToken }))
+                  }}
+                  className="inline-flex items-center justify-center text-white/95 hover:opacity-80 transition"
+                  title="Add more"
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={handleAddToCart}
+                disabled={isOutOfStock}
+                className='relative z-20 inline-flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-[10px] border shadow-md transition-all duration-300 flex-shrink-0 disabled:cursor-not-allowed'
+                style={{
+                  backgroundColor: isOutOfStock ? '#e5e7eb' : 'rgba(255,255,255,0.95)',
+                  borderColor: '#d1d5db'
+                }}
+                onMouseEnter={(e) => {
+                  if (isOutOfStock) return
+                  e.currentTarget.style.backgroundColor = '#f3f4f6'
+                }}
+                onMouseLeave={(e) => {
+                  if (isOutOfStock) return
+                  e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.95)'
+                }}
+                aria-label={t('common.addToCart')}
+              >
+                <Plus size={16} className={isOutOfStock ? 'text-gray-400' : 'text-slate-600'} strokeWidth={2.4} />
+              </button>
+            )}
           </div>
 
           <div className="flex items-center min-w-0">
@@ -284,7 +322,7 @@ const ProductCard = ({ product }) => {
               />
             ))}
             <span className="text-gray-500 text-[9px] sm:text-xs ml-1 truncate">
-              {reviewCount > 0 ? `(${reviewCount})` : 'No reviews yet'}
+              {reviewCount > 0 ? `(${reviewCount})` : t('common.noReviewsYet')}
             </span>
           </div>
         </div>
@@ -296,6 +334,7 @@ const ProductCard = ({ product }) => {
 // Featured selection component (only show admin-selected featured products)
 const BestSelling = () => {
   const { getToken, user, loading } = useAuth()
+  const { t } = useStorefrontI18n()
   const [featuredProducts, setFeaturedProducts] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -305,6 +344,10 @@ const BestSelling = () => {
   const fetchControllerRef = useRef(null)
 
   const visibleCount = Math.max(1, Math.min(40, Number(layoutSettings.itemsPerRow || 5) * Number(layoutSettings.rows || 2)))
+  const effectiveSectionTitle = sectionTitle === 'Craziest sale of the year!' ? t('featured.title') : sectionTitle
+  const effectiveSectionDescription = sectionDescription === "Grab the best deals before they're gone!"
+    ? t('featured.description')
+    : sectionDescription
 
   const fetchFeaturedAndSectionText = useCallback(async () => {
       fetchControllerRef.current?.abort()
@@ -475,8 +518,8 @@ const BestSelling = () => {
   return (
     <div className="px-4 sm:px-6 py-6 max-w-[1400px] w-full mx-auto bg-white relative z-10">
       <Title
-        title={sectionTitle}
-        description={sectionDescription}
+        title={effectiveSectionTitle}
+        description={effectiveSectionDescription}
         visibleButton={false}
       />
 
@@ -527,7 +570,7 @@ const BestSelling = () => {
       `}</style>
 
       {!isLoading && !error && featuredProducts.length === 0 && (
-        <div className="mt-6 text-center text-sm text-gray-500">No featured products selected yet.</div>
+        <div className="mt-6 text-center text-sm text-gray-500">{t('featured.empty')}</div>
       )}
 
       {error && (

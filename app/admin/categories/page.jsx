@@ -24,6 +24,7 @@ export default function CategoriesManager() {
     url: '',
     description: '',
     descriptionAr: '',
+    parentId: '',
   });
 
   const [imageFile, setImageFile] = useState(null);
@@ -93,6 +94,12 @@ export default function CategoriesManager() {
     }));
   };
 
+  const selectableParentCategories = categories.filter((category) => category._id !== editingId);
+  const categoryNameById = categories.reduce((accumulator, category) => {
+    accumulator[category._id] = category.name;
+    return accumulator;
+  }, {});
+
   // Save category
   const handleSave = async (e) => {
     e.preventDefault();
@@ -141,6 +148,7 @@ export default function CategoriesManager() {
       }
 
       setFormData({ name: '', nameAr: '', slug: '', image: '', url: '', description: '', descriptionAr: '' });
+      setFormData({ name: '', nameAr: '', slug: '', image: '', url: '', description: '', descriptionAr: '', parentId: '' });
       setImageFile(null);
       setImagePreview('');
       setShowForm(false);
@@ -162,6 +170,7 @@ export default function CategoriesManager() {
       url: category.url,
       description: category.description || '',
       descriptionAr: category.descriptionAr || '',
+      parentId: category.parentId || '',
     });
     setImagePreview(category.image);
     setEditingId(category._id);
@@ -187,7 +196,7 @@ export default function CategoriesManager() {
   const handleCancel = () => {
     setShowForm(false);
     setEditingId(null);
-    setFormData({ name: '', nameAr: '', slug: '', image: '', url: '', description: '', descriptionAr: '' });
+    setFormData({ name: '', nameAr: '', slug: '', image: '', url: '', description: '', descriptionAr: '', parentId: '' });
     setImageFile(null);
     setImagePreview('');
   };
@@ -245,6 +254,27 @@ export default function CategoriesManager() {
                     dir="rtl"
                     className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Parent Category
+                  </label>
+                  <select
+                    value={formData.parentId}
+                    onChange={(e) => setFormData(prev => ({ ...prev, parentId: e.target.value }))}
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                  >
+                    <option value="">None (top-level category)</option>
+                    {selectableParentCategories.map((category) => (
+                      <option key={category._id} value={category._id}>
+                        {category.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Select a parent to create this category as a subcategory.
+                  </p>
                 </div>
 
                 {/* Slug */}
@@ -376,6 +406,9 @@ export default function CategoriesManager() {
                   )}
                   <div className="flex-1">
                     <h3 className="font-semibold text-slate-800">{cat.name}</h3>
+                    <p className="text-xs text-slate-500 mt-1">
+                      {cat.parentId ? `Subcategory of ${categoryNameById[cat.parentId] || 'Unknown category'}` : 'Top-level category'}
+                    </p>
                     <p className="text-sm text-slate-500">/{cat.slug}</p>
                     <p className="text-xs text-blue-600 mt-1">{cat.url}</p>
                     {cat.description && (

@@ -22,6 +22,8 @@ const StoreSchema = new mongoose.Schema({
   featuredProductIds: { type: [String], default: [] }, // Array of featured product IDs
   featuredSectionTitle: { type: String, default: 'Craziest sale of the year!' },
   featuredSectionDescription: { type: String, default: "Grab the best deals before they're gone!" },
+  exploreInterestsEnabled: { type: Boolean, default: true },
+  exploreInterestsProductIds: { type: [String], default: [] },
   carouselProductIds: { type: [String], default: [] }, // Array of product IDs for carousel slider
   homeMenuCategories: {
     count: { type: Number, default: 6 },

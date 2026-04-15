@@ -3,9 +3,9 @@ import React, { useRef, useState, useEffect } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ChevronRight, ChevronLeft, Sparkles, ShoppingCart } from 'lucide-react'
+import { ChevronRight, ChevronLeft, Sparkles, Plus, Trash2 } from 'lucide-react'
 import { useSelector, useDispatch } from 'react-redux'
-import { addToCart, uploadCart } from '@/lib/features/cart/cartSlice'
+import { addToCart, uploadCart, removeFromCart } from '@/lib/features/cart/cartSlice'
 import { useAuth } from '@/lib/useAuth'
 import toast from 'react-hot-toast'
 import BannerSlider from '@/components/BannerSlider'
@@ -364,13 +364,61 @@ const HorizontalSlider = ({ section, router, allProducts }) => {
                     {/* Out of stock / Add to cart */}
                     {(() => {
                       const productId = product._id || product.id
-                      const count = cartItems[productId] || cartItems[String(productId)] || 0
+                      const rawCartEntry = cartItems[productId] || cartItems[String(productId)] || 0
+                      const count = typeof rawCartEntry === 'number'
+                        ? rawCartEntry
+                        : (rawCartEntry?.quantity || 0)
                       const isOutOfStock = isOutOfStockProduct(product)
 
                       if (isOutOfStock) {
                         return (
                           <div className="flex-shrink-0 px-3 py-1.5 rounded-full bg-gray-200 text-gray-600 text-xs font-semibold">
                             Out of Stock
+                          </div>
+                        )
+                      }
+
+                      if (count > 0) {
+                        return (
+                          <div
+                            className="relative flex-shrink-0 inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 shadow-md"
+                            style={{ backgroundColor: '#2563eb' }}
+                          >
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                dispatch(removeFromCart({ productId: String(productId) }))
+                                if (getToken && typeof getToken === 'function') {
+                                  dispatch(uploadCart({ getToken })).catch(() => {
+                                    // Cart sync failed silently
+                                  })
+                                }
+                              }}
+                              className="inline-flex items-center justify-center text-white/95 hover:opacity-80 transition"
+                              title="Remove"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                            <span className="min-w-[18px] text-center text-xs font-semibold text-white">{count}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                dispatch(addToCart({ productId: String(productId) }))
+                                if (getToken && typeof getToken === 'function') {
+                                  dispatch(uploadCart({ getToken })).catch(() => {
+                                    // Cart sync failed silently
+                                  })
+                                }
+                              }}
+                              className="inline-flex items-center justify-center text-white/95 hover:opacity-80 transition"
+                              title="Add more"
+                            >
+                              <Plus size={14} />
+                            </button>
                           </div>
                         )
                       }
@@ -395,22 +443,16 @@ const HorizontalSlider = ({ section, router, allProducts }) => {
                               })
                             }
                           }}
-                          className="relative flex-shrink-0 text-white p-2.5 rounded-full transition-all active:scale-95 shadow-md"
-                          style={{ backgroundColor: count > 0 ? '#262626' : '#DC013C' }}
+                          className="relative flex-shrink-0 inline-flex h-9 w-9 items-center justify-center rounded-[10px] border border-[#d1d5db] bg-white/95 shadow-md transition-all active:scale-95"
                           onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = count > 0 ? '#1a1a1a' : '#b8012f'
+                            e.currentTarget.style.backgroundColor = '#f3f4f6'
                           }}
                           onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = count > 0 ? '#262626' : '#DC013C'
+                            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.95)'
                           }}
                           aria-label="Add to cart"
                         >
-                          <ShoppingCart size={16} />
-                          {count > 0 ? (
-                            <span className="absolute -top-1 -right-1 text-white text-[10px] font-bold rounded-full min-w-[20px] h-5 flex items-center justify-center border-2 border-white px-1" style={{ backgroundColor: '#DC013C' }}>
-                              {count}
-                            </span>
-                          ) : null}
+                          <Plus size={16} className="text-slate-600" strokeWidth={2.4} />
                         </button>
                       )
                     })()}

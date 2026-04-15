@@ -8,10 +8,12 @@ import RatingModal from "./RatingModal";
 import { downloadInvoice, printInvoice } from "@/lib/generateInvoice";
 import Link from "next/link";
 import axios from "axios";
+import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
 
 const OrderItem = ({ order: initialOrder }) => {
 
-    const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || 'AED';
+    const { market, formatAmount } = useStorefrontMarket();
+    const currency = market.currency;
     const [ratingModal, setRatingModal] = useState(null);
     const [expanded, setExpanded] = useState(false);
     const [order, setOrder] = useState(initialOrder);
@@ -106,7 +108,7 @@ const OrderItem = ({ order: initialOrder }) => {
                         </div>
                         <div>
                             <p className="text-sm text-slate-500">Total</p>
-                            <p className="font-bold text-slate-800 text-lg">{currency}{order.total}</p>
+                            <p className="font-bold text-slate-800 text-lg">{currency}{formatAmount(order.total)}</p>
                         </div>
                         <button
                             onClick={() => setExpanded(!expanded)}
@@ -197,7 +199,7 @@ const OrderItem = ({ order: initialOrder }) => {
                                                     </div>
                                                     <div>
                                                         <p className="text-xs text-slate-500">Unit Price</p>
-                                                        <p className="font-medium text-slate-800">{currency}{(item.price || 0).toFixed(2)}</p>
+                                                        <p className="font-medium text-slate-800">{currency}{formatAmount(item.price || 0)}</p>
                                                     </div>
                                                 </div>
                                                 <div className="mt-2">
@@ -216,7 +218,7 @@ const OrderItem = ({ order: initialOrder }) => {
                                             </div>
                                             <div className="text-right">
                                                 <p className="text-xs text-slate-500 mb-1">Line Total</p>
-                                                <p className="font-bold text-slate-800 text-lg">{currency}{((item.price || 0) * (item.quantity || 0)).toFixed(2)}</p>
+                                                <p className="font-bold text-slate-800 text-lg">{currency}{formatAmount((item.price || 0) * (item.quantity || 0))}</p>
                                             </div>
                                         </div>
                                     )
@@ -230,23 +232,23 @@ const OrderItem = ({ order: initialOrder }) => {
                           <div className="space-y-3">
                             <div className="flex justify-between text-sm">
                               <span className="text-slate-600">Subtotal:</span>
-                              <span className="font-medium text-slate-800">{currency}{((order.total || 0) - (order.shippingFee || 0)).toFixed(2)}</span>
+                              <span className="font-medium text-slate-800">{currency}{formatAmount((order.total || 0) - (order.shippingFee || 0))}</span>
                             </div>
                             {order.shippingFee > 0 && (
                               <div className="flex justify-between text-sm">
                                 <span className="text-slate-600">Shipping:</span>
-                                <span className="font-medium text-slate-800">{currency}{(order.shippingFee || 0).toFixed(2)}</span>
+                                <span className="font-medium text-slate-800">{currency}{formatAmount(order.shippingFee || 0)}</span>
                               </div>
                             )}
                             {order.isCouponUsed && (
                               <div className="flex justify-between text-sm">
                                 <span className="text-green-600">Discount Applied:</span>
-                                <span className="font-medium text-green-600">-{currency}{(order.coupon?.discount || 0).toFixed(2)}</span>
+                                <span className="font-medium text-green-600">-{currency}{formatAmount(order.coupon?.discount || 0)}</span>
                               </div>
                             )}
                             <div className="flex justify-between font-bold text-slate-800 pt-3 border-t border-slate-300">
                               <span>Total Amount:</span>
-                              <span className="text-lg">{currency}{(order.total || 0).toFixed(2)}</span>
+                              <span className="text-lg">{currency}{formatAmount(order.total || 0)}</span>
                             </div>
                             <div className="mt-4 pt-4 border-t border-slate-300">
                               <p className="text-xs text-slate-600 mb-3">Payment Method & Status</p>
@@ -273,7 +275,7 @@ const OrderItem = ({ order: initialOrder }) => {
                                     </p>
                                     {!getPaymentStatus() && (
                                       <p className="text-xs text-amber-600 mt-1">
-                                        Rider will collect {currency}{(order.total || 0).toFixed(2)} during delivery
+                                                                                Rider will collect {currency}{formatAmount(order.total || 0)} during delivery
                                       </p>
                                     )}
                                   </div>
@@ -285,7 +287,7 @@ const OrderItem = ({ order: initialOrder }) => {
                                     <p className="text-xs text-green-700 font-medium">✓ Payment Confirmed by Delhivery</p>
                                     {order.delhivery.payment.cod_amount > 0 && (
                                       <p className="text-xs text-green-600 mt-1">
-                                        Collected: {currency}{order.delhivery.payment.cod_amount}
+                                                                                Collected: {currency}{formatAmount(order.delhivery.payment.cod_amount)}
                                       </p>
                                     )}
                                   </div>
