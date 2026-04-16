@@ -26,7 +26,8 @@ export async function GET(request) {
     
     // Get customers (limit to avoid spam)
     const customers = await User.find({ 
-      email: { $exists: true, $ne: null, $ne: '' }
+      email: { $exists: true, $ne: null, $ne: '' },
+      'emailPreferences.promotional': { $ne: false }
     })
     .limit(50) // Send to 50 customers at a time
     .select('email name')
@@ -66,20 +67,6 @@ export async function GET(request) {
     const results = [];
     for (const customer of customers) {
       try {
-        // Check email preferences
-        const dbUser = await User.findOne({ email: customer.email }).select('emailPreferences');
-        const preferences = dbUser?.emailPreferences || { promotional: true };
-        
-        // Skip if user has unsubscribed from promotional emails
-        if (preferences.promotional === false) {
-          results.push({ 
-            email: customer.email, 
-            status: 'skipped',
-            reason: 'User unsubscribed from promotional emails'
-          });
-          continue;
-        }
-
         const htmlContent = template.template(products, customer.email);
         
         // Personalize subject with customer name
@@ -198,13 +185,15 @@ export async function POST(request) {
     let customers;
     if (customerEmails && Array.isArray(customerEmails) && customerEmails.length > 0) {
       customers = await User.find({ 
-        email: { $in: customerEmails }
+        email: { $in: customerEmails },
+        'emailPreferences.promotional': { $ne: false }
       })
       .select('email name')
       .lean();
     } else {
       customers = await User.find({ 
-        email: { $exists: true, $ne: null, $ne: '' }
+        email: { $exists: true, $ne: null, $ne: '' },
+        'emailPreferences.promotional': { $ne: false }
       })
       .limit(limit)
       .select('email name')
@@ -245,20 +234,6 @@ export async function POST(request) {
     const results = [];
     for (const customer of customers) {
       try {
-        // Check email preferences
-        const dbUser = await User.findOne({ email: customer.email }).select('emailPreferences');
-        const preferences = dbUser?.emailPreferences || { promotional: true };
-        
-        // Skip if user has unsubscribed from promotional emails
-        if (preferences.promotional === false) {
-          results.push({ 
-            email: customer.email, 
-            status: 'skipped',
-            reason: 'User unsubscribed from promotional emails'
-          });
-          continue;
-        }
-
         const htmlContent = template.template(products, customer.email);
         
         // Personalize subject with customer name

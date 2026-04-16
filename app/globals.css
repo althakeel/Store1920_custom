@@ -258,6 +258,17 @@
     scrollbar-color: #d1d5db #f8fafc;
 }
 
+/* Compress page content when fixed cart sidebar is visible (desktop/tablet only) */
+@media (min-width: 768px) {
+    body {
+        transition: padding-right 0.3s ease;
+    }
+
+    body.cart-sidebar-compressed {
+        padding-right: 200px;
+    }
+}
+
 .store-sidebar-scroll::-webkit-scrollbar {
     width: 1px;
 }

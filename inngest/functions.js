@@ -88,7 +88,10 @@ export const sendDailyPromotionalEmail = inngest.createFunction(
         });
         const customers = await step.run('fetch-customers', async () => {
             await connectDB();
-            const users = await User.find({ email: { $exists: true, $ne: null, $ne: '' } }).lean();
+            const users = await User.find({
+                email: { $exists: true, $ne: null, $ne: '' },
+                'emailPreferences.promotional': { $ne: false }
+            }).lean();
             return users;
         });
         const products = await step.run('fetch-products', async () => {

@@ -27,6 +27,26 @@ export default function SettingsClient() {
     return () => unsub()
   }, [])
 
+  useEffect(() => {
+    const loadPreferences = async () => {
+      if (!user?.email) return
+      try {
+        const response = await fetch(`/api/email-preferences?email=${encodeURIComponent(user.email)}`)
+        const data = await response.json()
+        if (response.ok && data?.preferences) {
+          setEmailPreferences((prev) => ({
+            ...prev,
+            ...data.preferences
+          }))
+        }
+      } catch (error) {
+        console.error('Error loading email preferences:', error)
+      }
+    }
+
+    loadPreferences()
+  }, [user?.email])
+
   // Handle unsubscribe from email link
   useEffect(() => {
     const unsubscribeType = searchParams.get('unsubscribe')

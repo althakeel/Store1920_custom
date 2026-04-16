@@ -4,6 +4,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import GoogleOneTap from "@/components/GoogleOneTap";
 import SupportBar from "@/components/SupportBar";
+import CartQuickSidebar from "@/components/CartQuickSidebar";
 import { Toaster } from "react-hot-toast";
 import { Suspense, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
@@ -71,6 +72,7 @@ export default function ClientLayout({ children }) {
         <GoogleOneTap />
       </Suspense>
       <InitializeApp>{children}</InitializeApp>
+      <CartQuickSidebar />
       <SupportBar />
       <Footer />
     </ReduxProvider>

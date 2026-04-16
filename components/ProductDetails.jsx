@@ -1368,7 +1368,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
             {/* Quantity */}
             {isSelectionInStock && (
-              <div className="pt-1 flex items-center gap-2">
+              <div className="pt-1 flex items-center gap-2" dir="ltr">
                 <label className="text-base font-semibold text-gray-900 leading-none">Qty</label>
                 <select
                   value={quantity}
@@ -1384,7 +1384,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
             )}
 
             {/* Action Buttons */}
-            <div className="hidden md:block pt-3 space-y-3">
+            <div className="hidden md:block pt-3 space-y-3" dir="ltr">
               {!addedToCart ? (
                 <button
                   onClick={handleAddToCart}
@@ -1411,9 +1411,9 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                       <MinusIcon size={16} />
                     </button>
 
-                    <div className="text-center leading-tight px-2">
+                    <div className="text-center leading-tight px-2 min-w-0">
                       <p className="text-sm font-semibold text-gray-900">{quantity} Added</p>
-                      <p className="text-[11px] text-gray-500 truncate max-w-[120px]">{selectedVariantLabel}</p>
+                      <p className="text-[10px] font-bold text-orange-600">{currency} {(Number(effPrice || 0) * quantity).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</p>
                     </div>
 
                     <button

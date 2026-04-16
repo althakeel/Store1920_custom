@@ -337,7 +337,7 @@ export default function CategoryInterestSection() {
           <h2 className="text-3xl font-bold text-gray-900">Explore your interests</h2>
         </div>
 
-        <div className="mb-5 flex items-center gap-2 overflow-x-auto pb-1">
+        <div className="mb-5 flex items-center gap-2.5 overflow-x-auto pb-1">
           {categoriesToRender.map((category) => {
             const isActive = category.key === selectedCategoryOption?.key;
 
@@ -346,10 +346,10 @@ export default function CategoryInterestSection() {
                 key={category.key}
                 type="button"
                 onClick={() => setSelectedCategoryKey(category.key)}
-                className={`whitespace-nowrap rounded-full border px-4 py-2 text-sm font-medium transition ${
+                className={`whitespace-nowrap rounded-xl border px-4 py-2.5 text-sm font-semibold leading-none shadow-sm transition-all duration-200 active:scale-[0.98] ${
                   isActive
-                    ? 'border-gray-900 bg-gray-100 text-gray-900'
-                    : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900'
+                    ? 'border-gray-900 bg-gray-900 text-white shadow-md'
+                    : 'border-gray-300 bg-gray-50 text-gray-800 hover:border-gray-400 hover:bg-white'
                 }`}
               >
                 {category.label}

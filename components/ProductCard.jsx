@@ -373,7 +373,7 @@ const ProductCard = ({ product }) => {
                     ) : (
                         <>
                             <div
-                                className="absolute bottom-3 left-1/2 z-20 hidden -translate-x-1/2 md:inline-flex h-8 min-w-[32px] items-center justify-center rounded-md px-2 text-xs font-semibold text-white shadow-md transition-all duration-150 ease-out group-hover:opacity-0 group-hover:scale-95"
+                                className="absolute bottom-3 right-3 z-20 hidden md:inline-flex h-8 min-w-[32px] items-center justify-center rounded-md px-2 text-xs font-semibold text-white shadow-md transition-all duration-150 ease-out group-hover:opacity-0 group-hover:scale-95"
                                 style={{ backgroundColor: '#2563eb' }}
                             >
                                 <span className="inline-flex items-center gap-1">
@@ -382,7 +382,7 @@ const ProductCard = ({ product }) => {
                                 </span>
                             </div>
                             <div
-                                className="absolute bottom-3 left-1/2 z-20 inline-flex -translate-x-1/2 items-center justify-center shadow-md rounded-md gap-2 px-2 py-1.5 transition-all duration-150 ease-out md:opacity-0 md:scale-95 md:group-hover:opacity-100 md:group-hover:scale-100"
+                                className="absolute bottom-3 right-3 z-20 inline-flex items-center justify-center shadow-md rounded-md gap-2 px-2 py-1.5 transition-all duration-150 ease-out md:opacity-0 md:scale-95 md:group-hover:opacity-100 md:group-hover:scale-100"
                                 style={{ backgroundColor: '#2563eb' }}
                             >
                                 <button

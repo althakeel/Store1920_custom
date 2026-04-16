@@ -12,7 +12,7 @@ export default function MobileProductActions({
   isOrdering = false
 }) {
   return (
-    <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white shadow-2xl z-50 safe-area-bottom">
+    <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white shadow-2xl z-50 safe-area-bottom" dir="ltr">
       <div className="flex items-center gap-3 px-4 py-3">
         {/* Order Now Button */}
         <button

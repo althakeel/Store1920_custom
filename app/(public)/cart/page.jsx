@@ -285,7 +285,7 @@ export default function Cart() {
                             <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Cart ({cartArray.length})</h1>
                         </div>
 
-                        <div className="flex gap-6 max-lg:flex-col">
+                        <div className="flex gap-6 max-lg:flex-col" dir="ltr">
                             <div className="flex-1 space-y-4">
                                 {inStockCartArray.map((item, index) => (
                                     <div key={item._cartKey || index} className="rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow" style={{ background: "inherit" }}>

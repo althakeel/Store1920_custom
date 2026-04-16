@@ -858,24 +858,33 @@ const Navbar = () => {
       {navbarAppearanceLoading ? navbarSkeleton : (
         <>
       {/* Mobile Header */}
-      <nav className="lg:hidden sticky top-0 z-50 shadow-sm border-b border-gray-200" style={{ backgroundColor: navbarAppearance.backgroundColor, color: navbarTextColor }}>
-        <div className="flex items-center gap-3 px-3 py-3" style={{ backgroundColor: navbarAppearance.backgroundColor }}>
+      <nav className="lg:hidden sticky top-0 z-50 border-b border-gray-200 shadow-sm" style={{ backgroundColor: navbarAppearance.backgroundColor, color: navbarTextColor }}>
+        <div className="flex items-center gap-2 px-2.5 py-2.5" style={{ backgroundColor: navbarAppearance.backgroundColor }}>
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen((prev) => !prev)}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-md text-gray-700 hover:bg-gray-100"
+            aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+          >
+            {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+          </button>
+
           {mobileLogoSrc && (
-            <Link href="/" onClick={handleLogoNavigation} className="flex items-center flex-shrink-0">
+            <Link href="/" onClick={handleLogoNavigation} className="flex items-center flex-shrink-0 pr-1">
               <Image
                 src={mobileLogoSrc}
                 alt="Store Logo"
                 width={navbarAppearance.logoWidth}
                 height={navbarAppearance.logoHeight}
-                className="h-8 sm:h-10 w-auto object-contain"
-                style={{ maxHeight: '40px', maxWidth: '200px' }}
+                className="h-7 w-auto object-contain"
+                style={{ maxHeight: '32px', maxWidth: '120px' }}
                 priority
               />
             </Link>
           )}
 
-          <form onSubmit={handleSearch} className="flex-1 relative">
-            <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-gray-200">
+          <form onSubmit={handleSearch} className="relative flex-1 min-w-0">
+            <div className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-1.5">
               <input
                 type="text"
                 placeholder={searchPlaceholder || t('navbar.searchFragrances')}
@@ -883,14 +892,14 @@ const Navbar = () => {
                 onChange={(e) => setSearch(e.target.value)}
                 onFocus={() => setSearchFocused(true)}
                 onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
-                className="w-full bg-transparent outline-none placeholder-gray-500 text-gray-800 text-sm"
+                className="w-full min-w-0 bg-transparent text-sm text-gray-800 outline-none placeholder:text-gray-400"
               />
               <button
                 type="submit"
                 aria-label="Search"
-                className="flex-shrink-0"
+                className="flex-shrink-0 text-gray-500"
               >
-                <Search size={18} className="text-[#BE181B]" />
+                <Search size={16} />
               </button>
             </div>
 
@@ -925,6 +934,19 @@ const Navbar = () => {
               </div>
             )}
           </form>
+
+          <Link
+            href={firebaseUser ? '/dashboard/wishlist' : '/wishlist'}
+            className="relative inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md text-gray-700 hover:bg-gray-100"
+            aria-label="Wishlist"
+          >
+            <HeartIcon size={20} />
+            {wishlistCount > 0 && (
+              <span className="absolute -right-1 -top-1 inline-flex min-h-[16px] min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
+                {wishlistCount > 99 ? '99+' : wishlistCount}
+              </span>
+            )}
+          </Link>
         </div>
       </nav>
 
@@ -1278,7 +1300,17 @@ const Navbar = () => {
               {/* Header with Logo and Close Button */}
               <div className="flex justify-between items-center border-b border-gray-200 pb-4">
                 <button type="button" onClick={handleLogoNavigation} className="flex items-center">
-                  <Image src={Logo} alt="Store1920 Logo" width={120} height={35} className="object-contain" />
+                  {mobileLogoSrc || navbarLogoSrc ? (
+                    <Image
+                      src={mobileLogoSrc || navbarLogoSrc}
+                      alt="Store Logo"
+                      width={120}
+                      height={35}
+                      className="object-contain"
+                    />
+                  ) : (
+                    <span className="text-lg font-semibold text-gray-900">Store</span>
+                  )}
                 </button>
                 <button onClick={() => setMobileMenuOpen(false)} className="p-1 hover:bg-gray-100 rounded-full transition">
                   <X size={24} className="text-gray-600" />
@@ -1355,7 +1387,7 @@ const Navbar = () => {
                       className="flex items-center gap-3 px-4 py-3 hover:bg-gray-100 rounded-lg transition text-gray-700 font-medium"
                       onClick={() => setMobileMenuOpen(false)}
                     >
-                      <PackageIcon size={18} className="text-gray-600" />
+                      <Package size={18} className="text-gray-600" />
                       <span>{t('navbar.myOrders')}</span>
                     </Link>
                     <Link 
