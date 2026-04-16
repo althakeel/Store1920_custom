@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import axios from 'axios'
-import { Heart, ShoppingCartIcon, StarIcon, Trash2, Plus } from 'lucide-react'
+import { Heart, ShoppingCartIcon, StarIcon, Trash2, Minus, Plus } from 'lucide-react'
 import { useDispatch, useSelector } from 'react-redux'
 
 import { useAuth } from '@/lib/useAuth'
@@ -371,44 +371,52 @@ const ProductCard = ({ product }) => {
                             <Plus size={20} className={isOutOfStock ? 'text-gray-400' : 'text-gray-600'} strokeWidth={2.5} />
                         </button>
                     ) : (
-                        <div
-                            className="absolute bottom-3 right-3 z-20 inline-flex items-center justify-center shadow-md rounded-full gap-1.5"
-                            style={{
-                                backgroundColor: '#2563eb',
-                                padding: '6px 12px'
-                            }}
-                        >
-                            <button
-                                onClick={(e) => {
-                                    e.preventDefault()
-                                    e.stopPropagation()
-                                    dispatch(removeFromCart({ productId: product._id }))
-                                    dispatch(uploadCart({ getToken }))
-                                }}
-                                className="inline-flex items-center justify-center hover:opacity-80 transition"
-                                type="button"
-                                title="Delete"
+                        <>
+                            <div
+                                className="absolute bottom-3 left-1/2 z-20 hidden -translate-x-1/2 md:inline-flex h-8 min-w-[32px] items-center justify-center rounded-md px-2 text-xs font-semibold text-white shadow-md transition-all duration-150 ease-out group-hover:opacity-0 group-hover:scale-95"
+                                style={{ backgroundColor: '#2563eb' }}
                             >
-                                <Trash2 size={14} className="text-white" />
-                            </button>
-                            <span className="font-semibold text-xs text-white min-w-[20px] text-center">{itemQuantity}</span>
-                            <button
-                                onClick={(e) => {
-                                    e.preventDefault()
-                                    e.stopPropagation()
-                                    dispatch(addToCart({ 
-                                        productId: product._id,
-                                        price: priceNum > 0 ? priceNum : undefined
-                                    }))
-                                    dispatch(uploadCart({ getToken }))
-                                }}
-                                className="inline-flex items-center justify-center hover:opacity-80 transition"
-                                type="button"
-                                title="Add more"
+                                <span className="inline-flex items-center gap-1">
+                                    <ShoppingCartIcon size={12} />
+                                    <span>{itemQuantity}</span>
+                                </span>
+                            </div>
+                            <div
+                                className="absolute bottom-3 left-1/2 z-20 inline-flex -translate-x-1/2 items-center justify-center shadow-md rounded-md gap-2 px-2 py-1.5 transition-all duration-150 ease-out md:opacity-0 md:scale-95 md:group-hover:opacity-100 md:group-hover:scale-100"
+                                style={{ backgroundColor: '#2563eb' }}
                             >
-                                <Plus size={14} className="text-white" />
-                            </button>
-                        </div>
+                                <button
+                                    onClick={(e) => {
+                                        e.preventDefault()
+                                        e.stopPropagation()
+                                        dispatch(removeFromCart({ productId: product._id }))
+                                        dispatch(uploadCart({ getToken }))
+                                    }}
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-sm hover:bg-white/15 transition"
+                                    type="button"
+                                    title={itemQuantity === 1 ? 'Delete' : 'Decrease'}
+                                >
+                                    {itemQuantity === 1 ? <Trash2 size={14} className="text-white" /> : <Minus size={14} className="text-white" />}
+                                </button>
+                                <span className="font-semibold text-xs text-white min-w-[20px] text-center">{itemQuantity}</span>
+                                <button
+                                    onClick={(e) => {
+                                        e.preventDefault()
+                                        e.stopPropagation()
+                                        dispatch(addToCart({ 
+                                            productId: product._id,
+                                            price: priceNum > 0 ? priceNum : undefined
+                                        }))
+                                        dispatch(uploadCart({ getToken }))
+                                    }}
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-sm hover:bg-white/15 transition"
+                                    type="button"
+                                    title="Add more"
+                                >
+                                    <Plus size={14} className="text-white" />
+                                </button>
+                            </div>
+                        </>
                     )}
                 </div>
 

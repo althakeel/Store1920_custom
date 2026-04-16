@@ -120,11 +120,11 @@ export default function CategorySliderDisplay({ slider }) {
                 {/* Price */}
                 <div className="qf-card__price-row">
                   <span className="qf-card__price">
-                    {market.currency}{convertPrice(Number(product.basePrice || product.price || 0)).toLocaleString()}
+                    {market.currency} {convertPrice(Number(product.basePrice || product.price || 0)).toLocaleString()}
                   </span>
                   {product.originalPrice && (
                     <span className="qf-card__strike">
-                      {market.currency}{convertPrice(Number(product.originalPrice || 0)).toLocaleString()}
+                      {market.currency} {convertPrice(Number(product.originalPrice || 0)).toLocaleString()}
                     </span>
                   )}
                 </div>

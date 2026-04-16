@@ -6,7 +6,7 @@ import axios from 'axios'
 import Image from 'next/image'
 import Link from 'next/link'
 import { FaStar } from 'react-icons/fa'
-import { Plus, Trash2 } from 'lucide-react'
+import { Minus, Plus, ShoppingCart, Trash2 } from 'lucide-react'
 
 import { addToCart, uploadCart, removeFromCart } from '@/lib/features/cart/cartSlice'
 import { useAuth } from '@/lib/useAuth'
@@ -228,38 +228,49 @@ const ProductCard = ({ product }) => {
         )}
 
         {itemQuantity > 0 ? (
-          <div
-            className="absolute bottom-3 right-3 z-20 inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 shadow-md"
-            style={{ backgroundColor: '#2563eb' }}
-          >
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                dispatch(removeFromCart({ productId: product._id }))
-                dispatch(uploadCart({ getToken }))
-              }}
-              className="inline-flex items-center justify-center text-white/95 hover:opacity-80 transition"
-              title="Remove"
+          <>
+            <div
+              className="absolute bottom-3 right-3 z-20 hidden md:inline-flex h-8 min-w-[32px] items-center justify-center rounded-md px-2 text-xs font-semibold text-white shadow-md transition-all duration-150 ease-out group-hover:opacity-0 group-hover:scale-95 group-hover:-translate-y-0.5"
+              style={{ backgroundColor: '#2563eb' }}
             >
-              <Trash2 size={14} />
-            </button>
-            <span className="min-w-[18px] text-center text-xs font-semibold text-white">{itemQuantity}</span>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                dispatch(addToCart({ productId: product._id }))
-                dispatch(uploadCart({ getToken }))
-              }}
-              className="inline-flex items-center justify-center text-white/95 hover:opacity-80 transition"
-              title="Add more"
+              <span className="inline-flex items-center gap-1">
+                <ShoppingCart size={12} />
+                <span>{itemQuantity}</span>
+              </span>
+            </div>
+            <div
+              className="absolute bottom-3 right-3 z-20 inline-flex items-center justify-center gap-2 rounded-md px-2 py-1.5 shadow-md transition-all duration-150 ease-out md:opacity-0 md:scale-95 md:translate-y-1 md:group-hover:translate-y-0 md:group-hover:opacity-100 md:group-hover:scale-100 md:group-hover:shadow-lg"
+              style={{ backgroundColor: '#2563eb' }}
             >
-              <Plus size={14} />
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  dispatch(removeFromCart({ productId: product._id }))
+                  dispatch(uploadCart({ getToken }))
+                }}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-white/95 hover:bg-white/15 transition"
+                title={itemQuantity === 1 ? 'Delete' : 'Decrease'}
+              >
+                {itemQuantity === 1 ? <Trash2 size={14} /> : <Minus size={14} />}
+              </button>
+              <span className="min-w-[18px] text-center text-xs font-semibold text-white">{itemQuantity}</span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  dispatch(addToCart({ productId: product._id }))
+                  dispatch(uploadCart({ getToken }))
+                }}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-white/95 hover:bg-white/15 transition"
+                title="Add more"
+              >
+                <Plus size={14} />
+              </button>
+            </div>
+          </>
         ) : (
           <button
             onClick={handleAddToCart}
@@ -296,13 +307,17 @@ const ProductCard = ({ product }) => {
           <div className="flex items-start justify-between gap-2 mb-1">
             <div className="flex items-center gap-1 flex-wrap">
               {priceNum > 0 && (
-                <p className="text-base sm:text-lg font-extrabold text-slate-900 leading-none">
-                  {market.currency}{convertedPrice.toFixed(0)}
+                <p className="inline-flex items-center gap-1.5 text-base sm:text-lg font-extrabold text-slate-950 leading-none">
+                  <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">
+                    {market.currency}
+                  </span>
+                  <span>{convertedPrice.toFixed(0)}</span>
                 </p>
               )}
               {AEDNum > 0 && AEDNum > priceNum && (
-                <p className="text-[10px] sm:text-xs text-slate-400 line-through leading-none mt-0.5">
-                  {market.currency}{convertedAED.toFixed(0)}
+                <p className="inline-flex items-center gap-1 text-[10px] sm:text-xs text-slate-300 line-through leading-none mt-0.5">
+                  <span className="uppercase tracking-wide">{market.currency}</span>
+                  <span>{convertedAED.toFixed(0)}</span>
                 </p>
               )}
               {discount > 0 && (
@@ -353,9 +368,12 @@ const BestSelling = () => {
       fetchControllerRef.current?.abort()
       const controller = new AbortController()
       fetchControllerRef.current = controller
+      const shouldShowSectionLoader = featuredProducts.length === 0
 
       try {
-        setIsLoading(true)
+        if (shouldShowSectionLoader) {
+          setIsLoading(true)
+        }
         setError(null)
 
         let headers = undefined
@@ -432,7 +450,9 @@ const BestSelling = () => {
           console.warn('Failed to load featured products', err)
         }
         setError('Could not load featured products')
-        setFeaturedProducts([])
+        if (featuredProducts.length === 0) {
+          setFeaturedProducts([])
+        }
       } finally {
         if (fetchControllerRef.current === controller) {
           fetchControllerRef.current = null
@@ -441,7 +461,7 @@ const BestSelling = () => {
           }
         }
       }
-    }, [getToken])
+    }, [getToken, featuredProducts.length])
 
   useEffect(() => {
     return () => {
@@ -503,15 +523,9 @@ const BestSelling = () => {
     window.addEventListener('storage', handleStorage)
     window.addEventListener('featuredSectionLiveUpdate', handleLiveUpdate)
 
-    // Keep homepage in sync even if updates happen elsewhere.
-    const intervalId = window.setInterval(() => {
-      fetchFeaturedAndSectionText()
-    }, 10000)
-
     return () => {
       window.removeEventListener('storage', handleStorage)
       window.removeEventListener('featuredSectionLiveUpdate', handleLiveUpdate)
-      window.clearInterval(intervalId)
     }
   }, [fetchFeaturedAndSectionText])
 
@@ -527,7 +541,7 @@ const BestSelling = () => {
         className={layoutSettings.style === 'list' ? 'mt-6 grid grid-cols-1 gap-3' : 'featured-products-grid mt-6 gap-2 sm:gap-4'}
         style={layoutSettings.style === 'list' ? undefined : { '--desktop-cols': String(Math.max(1, Math.min(10, Number(layoutSettings.itemsPerRow || 5)))) }}
       >
-        {isLoading
+        {isLoading && featuredProducts.length === 0
           ? Array(visibleCount).fill(0).map((_, idx) => (
               <div key={idx} className="bg-white rounded-xl shadow-sm animate-pulse">
                 <div className="w-full h-36 sm:h-64 bg-gray-200 rounded-t-xl" />

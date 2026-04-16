@@ -2,9 +2,11 @@
 import { ChevronRightIcon } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { useStorefrontMarket } from "@/lib/useStorefrontMarket";
 
 export default function ProductSection({ title, products, viewAllLink }) {
     const router = useRouter();
+    const { market, convertPrice } = useStorefrontMarket();
 
     if (!products || products.length === 0) return null;
 
@@ -52,11 +54,11 @@ export default function ProductSection({ title, products, viewAllLink }) {
                                                             <div className="flex items-center gap-2">
                                                                 {/* Show sale price if > 0 */}
                                                                 {Number(product.price) > 0 && (
-                                                                    <span className="text-sm font-bold text-gray-900">AED {product.price}</span>
+                                                                    <span className="text-sm font-bold text-gray-900">{market.currency} {Math.round(convertPrice(Number(product.price) || 0))}</span>
                                                                 )}
                                                                 {/* Show regular price only if > 0, greater than price, and price > 0 */}
                                                                 {Number(product.AED) > 0 && Number(product.AED) > Number(product.price) && Number(product.price) > 0 && (
-                                                                    <span className="text-xs text-gray-500 line-through">AED {product.AED}</span>
+                                                                    <span className="text-xs text-gray-500 line-through">{market.currency} {Math.round(convertPrice(Number(product.AED) || 0))}</span>
                                                                 )}
                                                             </div>
                                                         )}

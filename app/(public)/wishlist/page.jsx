@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useDispatch } from "react-redux";
 import { addToCart } from "@/lib/features/cart/cartSlice";
+import { useStorefrontMarket } from "@/lib/useStorefrontMarket";
 import PageTitle from "@/components/PageTitle";
 import DashboardSidebar from "@/components/DashboardSidebar";
 
@@ -48,6 +49,7 @@ function WishlistAuthed() {
   const isSignedIn = !!user;
   const router = useRouter();
   const dispatch = useDispatch();
+  const { market, convertPrice } = useStorefrontMarket();
 
   const [wishlist, setWishlist] = useState([]);
   const [selected, setSelected] = useState([]);
@@ -278,6 +280,8 @@ function WishlistAuthed() {
                     product.images?.[0] || PLACEHOLDER_IMAGE;
                   const isSelected = selected.includes(product._pid);
                   const discount = product.AED ? Math.round(((product.AED - product.price) / product.AED) * 100) : 0;
+                  const convertedPrice = convertPrice(Number(product.price) || 0);
+                  const convertedAED = convertPrice(Number(product.AED) || 0);
 
                   return (
                     <div
@@ -329,11 +333,11 @@ function WishlistAuthed() {
 
                         <div className="mt-2 flex items-baseline gap-2">
                           <span className="text-xl font-bold text-gray-900">
-                            AED{product.price.toLocaleString()}
+                            {market.currency} {Math.round(convertedPrice).toLocaleString()}
                           </span>
                           {product.AED && (
                             <span className="text-sm text-gray-400 line-through">
-                              AED{product.AED.toLocaleString()}
+                              {market.currency} {Math.round(convertedAED).toLocaleString()}
                             </span>
                           )}
                           {discount > 0 && (
@@ -397,7 +401,7 @@ function WishlistAuthed() {
               </div>
               <div className="border-t pt-4 flex justify-between items-center">
                 <span className="text-gray-900 font-semibold">Total Amount</span>
-                <span className="font-bold text-2xl text-orange-600">AED{total.toLocaleString()}</span>
+                <span className="font-bold text-2xl text-orange-600">{market.currency} {Math.round(convertPrice(total)).toLocaleString()}</span>
               </div>
             </div>
 
@@ -442,7 +446,7 @@ function WishlistAuthed() {
           <div className="flex justify-between items-center gap-4">
             <div className="flex-1">
               <p className="text-xs text-gray-500 font-medium">{selected.length} {selected.length === 1 ? 'item' : 'items'} selected</p>
-              <p className="font-bold text-xl text-gray-900">AED{total.toLocaleString()}</p>
+              <p className="font-bold text-xl text-gray-900">{market.currency} {Math.round(convertPrice(total)).toLocaleString()}</p>
             </div>
             <div className="flex items-center gap-2">
               <button

@@ -3,10 +3,11 @@ import React, { useRef, useState, useEffect } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ChevronRight, ChevronLeft, Sparkles, Plus, Trash2 } from 'lucide-react'
+import { ChevronRight, ChevronLeft, Sparkles, Minus, Plus, ShoppingCart, Trash2 } from 'lucide-react'
 import { useSelector, useDispatch } from 'react-redux'
 import { addToCart, uploadCart, removeFromCart } from '@/lib/features/cart/cartSlice'
 import { useAuth } from '@/lib/useAuth'
+import { useStorefrontMarket } from '@/lib/useStorefrontMarket'
 import toast from 'react-hot-toast'
 import BannerSlider from '@/components/BannerSlider'
 
@@ -83,6 +84,7 @@ const HorizontalSlider = ({ section, router, allProducts }) => {
   
   const dispatch = useDispatch()
   const { getToken } = useAuth() || {}
+  const { market, convertPrice } = useStorefrontMarket()
   const cartItems = useSelector(state => state.cart?.cartItems || {})
 
   const getCurrentPrice = (product) => product.basePrice ?? product.price ?? product.salePrice
@@ -320,46 +322,57 @@ const HorizontalSlider = ({ section, router, allProducts }) => {
 
                         if (count > 0) {
                           return (
-                            <div
-                              className="absolute bottom-3 right-3 z-20 inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 shadow-md"
-                              style={{ backgroundColor: '#2563eb' }}
-                            >
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault()
-                                  e.stopPropagation()
-                                  dispatch(removeFromCart({ productId: String(productId) }))
-                                  if (getToken && typeof getToken === 'function') {
-                                    dispatch(uploadCart({ getToken })).catch(() => {
-                                      // Cart sync failed silently
-                                    })
-                                  }
-                                }}
-                                className="inline-flex items-center justify-center text-white/95 hover:opacity-80 transition"
-                                title="Remove"
+                            <>
+                              <div
+                                className="absolute bottom-3 left-1/2 z-20 hidden -translate-x-1/2 md:inline-flex h-8 min-w-[32px] items-center justify-center rounded-md px-2 text-xs font-semibold text-white shadow-md transition-all duration-150 ease-out group-hover:opacity-0 group-hover:scale-95"
+                                style={{ backgroundColor: '#2563eb' }}
                               >
-                                <Trash2 size={14} />
-                              </button>
-                              <span className="min-w-[18px] text-center text-xs font-semibold text-white">{count}</span>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault()
-                                  e.stopPropagation()
-                                  dispatch(addToCart({ productId: String(productId) }))
-                                  if (getToken && typeof getToken === 'function') {
-                                    dispatch(uploadCart({ getToken })).catch(() => {
-                                      // Cart sync failed silently
-                                    })
-                                  }
-                                }}
-                                className="inline-flex items-center justify-center text-white/95 hover:opacity-80 transition"
-                                title="Add more"
+                                <span className="inline-flex items-center gap-1">
+                                  <ShoppingCart size={12} />
+                                  <span>{count}</span>
+                                </span>
+                              </div>
+                              <div
+                                className="absolute bottom-3 left-1/2 z-20 inline-flex -translate-x-1/2 items-center justify-center gap-2 rounded-md px-2 py-1.5 shadow-md transition-all duration-150 ease-out md:opacity-0 md:scale-95 md:group-hover:opacity-100 md:group-hover:scale-100"
+                                style={{ backgroundColor: '#2563eb' }}
                               >
-                                <Plus size={14} />
-                              </button>
-                            </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                    dispatch(removeFromCart({ productId: String(productId) }))
+                                    if (getToken && typeof getToken === 'function') {
+                                      dispatch(uploadCart({ getToken })).catch(() => {
+                                        // Cart sync failed silently
+                                      })
+                                    }
+                                  }}
+                                  className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-white/95 hover:bg-white/15 transition"
+                                  title={count === 1 ? 'Delete' : 'Decrease'}
+                                >
+                                  {count === 1 ? <Trash2 size={14} /> : <Minus size={14} />}
+                                </button>
+                                <span className="min-w-[18px] text-center text-xs font-semibold text-white">{count}</span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                    dispatch(addToCart({ productId: String(productId) }))
+                                    if (getToken && typeof getToken === 'function') {
+                                      dispatch(uploadCart({ getToken })).catch(() => {
+                                        // Cart sync failed silently
+                                      })
+                                    }
+                                  }}
+                                  className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-white/95 hover:bg-white/15 transition"
+                                  title="Add more"
+                                >
+                                  <Plus size={14} />
+                                </button>
+                              </div>
+                            </>
                           )
                         }
 
@@ -432,27 +445,38 @@ const HorizontalSlider = ({ section, router, allProducts }) => {
                   {/* Price Row with Cart Button */}
                   <div className="flex items-center justify-between gap-2 pt-0.5">
                     <div className="flex items-baseline gap-2">
-                      <span className="text-base sm:text-lg font-bold text-gray-900">
-                        AED{getCurrentPrice(product)?.toLocaleString?.() || getCurrentPrice(product)}
-                      </span>
                       {(() => {
+                        const currentPrice = Number(getCurrentPrice(product) || 0)
                         const regularPrice = getRegularPrice(product)
-                        const currentPrice = getCurrentPrice(product)
-                        return regularPrice && regularPrice > currentPrice ? (
+                        const convertedCurrentPrice = convertPrice(currentPrice)
+                        return (
                           <>
-                            <span className="text-xs text-gray-400 line-through">
-                              AED{regularPrice?.toLocaleString?.() || regularPrice}
-                            </span>
-                            {(() => {
-                              const discountPercent = getDiscountPercent(regularPrice, currentPrice)
-                              return discountPercent ? (
-                                <span className="text-[10px] sm:text-xs font-semibold text-green-600">
-                                  {discountPercent}% off
+                            <span className="text-base sm:text-lg font-bold text-gray-900">
+                              <span className="inline-flex items-center gap-1.5">
+                                <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">
+                                  {market.currency}
                                 </span>
-                              ) : null
-                            })()}
+                                <span>{convertedCurrentPrice?.toLocaleString?.() || convertedCurrentPrice}</span>
+                              </span>
+                            </span>
+                            {regularPrice && regularPrice > currentPrice ? (
+                              <>
+                                <span className="inline-flex items-center gap-1 text-xs text-slate-300 line-through">
+                                  <span className="uppercase tracking-wide">{market.currency}</span>
+                                  <span>{convertPrice(Number(regularPrice) || 0)?.toLocaleString?.() || convertPrice(Number(regularPrice) || 0)}</span>
+                                </span>
+                                {(() => {
+                                  const discountPercent = getDiscountPercent(regularPrice, currentPrice)
+                                  return discountPercent ? (
+                                    <span className="text-[10px] sm:text-xs font-semibold text-green-600">
+                                      {discountPercent}% off
+                                    </span>
+                                  ) : null
+                                })()}
+                              </>
+                            ) : null}
                           </>
-                        ) : null
+                        )
                       })()}
                     </div>
                   </div>

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import axios from "axios";
+import { useStorefrontMarket } from "@/lib/useStorefrontMarket";
 
 const TOP_DEALS_SECTION_KEYS = new Set(["top_deals", "top-deals", "topdeals"]);
 
@@ -9,6 +10,7 @@ export default function TopDeals() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [title, setTitle] = useState("Top Deals");
+  const { market, convertPrice } = useStorefrontMarket();
 
   useEffect(() => {
     const load = async () => {
@@ -124,6 +126,7 @@ export default function TopDeals() {
                   item.images?.[0] && item.images[0] !== ""
                     ? item.images[0]
                     : "https://ik.imagekit.io/jrstupuke/placeholder.png";
+                const convertedPrice = convertPrice(Number(item.price) || 0);
 
                 return (
                   <a
@@ -143,7 +146,7 @@ export default function TopDeals() {
                       {item.name}
                     </p>
                     <p className="font-bold text-[10px] sm:text-[12px] md:text-[16px] mt-1 sm:mt-1.5 text-[#E6003E]">
-                      From AED {item.price}
+                      From {market.currency} {Math.round(convertedPrice)}
                     </p>
                   </a>
                 );

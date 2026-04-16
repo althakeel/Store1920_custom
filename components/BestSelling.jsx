@@ -6,7 +6,7 @@ import axios from 'axios'
 import Image from 'next/image'
 import Link from 'next/link'
 import { FaStar } from 'react-icons/fa'
-import { Plus, Trash2 } from 'lucide-react'
+import { Minus, Plus, ShoppingCart, Trash2 } from 'lucide-react'
 import { addToCart, uploadCart, removeFromCart } from '@/lib/features/cart/cartSlice'
 import { useAuth } from '@/lib/useAuth'
 
@@ -193,38 +193,49 @@ const ProductCard = ({ product }) => {
           Out of Stock
         </div>
       ) : itemQuantity > 0 ? (
-        <div
-          className="absolute bottom-4 right-4 z-10 inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 shadow-md"
-          style={{ backgroundColor: '#2563eb' }}
-        >
-          <button
-            type="button"
-            onClick={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              dispatch(removeFromCart({ productId: product._id }))
-              dispatch(uploadCart({ getToken }))
-            }}
-            className="inline-flex items-center justify-center text-white/95 hover:opacity-80 transition"
-            title="Remove"
+        <>
+          <div
+            className="absolute bottom-4 right-4 z-10 hidden md:inline-flex h-8 min-w-[32px] items-center justify-center rounded-md px-2 text-xs font-semibold text-white shadow-md transition-all duration-150 ease-out group-hover:opacity-0 group-hover:scale-95 group-hover:-translate-y-0.5"
+            style={{ backgroundColor: '#2563eb' }}
           >
-            <Trash2 size={14} />
-          </button>
-          <span className="min-w-[18px] text-center text-xs font-semibold text-white">{itemQuantity}</span>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              dispatch(addToCart({ productId: product._id }))
-              dispatch(uploadCart({ getToken }))
-            }}
-            className="inline-flex items-center justify-center text-white/95 hover:opacity-80 transition"
-            title="Add more"
+            <span className="inline-flex items-center gap-1">
+              <ShoppingCart size={12} />
+              <span>{itemQuantity}</span>
+            </span>
+          </div>
+          <div
+            className="absolute bottom-4 right-4 z-10 inline-flex items-center justify-center gap-2 rounded-md px-2 py-1.5 shadow-md transition-all duration-150 ease-out md:opacity-0 md:scale-95 md:translate-y-1 md:group-hover:translate-y-0 md:group-hover:opacity-100 md:group-hover:scale-100 md:group-hover:shadow-lg"
+            style={{ backgroundColor: '#2563eb' }}
           >
-            <Plus size={14} />
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                dispatch(removeFromCart({ productId: product._id }))
+                dispatch(uploadCart({ getToken }))
+              }}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-white/95 hover:bg-white/15 transition"
+              title={itemQuantity === 1 ? 'Delete' : 'Decrease'}
+            >
+              {itemQuantity === 1 ? <Trash2 size={14} /> : <Minus size={14} />}
+            </button>
+            <span className="min-w-[18px] text-center text-xs font-semibold text-white">{itemQuantity}</span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                dispatch(addToCart({ productId: product._id }))
+                dispatch(uploadCart({ getToken }))
+              }}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-white/95 hover:bg-white/15 transition"
+              title="Add more"
+            >
+              <Plus size={14} />
+            </button>
+          </div>
+        </>
       ) : (
         <button 
           onClick={handleAddToCart}

@@ -5,11 +5,13 @@ import axios from "axios";
 import Image from "next/image";
 import Link from "next/link";
 import { Heart, ChevronRight } from "lucide-react";
+import { useStorefrontMarket } from "@/lib/useStorefrontMarket";
 import Banner from '../assets/common/bann.jpg'
 
 export default function CarouselSlider() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const { market, convertPrice } = useStorefrontMarket();
   const scrollRef = useRef(null);
   const containerRef = useRef(null);
   const [showNextArrow, setShowNextArrow] = useState(false);
@@ -274,6 +276,7 @@ export default function CarouselSlider() {
             ) : products.length > 0 ? (
               products.map((product) => {
                 const imageSrc = product.images?.[0]?.url || product.images?.[0] || "/placeholder.png";
+                const convertedPrice = convertPrice(Number(product.price) || 0);
                 return (
                   <Link
                     key={product.slug || product.id || product.name}
@@ -392,7 +395,7 @@ export default function CarouselSlider() {
                         fontWeight: 600,
                         marginTop: 4,
                       }}>
-                        From <span style={{fontWeight: 700, color: '#a51010ff'}}>AED{product.price}</span>
+                        From <span style={{fontWeight: 700, color: '#a51010ff'}}>{market.currency} {Math.round(convertedPrice)}</span>
                       </div>
                     </div>
                   </div>

@@ -5,10 +5,13 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { ArrowLeft, PackageIcon } from 'lucide-react';
+import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
 
 function SearchResultsInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { market, convertPrice } = useStorefrontMarket();
+  const formatPrice = (amount) => `${market.currency} ${Math.round(convertPrice(Number(amount) || 0))}`;
   const [keyword, setKeyword] = useState('');
   const [method, setMethod] = useState('image-search');
   const [source, setSource] = useState('');
@@ -217,9 +220,9 @@ function SearchResultsInner() {
                     )}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className="text-lg font-bold text-blue-600">AED{product.price}</span>
+                        <span className="text-lg font-bold text-blue-600">{formatPrice(product.price)}</span>
                         {product.AED > product.price && (
-                          <span className="text-sm text-gray-400 line-through">AED{product.AED}</span>
+                          <span className="text-sm text-gray-400 line-through">{formatPrice(product.AED)}</span>
                         )}
                       </div>
                       {product.AED > product.price && (
@@ -280,9 +283,9 @@ function SearchResultsInner() {
                     {/* Pricing */}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className="text-lg font-bold text-blue-600">AED{product.price}</span>
+                        <span className="text-lg font-bold text-blue-600">{formatPrice(product.price)}</span>
                         {product.AED > product.price && (
-                          <span className="text-sm text-gray-400 line-through">AED{product.AED}</span>
+                          <span className="text-sm text-gray-400 line-through">{formatPrice(product.AED)}</span>
                         )}
                       </div>
                       {product.AED > product.price && (
@@ -339,9 +342,9 @@ function SearchResultsInner() {
                         )}
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <span className="text-lg font-bold text-blue-600">AED{product.price}</span>
+                            <span className="text-lg font-bold text-blue-600">{formatPrice(product.price)}</span>
                             {product.AED > product.price && (
-                              <span className="text-sm text-gray-400 line-through">AED{product.AED}</span>
+                              <span className="text-sm text-gray-400 line-through">{formatPrice(product.AED)}</span>
                             )}
                           </div>
                           {product.AED > product.price && (

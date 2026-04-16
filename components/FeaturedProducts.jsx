@@ -5,7 +5,7 @@ import { useEffect, useState, useMemo } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { FaStar } from 'react-icons/fa'
-import { Plus, Trash2 } from 'lucide-react'
+import { Minus, Plus, ShoppingCart, Trash2 } from 'lucide-react'
 import axios from 'axios'
 
 import { addToCart, uploadCart, removeFromCart } from '@/lib/features/cart/cartSlice'
@@ -155,38 +155,49 @@ const ProductCard = ({ product }) => {
         )}
 
         {itemQuantity > 0 ? (
-          <div
-            className="absolute bottom-3 right-3 z-20 inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-1.5 shadow-md"
-            style={{ backgroundColor: '#2563eb' }}
-          >
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                dispatch(removeFromCart({ productId: product._id }))
-                dispatch(uploadCart({ getToken }))
-              }}
-              className="inline-flex items-center justify-center text-white/95 hover:opacity-80 transition"
-              title="Remove"
+          <>
+            <div
+              className="absolute bottom-3 left-1/2 z-20 hidden -translate-x-1/2 md:inline-flex h-8 min-w-[32px] items-center justify-center rounded-md px-2 text-xs font-semibold text-white shadow-md transition-all duration-150 ease-out group-hover:opacity-0 group-hover:scale-95"
+              style={{ backgroundColor: '#2563eb' }}
             >
-              <Trash2 size={14} />
-            </button>
-            <span className="min-w-[18px] text-center text-xs font-semibold text-white">{itemQuantity}</span>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                dispatch(addToCart({ productId: product._id }))
-                dispatch(uploadCart({ getToken }))
-              }}
-              className="inline-flex items-center justify-center text-white/95 hover:opacity-80 transition"
-              title="Add more"
+              <span className="inline-flex items-center gap-1">
+                <ShoppingCart size={12} />
+                <span>{itemQuantity}</span>
+              </span>
+            </div>
+            <div
+              className="absolute bottom-3 left-1/2 z-20 inline-flex -translate-x-1/2 items-center justify-center gap-2 rounded-md px-2 py-1.5 shadow-md transition-all duration-150 ease-out md:opacity-0 md:scale-95 md:group-hover:opacity-100 md:group-hover:scale-100"
+              style={{ backgroundColor: '#2563eb' }}
             >
-              <Plus size={14} />
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  dispatch(removeFromCart({ productId: product._id }))
+                  dispatch(uploadCart({ getToken }))
+                }}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-white/95 hover:bg-white/15 transition"
+                title={itemQuantity === 1 ? 'Delete' : 'Decrease'}
+              >
+                {itemQuantity === 1 ? <Trash2 size={14} /> : <Minus size={14} />}
+              </button>
+              <span className="min-w-[18px] text-center text-xs font-semibold text-white">{itemQuantity}</span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  dispatch(addToCart({ productId: product._id }))
+                  dispatch(uploadCart({ getToken }))
+                }}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-white/95 hover:bg-white/15 transition"
+                title="Add more"
+              >
+                <Plus size={14} />
+              </button>
+            </div>
+          </>
         ) : (
           <button 
             onClick={handleAddToCart}
@@ -235,14 +246,18 @@ const ProductCard = ({ product }) => {
         <div className="mt-auto flex items-center justify-between">
           <div className="flex flex-col gap-0.5">
             {Number(product.price) > 0 && (
-              <p className="text-sm sm:text-base font-bold text-black">
-                {market.currency}{Number(convertedPrice).toFixed(2)}
+              <p className="inline-flex items-center gap-1.5 text-sm sm:text-base font-bold text-slate-950">
+                <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">
+                  {market.currency}
+                </span>
+                <span>{Number(convertedPrice).toFixed(2)}</span>
               </p>
             )}
             {Number(product.AED) > 0 && Number(product.AED) > Number(product.price) && (
               <div className="flex items-center gap-1.5">
-                <p className="text-xs sm:text-sm text-gray-400 line-through">
-                  {market.currency}{Number(convertedAED).toFixed(2)}
+                <p className="inline-flex items-center gap-1 text-xs sm:text-sm text-slate-300 line-through">
+                  <span className="uppercase tracking-wide">{market.currency}</span>
+                  <span>{Number(convertedAED).toFixed(2)}</span>
                 </p>
                 {discount > 0 && (
                   <span className="text-[10px] sm:text-xs font-semibold text-green-600">

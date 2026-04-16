@@ -2,12 +2,14 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { X } from 'lucide-react'
+import { useStorefrontMarket } from '@/lib/useStorefrontMarket'
 
 const SocialProofPopup = () => {
   const [visible, setVisible] = useState(false)
   const [currentProduct, setCurrentProduct] = useState(null)
   const [products, setProducts] = useState([])
   const [mounted, setMounted] = useState(false)
+  const { market, convertPrice } = useStorefrontMarket()
 
   // Ensure component is mounted (client-side only)
   useEffect(() => {
@@ -185,9 +187,9 @@ const SocialProofPopup = () => {
         {currentProduct.price && (
           <div className="bg-gradient-to-r from-green-500 to-emerald-500 px-3 py-1.5 flex items-center justify-between">
             <div className="flex items-baseline gap-1.5">
-              <span className="text-white font-bold text-sm">AED{currentProduct.price}</span>
+              <span className="text-white font-bold text-sm">{market.currency} {Math.round(convertPrice(Number(currentProduct.price) || 0))}</span>
               {currentProduct.AED > currentProduct.price && (
-                <span className="text-white/70 text-xs line-through">AED{currentProduct.AED}</span>
+                <span className="text-white/70 text-xs line-through">{market.currency} {Math.round(convertPrice(Number(currentProduct.AED) || 0))}</span>
               )}
             </div>
             <Link 

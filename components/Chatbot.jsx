@@ -4,6 +4,7 @@ import { MessageCircle, X, Send, Bot, User, Loader2, Sparkles, ShoppingBag, Glob
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
+import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
 
 const Chatbot = () => {
     const [isOpen, setIsOpen] = useState(false);
@@ -20,6 +21,7 @@ const Chatbot = () => {
     const [inputMessage, setInputMessage] = useState('');
     const [isTyping, setIsTyping] = useState(false);
     const [products, setProducts] = useState([]);
+    const { market, convertPrice } = useStorefrontMarket();
     const messagesEndRef = useRef(null);
     const inputRef = useRef(null);
     const languageSelectorRef = useRef(null);
@@ -350,7 +352,7 @@ const Chatbot = () => {
                                                                     )}
                                                                     <div className="flex-1 min-w-0">
                                                                         <p className="text-xs font-bold text-blue-900">🛍️ {product.name}</p>
-                                                                        <p className="text-xs text-blue-700">AED{product.price}</p>
+                                                                        <p className="text-xs text-blue-700">{market.currency} {Math.round(convertPrice(Number(product.price) || 0))}</p>
                                                                     </div>
                                                                 </div>
                                                             </Link>
