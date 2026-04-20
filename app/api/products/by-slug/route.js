@@ -5,8 +5,11 @@ import { localizeRecord, resolveStorefrontLanguage } from "@/lib/storefrontLangu
 
 export async function GET(request) {
     await dbConnect();
-    const language = resolveStorefrontLanguage(request);
     const { searchParams } = new URL(request.url);
+    const requestedLanguage = searchParams.get("lang");
+    const language = requestedLanguage === 'ar' || requestedLanguage === 'en'
+        ? requestedLanguage
+        : resolveStorefrontLanguage(request);
     const slug = searchParams.get("slug");
     if (!slug) {
         return NextResponse.json({ error: "Missing slug" }, { status: 400 });

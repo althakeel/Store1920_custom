@@ -8,6 +8,8 @@ import { useSelector } from "react-redux";
 import axios from "axios";
 import { auth } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
+import { useStorefrontI18n } from "@/lib/useStorefrontI18n";
+import { localizeRecord } from "@/lib/storefrontLanguage";
 
 // Skeleton Loader Components
 const ProductDetailsSkeleton = () => (
@@ -101,12 +103,18 @@ const RelatedProductsSkeleton = () => (
 
 export default function ProductBySlug() {
     const { slug } = useParams();
+    const { language } = useStorefrontI18n();
     const [product, setProduct] = useState(null);
     const [loading, setLoading] = useState(true);
     const [recommendedProducts, setRecommendedProducts] = useState([]);
     const [reviews, setReviews] = useState([]);
     const [loadingReviews, setLoadingReviews] = useState(false);
     const products = useSelector(state => state.product.list);
+
+    const localizeProductFields = (item) => {
+        if (!item) return item;
+        return localizeRecord(item, language, ['name', 'description', 'shortDescription', 'brand']);
+    };
 
     const resolveCategoryNames = (item) => {
         const candidates = [
@@ -141,12 +149,13 @@ export default function ProductBySlug() {
         ));
 
         if (sameCategory.length > 0) {
-            return sameCategory.slice(0, 5);
+            return sameCategory.slice(0, 5).map(localizeProductFields);
         }
 
         return sourceProducts
             .filter((candidate) => candidate?.slug !== currentProduct.slug && candidate?.inStock)
-            .slice(0, 5);
+            .slice(0, 5)
+            .map(localizeProductFields);
     };
 
     const fetchApiRecommendations = async (currentProduct) => {
@@ -156,7 +165,10 @@ export default function ProductBySlug() {
             try {
                 const { data } = await axios.get(`/api/products?category=${encodeURIComponent(categoryName)}&limit=12`);
                 const matches = Array.isArray(data?.products)
-                    ? data.products.filter((candidate) => candidate?.slug !== currentProduct.slug && candidate?.inStock).slice(0, 5)
+                    ? data.products
+                        .filter((candidate) => candidate?.slug !== currentProduct.slug && candidate?.inStock)
+                        .slice(0, 5)
+                        .map(localizeProductFields)
                     : [];
 
                 if (matches.length > 0) {
@@ -170,7 +182,10 @@ export default function ProductBySlug() {
         try {
             const { data } = await axios.get('/api/products?limit=12');
             return Array.isArray(data?.products)
-                ? data.products.filter((candidate) => candidate?.slug !== currentProduct.slug && candidate?.inStock).slice(0, 5)
+                ? data.products
+                    .filter((candidate) => candidate?.slug !== currentProduct.slug && candidate?.inStock)
+                    .slice(0, 5)
+                    .map(localizeProductFields)
                 : [];
         } catch (error) {
             return [];
@@ -181,18 +196,19 @@ export default function ProductBySlug() {
         setLoading(true);
         try {
             let found = products.find((product) => product.slug === slug);
+            found = localizeProductFields(found);
             
             // Refetch only when product is missing OR it is a variant product with incomplete variant data
             const needsFresh = !found || (found?.hasVariants && (!Array.isArray(found.variants) || found.variants.length === 0));
             
             if (needsFresh) {
                 const response = await axios.get(
-                    `/api/products/by-slug?slug=${encodeURIComponent(slug)}`,
+                    `/api/products/by-slug?slug=${encodeURIComponent(slug)}&lang=${language}`,
                     { validateStatus: (status) => status === 200 || status === 404 }
                 );
 
                 if (response.status === 200) {
-                    found = response.data.product || found || null;
+                    found = localizeProductFields(response.data.product) || found || null;
                 } else if (response.status === 404) {
                     found = found || null;
                 }
@@ -239,7 +255,7 @@ export default function ProductBySlug() {
             fetchProduct();
             window.scrollTo({ top: 0, behavior: 'instant' });
         }
-    }, [slug]);
+    }, [slug, language]);
 
     useEffect(() => {
         const productId = product?._id || product?.id;

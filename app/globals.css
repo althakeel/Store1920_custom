@@ -261,11 +261,18 @@
 /* Compress page content when fixed cart sidebar is visible (desktop/tablet only) */
 @media (min-width: 768px) {
     body {
-        transition: padding-right 0.3s ease;
+        transition: padding-right 0.3s ease, padding-left 0.3s ease;
     }
 
-    body.cart-sidebar-compressed {
+    body.cart-sidebar-compressed,
+    body.cart-sidebar-compressed-right {
         padding-right: 200px;
+        padding-left: 0;
+    }
+
+    body.cart-sidebar-compressed-left {
+        padding-left: 200px;
+        padding-right: 0;
     }
 }
 

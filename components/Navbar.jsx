@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, ShoppingCart, LifeBuoy, Menu, X, HeartIcon, StarIcon, ArrowLeft, LogOut, User, MapPin, Package, ChevronDown, Check } from "lucide-react";
+import { Search, ShoppingCart, Menu, X, HeartIcon, StarIcon, ArrowLeft, LogOut, User, MapPin, Package, ChevronDown, Check } from "lucide-react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { useState, useEffect, useRef, useMemo } from "react";
@@ -28,6 +28,22 @@ import { translateStaticText } from '@/lib/useStorefrontI18n';
 
 const NAVBAR_SELECTED_ADDRESS_KEY = 'navbarSelectedAddressId';
 
+const readPersistedLanguage = () => {
+  if (typeof window === 'undefined') return 'en';
+
+  try {
+    const savedLanguage = window.localStorage.getItem(STOREFRONT_LANGUAGE_KEY);
+    if (savedLanguage === 'ar' || savedLanguage === 'en') {
+      return savedLanguage;
+    }
+  } catch {
+    // Ignore storage read failures.
+  }
+
+  const cookieMatch = document.cookie.match(new RegExp(`(?:^|; )${STOREFRONT_LANGUAGE_COOKIE}=([^;]+)`));
+  return cookieMatch?.[1] === 'ar' ? 'ar' : 'en';
+};
+
 const getContrastColor = (hexColor) => {
   const hex = String(hexColor || '').replace('#', '');
   if (!/^[0-9a-fA-F]{6}$/.test(hex)) return '#ffffff';
@@ -49,10 +65,8 @@ const Navbar = () => {
   const [productIndex, setProductIndex] = useState(0);
   const [search, setSearch] = useState("");
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
-  const [supportDropdownOpen, setSupportDropdownOpen] = useState(false);
   const [categoriesDropdownOpen, setCategoriesDropdownOpen] = useState(false);
   const [hoveredCategory, setHoveredCategory] = useState(null);
-  const hoverTimer = useRef(null);
   const marketHoverTimer = useRef(null);
   const categoryTimer = useRef(null);
   const userDropdownRef = useRef(null);
@@ -78,7 +92,8 @@ const Navbar = () => {
   const [searchFocused, setSearchFocused] = useState(false);
   const [showAddressModal, setShowAddressModal] = useState(false);
   const [selectedAddressId, setSelectedAddressId] = useState(null);
-  const [storefrontLanguage, setStorefrontLanguage] = useState('en');
+  const [storefrontLanguage, setStorefrontLanguage] = useState(readPersistedLanguage);
+  const [languageHydrated, setLanguageHydrated] = useState(false);
   const [marketDropdownOpen, setMarketDropdownOpen] = useState(false);
   const [navbarAppearance, setNavbarAppearance] = useState({
     logoUrl: '',
@@ -147,12 +162,8 @@ const Navbar = () => {
     if (typeof window === 'undefined') return;
 
     const readLanguage = () => {
-      try {
-        const savedLanguage = window.localStorage.getItem(STOREFRONT_LANGUAGE_KEY);
-        setStorefrontLanguage(savedLanguage === 'ar' ? 'ar' : 'en');
-      } catch {
-        setStorefrontLanguage('en');
-      }
+      setStorefrontLanguage(readPersistedLanguage());
+      setLanguageHydrated(true);
     };
 
     const handleLanguageChange = (event) => {
@@ -178,6 +189,7 @@ const Navbar = () => {
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
+    if (!languageHydrated) return;
 
     const isArabic = storefrontLanguage === 'ar';
     document.documentElement.setAttribute('lang', isArabic ? 'ar' : 'en');
@@ -192,7 +204,7 @@ const Navbar = () => {
     } catch {
       // Ignore storage write failures.
     }
-  }, [storefrontLanguage]);
+  }, [storefrontLanguage, languageHydrated]);
 
   useEffect(() => {
     const fetchNavbarAppearance = async () => {
@@ -1003,6 +1015,24 @@ const Navbar = () => {
                 <span className="max-w-[130px] truncate text-xs font-semibold">{selectedDeliveryLabel}</span>
               </span>
             </button>
+
+            <Link
+              href="/fast-delivery"
+              className="shipxpress-pill group hidden xl:flex"
+              aria-label="ShipXpress"
+            >
+              <span className="shipxpress-badge">
+                <span className="shipxpress-badge-icon" aria-hidden="true">📍</span>
+                <span className="shipxpress-badge-dot" />
+                {storefrontLanguage === 'ar' ? 'خلال يومين' : 'Within 2 days'}
+              </span>
+              <span className="shipxpress-main">
+                <span className="shipxpress-truck-wrap" aria-hidden="true">
+                  <Image src={Truck} alt="Truck" width={16} height={16} className="shipxpress-truck" />
+                </span>
+                <span className="shipxpress-text">ShipXpress</span>
+              </span>
+            </Link>
           </div>
 
           <form onSubmit={handleSearch} className="hidden lg:flex flex-1 max-w-[620px] mx-2">
@@ -1097,40 +1127,6 @@ const Navbar = () => {
                 <span>{t('navbar.signInRegister')}</span>
               </button>
             )}
-
-            <div
-              className="relative"
-              onMouseEnter={() => {
-                if (hoverTimer.current) clearTimeout(hoverTimer.current);
-                setSupportDropdownOpen(true);
-              }}
-              onMouseLeave={() => {
-                if (hoverTimer.current) clearTimeout(hoverTimer.current);
-                hoverTimer.current = setTimeout(() => setSupportDropdownOpen(false), 200);
-              }}
-            >
-              <Link href="/support" className="inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 transition whitespace-nowrap hover:bg-white/8"><LifeBuoy size={13} />{t('navbar.support')}</Link>
-              {supportDropdownOpen && (
-                <ul
-                  className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-xl border border-gray-200 text-sm text-gray-700 z-50 overflow-hidden"
-                  onMouseEnter={() => {
-                    if (hoverTimer.current) clearTimeout(hoverTimer.current);
-                    setSupportDropdownOpen(true);
-                  }}
-                  onMouseLeave={() => {
-                    if (hoverTimer.current) clearTimeout(hoverTimer.current);
-                    hoverTimer.current = setTimeout(() => setSupportDropdownOpen(false), 200);
-                  }}
-                  role="menu"
-                >
-                  <li><Link href="/faq" className="block px-4 py-2.5 hover:bg-gray-50 transition">{t('navbar.faq')}</Link></li>
-                  <li><Link href="/support" className="block px-4 py-2.5 hover:bg-gray-50 transition">{t('navbar.support')}</Link></li>
-                  <li><Link href="/terms" className="block px-4 py-2.5 hover:bg-gray-50 transition">{t('navbar.termsAndConditions')}</Link></li>
-                  <li><Link href="/privacy-policy" className="block px-4 py-2.5 hover:bg-gray-50 transition">{t('navbar.privacyPolicy')}</Link></li>
-                  <li><Link href="/return-policy" className="block px-4 py-2.5 hover:bg-gray-50 transition">{t('navbar.returnPolicy')}</Link></li>
-                </ul>
-              )}
-            </div>
 
             <div
               ref={marketDropdownRef}
@@ -1600,6 +1596,96 @@ const Navbar = () => {
   <NavbarMenuBar />
         </>
       )}
+      <style jsx global>{`
+        .shipxpress-pill {
+          position: relative;
+          display: inline-flex;
+          flex-direction: column;
+          min-width: 126px;
+          border-radius: 9999px;
+          background: linear-gradient(180deg, #c76206 0%, #8a3f02 100%);
+          border: 1px solid rgba(255, 255, 255, 0.24);
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+          padding: 9px 10px 7px;
+          text-decoration: none;
+        }
+
+        .shipxpress-badge {
+          position: absolute;
+          top: -9px;
+          left: 50%;
+          transform: translateX(-50%);
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          white-space: nowrap;
+          border-radius: 9999px;
+          background: linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%);
+          color: #fffef7;
+          font-size: 9px;
+          line-height: 1;
+          font-weight: 800;
+          padding: 3px 7px;
+          border: 1px solid rgba(255, 255, 255, 0.28);
+          box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
+          animation: shipxpressBadgePulse 2.2s ease-in-out infinite;
+        }
+
+        .shipxpress-badge-icon {
+          font-size: 9px;
+        }
+
+        .shipxpress-badge-dot {
+          width: 5px;
+          height: 5px;
+          border-radius: 9999px;
+          background: #fff;
+          opacity: 0.9;
+        }
+
+        .shipxpress-main {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          color: #fff;
+          font-size: 18px;
+          line-height: 1;
+          font-weight: 800;
+          letter-spacing: 0.01em;
+        }
+
+        .shipxpress-truck-wrap {
+          position: relative;
+          width: 18px;
+          height: 18px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          overflow: visible;
+        }
+
+        .shipxpress-truck {
+          animation: shipxpressTruckMove 1.2s ease-in-out infinite;
+          will-change: transform;
+        }
+
+        .shipxpress-pill:hover .shipxpress-truck,
+        .shipxpress-pill:focus-visible .shipxpress-truck {
+          animation-duration: 0.8s;
+        }
+
+        @keyframes shipxpressTruckMove {
+          0% { transform: translateX(-2px); }
+          50% { transform: translateX(2px); }
+          100% { transform: translateX(-2px); }
+        }
+
+        @keyframes shipxpressBadgePulse {
+          0%, 100% { transform: translateX(-50%) scale(1); }
+          50% { transform: translateX(-50%) scale(1.04); }
+        }
+      `}</style>
     </>
   );
 };

@@ -100,12 +100,20 @@ export default function CartQuickSidebar() {
   useEffect(() => {
     if (typeof document === 'undefined') return
     const shouldCompress = visible && !shouldHideOnPage && cartRows.length > 0
-    document.body.classList.toggle('cart-sidebar-compressed', shouldCompress)
+    const activeClass = isArabic ? 'cart-sidebar-compressed-left' : 'cart-sidebar-compressed-right'
+    const inactiveClass = isArabic ? 'cart-sidebar-compressed-right' : 'cart-sidebar-compressed-left'
+
+    document.body.classList.toggle(activeClass, shouldCompress)
+    document.body.classList.remove(inactiveClass)
+    // Backward compatibility for legacy class name
+    document.body.classList.remove('cart-sidebar-compressed')
 
     return () => {
+      document.body.classList.remove('cart-sidebar-compressed-left')
+      document.body.classList.remove('cart-sidebar-compressed-right')
       document.body.classList.remove('cart-sidebar-compressed')
     }
-  }, [visible, shouldHideOnPage, cartRows.length])
+  }, [visible, shouldHideOnPage, cartRows.length, isArabic])
 
   useEffect(() => {
     const previousItems = previousItemsRef.current || {}
@@ -132,13 +140,6 @@ export default function CartQuickSidebar() {
 
   return (
     <>
-      {visible && (
-        <div
-          className="fixed inset-0 z-[80] hidden md:block bg-black/40 transition-opacity duration-200"
-          onClick={() => setVisible(false)}
-          aria-hidden="true"
-        />
-      )}
       <div className={`pointer-events-none fixed inset-y-0 z-[90] hidden md:block w-[200px] max-w-[calc(100vw-16px)] ${
         isArabic ? 'left-0' : 'right-0'
       }`} dir="ltr">

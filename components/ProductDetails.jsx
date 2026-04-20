@@ -14,11 +14,20 @@ import ProductDescription from "./ProductDescription";
 import { useAuth } from '@/lib/useAuth';
 import { trackMetaEvent } from "@/lib/metaPixelClient";
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
+import { useStorefrontI18n } from '@/lib/useStorefrontI18n';
+
+const sanitizeDisplayText = (value) => String(value ?? '')
+  .replace(/\u00C2\u00A0/g, ' ')
+  .replace(/\u00A0/g, ' ')
+  .replace(/\u00C2/g, '')
+  .replace(/\s+/g, ' ')
+  .trim();
 
 const ProductDetails = ({ product, reviews = [], loadingReviews = false, onReviewAdded, hideTitle = false, offerData = null }) => {
   // Assume product loading state from redux if available
   const loading = useSelector(state => state.product?.status === 'loading');
   const { market, convertPrice } = useStorefrontMarket();
+  const { t, isArabic } = useStorefrontI18n();
   const currency = market.currency;
   const getDeliveryRangeText = () => {
     const startDate = new Date();
@@ -330,6 +339,8 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const soldUnitsRaw = product?.attributes?.sold ?? product?.sold ?? product?.soldCount ?? product?.orderCount;
   const soldUnits = Number.isFinite(Number(soldUnitsRaw)) ? Number(soldUnitsRaw) : 0;
   const displaySellerName = soldByText || product?.store?.name || 'Store1920';
+  const safeProductName = sanitizeDisplayText(product?.name || product?.title || t('common.untitledProduct'));
+  const safeDisplaySellerName = sanitizeDisplayText(displaySellerName);
   const selectedVariantLabel = [selectedColor, selectedSize]
     .filter(Boolean)
     .join(' • ') || (selectedBundleQty ? `Bundle ${selectedBundleQty}` : 'Default');
@@ -843,7 +854,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
               ));
             })()}
             <span className="text-gray-400">›</span>
-            <span className="text-gray-700 truncate max-w-[160px] sm:max-w-xs md:max-w-sm">{product.name}</span>
+            <span className="text-gray-700 truncate max-w-[160px] sm:max-w-xs md:max-w-sm">{safeProductName}</span>
           </nav>
         </div>
       </div>
@@ -869,7 +880,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   >
                     <Image
                       src={image || 'https://ik.imagekit.io/jrstupuke/placeholder.png'}
-                      alt={`${product.name} ${index + 1}`}
+                      alt={`${safeProductName} ${index + 1}`}
                       width={68}
                       height={68}
                       className="object-cover w-full h-full"
@@ -913,7 +924,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   <div className="overflow-hidden w-full h-full relative">
                     <Image
                       src={mainImage || 'https://ik.imagekit.io/jrstupuke/placeholder.png'}
-                      alt={product.name}
+                      alt={safeProductName}
                       fill
                       sizes="100vw"
                       className="object-cover"
@@ -958,7 +969,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
                 <Image
                   src={mainImage || 'https://ik.imagekit.io/jrstupuke/placeholder.png'}
-                  alt={product.name}
+                  alt={safeProductName}
                   fill
                   className="object-cover"
                   priority
@@ -981,7 +992,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 >
                   <Image
                     src={image || 'https://ik.imagekit.io/jrstupuke/placeholder.png'}
-                    alt={`${product.name} ${index + 1}`}
+                    alt={`${safeProductName} ${index + 1}`}
                     width={56}
                     height={56}
                     className="object-cover w-full h-full"
@@ -1028,7 +1039,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
             {/* Product Title + Share */}
             <div className="flex items-start justify-between gap-3">
               <h1 className="text-sm font-normal text-gray-900 leading-snug flex-1">
-                {product.name}
+                {safeProductName}
               </h1>
               {/* Share icon — top right, matching reference */}
               <div className="relative flex-shrink-0" ref={shareMenuRef}>
@@ -1044,9 +1055,9 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
                 {showShareMenu && (
                   <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-2xl border border-gray-200 z-50 p-4">
-                    <p className="text-sm font-semibold text-gray-800 mb-3">Share to</p>
+                    <p className="text-sm font-semibold text-gray-800 mb-3">{t('product.shareTo')}</p>
                     <div className="flex items-center gap-2 mb-4">
-                      <span className="text-xs text-gray-500">Item ID:</span>
+                      <span className="text-xs text-gray-500">{t('product.itemId')}</span>
                       <span className="text-xs font-medium text-gray-800 font-mono">
                         {String(product._id || '').slice(-8).toUpperCase()}
                       </span>
@@ -1054,7 +1065,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                         onClick={copyToClipboard}
                         className="ml-auto text-xs border border-gray-300 rounded px-2 py-0.5 text-gray-600 hover:bg-gray-100 transition"
                       >
-                        {copied ? 'Copied!' : 'Copy'}
+                        {copied ? t('common.copied') : t('common.copy')}
                       </button>
                     </div>
                     <div className="flex items-center gap-3">
@@ -1084,11 +1095,11 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
               <div>
                 <div className="flex items-center justify-between text-sm font-normal text-gray-600">
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="whitespace-nowrap">{formatSoldCount(soldUnits)} sold</span>
+                    <span className="whitespace-nowrap">{t('product.soldCount', { count: formatSoldCount(soldUnits) })}</span>
                     <span className="text-gray-400">|</span>
                     <span className="truncate">
-                      <span>Sold by </span>
-                      <span className="text-gray-800">{displaySellerName}</span>
+                      <span>{t('product.soldBy')} </span>
+                      <span className="text-gray-800">{safeDisplaySellerName}</span>
                     </span>
                   </div>
 
@@ -1172,14 +1183,14 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                       <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                       </svg>
-                      Out of Stock
+                      {t('common.outOfStock')}
                     </span>
                   ) : product.stockQuantity < 20 ? (
                     <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-orange-50 text-orange-700 text-sm font-medium rounded-lg border border-orange-200">
                       <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                       </svg>
-                      Limited stock: {product.stockQuantity} available
+                      {t('product.limitedStockAvailable', { count: product.stockQuantity })}
                     </span>
                   ) : null}
                 </div>
@@ -1192,7 +1203,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                   </svg>
-                  Out of Stock
+                  {t('common.outOfStock')}
                 </div>
               )}
               <div className="flex items-end gap-1 flex-wrap">
@@ -1209,13 +1220,13 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
                 {effAED > effPrice && (
                   <span className="inline-flex items-center border border-orange-400 bg-orange-50 text-orange-500 text-[12px] font-medium px-2 py-0.5 rounded-sm leading-none whitespace-nowrap">
-                    {discountPercent}% OFF limited time
+                    {`${t('common.offPercent', { discount: discountPercent })} ${t('product.limitedTime')}`}
                   </span>
                 )}
 
                 {Number(availableStock) > 0 && Number(availableStock) <= 20 && (
                   <span className="inline-flex items-center border border-orange-400 bg-orange-50 text-orange-500 text-[12px] font-medium px-2 py-0.5 rounded-sm leading-none whitespace-nowrap">
-                    ALMOST SOLD OUT
+                    {t('product.almostSoldOut')}
                   </span>
                 )}
               </div>
@@ -1226,7 +1237,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 onClick={() => setShowPayLaterModal(true)}
                 className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition"
               >
-                <span>4 interest-free installments of {currency}{(Number(convertedEffPrice || 0) / 4).toFixed(2)} with</span>
+                <span>{t('product.installments', { amount: `${currency}${(Number(convertedEffPrice || 0) / 4).toFixed(2)}` })}</span>
                 <img
                   src="https://levantine.ae/wp-content/uploads/2023/03/tabby-badge.png"
                   alt="Tabby"
@@ -1246,7 +1257,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
             {/* Color Options */}
             {variantColors.length > 0 && (
               <div className="space-y-2 pt-2">
-                <label className="text-sm font-semibold text-gray-900">Color</label>
+                <label className="text-sm font-semibold text-gray-900">{t('product.color')}</label>
                 <div className="flex flex-wrap gap-2">
                   {variantColors.map((color) => {
                     const inStock = isColorAvailable(color);
@@ -1265,7 +1276,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                         {color}
                         {!inStock && (
                           <span className="absolute -top-1 -right-1 text-[8px] bg-red-500 text-white px-1 py-0.5 rounded opacity-100">
-                            OUT
+                            {t('product.outLabel')}
                           </span>
                         )}
                       </button>
@@ -1278,7 +1289,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
             {/* Size Options */}
             {variantSizes.length > 0 && (
               <div className="space-y-2 pt-2">
-                <label className="text-sm font-semibold text-gray-900">Size</label>
+                <label className="text-sm font-semibold text-gray-900">{t('product.size')}</label>
                 <div className="flex flex-wrap gap-2">
                   {variantSizes.map((size) => {
                     const inStock = isSizeAvailable(size);
@@ -1297,7 +1308,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                         {size}
                         {!inStock && (
                           <span className="absolute -top-1 -right-1 text-[8px] bg-red-500 text-white px-1 py-0.5 rounded opacity-100">
-                            OUT
+                            {t('product.outLabel')}
                           </span>
                         )}
                       </button>
@@ -1311,7 +1322,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
             {bulkVariants.length > 0 && (
               <div className="space-y-2 pt-2">
                 <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-3">
-                  BUNDLE AND SAVE MORE!
+                  {t('product.bundleAndSave')}
                 </p>
                 {bulkVariants
                   .slice()
@@ -1324,13 +1335,13 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                     const save = AED > price ? (AED - price) : 0;
                     const convertedBundlePrice = convertPrice(price);
                     const tag = v.tag || v.options?.tag || '';
-                    const label = v.options?.title?.trim() || (qty === 1 ? 'Buy 1' : `Bundle of ${qty}`);
+                    const label = v.options?.title?.trim() || (qty === 1 ? t('product.buy1') : t('product.bundleOf', { qty }));
                     
                     return (
                       <div key={`${qty}-${idx}`} className="relative">
                         {tag === 'MOST_POPULAR' && (
                           <div className="absolute -top-2 right-2 bg-pink-500 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full z-10 uppercase">
-                            MOST POPULAR
+                            {t('product.mostPopular')}
                           </div>
                         )}
                         <button
@@ -1352,8 +1363,8 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                             </div>
                             <div>
                               <p className="font-semibold text-gray-900 text-sm">{label}</p>
-                              {qty === 2 && <p className="text-xs text-gray-500">Perfect for 2 Pack</p>}
-                              {qty === 3 && <p className="text-xs text-gray-500">Best Value</p>}
+                              {qty === 2 && <p className="text-xs text-gray-500">{t('product.perfectFor2Pack')}</p>}
+                              {qty === 3 && <p className="text-xs text-gray-500">{t('product.bestValue')}</p>}
                             </div>
                           </div>
                           <div className="text-right">
@@ -1368,11 +1379,16 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
             {/* Quantity */}
             {isSelectionInStock && (
-              <div className="pt-1 flex items-center gap-2" dir="ltr">
-                <label className="text-base font-semibold text-gray-900 leading-none">Qty</label>
+              <div
+                className="pt-1 flex w-full items-center gap-2"
+                dir="ltr"
+                style={isArabic ? { justifyContent: 'flex-end' } : undefined}
+              >
+                <label className="text-base font-semibold text-gray-900 leading-none">{t('product.qty')}</label>
                 <select
                   value={quantity}
                   onChange={(e) => setQuantity(Number(e.target.value) || 1)}
+                  dir="ltr"
                   className="h-10 min-w-[72px] rounded-md border border-gray-300 bg-white pl-3 pr-7 text-base text-gray-900"
                 >
                   {Array.from({ length: Math.max(1, maxOrderQty) }).map((_, i) => {
@@ -1396,8 +1412,10 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   }`}
                 >
                   {!isSelectionInStock
-                    ? 'Out of Stock'
-                    : `${discountPercent > 0 ? `-${discountPercent}% now! ` : ''}Add to cart`}
+                    ? t('common.outOfStock')
+                    : (discountPercent > 0
+                      ? t('product.discountAddToCart', { discount: discountPercent })
+                      : t('common.addToCart'))}
                 </button>
               ) : (
                 <div className="flex items-center gap-3">
@@ -1431,7 +1449,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                     onClick={() => router.push('/cart')}
                     className="h-14 px-7 rounded-full bg-orange-500 text-white font-bold text-base hover:bg-orange-600 transition whitespace-nowrap"
                   >
-                    Go to cart
+                    {isArabic ? 'اذهب إلى السلة' : 'Go to cart'}
                   </button>
                 </div>
               )}
@@ -1441,7 +1459,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
             {fbtEnabled && fbtProducts.length > 0 && (
               <div className="pt-2">
                 <div className="rounded-lg border border-gray-200 bg-white p-2.5 space-y-2.5">
-                  <h3 className="text-[10px] font-semibold text-slate-600 uppercase tracking-[0.08em]">Frequently Bought Together</h3>
+                  <h3 className="text-[10px] font-semibold text-slate-600 uppercase tracking-[0.08em]">{isArabic ? 'يُشترى معًا غالبًا' : 'Frequently Bought Together'}</h3>
 
                   <div className="overflow-x-auto pb-1">
                     <div className="flex items-center gap-2 min-w-max">
@@ -1512,7 +1530,10 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                     disabled={selectedAddonProducts.length === 0}
                     className={`w-full h-10 rounded border border-green-600 bg-white text-green-700 font-bold uppercase tracking-tight text-base hover:bg-green-50 hover:-translate-y-0.5 hover:shadow-sm active:translate-y-0 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none ${selectedAddonProducts.length > 0 ? 'animate-[pulse_2.4s_ease-in-out_infinite]' : ''}`}
                   >
-                    Buy {totalBundleItems} Together for <span className="line-through">{currency} {bundleTotal.toFixed(2)}</span>
+                    {isArabic
+                      ? `اشترِ ${totalBundleItems} معًا مقابل `
+                      : `Buy ${totalBundleItems} Together for `}
+                    <span className="line-through">{currency} {bundleTotal.toFixed(2)}</span>
                   </button>
                 </div>
               </div>
@@ -1520,42 +1541,42 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
             {/* Shipping and assurance */}
             <div className="pt-1">
-              <div className="rounded-xl border border-green-100 bg-gradient-to-b from-green-50 to-white p-3">
+              <div className="rounded-xl border border-green-100 bg-gradient-to-b from-green-50 to-white p-3" dir={isArabic ? 'rtl' : 'ltr'}>
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
-                  <p className="text-green-700 font-semibold">🚚 Free shipping for this item &gt;</p>
-                  <p className="text-gray-500">Delivery: {deliveryRangeText}</p>
+                  <p className="text-green-700 font-semibold">🚚 {isArabic ? 'شحن مجاني لهذا المنتج' : 'Free shipping for this item'}</p>
+                  <p className="text-gray-500">{isArabic ? `التوصيل: ${deliveryRangeText}` : `Delivery: ${deliveryRangeText}`}</p>
                 </div>
-                <p className="mt-1 text-[11px] text-gray-600">Courier company: SHIPA / Shipa Delivery / iMile / Emirates Post</p>
+                <p className="mt-1 text-[11px] text-gray-600">{isArabic ? 'شركة الشحن: SHIPA / Shipa Delivery / iMile / Emirates Post' : 'Courier company: SHIPA / Shipa Delivery / iMile / Emirates Post'}</p>
 
                 <div className="mt-3 rounded-lg border border-green-100 bg-white p-2.5">
-                  <p className="text-green-700 font-semibold text-[15px]">🛡️ Why choose store1920? &gt;</p>
+                  <p className="text-green-700 font-semibold text-[15px]">🛡️ {isArabic ? 'لماذا تختار store1920؟' : 'Why choose store1920?'}</p>
 
                   <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[12px]">
                     <div className="rounded-md bg-green-50/70 px-2 py-1.5">
-                      <p className="font-medium text-gray-800">Security &amp; Privacy</p>
-                      <p className="text-green-700">✓ Safe payments</p>
-                      <p className="text-green-700">✓ Secure privacy</p>
+                      <p className="font-medium text-gray-800">{isArabic ? 'الأمان والخصوصية' : 'Security & Privacy'}</p>
+                      <p className="text-green-700">{isArabic ? '✓ مدفوعات آمنة' : '✓ Safe payments'}</p>
+                      <p className="text-green-700">{isArabic ? '✓ خصوصية محمية' : '✓ Secure privacy'}</p>
                     </div>
 
                     <div className="rounded-md bg-green-50/70 px-2 py-1.5">
-                      <p className="font-medium text-gray-800">Delivery guarantee</p>
-                      <p className="text-green-700">✓ AED20.00 credit for delay</p>
-                      <p className="text-green-700">✓ 50-day no update refund</p>
+                      <p className="font-medium text-gray-800">{isArabic ? 'ضمان التوصيل' : 'Delivery guarantee'}</p>
+                      <p className="text-green-700">{isArabic ? '✓ رصيد AED20.00 عند التأخير' : '✓ AED20.00 credit for delay'}</p>
+                      <p className="text-green-700">{isArabic ? '✓ استرداد خلال 50 يومًا عند عدم وجود تحديث' : '✓ 50-day no update refund'}</p>
                     </div>
 
                     <div className="rounded-md bg-gray-50 px-2 py-1.5 sm:col-span-2">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
-                        <p className="text-gray-800">✓ Return if item damaged</p>
-                        <p className="text-gray-800">✓ 70-day no delivery refund</p>
+                        <p className="text-gray-800">{isArabic ? '✓ إرجاع عند تلف المنتج' : '✓ Return if item damaged'}</p>
+                        <p className="text-gray-800">{isArabic ? '✓ استرداد خلال 70 يومًا عند عدم التسليم' : '✓ 70-day no delivery refund'}</p>
                       </div>
                     </div>
                   </div>
                 </div>
 
                 <div className="mt-2.5 space-y-1.5 text-[13px]">
-                  <p className="text-green-700 font-medium">💳 Free returns · Price adjustment &gt;</p>
-                  <p className="text-green-700 font-medium">🌱 store1920&apos;s Tree Planting Program (25M+ trees) &gt;</p>
-                  <p className="text-gray-700">What&apos;s included &gt;</p>
+                  <p className="text-green-700 font-medium">💳 {isArabic ? 'إرجاع مجاني · تعديل السعر' : 'Free returns · Price adjustment'}</p>
+                  <p className="text-green-700 font-medium">🌱 {isArabic ? 'برنامج store1920 لزراعة الأشجار (25M+ شجرة)' : 'store1920\'s Tree Planting Program (25M+ trees)'}</p>
+                  <p className="text-gray-700">{isArabic ? 'ماذا يشمل؟' : 'What\'s included'}</p>
                 </div>
               </div>
             </div>
@@ -1570,7 +1591,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 }`}
               >
                 <HeartIcon size={16} fill={isInWishlist ? 'currentColor' : 'none'} />
-                {isInWishlist ? 'Saved' : 'Save'}
+                {isInWishlist ? (isArabic ? 'تم الحفظ' : 'Saved') : (isArabic ? 'حفظ' : 'Save')}
               </button>
             </div>
           </div>
@@ -1610,9 +1631,9 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
             />
           </div>
           <div>
-            <p className="font-semibold text-gray-900">Added to cart!</p>
+            <p className="font-semibold text-gray-900">{isArabic ? 'تمت الإضافة إلى السلة!' : 'Added to cart!'}</p>
             <a href="/cart" className="text-sm text-orange-500 hover:underline">
-              View Cart
+              {isArabic ? 'عرض السلة' : 'View Cart'}
             </a>
           </div>
         </div>
