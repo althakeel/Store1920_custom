@@ -3,31 +3,27 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import BannerC from '@/assets/heroslider1/banner_slider.webp';
-import WideBanner1 from '@/assets/heroslider1/main3.webp';
-import WideBanner2 from '@/assets/heroslider1/main1.webp';
-import Banner3 from '@/assets/heroslider1/banner05.avif';
 
 const HEIGHT = 320;
 const SLIDE_INTERVAL = 5000;
 const SKELETON_TIMEOUT = 1000; // Reduced timeout for faster initial display 
 
-const fallbackSlides = [
-  { image: BannerC, link: '/offers', bg: '#0d1724' },
-  // { image: WideBanner1, link: '/offers', bg: '#0071A4' },
-  // { image: Banner3, link: '/offers', bg: '#8a1114' },
-  // { image: WideBanner2, link: '/offers', bg: '#00D5C3' },
-];
+const fallbackSlides = [];
 
 export default function HeroBannerSlider() {
   const [index, setIndex] = useState(0);
   const [loaded, setLoaded] = useState([]);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [showcaseConfig, setShowcaseConfig] = useState(null);
+  const [showcaseLoaded, setShowcaseLoaded] = useState(false);
   const router = useRouter();
   const intervalRef = useRef(null);
 
   const slides = useMemo(() => {
+    if (!showcaseLoaded) {
+      return [];
+    }
+
     if (showcaseConfig?.mainBannerEnabled) {
       const dynamicSlide = {
         type: 'config',
@@ -52,7 +48,7 @@ export default function HeroBannerSlider() {
     }
 
     return fallbackSlides;
-  }, [showcaseConfig]);
+  }, [showcaseConfig, showcaseLoaded]);
 
   // Memoized click handler
   const handleSlideClick = useCallback((link) => {
@@ -78,6 +74,8 @@ export default function HeroBannerSlider() {
         setShowcaseConfig(data?.config || null);
       } catch {
         setShowcaseConfig(null);
+      } finally {
+        setShowcaseLoaded(true);
       }
     };
     fetchShowcase();
@@ -120,6 +118,10 @@ export default function HeroBannerSlider() {
       setIsInitialLoad(false);
     }
   }, [loaded]);
+
+  if (showcaseLoaded && slides.length === 0) {
+    return null;
+  }
 
   if (isInitialLoad && !loaded[0]) {
     return (
