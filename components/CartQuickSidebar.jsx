@@ -72,7 +72,10 @@ export default function CartQuickSidebar() {
 
   const convertedSubtotal = useMemo(() => convertPrice(Number(total || 0)), [total, convertPrice])
 
-  const shouldHideOnPage = pathname === '/cart' || pathname === '/checkout'
+  const shouldHideOnPage =
+    pathname === '/cart' ||
+    pathname === '/checkout' ||
+    pathname?.startsWith('/dashboard')
 
   const syncCartIfNeeded = async () => {
     if (!user) return

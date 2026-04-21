@@ -5,6 +5,7 @@ import connectDB from '@/lib/mongodb';
 import imagekit from '@/configs/imageKit';
 import Product from '@/models/Product';
 import Category from '@/models/Category';
+import StorePreference from '@/models/StorePreference';
 import authSeller from '@/middlewares/authSeller';
 import { getAuth } from '@/lib/firebase-admin';
 
@@ -172,8 +173,8 @@ const extractWooAttributes = (row = {}, parentRow = null) => {
   return Object.fromEntries(attributeMap.entries());
 };
 
-const normalizeBadgeValues = (...sources) => {
-  const badgeLookup = new Map(KNOWN_BADGES.map((badge) => [badge.toLowerCase(), badge]));
+const normalizeBadgeValues = (allowedBadges = KNOWN_BADGES, ...sources) => {
+  const badgeLookup = new Map(allowedBadges.map((badge) => [badge.toLowerCase(), badge]));
   const requested = sources.flatMap((source) => parseStringArray(source));
 
   return [...new Set(
@@ -433,6 +434,14 @@ export async function POST(request) {
     const formData = await request.formData();
     const file = formData.get('file');
 
+    const preference = await StorePreference.findOne({ storeId }).lean();
+    const customBadges = Array.isArray(preference?.appearanceSections?.productPageInfo?.badgeSettings?.badges)
+      ? preference.appearanceSections.productPageInfo.badgeSettings.badges
+          .map((badge) => String(badge?.label || '').trim())
+          .filter(Boolean)
+      : [];
+    const allowedBadges = [...new Set([...(customBadges.length ? customBadges : []), ...KNOWN_BADGES])];
+
     if (!file) {
       return NextResponse.json({ error: 'File is required' }, { status: 400 });
     }
@@ -590,6 +599,7 @@ export async function POST(request) {
         const brand = String(getFirstPresentValue(row.Brands, row.brand, row.Brand, parentRow?.Brands, parentRow?.brand, parentRow?.Brand) || '').trim();
         const tags = parseStringArray(getFirstPresentValue(row.Tags, row.tags, row.Tag, row.tag, parentRow?.Tags, parentRow?.tags, parentRow?.Tag, parentRow?.tag));
         const badges = normalizeBadgeValues(
+          allowedBadges,
           row.Badges,
           row.badges,
           row['Product Badges'],

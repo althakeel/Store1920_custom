@@ -106,6 +106,14 @@ const appendUniqueTags = (existing = [], incoming = []) => {
 }
 
 const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.ogg', '.mov', '.m4v', '.avi', '.mkv']
+const DEFAULT_BADGE_OPTIONS = [
+    'Price Lower Than Usual',
+    'Hot Deal',
+    'Best Seller',
+    'New Arrival',
+    'Limited Stock',
+    'Free Shipping',
+]
 
 const isVideoSource = (value = '') => {
     const raw = String(value || '').toLowerCase().split('?')[0]
@@ -355,7 +363,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
         const [isSlugManuallyEdited, setIsSlugManuallyEdited] = useState(false);
         const [images, setImages] = useState({ "1": null, "2": null, "3": null, "4": null, "5": null, "6": null, "7": null, "8": null });
         const [productInfo, setProductInfo] = useState({
-            name: '', nameAr: '', slug: '', brand: '', brandAr: '', shortDescription: '', shortDescriptionAr: '', shortDescription2: '', specTableEnabled: false, specTableColumns: ['Property', 'Value'], specTableRows: [['', '']], description: '', descriptionAr: '', AED: '', price: '', category: '', sku: '', stockQuantity: 0, colors: [], sizes: [], fastDelivery: false, freeShippingEligible: false, allowReturn: true, allowReplacement: true, reviews: [], badges: [], imageAspectRatio: '1:1', tags: [], seoTitle: '', seoDescription: '', seoKeywords: [], deliveredBy: '', soldBy: '', paymentInfo: ''
+            name: '', nameAr: '', slug: '', brand: '', brandAr: '', shortDescription: '', shortDescriptionAr: '', shortDescription2: '', specTableEnabled: false, specTableTitle: 'Product information', specTableColumns: ['Property', 'Value'], specTableRows: [['', '']], description: '', descriptionAr: '', AED: '', price: '', category: '', sku: '', stockQuantity: 0, colors: [], sizes: [], fastDelivery: false, freeShippingEligible: false, allowReturn: true, allowReplacement: true, reviews: [], badges: [], imageAspectRatio: '1:1', tags: [], seoTitle: '', seoDescription: '', seoKeywords: [], deliveredBy: '', soldBy: '', paymentInfo: ''
         });
         const [tagInput, setTagInput] = useState('');
         const [seoKeywordInput, setSeoKeywordInput] = useState('');
@@ -385,6 +393,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
     const [fbtBundleDiscount, setFbtBundleDiscount] = useState('')
     const [searchFbt, setSearchFbt] = useState('')
     const [loadingFbt, setLoadingFbt] = useState(false)
+    const [storeBadgeOptions, setStoreBadgeOptions] = useState(DEFAULT_BADGE_OPTIONS)
 
     const { user, loading: authLoading, getToken } = useAuth();
 
@@ -495,6 +504,37 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
         // Fetch categories and auto-sync menu categories if needed
         fetchCategories();
     }, [user, getToken]);
+    useEffect(() => {
+        const fetchBadgeOptions = async () => {
+            if (!user) return
+
+            try {
+                const token = await getToken()
+                if (!token) return
+
+                const res = await fetch('/api/store/appearance/sections', {
+                    headers: { Authorization: `Bearer ${token}` },
+                })
+
+                if (!res.ok) return
+
+                const data = await res.json()
+                const configuredBadges = Array.isArray(data?.productPageInfo?.badgeSettings?.badges)
+                    ? data.productPageInfo.badgeSettings.badges
+                        .map((badge) => String(badge?.label || '').trim())
+                        .filter(Boolean)
+                    : []
+
+                if (configuredBadges.length > 0) {
+                    setStoreBadgeOptions(configuredBadges)
+                }
+            } catch (error) {
+                console.warn('Failed to load store badge options:', error)
+            }
+        }
+
+        fetchBadgeOptions()
+    }, [user, getToken])
 
     // Fetch products for FBT selection (lazy, only when enabled)
     useEffect(() => {
@@ -552,6 +592,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 shortDescriptionAr: product.shortDescriptionAr || "",
                 shortDescription2: product.shortDescription2 || product.attributes?.shortDescription2 || "",
                 specTableEnabled: Boolean(product.specTableEnabled ?? product.attributes?.specTableEnabled ?? false),
+                specTableTitle: product.attributes?.specTableTitle || product.specTableTitle || 'Product information',
                 specTableColumns: Array.isArray(product.specTableColumns) && product.specTableColumns.length > 0
                     ? product.specTableColumns
                     : (Array.isArray(product.attributes?.specTableColumns) && product.attributes.specTableColumns.length > 0
@@ -794,6 +835,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 shortDescription: productInfo.shortDescription,
                 shortDescription2: productInfo.shortDescription2 || '',
                 specTableEnabled: Boolean(productInfo.specTableEnabled),
+                specTableTitle: productInfo.specTableTitle || 'Product information',
                 specTableColumns: Array.isArray(productInfo.specTableColumns) ? productInfo.specTableColumns : ['Property', 'Value'],
                 specRows: Array.isArray(productInfo.specTableRows) ? productInfo.specTableRows : [],
                 badges: productInfo.badges || [],
@@ -901,6 +943,11 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
             setLoading(false)
         }
     }
+
+    const availableBadgeOptions = Array.from(new Set([
+        ...(storeBadgeOptions || []),
+        ...((productInfo.badges || []).map((badge) => String(badge || '').trim()).filter(Boolean))
+    ]))
 
     return (
 
@@ -1068,6 +1115,16 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                     </div>
 
                     <p className="text-xs text-blue-600">Use this separate table section to add product specs like Brand, Item Volume, Dimensions, Features.</p>
+                    <div className="flex items-center gap-2">
+                        <label className="text-xs font-medium text-blue-800 whitespace-nowrap">Table Title:</label>
+                        <input
+                            type="text"
+                            value={productInfo.specTableTitle || ''}
+                            onChange={(e) => setProductInfo(p => ({ ...p, specTableTitle: e.target.value }))}
+                            className="flex-1 rounded border border-blue-300 bg-white px-2 py-1 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                            placeholder="e.g. Product information"
+                        />
+                    </div>
                     {productInfo.specTableEnabled ? (
                         <div className="rounded-md border border-blue-300 bg-white p-3 space-y-3">
                             <div className="flex flex-wrap gap-2">
@@ -1367,7 +1424,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 <div>
                     <label className="block text-sm font-medium mb-2">Product Badges (Optional)</label>
                     <div className="flex flex-wrap gap-2 mb-2">
-                        {['Price Lower Than Usual', 'Hot Deal', 'Best Seller', 'New Arrival', 'Limited Stock', 'Free Shipping'].map((badge) => (
+                        {availableBadgeOptions.map((badge) => (
                             <button
                                 key={badge}
                                 type="button"
@@ -1388,7 +1445,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                             </button>
                         ))}
                     </div>
-                    <p className="text-xs text-gray-500">Select badges to display on the product page</p>
+                    <p className="text-xs text-gray-500">Select badges to display on the product page. Badge options come from /store/customize/product-page.</p>
                 </div>
 
                 <RichTextDescriptionEditor

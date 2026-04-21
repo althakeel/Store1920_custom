@@ -24,6 +24,15 @@ const sanitizeDisplayText = (value) => String(value ?? '')
   .replace(/\s+/g, ' ')
   .trim();
 
+const DEFAULT_BADGE_STYLES = [
+  { label: 'Price Lower Than Usual', backgroundColor: '#007600', textColor: '#ffffff', borderRadius: 0 },
+  { label: 'Hot Deal', backgroundColor: '#cc0c39', textColor: '#ffffff', borderRadius: 0 },
+  { label: 'Best Seller', backgroundColor: '#c45500', textColor: '#ffffff', borderRadius: 0 },
+  { label: 'New Arrival', backgroundColor: '#0066c0', textColor: '#ffffff', borderRadius: 0 },
+  { label: 'Limited Stock', backgroundColor: '#b12704', textColor: '#ffffff', borderRadius: 0 },
+  { label: 'Free Shipping', backgroundColor: '#007185', textColor: '#ffffff', borderRadius: 0 }
+];
+
 const ProductDetails = ({ product, reviews = [], loadingReviews = false, onReviewAdded, hideTitle = false, offerData = null, recommendedProducts = [] }) => {
   // Assume product loading state from redux if available
   const loading = useSelector(state => state.product?.status === 'loading');
@@ -57,7 +66,10 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     cutoffHour: 23,
     cutoffMinute: 0,
     deliveryMinDays: 2,
-    deliveryMaxDays: 5
+    deliveryMaxDays: 5,
+    badgeSettings: {
+      badges: DEFAULT_BADGE_STYLES
+    }
   });
   const [timeNow, setTimeNow] = useState(() => new Date());
   const [mainImage, setMainImage] = useState(product.images?.[0]);
@@ -122,6 +134,23 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     }
     return `${startDay} ${startMonth} - ${endDay} ${endMonth}`;
   }, [productPageInfo.deliveryMinDays, productPageInfo.deliveryMaxDays, timeNow]);
+
+  const badgeStyleMap = useMemo(() => {
+    const configuredBadges = Array.isArray(productPageInfo?.badgeSettings?.badges) && productPageInfo.badgeSettings.badges.length
+      ? productPageInfo.badgeSettings.badges
+      : DEFAULT_BADGE_STYLES;
+
+    return configuredBadges.reduce((accumulator, badge) => {
+      const label = String(badge?.label || '').trim().toLowerCase();
+      if (!label) return accumulator;
+      accumulator[label] = {
+        backgroundColor: badge.backgroundColor || '#565959',
+        color: badge.textColor || '#ffffff',
+        borderRadius: `${Math.max(0, Math.min(24, Number(badge.borderRadius) || 0))}px`
+      };
+      return accumulator;
+    }, {});
+  }, [productPageInfo?.badgeSettings?.badges]);
 
   const orderWithinText = useMemo(() => {
     const target = new Date(timeNow);
@@ -234,6 +263,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const [fbtBundleDiscount, setFbtBundleDiscount] = useState(0);
   const [selectedFbtProducts, setSelectedFbtProducts] = useState({});
   const [loadingFbt, setLoadingFbt] = useState(false);
+  const [showFbtPopup, setShowFbtPopup] = useState(false);
   const fbtViewedEventSent = useRef(false);
 
   const isValidFbtPrice = (value) => Number.isFinite(Number(value)) && Number(value) >= 0;
@@ -970,6 +1000,23 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const bundleTotal = calculateFbtTotal();
   const bundleSavings = Math.max(baseBundleTotal - bundleTotal, 0);
   const totalBundleItems = 1 + validSelectedAddonProducts.length;
+  const allFbtCards = [{
+    _id: 'main-product',
+    name: product.name,
+    image: product.images?.[0],
+    price: Number(effPrice || 0),
+    isMain: true,
+    checked: true,
+    badge: product.fastDelivery ? 'express' : null,
+  }, ...fbtProducts.map((item) => ({
+    _id: item._id,
+    name: item.name,
+    image: item.images?.[0],
+    price: Number(item.price || 0),
+    isMain: false,
+    checked: Boolean(selectedFbtProducts[item._id]),
+    badge: item.fastDelivery ? 'express' : (String(item.tags?.[0] || '').toLowerCase() === 'supermall' ? null : (item.tags?.[0] || null)),
+  }))];
 
   if (loading) {
     return (
@@ -1000,7 +1047,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 }
               }
               if (chain.length === 0 && firstCatId) {
-                // ID not resolved yet — show nothing until loaded
+                // ID not resolved yet - show nothing until loaded
                 return null;
               }
               if (chain.length === 0) {
@@ -1341,6 +1388,28 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 )}
               </div>
 
+              {/* Product Badges (middle column) */}
+              {product.attributes?.badges && product.attributes.badges.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {product.attributes.badges.map((badge, index) => {
+                    const badgeStyle = badgeStyleMap[String(badge || '').trim().toLowerCase()] || {
+                      backgroundColor: '#565959',
+                      color: '#ffffff',
+                      borderRadius: '0px'
+                    };
+                    return (
+                      <span
+                        key={index}
+                        className="inline-flex items-center px-2.5 py-[3px] text-[12px] font-bold tracking-normal"
+                        style={badgeStyle}
+                      >
+                        {badge}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+
               <div className="mt-2 flex items-center gap-3">
                 <div className="text-slate-900">
                   {renderSplitPrice(convertedEffPrice, {
@@ -1358,22 +1427,134 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 )}
               </div>
 
-              <div className="mt-3 text-sm text-gray-600 leading-relaxed">
-                {product.shortDescription ? (
-                  <p className="whitespace-normal break-words">{String(product.shortDescription)}</p>
-                ) : (
-                  <p className="whitespace-normal break-words">{String(product.description || '').slice(0, 300)}</p>
-                )}
-              </div>
+              <ProductDescription
+                product={product}
+                reviews={reviews}
+                loadingReviews={loadingReviewsLocal || loadingReviews}
+                onReviewAdded={onReviewAdded}
+                showSuggestedProducts={false}
+                showMainDescription={false}
+              />
             </div>
 
-            <ProductDescription
-              product={product}
-              reviews={reviews}
-              loadingReviews={loadingReviewsLocal || loadingReviews}
-              onReviewAdded={onReviewAdded}
-              showSuggestedProducts={false}
-            />
+            {fbtEnabled && fbtProducts.length > 0 && (
+              <div className="pt-4 mt-3 border-t border-gray-200">
+                <div className="rounded-lg border border-gray-200 bg-white p-4 sm:p-5">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <h2 className="text-[18px] font-bold text-gray-900">{isArabic ? 'يُشترى معًا غالبًا' : 'Frequently Bought Together'}</h2>
+                      <p className="text-sm text-gray-500 mt-1">
+                        {isArabic
+                          ? `${totalBundleItems} عناصر محددة - الإجمالي ${currency} ${bundleTotal.toFixed(2)}`
+                          : `${totalBundleItems} items selected - Total ${currency} ${bundleTotal.toFixed(2)}`}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowFbtPopup(true)}
+                      className="h-10 px-4 rounded-md border border-gray-300 text-sm font-semibold text-gray-800 hover:bg-gray-50 transition"
+                    >
+                      {isArabic ? 'عرض الكل' : 'View All'}
+                    </button>
+                  </div>
+
+                  <div className="mt-4 overflow-x-auto">
+                    <div className="flex items-start gap-3 min-w-max pb-2">
+                      {allFbtCards.map((card, index, arr) => (
+                        <div key={card._id} className="flex items-center gap-3">
+                          <label className={`relative w-[136px] p-2.5 rounded-md border cursor-pointer transition flex-shrink-0 ${card.checked ? 'bg-white border-gray-300' : 'bg-white border-gray-200 opacity-60'}`}>
+                            <input
+                              type="checkbox"
+                              checked={card.checked}
+                              readOnly={card.isMain}
+                              onChange={card.isMain ? undefined : () => toggleFbtProduct(card._id)}
+                              className="absolute left-2 top-2 h-3.5 w-3.5 rounded accent-blue-600"
+                            />
+                            <div className="h-[82px] rounded bg-gray-50 overflow-hidden flex items-center justify-center mb-2 mt-1">
+                              <div className="relative w-[66px] h-[66px]">
+                                <Image src={card.image || 'https://ik.imagekit.io/jrstupuke/placeholder.png'} alt={card.name} fill className="object-contain" />
+                              </div>
+                            </div>
+                            <p className="text-[11px] text-gray-600 line-clamp-2 leading-snug mb-0.5 min-h-[30px]">{card.name}</p>
+                            <p className="text-[13px] font-bold text-gray-900">{currency} {card.price.toFixed(2)}</p>
+                          </label>
+                          {index < arr.length - 1 && (
+                            <span className="text-2xl font-light text-gray-400 flex-shrink-0">+</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleAddBundleToCart}
+                    disabled={selectedAddonProducts.length === 0}
+                    className="mt-3 w-full h-11 rounded-md bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-bold text-[15px] transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isArabic
+                      ? `اشترِ ${totalBundleItems} معًا مقابل ${currency} ${bundleTotal.toFixed(2)}`
+                      : `Buy ${totalBundleItems} together for ${currency} ${bundleTotal.toFixed(2)}`}
+                  </button>
+                </div>
+
+                {showFbtPopup && (
+                  <div className="fixed inset-0 z-[120] bg-black/55 flex items-center justify-center p-4" onClick={() => setShowFbtPopup(false)}>
+                    <div className="w-full max-w-5xl max-h-[88vh] bg-white rounded-xl shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+                        <h3 className="text-lg font-bold text-gray-900">{isArabic ? 'يُشترى معًا غالبًا' : 'Frequently Bought Together'}</h3>
+                        <button
+                          type="button"
+                          onClick={() => setShowFbtPopup(false)}
+                          className="h-8 w-8 rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+                          aria-label="Close"
+                        >
+                          ×
+                        </button>
+                      </div>
+
+                      <div className="p-5 overflow-y-auto max-h-[60vh]">
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                          {allFbtCards.map((card) => (
+                            <label key={card._id} className={`relative rounded-lg border p-3 cursor-pointer transition ${card.checked ? 'border-gray-300 bg-white' : 'border-gray-200 bg-gray-50/40 opacity-80'}`}>
+                              <input
+                                type="checkbox"
+                                checked={card.checked}
+                                readOnly={card.isMain}
+                                onChange={card.isMain ? undefined : () => toggleFbtProduct(card._id)}
+                                className="absolute left-2 top-2 h-4 w-4 rounded accent-blue-600"
+                              />
+                              <div className="h-[110px] rounded bg-gray-50 overflow-hidden flex items-center justify-center mb-3 mt-2">
+                                <div className="relative w-[78px] h-[78px]">
+                                  <Image src={card.image || 'https://ik.imagekit.io/jrstupuke/placeholder.png'} alt={card.name} fill className="object-contain" />
+                                </div>
+                              </div>
+                              <p className="text-[12px] text-gray-600 line-clamp-2 min-h-[36px]">{card.name}</p>
+                              <p className="mt-1 text-[15px] font-bold text-gray-900">{currency} {card.price.toFixed(2)}</p>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="border-t border-gray-200 px-5 py-4 bg-gray-50 flex items-center justify-between gap-4">
+                        <p className="text-sm text-gray-600">
+                          {isArabic ? `${totalBundleItems} عناصر` : `${totalBundleItems} items`} • {currency} {bundleTotal.toFixed(2)}
+                        </p>
+                        <button
+                          onClick={async () => {
+                            await handleAddBundleToCart();
+                            setShowFbtPopup(false);
+                          }}
+                          disabled={selectedAddonProducts.length === 0}
+                          className="h-11 px-5 rounded-md bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-bold text-sm transition disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {isArabic ? `اشترِ ${totalBundleItems} معًا` : `Buy ${totalBundleItems} together`}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* RIGHT: Product Info (buy box, meta) */}
@@ -1452,42 +1633,6 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
             )}
 
             {/* Short Description hidden to match reference layout */}
-
-            {/* Product Badges */}
-            {product.attributes?.badges && product.attributes.badges.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {product.attributes.badges.map((badge, index) => {
-                  // Define badge styles based on type
-                  const badgeStyles = {
-                    'Price Lower Than Usual': 'bg-green-100 text-green-700 border-green-200',
-                    'Hot Deal': 'bg-red-100 text-red-700 border-red-200',
-                    'Best Seller': 'bg-purple-100 text-purple-700 border-purple-200',
-                    'New Arrival': 'bg-blue-100 text-blue-700 border-blue-200',
-                    'Limited Stock': 'bg-orange-100 text-orange-700 border-orange-200',
-                    'Free Shipping': 'bg-teal-100 text-teal-700 border-teal-200'
-                  };
-                  
-                  const badgeIcons = {
-                    'Price Lower Than Usual': '💰',
-                    'Hot Deal': '🔥',
-                    'Best Seller': '⭐',
-                    'New Arrival': '✨',
-                    'Limited Stock': '⏰',
-                    'Free Shipping': '🚚'
-                  };
-
-                  return (
-                    <span
-                      key={index}
-                      className={`inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-full border ${badgeStyles[badge] || 'bg-gray-100 text-gray-700 border-gray-200'}`}
-                    >
-                      <span>{badgeIcons[badge] || '🏷️'}</span>
-                      {badge}
-                    </span>
-                  );
-                })}
-              </div>
-            )}
 
             {/* Stock Availability */}
               {(typeof product.stockQuantity === 'number' || product.inStock === false) && (
@@ -1814,80 +1959,17 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
         </div>
       </div>
 
-      {/* Frequently Bought Together — separate row below 3-column layout */}
-      {fbtEnabled && fbtProducts.length > 0 && (
-        <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 pb-8">
-          <hr className="border-gray-200" />
-          <div className="py-8">
-            <h2 className="text-[20px] font-bold text-gray-900 mb-6">{isArabic ? 'يُشترى معًا غالبًا' : 'Frequently Bought Together'}</h2>
-            <div className="flex flex-col lg:flex-row lg:items-start gap-8">
-              <div className="flex-1 overflow-x-auto">
-                <div className="flex items-start gap-4 min-w-max">
-                  {[{
-                    _id: 'main-product',
-                    name: product.name,
-                    image: product.images?.[0],
-                    price: Number(effPrice || 0),
-                    isMain: true,
-                    checked: true,
-                    badge: product.fastDelivery ? 'express' : null,
-                  }, ...fbtProducts.map((item) => ({
-                    _id: item._id,
-                    name: item.name,
-                    image: item.images?.[0],
-                    price: Number(item.price || 0),
-                    isMain: false,
-                    checked: Boolean(selectedFbtProducts[item._id]),
-                    badge: item.fastDelivery ? 'express' : (String(item.tags?.[0] || '').toLowerCase() === 'supermall' ? null : (item.tags?.[0] || null)),
-                  }))].map((card, index, arr) => (
-                    <div key={card._id} className="flex items-center gap-4">
-                      <label className={`relative w-[160px] p-3 rounded-lg border cursor-pointer transition flex-shrink-0 ${card.checked ? 'bg-white border-gray-300' : 'bg-white border-gray-200 opacity-60'}`}>
-                        <input
-                          type="checkbox"
-                          checked={card.checked}
-                          readOnly={card.isMain}
-                          onChange={card.isMain ? undefined : () => toggleFbtProduct(card._id)}
-                          className="absolute left-2 top-2 h-4 w-4 rounded accent-blue-600"
-                        />
-                        <div className="h-[120px] rounded bg-gray-50 overflow-hidden flex items-center justify-center mb-3">
-                          <div className="relative w-[100px] h-[100px]">
-                            <Image src={card.image || 'https://ik.imagekit.io/jrstupuke/placeholder.png'} alt={card.name} fill className="object-contain" />
-                          </div>
-                        </div>
-                        <p className="text-[12px] text-gray-600 line-clamp-2 leading-snug mb-1 min-h-[32px]">{card.name}</p>
-                        <p className="text-[13px] font-bold text-gray-900">{currency} {card.price.toFixed(2)}</p>
-                        {card.badge && (
-                          <span className={`mt-1 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold leading-none ${String(card.badge).toLowerCase() === 'express' ? 'bg-yellow-300 text-black italic' : 'bg-green-800 text-green-100'}`}>
-                            {String(card.badge).toLowerCase() === 'express' ? 'express' : String(card.badge).toLowerCase()}
-                          </span>
-                        )}
-                      </label>
-                      {index < arr.length - 1 && (
-                        <span className="text-3xl font-light text-gray-400 flex-shrink-0">+</span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex-shrink-0 lg:w-[230px] bg-white border border-gray-200 rounded-lg p-5 flex flex-col gap-3 shadow-sm">
-                <div>
-                  <p className="text-[13px] text-gray-500 mb-0.5">Total price:</p>
-                  <p className="text-[24px] font-bold text-gray-900">{currency} {bundleTotal.toFixed(2)}</p>
-                </div>
-                <button
-                  onClick={handleAddBundleToCart}
-                  disabled={selectedAddonProducts.length === 0}
-                  className="w-full h-11 rounded-lg bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-bold text-[15px] transition disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isArabic ? `اشترِ ${totalBundleItems} معًا` : `Add both to Cart`}
-                </button>
-              </div>
-            </div>
-          </div>
-          <hr className="border-gray-200" />
-        </div>
-      )}
+      {/* Full product description below the grid */}
+      <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 pb-8">
+        <ProductDescription
+          product={product}
+          reviews={reviews}
+          loadingReviews={loadingReviewsLocal || loadingReviews}
+          onReviewAdded={onReviewAdded}
+          showSuggestedProducts={true}
+          showMainDescription={true}
+        />
+      </div>
 
       {relatedProducts.length > 0 && (
         <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 pb-8">

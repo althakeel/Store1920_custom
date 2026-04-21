@@ -75,7 +75,7 @@ const designPages = [
   },
   {
     title: 'Product Page Info',
-    description: 'Edit delivery, returns, VAT, and rush-delivery texts for the product buy box.',
+    description: 'Edit product badges plus delivery, returns, VAT, and rush-delivery texts for the product page.',
     href: '/store/customize/product-page',
     icon: Truck,
   },

@@ -29,7 +29,7 @@ const toTitleCase = (value) => value
     .join(' ')
 
 // Updated design - Noon.com style v2
-const ProductDescription = ({ product, reviews = [], loadingReviews = false, onReviewAdded, showSuggestedProducts = true }) => {
+const ProductDescription = ({ product, reviews = [], loadingReviews = false, onReviewAdded, showSuggestedProducts = true, showMainDescription = true }) => {
 
     // Use reviews and loadingReviews from props only
     const [suggestedProducts, setSuggestedProducts] = useState([])
@@ -235,18 +235,29 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
 
             {showSpecTable && (
                 <div className="order-1 bg-white border-t border-gray-300 pt-4 sm:pt-5">
-                    <div className="overflow-x-auto">
-                        <table className="w-full border-separate border-spacing-0">
+                    <h3 className="text-[28px] leading-none font-semibold text-gray-900 mb-3">{product?.attributes?.specTableTitle || 'Product information'}</h3>
+                    <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+                        <table className="w-full border-collapse table-fixed">
                             <tbody>
                                 {specTableRows.map((row, rowIdx) => (
-                                    <tr key={`spec-row-${rowIdx}`} className="align-top">
+                                    <tr key={`spec-row-${rowIdx}`} className={`${rowIdx !== specTableRows.length - 1 ? 'border-b border-gray-200' : ''}`}>
                                         {specTableColumns.map((_, colIdx) => (
-                                            <td
-                                                key={`spec-cell-${rowIdx}-${colIdx}`}
-                                                className={`px-3 py-2 text-[14px] leading-6 ${colIdx === 0 ? 'font-semibold text-gray-900 w-[260px]' : 'text-gray-800'} ${rowIdx !== specTableRows.length - 1 ? 'border-b border-gray-100' : ''}`}
-                                            >
-                                                {row[colIdx] || '-'}
-                                            </td>
+                                            colIdx === 0 ? (
+                                                <th
+                                                    key={`spec-cell-${rowIdx}-${colIdx}`}
+                                                    scope="row"
+                                                    className="w-[42%] bg-gray-50 px-4 py-3 text-left text-[14px] font-semibold text-gray-900 align-top"
+                                                >
+                                                    {row[colIdx] || '-'}
+                                                </th>
+                                            ) : (
+                                                <td
+                                                    key={`spec-cell-${rowIdx}-${colIdx}`}
+                                                    className="px-4 py-3 text-[14px] text-gray-700 leading-6 align-top break-words border-l border-gray-100"
+                                                >
+                                                    {row[colIdx] || '-'}
+                                                </td>
+                                            )
                                         ))}
                                     </tr>
                                 ))}
@@ -288,50 +299,51 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
                 </div>
             )}
 
-            {/* Product Description Section */}
-            <div className="order-2 bg-white border-t border-gray-200 pt-4">
-                <div className="flex items-center justify-between mb-2">
-                    <h2 className="text-[18px] leading-none font-semibold text-gray-900">Product details</h2>
-                    <div className="hidden sm:flex items-center gap-2 text-[13px] text-gray-800">
-                        <button className="hover:underline">Save</button>
-                        <span>|</span>
-                        <button className="hover:underline">Report this item</button>
+            {showMainDescription && (
+                <div className="order-2 bg-white border-t border-gray-200 pt-4">
+                    <div className="flex items-center justify-between mb-2">
+                        <h2 className="text-[18px] leading-none font-semibold text-gray-900">Product details</h2>
+                        <div className="hidden sm:flex items-center gap-2 text-[13px] text-gray-800">
+                            <button className="hover:underline">Save</button>
+                            <span>|</span>
+                            <button className="hover:underline">Report this item</button>
+                        </div>
                     </div>
-                </div>
 
-                <div className="relative">
-                    <div
-                        className={`max-w-none text-[14px] leading-[1.5] text-gray-900
-                        [&_h1]:text-[16px] [&_h1]:font-semibold [&_h1]:mb-2
-                        [&_h2]:text-[15px] [&_h2]:font-semibold [&_h2]:mb-2
-                        [&_h3]:text-[14px] [&_h3]:font-semibold [&_h3]:mb-1.5
-                        [&_p]:mb-2
-                        [&_ul]:list-disc [&_ul]:list-outside [&_ul]:pl-5 [&_ul]:mb-2
-                        [&_ol]:list-decimal [&_ol]:list-outside [&_ol]:pl-5 [&_ol]:mb-2
-                        [&_li_p]:mb-0 [&_li_p]:inline
-                        [&_img]:max-w-full [&_img]:h-auto [&_img]:my-4
-                        [&_video]:max-w-full [&_video]:w-full [&_video]:h-auto [&_video]:my-4
-                        ${shouldCollapseDescription && !isDescriptionExpanded ? 'overflow-hidden [display:-webkit-box] [-webkit-line-clamp:6] [-webkit-box-orient:vertical]' : ''}`}
-                        dangerouslySetInnerHTML={{ __html: normalizedDescription }}
-                    />
+                    <div className="relative">
+                        <div
+                            className={`max-w-none text-[14px] leading-[1.5] text-gray-900
+                            [&_h1]:text-[16px] [&_h1]:font-semibold [&_h1]:mb-2
+                            [&_h2]:text-[15px] [&_h2]:font-semibold [&_h2]:mb-2
+                            [&_h3]:text-[14px] [&_h3]:font-semibold [&_h3]:mb-1.5
+                            [&_p]:mb-2
+                            [&_ul]:list-disc [&_ul]:list-outside [&_ul]:pl-5 [&_ul]:mb-2
+                            [&_ol]:list-decimal [&_ol]:list-outside [&_ol]:pl-5 [&_ol]:mb-2
+                            [&_li_p]:mb-0 [&_li_p]:inline
+                            [&_img]:max-w-full [&_img]:h-auto [&_img]:my-4
+                            [&_video]:max-w-full [&_video]:w-full [&_video]:h-auto [&_video]:my-4
+                            ${shouldCollapseDescription && !isDescriptionExpanded ? 'overflow-hidden [display:-webkit-box] [-webkit-line-clamp:6] [-webkit-box-orient:vertical]' : ''}`}
+                            dangerouslySetInnerHTML={{ __html: normalizedDescription }}
+                        />
 
-                    {shouldCollapseDescription && !isDescriptionExpanded && (
-                        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-white to-transparent" />
+                        {shouldCollapseDescription && !isDescriptionExpanded && (
+                            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-white to-transparent" />
+                        )}
+                    </div>
+
+                    {shouldCollapseDescription && (
+                        <div className="mt-3 text-center">
+                            <button
+                                onClick={() => setIsDescriptionExpanded((prev) => !prev)}
+                                className="inline-flex items-center gap-1 text-[13px] text-gray-800 hover:text-gray-900"
+                            >
+                                {isDescriptionExpanded ? 'See less' : 'See more'}
+                                {isDescriptionExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                            </button>
+                        </div>
                     )}
                 </div>
-
-                {shouldCollapseDescription && (
-                    <div className="mt-3 text-center">
-                        <button
-                            onClick={() => setIsDescriptionExpanded((prev) => !prev)}
-                            className="inline-flex items-center gap-1 text-[13px] text-gray-800 hover:text-gray-900"
-                        >
-                            {isDescriptionExpanded ? 'See less' : 'See more'}
-                            {isDescriptionExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                        </button>
-                    </div>
-                )}
-            </div>
+            )}
 
             {/* Suggested Products Section */}
             {showSuggestedProducts && suggestedProducts.length > 0 && (

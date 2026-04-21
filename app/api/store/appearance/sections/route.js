@@ -23,7 +23,17 @@ const DEFAULT_APPEARANCE = {
     rushPrefix: 'Or ⚡ Rush delivery',
     rushHour: 11,
     rushMinute: 15,
-    rushDayLabel: 'Today by'
+    rushDayLabel: 'Today by',
+    badgeSettings: {
+      badges: [
+        { label: 'Price Lower Than Usual', backgroundColor: '#007600', textColor: '#ffffff', borderRadius: 0 },
+        { label: 'Hot Deal', backgroundColor: '#cc0c39', textColor: '#ffffff', borderRadius: 0 },
+        { label: 'Best Seller', backgroundColor: '#c45500', textColor: '#ffffff', borderRadius: 0 },
+        { label: 'New Arrival', backgroundColor: '#0066c0', textColor: '#ffffff', borderRadius: 0 },
+        { label: 'Limited Stock', backgroundColor: '#b12704', textColor: '#ffffff', borderRadius: 0 },
+        { label: 'Free Shipping', backgroundColor: '#007185', textColor: '#ffffff', borderRadius: 0 }
+      ]
+    }
   },
   pageSeo: {}
 }
@@ -104,6 +114,37 @@ function clampNumber(value, min, max, fallback) {
   return Math.max(min, Math.min(max, num))
 }
 
+function normalizeColor(value, fallback) {
+  const color = String(value || '').trim()
+  return /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(color) ? color : fallback
+}
+
+function normalizeBadgeDefinitions(values) {
+  const source = Array.isArray(values) && values.length
+    ? values
+    : DEFAULT_APPEARANCE.productPageInfo.badgeSettings.badges
+
+  const seen = new Set()
+  const normalized = []
+
+  source.forEach((entry, index) => {
+    const label = String(entry?.label || '').trim().slice(0, 40)
+    const key = label.toLowerCase()
+    if (!label || seen.has(key)) return
+    seen.add(key)
+
+    const fallback = DEFAULT_APPEARANCE.productPageInfo.badgeSettings.badges[index] || DEFAULT_APPEARANCE.productPageInfo.badgeSettings.badges[0]
+    normalized.push({
+      label,
+      backgroundColor: normalizeColor(entry?.backgroundColor, fallback.backgroundColor),
+      textColor: normalizeColor(entry?.textColor, fallback.textColor),
+      borderRadius: clampNumber(entry?.borderRadius, 0, 24, fallback.borderRadius)
+    })
+  })
+
+  return normalized.length ? normalized.slice(0, 20) : DEFAULT_APPEARANCE.productPageInfo.badgeSettings.badges
+}
+
 function normalizeAppearance(data = {}) {
   const categorySliders = data.categorySliders || {}
   const carouselSlider = data.carouselSlider || {}
@@ -176,7 +217,10 @@ function normalizeAppearance(data = {}) {
       rushPrefix: (productPageInfo.rushPrefix || DEFAULT_APPEARANCE.productPageInfo.rushPrefix).toString().trim(),
       rushHour: clampNumber(productPageInfo.rushHour, 0, 23, DEFAULT_APPEARANCE.productPageInfo.rushHour),
       rushMinute: clampNumber(productPageInfo.rushMinute, 0, 59, DEFAULT_APPEARANCE.productPageInfo.rushMinute),
-      rushDayLabel: (productPageInfo.rushDayLabel || DEFAULT_APPEARANCE.productPageInfo.rushDayLabel).toString().trim()
+      rushDayLabel: (productPageInfo.rushDayLabel || DEFAULT_APPEARANCE.productPageInfo.rushDayLabel).toString().trim(),
+      badgeSettings: {
+        badges: normalizeBadgeDefinitions(productPageInfo.badgeSettings?.badges)
+      }
     },
     pageSeo
   }

@@ -2,9 +2,18 @@
 
 import { useEffect, useState } from 'react'
 import axios from 'axios'
-import { Loader2, Save } from 'lucide-react'
+import { Loader2, Plus, Save, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuth } from '@/lib/useAuth'
+
+const DEFAULT_BADGES = [
+  { label: 'Price Lower Than Usual', backgroundColor: '#007600', textColor: '#ffffff', borderRadius: 0 },
+  { label: 'Hot Deal', backgroundColor: '#cc0c39', textColor: '#ffffff', borderRadius: 0 },
+  { label: 'Best Seller', backgroundColor: '#c45500', textColor: '#ffffff', borderRadius: 0 },
+  { label: 'New Arrival', backgroundColor: '#0066c0', textColor: '#ffffff', borderRadius: 0 },
+  { label: 'Limited Stock', backgroundColor: '#b12704', textColor: '#ffffff', borderRadius: 0 },
+  { label: 'Free Shipping', backgroundColor: '#007185', textColor: '#ffffff', borderRadius: 0 }
+]
 
 const DEFAULT_FORM = {
   returnsText: 'FREE Returns',
@@ -14,7 +23,10 @@ const DEFAULT_FORM = {
   cutoffHour: 23,
   cutoffMinute: 0,
   deliveryMinDays: 2,
-  deliveryMaxDays: 5
+  deliveryMaxDays: 5,
+  badgeSettings: {
+    badges: DEFAULT_BADGES
+  }
 }
 
 export default function ProductPageCustomizePage() {
@@ -22,6 +34,38 @@ export default function ProductPageCustomizePage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState(DEFAULT_FORM)
+
+  const updateBadge = (index, key, value) => {
+    setForm((prev) => ({
+      ...prev,
+      badgeSettings: {
+        badges: (prev.badgeSettings?.badges || []).map((badge, badgeIndex) => (
+          badgeIndex === index ? { ...badge, [key]: value } : badge
+        ))
+      }
+    }))
+  }
+
+  const addBadge = () => {
+    setForm((prev) => ({
+      ...prev,
+      badgeSettings: {
+        badges: [
+          ...(prev.badgeSettings?.badges || []),
+          { label: '', backgroundColor: '#565959', textColor: '#ffffff', borderRadius: 0 }
+        ]
+      }
+    }))
+  }
+
+  const removeBadge = (index) => {
+    setForm((prev) => ({
+      ...prev,
+      badgeSettings: {
+        badges: (prev.badgeSettings?.badges || []).filter((_, badgeIndex) => badgeIndex !== index)
+      }
+    }))
+  }
 
   const cutoffHour24 = Number(form.cutoffHour) || 0
   const cutoffHour12 = cutoffHour24 % 12 === 0 ? 12 : cutoffHour24 % 12
@@ -54,7 +98,12 @@ export default function ProductPageCustomizePage() {
 
       setForm({
         ...DEFAULT_FORM,
-        ...(res.data?.productPageInfo || {})
+        ...(res.data?.productPageInfo || {}),
+        badgeSettings: {
+          badges: Array.isArray(res.data?.productPageInfo?.badgeSettings?.badges) && res.data.productPageInfo.badgeSettings.badges.length
+            ? res.data.productPageInfo.badgeSettings.badges
+            : DEFAULT_BADGES
+        }
       })
     } catch (error) {
       toast.error('Failed to load product page settings')
@@ -79,7 +128,17 @@ export default function ProductPageCustomizePage() {
           deliveryMinDays: Math.max(0, Number(form.deliveryMinDays) || 0),
           deliveryMaxDays: Math.max(0, Number(form.deliveryMaxDays) || 0),
           cutoffHour: Math.max(0, Math.min(23, Number(form.cutoffHour) || 0)),
-          cutoffMinute: Math.max(0, Math.min(59, Number(form.cutoffMinute) || 0))
+          cutoffMinute: Math.max(0, Math.min(59, Number(form.cutoffMinute) || 0)),
+          badgeSettings: {
+            badges: (form.badgeSettings?.badges || [])
+              .map((badge) => ({
+                label: String(badge?.label || '').trim(),
+                backgroundColor: String(badge?.backgroundColor || '').trim(),
+                textColor: String(badge?.textColor || '').trim(),
+                borderRadius: Math.max(0, Math.min(24, Number(badge?.borderRadius) || 0))
+              }))
+              .filter((badge) => badge.label)
+          }
         }
       }
 
@@ -179,6 +238,91 @@ export default function ProductPageCustomizePage() {
             </div>
             <p className="text-xs text-slate-500">Choose the daily cutoff time customers must order before.</p>
           </label>
+        </div>
+      </div>
+
+      <div className="bg-white border rounded-xl p-5 space-y-4">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Product Badges</h2>
+            <p className="text-sm text-slate-500 mt-1">Control the badge options used on product pages and in the product editor.</p>
+          </div>
+          <button
+            type="button"
+            onClick={addBadge}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            <Plus size={16} />
+            Add Badge
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          {(form.badgeSettings?.badges || []).map((badge, index) => (
+            <div key={`badge-${index}`} className="rounded-xl border border-slate-200 p-4">
+              <div className="grid gap-4 md:grid-cols-[minmax(0,1.5fr)_140px_140px_120px_auto] md:items-end">
+                <label className="space-y-1">
+                  <span className="text-sm font-medium text-slate-700">Badge label</span>
+                  <input
+                    className="w-full border rounded-lg px-3 py-2"
+                    value={badge.label || ''}
+                    onChange={(e) => updateBadge(index, 'label', e.target.value.slice(0, 40))}
+                    placeholder="e.g. Limited time deal"
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-sm font-medium text-slate-700">Background</span>
+                  <input
+                    type="color"
+                    className="h-11 w-full border rounded-lg px-2 py-1 bg-white"
+                    value={badge.backgroundColor || '#565959'}
+                    onChange={(e) => updateBadge(index, 'backgroundColor', e.target.value)}
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-sm font-medium text-slate-700">Text color</span>
+                  <input
+                    type="color"
+                    className="h-11 w-full border rounded-lg px-2 py-1 bg-white"
+                    value={badge.textColor || '#ffffff'}
+                    onChange={(e) => updateBadge(index, 'textColor', e.target.value)}
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-sm font-medium text-slate-700">Radius</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="24"
+                    className="w-full border rounded-lg px-3 py-2"
+                    value={badge.borderRadius ?? 0}
+                    onChange={(e) => updateBadge(index, 'borderRadius', e.target.value)}
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => removeBadge(index)}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
+                >
+                  <Trash2 size={16} />
+                  Remove
+                </button>
+              </div>
+
+              <div className="mt-3">
+                <span
+                  className="inline-flex items-center px-2.5 py-[3px] text-[12px] font-bold"
+                  style={{
+                    backgroundColor: badge.backgroundColor || '#565959',
+                    color: badge.textColor || '#ffffff',
+                    borderRadius: `${Math.max(0, Math.min(24, Number(badge.borderRadius) || 0))}px`
+                  }}
+                >
+                  {badge.label || 'Badge preview'}
+                </span>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
