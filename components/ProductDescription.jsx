@@ -347,7 +347,7 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
 
             {/* Suggested Products Section */}
             {showSuggestedProducts && suggestedProducts.length > 0 && (
-                <div className="bg-white border-0 md:border md:border-gray-200 mt-6">
+                <div className="order-3 bg-white border-0 md:border md:border-gray-200 mt-6">
                     <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between">
                         <h2 className="text-xl font-bold text-gray-900">You May Also Like</h2>
                         {product.category && (
@@ -360,7 +360,7 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
                         )}
                     </div>
                     <div className="p-6">
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
                             {suggestedProducts.map((suggestedProduct) => (
                                 <ProductCard key={suggestedProduct._id} product={suggestedProduct} />
                             ))}
