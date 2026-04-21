@@ -151,8 +151,19 @@ export async function DELETE(request) {
         }
 
         const userId = decodedToken.uid;
-        const { productId } = await request.json();
-        const productKey = String(productId || "").trim();
+
+        const { searchParams } = new URL(request.url);
+        const queryProductId = searchParams.get('productId');
+
+        let bodyProductId = null;
+        try {
+            const body = await request.json();
+            bodyProductId = body?.productId || null;
+        } catch {
+            // Some clients/proxies drop DELETE body; query param fallback handles this.
+        }
+
+        const productKey = String(queryProductId || bodyProductId || "").trim();
 
         if (!productKey) {
             return NextResponse.json({ error: "productId is required" }, { status: 400 });
@@ -166,7 +177,11 @@ export async function DELETE(request) {
             { new: true }
         );
 
-        return NextResponse.json({ cart: updatedUser?.cart || {} });
+        if (!updatedUser) {
+            return NextResponse.json({ cart: {} });
+        }
+
+        return NextResponse.json({ cart: updatedUser.cart || {} });
     } catch (error) {
         console.error(error);
         return NextResponse.json({ error: error.message }, { status: 400 });

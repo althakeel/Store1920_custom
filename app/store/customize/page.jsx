@@ -14,6 +14,8 @@ import {
   Package,
   Shapes,
   Compass,
+  Search,
+  Truck,
 } from 'lucide-react'
 
 const designPages = [
@@ -64,6 +66,18 @@ const designPages = [
     description: 'Edit the storefront sitemap category section layout.',
     href: '/store/storefront/sitemap-categories',
     icon: Shapes,
+  },
+  {
+    title: 'SEO Meta Tags',
+    description: 'Select a page and set meta title, description, and keywords.',
+    href: '/store/storefront/seo',
+    icon: Search,
+  },
+  {
+    title: 'Product Page Info',
+    description: 'Edit delivery, returns, VAT, and rush-delivery texts for the product buy box.',
+    href: '/store/customize/product-page',
+    icon: Truck,
   },
 ]
 

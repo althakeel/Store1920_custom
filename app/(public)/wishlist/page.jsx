@@ -15,7 +15,6 @@ import { useDispatch } from "react-redux";
 import { addToCart } from "@/lib/features/cart/cartSlice";
 import { useStorefrontMarket } from "@/lib/useStorefrontMarket";
 import PageTitle from "@/components/PageTitle";
-import DashboardSidebar from "@/components/DashboardSidebar";
 
 const PLACEHOLDER_IMAGE = "/placeholder.png";
 
@@ -232,11 +231,10 @@ function WishlistAuthed() {
     <>
       <PageTitle title="My Wishlist" />
 
-      <div className="max-w-[1250px] mx-auto px-4 sm:px-6 py-8 grid grid-cols-1 lg:grid-cols-[4fr_1fr] gap-6">
-        {isSignedIn && <DashboardSidebar />}
+      <div className="max-w-[1320px] mx-auto px-4 sm:px-6 py-6 sm:py-8 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_360px] gap-6 xl:gap-8">
 
         {/* ------------------ LEFT (80%) ------------------ */}
-        <main>
+        <main className="min-w-0">
           {wishlist.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 px-4">
               <div className="bg-gradient-to-br from-pink-100 to-red-100 rounded-full p-8 mb-6">
@@ -255,14 +253,14 @@ function WishlistAuthed() {
             </div>
           ) : (
             <>
-              <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-200">
-                <div>
+              <div className="mb-6 pb-4 border-b border-gray-200 flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
                   <h2 className="text-2xl font-bold text-gray-900">My Wishlist</h2>
                   <p className="text-sm text-gray-500 mt-1">{wishlist.length} {wishlist.length === 1 ? 'Item' : 'Items'}</p>
                 </div>
                 <button
                   onClick={selectAll}
-                  className="text-orange-600 text-sm font-semibold hover:text-orange-700 transition-colors flex items-center gap-2"
+                  className="text-orange-600 text-sm font-semibold hover:text-orange-700 transition-colors inline-flex items-center gap-2 rounded-full border border-orange-200 px-3 py-1.5 bg-orange-50/60"
                 >
                   <CheckCircle2 size={18} />
                   {selected.length === wishlist.length
@@ -271,7 +269,7 @@ function WishlistAuthed() {
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+              <div className="grid gap-4 xl:gap-5 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
                 {wishlist.map((item) => {
                   const product = getProduct(item);
                   if (!product) return null;
@@ -286,7 +284,7 @@ function WishlistAuthed() {
                   return (
                     <div
                       key={product._pid}
-                      className={`group bg-white rounded-xl border-2 transition-all hover:shadow-xl relative overflow-hidden ${
+                      className={`group bg-white rounded-2xl border-2 transition-all hover:shadow-lg relative overflow-hidden ${
                         isSelected ? 'border-orange-500 shadow-lg' : 'border-gray-200 hover:border-orange-200'
                       }`}
                     >
@@ -327,27 +325,27 @@ function WishlistAuthed() {
 
                       {/* INFO */}
                       <div className="px-4 pb-4">
-                        <h3 className="text-sm font-medium line-clamp-2 min-h-[40px] text-gray-800 group-hover:text-gray-900">
+                        <h3 className="text-[15px] font-semibold line-clamp-2 min-h-[44px] text-gray-800 group-hover:text-gray-900">
                           {product.name}
                         </h3>
 
-                        <div className="mt-2 flex items-baseline gap-2">
-                          <span className="text-xl font-bold text-gray-900">
+                        <div className="mt-2 flex items-end gap-2">
+                          <span className="text-[34px] font-extrabold leading-none text-gray-900">
                             {market.currency} {Math.round(convertedPrice).toLocaleString()}
                           </span>
                           {product.AED && (
-                            <span className="text-sm text-gray-400 line-through">
+                            <span className="text-sm text-gray-400 line-through leading-none pb-1">
                               {market.currency} {Math.round(convertedAED).toLocaleString()}
                             </span>
                           )}
                           {discount > 0 && (
-                            <span className="inline-flex items-center text-[10px] sm:text-xs font-bold px-1.5 py-0.5 rounded-full text-white bg-green-500">
+                            <span className="ml-auto inline-flex items-center text-xs font-extrabold px-2 py-1 rounded-full text-white bg-emerald-500 leading-none">
                               {discount}% OFF
                             </span>
                           )}
                         </div>
 
-                        <div className="flex gap-2 mt-4">
+                        <div className="flex items-center gap-2 mt-4">
                           <button
                             onClick={() =>
                               dispatch(addToCart({
@@ -355,20 +353,17 @@ function WishlistAuthed() {
                                 price: Number(product.price) || 0,
                               }))
                             }
-                            className="flex-1 text-white text-sm font-semibold px-4 py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 hover:shadow-md"
-                            style={{ backgroundColor: '#DC013C' }}
-                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#b8012f'}
-                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#DC013C'}
+                            className="flex-1 h-12 bg-rose-600 hover:bg-rose-700 text-white text-sm font-semibold px-4 rounded-xl transition-all inline-flex items-center justify-center gap-2 whitespace-nowrap"
                           >
                             <ShoppingCartIcon size={16} />
-                            Add to Cart
+                            <span>Add to Cart</span>
                           </button>
 
                           <button
                             onClick={() =>
                               removeFromWishlist(product._pid)
                             }
-                            className="bg-red-50 hover:bg-red-100 text-red-500 p-2.5 rounded-lg transition-all"
+                            className="h-12 w-12 shrink-0 bg-rose-50 hover:bg-rose-100 text-rose-500 border border-rose-100 rounded-xl transition-all inline-flex items-center justify-center"
                           >
                             <TrashIcon size={18} />
                           </button>
@@ -384,12 +379,12 @@ function WishlistAuthed() {
 
         {/* ------------------ RIGHT (20%) ------------------ */}
         <aside className="hidden lg:block">
-          <div className="sticky top-24 bg-gradient-to-br from-orange-50 to-red-50 border-2 border-orange-200 rounded-2xl p-6 shadow-lg">
+          <div className="sticky top-24 bg-gradient-to-br from-orange-50 to-red-50 border-2 border-orange-200 rounded-2xl p-5 xl:p-6 shadow-lg">
             <div className="flex items-center gap-2 mb-5">
               <div className="bg-orange-500 rounded-full p-2">
                 <ShoppingCartIcon size={20} className="text-white" />
               </div>
-              <h3 className="text-xl font-bold text-gray-900">
+              <h3 className="text-2xl font-bold text-gray-900">
                 Price Summary
               </h3>
             </div>

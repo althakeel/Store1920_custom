@@ -25,6 +25,26 @@ const getImageSrc = (product) => {
     return 'https://ik.imagekit.io/jrstupuke/placeholder.png'
 }
 
+const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.ogg', '.mov', '.m4v', '.avi', '.mkv']
+
+const getPrimaryMedia = (product) => {
+    const fallback = 'https://ik.imagekit.io/jrstupuke/placeholder.png'
+    if (!Array.isArray(product?.images) || product.images.length === 0) {
+        return { type: 'image', src: fallback }
+    }
+
+    const first = product.images[0]
+    const raw = (first?.url || first?.src || (typeof first === 'string' ? first : '') || '').toString().trim()
+    const src = raw || fallback
+    const normalized = src.toLowerCase().split('?')[0]
+    const isVideo = VIDEO_EXTENSIONS.some((ext) => normalized.endsWith(ext))
+
+    return {
+        type: isVideo ? 'video' : 'image',
+        src,
+    }
+}
+
 // Normalize price-like values (numbers or strings with currency symbols)
 const parseAmount = (value) => {
     const num = Number(String(value ?? '').replace(/[^0-9.]/g, ''))
@@ -321,7 +341,7 @@ const ProductCard = ({ product }) => {
 
     const showPrice = priceNum > 0 || AEDNum > 0
 
-    const imageSrc = getImageSrc(product)
+    const media = getPrimaryMedia(product)
 
     return (
         <Link href={`/product/${product.slug || product._id || ''}`} className="group w-full">
@@ -340,17 +360,29 @@ const ProductCard = ({ product }) => {
                     >
                         <Heart size={18} fill={isInWishlist ? 'currentColor' : 'none'} className={isInWishlist ? 'text-rose-500' : ''} />
                     </button>
-                    <Image
-                        src={imageSrc}
-                        alt={displayName}
-                        fill
-                        className="object-cover transition-transform duration-300 group-hover:scale-[1.04]"
-                        onError={(e) => {
-                            if (e.currentTarget.src !== 'https://ik.imagekit.io/jrstupuke/placeholder.png') {
-                                e.currentTarget.src = 'https://ik.imagekit.io/jrstupuke/placeholder.png'
-                            }
-                        }}
-                    />
+                    {media.type === 'video' ? (
+                        <video
+                            src={media.src}
+                            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]"
+                            muted
+                            loop
+                            autoPlay
+                            playsInline
+                            preload="metadata"
+                        />
+                    ) : (
+                        <Image
+                            src={media.src || getImageSrc(product)}
+                            alt={displayName}
+                            fill
+                            className="object-cover transition-transform duration-300 group-hover:scale-[1.04]"
+                            onError={(e) => {
+                                if (e.currentTarget.src !== 'https://ik.imagekit.io/jrstupuke/placeholder.png') {
+                                    e.currentTarget.src = 'https://ik.imagekit.io/jrstupuke/placeholder.png'
+                                }
+                            }}
+                        />
+                    )}
                     {itemQuantity === 0 ? (
                         <button
                             type="button"

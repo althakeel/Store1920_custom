@@ -23,8 +23,9 @@ export async function POST(request) {
     const idToken = authHeader.split('Bearer ')[1];
     const decodedToken = await getAuth().verifyIdToken(idToken);
     const userId = decodedToken.uid;
-    const { email } = await request.json();
-    if (!email) return NextResponse.json({ error: 'Missing email' }, { status: 400 });
+    const { email, permissions } = await request.json();
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    if (!normalizedEmail) return NextResponse.json({ error: 'Missing email' }, { status: 400 });
 
     // Find the store owned/admin by this user
     const store = await Store.findOne({ userId }).lean();
@@ -33,7 +34,7 @@ export async function POST(request) {
     // Check if already invited or member
     const existing = await StoreUser.findOne({ 
       storeId: store._id.toString(), 
-      email 
+      email: normalizedEmail
     }).lean();
     if (existing && ["invited", "pending", "approved"].includes(existing.status)) {
       return NextResponse.json({ error: 'User already invited or member' }, { status: 400 });
@@ -43,16 +44,36 @@ export async function POST(request) {
     const inviteToken = randomBytes(32).toString('hex');
     const inviteExpiry = new Date(Date.now() + 1000 * 60 * 60 * 24 * 7); // 7 days
 
-    // Create invite in DB
-    await StoreUser.create({
-      storeId: store._id.toString(),
-      email,
-      role: 'member',
-      status: 'invited',
-      invitedById: userId,
-      inviteToken,
-      inviteExpiry,
-    });
+    const sanitizedPermissions = permissions && typeof permissions === 'object' ? permissions : {};
+
+    // Reuse existing removed/rejected invite row to avoid duplicate key errors.
+    if (existing) {
+      await StoreUser.updateOne(
+        { _id: existing._id },
+        {
+          $set: {
+            email: normalizedEmail,
+            role: 'member',
+            status: 'invited',
+            invitedById: userId,
+            inviteToken,
+            inviteExpiry,
+            permissions: sanitizedPermissions,
+          }
+        }
+      );
+    } else {
+      await StoreUser.create({
+        storeId: store._id.toString(),
+        email: normalizedEmail,
+        role: 'member',
+        status: 'invited',
+        invitedById: userId,
+        inviteToken,
+        inviteExpiry,
+        permissions: sanitizedPermissions,
+      });
+    }
 
 
     // Custom email subject and body
@@ -85,7 +106,7 @@ export async function POST(request) {
     const resend = new Resend(RESEND_API_KEY);
     const { data, error } = await resend.emails.send({
       from: EMAIL_FROM,
-      to: [email],
+      to: [normalizedEmail],
       subject: emailSubject,
       html: emailBody,
     });

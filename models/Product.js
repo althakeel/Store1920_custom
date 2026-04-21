@@ -11,6 +11,10 @@ const ProductSchema = new mongoose.Schema({
   descriptionAr: { type: String, default: '' },
   shortDescription: String,
   shortDescriptionAr: { type: String, default: '' },
+  shortDescription2: { type: String, default: '' },
+  specTableEnabled: { type: Boolean, default: false },
+  specTableColumns: { type: [String], default: ['Property', 'Value'] },
+  specTableRows: { type: Array, default: [] },
   AED: Number,
   price: Number,
   costPrice: { type: Number, default: 0 }, // Actual cost/purchase price for profit calculation
@@ -34,6 +38,9 @@ const ProductSchema = new mongoose.Schema({
   imageAspectRatio: { type: String, default: '1:1' },
   storeId: String,
   tags: { type: [String], default: [] },
+  seoTitle: { type: String, default: '' },
+  seoDescription: { type: String, default: '' },
+  seoKeywords: { type: [String], default: [] },
   // Frequently Bought Together fields
   enableFBT: { type: Boolean, default: false },
   fbtProductIds: { type: [String], default: [] },

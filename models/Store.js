@@ -17,6 +17,27 @@ const StoreSchema = new mongoose.Schema({
   businessHours: String,
   returnPolicy: String,
   shippingPolicy: String,
+  smtpSettings: {
+    transactional: {
+      host: { type: String, default: '' },
+      port: { type: Number, default: 465 },
+      user: { type: String, default: '' },
+      pass: { type: String, default: '' },
+      secure: { type: Boolean, default: true },
+      fromEmail: { type: String, default: '' },
+      fromName: { type: String, default: '' },
+    },
+    promotional: {
+      host: { type: String, default: '' },
+      port: { type: Number, default: 465 },
+      user: { type: String, default: '' },
+      pass: { type: String, default: '' },
+      secure: { type: Boolean, default: true },
+      fromEmail: { type: String, default: '' },
+      fromName: { type: String, default: '' },
+    },
+    updatedAt: { type: Date, default: null },
+  },
   isActive: { type: Boolean, default: false },
   status: { type: String, default: "pending", enum: ["pending", "approved", "rejected"] },
   featuredProductIds: { type: [String], default: [] }, // Array of featured product IDs

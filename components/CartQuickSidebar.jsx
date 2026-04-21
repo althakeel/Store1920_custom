@@ -5,10 +5,11 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { Minus, Plus, ShoppingCart, Trash2, X } from 'lucide-react'
 import { usePathname } from 'next/navigation'
+import axios from 'axios'
 import { useDispatch, useSelector } from 'react-redux'
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket'
 import { useStorefrontI18n } from '@/lib/useStorefrontI18n'
-import { addToCart, deleteItemFromCart, removeFromCart, uploadCart } from '@/lib/features/cart/cartSlice'
+import { addToCart, deleteItemFromCart, fetchCart, removeFromCart, uploadCart } from '@/lib/features/cart/cartSlice'
 import { useAuth } from '@/lib/useAuth'
 
 const getQty = (entry) => {
@@ -88,12 +89,39 @@ export default function CartQuickSidebar() {
   }
 
   const handleDecrease = async (productId) => {
-    dispatch(removeFromCart({ productId: String(productId) }))
+    const id = String(productId)
+    const currentEntry = cartItems?.[id]
+    const currentQty = getQty(currentEntry)
+
+    if (currentQty <= 1) {
+      await handleDelete(id)
+      return
+    }
+
+    dispatch(removeFromCart({ productId: id }))
     await syncCartIfNeeded()
   }
 
   const handleDelete = async (productId) => {
-    dispatch(deleteItemFromCart({ productId: String(productId) }))
+    const id = String(productId)
+    dispatch(deleteItemFromCart({ productId: id }))
+
+    if (user) {
+      try {
+        const token = await getToken?.()
+        if (token) {
+          await axios.delete(`/api/cart?productId=${encodeURIComponent(id)}`, {
+            headers: { Authorization: `Bearer ${token}` },
+            data: { productId: id },
+          })
+          await dispatch(fetchCart({ getToken }))
+          return
+        }
+      } catch {
+        // Fallback to full cart upload when direct delete fails.
+      }
+    }
+
     await syncCartIfNeeded()
   }
 
@@ -140,7 +168,7 @@ export default function CartQuickSidebar() {
 
   return (
     <>
-      <div className={`pointer-events-none fixed inset-y-0 z-[90] hidden md:block w-[200px] max-w-[calc(100vw-16px)] ${
+      <div className={`pointer-events-none fixed inset-y-0 z-[90] hidden md:block w-[175px] max-w-[calc(100vw-16px)] ${
         isArabic ? 'left-0' : 'right-0'
       }`} dir="ltr">
       <aside

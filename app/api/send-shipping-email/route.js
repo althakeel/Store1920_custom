@@ -45,6 +45,7 @@ export async function POST(request) {
     await sendOrderShippedEmail({
       email: customerEmail,
       name: customerName,
+      storeId: order.storeId,
       orderId: order._id,
       trackingId: order.trackingId,
       trackingUrl: order.trackingUrl,

@@ -27,6 +27,23 @@ import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
 import { translateStaticText } from '@/lib/useStorefrontI18n';
 
 const NAVBAR_SELECTED_ADDRESS_KEY = 'navbarSelectedAddressId';
+const NAVBAR_APPEARANCE_CACHE_KEY = 'navbarAppearanceCache';
+
+const DEFAULT_NAVBAR_APPEARANCE = { logoUrl: '', logoWidth: 120, logoHeight: 40, backgroundColor: '#8f3404' };
+
+const readCachedNavbarAppearance = () => {
+  if (typeof window === 'undefined') return DEFAULT_NAVBAR_APPEARANCE;
+  try {
+    const raw = window.localStorage.getItem(NAVBAR_APPEARANCE_CACHE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed.logoUrl === 'string') return parsed;
+    }
+  } catch {
+    // Ignore storage read failures.
+  }
+  return DEFAULT_NAVBAR_APPEARANCE;
+};
 
 const readPersistedLanguage = () => {
   if (typeof window === 'undefined') return 'en';
@@ -92,16 +109,18 @@ const Navbar = () => {
   const [searchFocused, setSearchFocused] = useState(false);
   const [showAddressModal, setShowAddressModal] = useState(false);
   const [selectedAddressId, setSelectedAddressId] = useState(null);
-  const [storefrontLanguage, setStorefrontLanguage] = useState(readPersistedLanguage);
+  // Initialize with safe defaults to avoid hydration mismatch
+  // Will be updated from localStorage in useEffect after mount
+  const [storefrontLanguage, setStorefrontLanguage] = useState('en');
   const [languageHydrated, setLanguageHydrated] = useState(false);
   const [marketDropdownOpen, setMarketDropdownOpen] = useState(false);
-  const [navbarAppearance, setNavbarAppearance] = useState({
-    logoUrl: '',
-    logoWidth: 120,
-    logoHeight: 40,
-    backgroundColor: '#8f3404',
-  });
-  const [navbarAppearanceLoading, setNavbarAppearanceLoading] = useState(true);
+  // Initialize with default appearance to avoid hydration mismatch
+  // Will be updated from localStorage in useEffect after mount
+  const [navbarAppearance, setNavbarAppearance] = useState(DEFAULT_NAVBAR_APPEARANCE);
+  // Render the navbar with the default appearance on both server and client initially
+  // to avoid hydration mismatches. Loading state is set false initially and toggled
+  // by the fetch effect when data is retrieved.
+  const [navbarAppearanceLoading, setNavbarAppearanceLoading] = useState(false);
   const { market: storefrontMarket, setMarketCode } = useStorefrontMarket();
   const t = (key, replacements = {}) => translateStaticText(key, storefrontLanguage, replacements);
 
@@ -207,6 +226,24 @@ const Navbar = () => {
   }, [storefrontLanguage, languageHydrated]);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    try {
+      const cached = window.localStorage.getItem(NAVBAR_APPEARANCE_CACHE_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && typeof parsed.logoUrl === 'string') {
+          setNavbarAppearance(parsed);
+        }
+      }
+    } catch {
+      // Ignore storage read failures
+    }
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
     const fetchNavbarAppearance = async () => {
       try {
         // Add timestamp to bypass any caching
@@ -217,7 +254,7 @@ const Navbar = () => {
           // Always use public storefront navbar appearance.
           // Passing auth headers can switch to user-scoped settings and clear the logo.
           headers: {},
-          next: { revalidate: 0 }
+          signal: controller.signal,
         });
         if (!response.ok) {
           console.warn('[Navbar] API returned status:', response.status);
@@ -239,6 +276,11 @@ const Navbar = () => {
         };
         
         setNavbarAppearance(nextAppearance);
+        try {
+          window.localStorage.setItem(NAVBAR_APPEARANCE_CACHE_KEY, JSON.stringify(nextAppearance));
+        } catch {
+          // Ignore storage write failures.
+        }
         console.log('[Navbar] Applied Appearance:', { 
           usingCustomLogo: !!data.logoUrl, 
           dims: `${nextAppearance.logoWidth}x${nextAppearance.logoHeight}` 
@@ -288,6 +330,7 @@ const Navbar = () => {
     }
 
     return () => {
+      controller.abort();
       if (typeof window !== 'undefined') {
         window.removeEventListener('navbarAppearanceUpdated', handleNavbarAppearanceUpdate);
       }

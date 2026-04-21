@@ -1,7 +1,6 @@
 "use client"
 import ProductDescription from "@/components/ProductDescription";
 import ProductDetails from "@/components/ProductDetails";
-import ProductCard from "@/components/ProductCard";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useSelector } from "react-redux";
@@ -209,14 +208,15 @@ export default function ProductBySlug() {
 
                 if (response.status === 200) {
                     found = localizeProductFields(response.data.product) || found || null;
+                    console.log('🔍 FETCHED PRODUCT SPECS:', { specTableEnabled: found?.attributes?.specTableEnabled, specRows: found?.attributes?.specRows });
                 } else if (response.status === 404) {
                     found = found || null;
                 }
             }
             
             setProduct(found);
-
             if (found) {
+                console.log('🔍 PRODUCT ATTRIBUTES:', { attributes: found?.attributes });
                 const localRecommendations = buildLocalRecommendations(found, products);
                 if (localRecommendations.length > 0) {
                     setRecommendedProducts(localRecommendations);
@@ -263,6 +263,38 @@ export default function ProductBySlug() {
             fetchReviews(productId);
         }
     }, [product?._id, product?.id]);
+
+    useEffect(() => {
+        if (!product) return;
+
+        const metaTitle = String(product.seoTitle || product.name || '').trim();
+        const metaDescription = String(product.seoDescription || product.shortDescription || '').trim();
+        const keywordList = Array.isArray(product.seoKeywords) && product.seoKeywords.length > 0
+            ? product.seoKeywords
+            : (Array.isArray(product.tags) ? product.tags : []);
+
+        if (metaTitle) {
+            document.title = metaTitle;
+        }
+
+        const descriptionTag = document.querySelector('meta[name="description"]') || document.createElement('meta');
+        descriptionTag.setAttribute('name', 'description');
+        if (metaDescription) {
+            descriptionTag.setAttribute('content', metaDescription);
+        }
+        if (!descriptionTag.parentNode) {
+            document.head.appendChild(descriptionTag);
+        }
+
+        const keywordsTag = document.querySelector('meta[name="keywords"]') || document.createElement('meta');
+        keywordsTag.setAttribute('name', 'keywords');
+        if (keywordList.length > 0) {
+            keywordsTag.setAttribute('content', keywordList.join(', '));
+        }
+        if (!keywordsTag.parentNode) {
+            document.head.appendChild(keywordsTag);
+        }
+    }, [product]);
 
     // Track browse history for signed-in users and localStorage for guests
     useEffect(() => {
@@ -321,22 +353,7 @@ export default function ProductBySlug() {
                     </div>
                 ) : product ? (
                     <>
-                        <ProductDetails product={product} reviews={reviews} loadingReviews={loadingReviews} onReviewAdded={() => fetchReviews(product._id || product.id)} />
-                        {/* Recommended Products */}
-                        {recommendedProducts.length > 0 && (
-                            <div className="-mx-0 md:mx-0 mt-12 mb-16">
-                                <div className="px-4 md:px-0">
-                                    <h2 className="text-2xl font-semibold text-slate-800 mb-6">You May Also Like</h2>
-                                </div>
-                                <div className="px-4 md:px-0">
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-5 xl:grid-cols-5 gap-6">
-                                        {recommendedProducts.map((prod) => (
-                                            <ProductCard key={prod._id || prod.id} product={prod} />
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
+                        <ProductDetails product={product} reviews={reviews} loadingReviews={loadingReviews} onReviewAdded={() => fetchReviews(product._id || product.id)} recommendedProducts={recommendedProducts} />
                     </>
                 ) : (
                     <div className="text-center py-16">

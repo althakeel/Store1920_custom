@@ -79,6 +79,39 @@ const slugifyValue = (value = '') => {
         .replace(/^-+|-+$/g, '')
 }
 
+const parseTagList = (rawValue = '') => {
+    return Array.from(
+        new Set(
+            String(rawValue || '')
+                .split(',')
+                .map((item) => item.trim())
+                .filter(Boolean)
+        )
+    )
+}
+
+const appendUniqueTags = (existing = [], incoming = []) => {
+    const seen = new Set(existing.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean))
+    const merged = [...existing]
+
+    incoming.forEach((item) => {
+        const tag = String(item || '').trim()
+        const key = tag.toLowerCase()
+        if (!tag || seen.has(key)) return
+        seen.add(key)
+        merged.push(tag)
+    })
+
+    return merged
+}
+
+const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.ogg', '.mov', '.m4v', '.avi', '.mkv']
+
+const isVideoSource = (value = '') => {
+    const raw = String(value || '').toLowerCase().split('?')[0]
+    return VIDEO_EXTENSIONS.some((ext) => raw.endsWith(ext))
+}
+
 function RichTextDescriptionEditor({
     label,
     value,
@@ -146,12 +179,18 @@ function RichTextDescriptionEditor({
                 <button type="button" onClick={() => editor?.chain().focus().toggleBulletList().run()} className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${editor?.isActive('bulletList') ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 hover:bg-gray-200'}`} title="Bullet List">• List</button>
                 <button type="button" onClick={() => editor?.chain().focus().toggleOrderedList().run()} className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${editor?.isActive('orderedList') ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 hover:bg-gray-200'}`} title="Numbered List">1. List</button>
                 <div className="w-px h-6 bg-gray-300 self-center mx-1"></div>
-                <button type="button" onClick={() => editor?.chain().focus().insertTable({ rows: 2, cols: 2, withHeaderRow: false }).run()} className="px-3 py-1.5 rounded text-sm font-medium bg-gray-100 hover:bg-gray-200 transition-all" title="Insert Table">📊 <span className="hidden sm:inline">Table</span></button>
-                <button type="button" onClick={() => editor?.chain().focus().addColumnAfter().run()} disabled={!editor?.can().addColumnAfter()} className="px-2 py-1.5 rounded text-xs font-medium bg-gray-100 hover:bg-gray-200 transition-all disabled:opacity-30" title="Add Column">+ Col</button>
-                <button type="button" onClick={() => editor?.chain().focus().deleteColumn().run()} disabled={!editor?.can().deleteColumn()} className="px-2 py-1.5 rounded text-xs font-medium bg-gray-100 hover:bg-gray-200 transition-all disabled:opacity-30" title="Delete Column">- Col</button>
-                <button type="button" onClick={() => editor?.chain().focus().addRowAfter().run()} disabled={!editor?.can().addRowAfter()} className="px-2 py-1.5 rounded text-xs font-medium bg-gray-100 hover:bg-gray-200 transition-all disabled:opacity-30" title="Add Row">+ Row</button>
-                <button type="button" onClick={() => editor?.chain().focus().deleteRow().run()} disabled={!editor?.can().deleteRow()} className="px-2 py-1.5 rounded text-xs font-medium bg-gray-100 hover:bg-gray-200 transition-all disabled:opacity-30" title="Delete Row">- Row</button>
-                <button type="button" onClick={() => editor?.chain().focus().deleteTable().run()} disabled={!editor?.can().deleteTable()} className="px-2 py-1.5 rounded text-xs font-medium bg-red-100 hover:bg-red-200 transition-all disabled:opacity-30" title="Delete Table">🗑️</button>
+                <button type="button" onClick={() => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} className="px-3 py-1.5 rounded text-sm font-medium bg-gray-100 hover:bg-gray-200 transition-all" title="Insert Table">📊 <span className="hidden sm:inline">Table</span></button>
+                {editor?.isActive('table') && (
+                    <>
+                        <div className="w-px h-6 bg-blue-300 self-center mx-1"></div>
+                        <span className="self-center text-xs text-blue-600 font-semibold px-1">Table:</span>
+                        <button type="button" onClick={() => editor?.chain().focus().addColumnAfter().run()} className="px-2 py-1.5 rounded text-xs font-medium bg-blue-50 hover:bg-blue-100 text-blue-700 transition-all" title="Add Column After">+ Col</button>
+                        <button type="button" onClick={() => editor?.chain().focus().deleteColumn().run()} className="px-2 py-1.5 rounded text-xs font-medium bg-blue-50 hover:bg-blue-100 text-blue-700 transition-all" title="Delete Column">- Col</button>
+                        <button type="button" onClick={() => editor?.chain().focus().addRowAfter().run()} className="px-2 py-1.5 rounded text-xs font-medium bg-blue-50 hover:bg-blue-100 text-blue-700 transition-all" title="Add Row After">+ Row</button>
+                        <button type="button" onClick={() => editor?.chain().focus().deleteRow().run()} className="px-2 py-1.5 rounded text-xs font-medium bg-blue-50 hover:bg-blue-100 text-blue-700 transition-all" title="Delete Row">- Row</button>
+                        <button type="button" onClick={() => editor?.chain().focus().deleteTable().run()} className="px-2 py-1.5 rounded text-xs font-medium bg-red-100 hover:bg-red-200 text-red-700 transition-all" title="Delete Entire Table">🗑️ Table</button>
+                    </>
+                )}
                 <div className="w-px h-6 bg-gray-300 self-center mx-1"></div>
                 <button type="button" onClick={() => editor?.chain().focus().setTextAlign('left').run()} className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${editor?.isActive({ textAlign: 'left' }) ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 hover:bg-gray-200'}`} title="Align Left">⬅</button>
                 <button type="button" onClick={() => editor?.chain().focus().setTextAlign('center').run()} className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${editor?.isActive({ textAlign: 'center' }) ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 hover:bg-gray-200'}`} title="Align Center">↔</button>
@@ -242,6 +281,70 @@ function RichTextDescriptionEditor({
     )
 }
 
+function ShortDescriptionRichTextEditor({
+    label,
+    value,
+    onChange,
+    placeholder,
+}) {
+    const editor = useEditor({
+        extensions: [
+            StarterKit,
+            Link.configure({ openOnClick: false }),
+            Placeholder.configure({ placeholder })
+        ],
+        content: value || '',
+        immediatelyRender: false,
+        onUpdate: ({ editor: activeEditor }) => {
+            onChange(activeEditor.getHTML())
+        }
+    })
+
+    useEffect(() => {
+        if (!editor) return
+
+        const nextValue = value || ''
+        const currentValue = editor.getHTML()
+
+        if (nextValue && currentValue !== nextValue) {
+            editor.commands.setContent(nextValue)
+            return
+        }
+
+        if (!nextValue && currentValue !== '<p></p>') {
+            editor.commands.clearContent()
+        }
+    }, [value, editor])
+
+    return (
+        <div>
+            <label className="block text-sm font-medium mb-1 text-gray-700">{label}</label>
+            <div className="border border-gray-300 rounded-t bg-white p-2 flex flex-wrap gap-1.5 shadow-sm">
+                <button type="button" onClick={() => editor?.chain().focus().toggleBold().run()} className={`px-2.5 py-1 rounded text-xs font-medium transition-all ${editor?.isActive('bold') ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 hover:bg-gray-200'}`} title="Bold"><strong>B</strong></button>
+                <button type="button" onClick={() => editor?.chain().focus().toggleBulletList().run()} className={`px-2.5 py-1 rounded text-xs font-medium transition-all ${editor?.isActive('bulletList') ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 hover:bg-gray-200'}`} title="Bullet List">• List</button>
+                <button type="button" onClick={() => editor?.chain().focus().toggleOrderedList().run()} className={`px-2.5 py-1 rounded text-xs font-medium transition-all ${editor?.isActive('orderedList') ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 hover:bg-gray-200'}`} title="Numbered List">1. List</button>
+                <button
+                    type="button"
+                    onClick={() => {
+                        const url = prompt('Enter link URL:')
+                        if (!url) return
+                        editor?.chain().focus().extendMarkRange('link').setLink({ href: url }).run()
+                    }}
+                    className="px-2.5 py-1 rounded text-xs font-medium bg-gray-100 hover:bg-gray-200 transition-all"
+                    title="Add Link"
+                >
+                    🔗 Link
+                </button>
+            </div>
+            <EditorContent
+                editor={editor}
+                className="border border-t-0 border-gray-300 rounded-b bg-white p-3 min-h-[110px] max-h-[260px] overflow-y-auto prose prose-slate max-w-none focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 transition-all"
+            />
+            <p className="text-xs text-gray-500 mt-1">Use Enter for next line. Select text then click Link to add URL.</p>
+        </div>
+    )
+}
+
 export default function ProductForm({ product = null, onClose, onSubmitSuccess }) {
         // MISSING STATE HOOKS (add these at the top of ProductForm)
         const [dbCategories, setDbCategories] = useState([]);
@@ -252,9 +355,10 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
         const [isSlugManuallyEdited, setIsSlugManuallyEdited] = useState(false);
         const [images, setImages] = useState({ "1": null, "2": null, "3": null, "4": null, "5": null, "6": null, "7": null, "8": null });
         const [productInfo, setProductInfo] = useState({
-            name: '', nameAr: '', slug: '', brand: '', brandAr: '', shortDescription: '', shortDescriptionAr: '', description: '', descriptionAr: '', AED: '', price: '', category: '', sku: '', stockQuantity: 0, colors: [], sizes: [], fastDelivery: false, freeShippingEligible: false, allowReturn: true, allowReplacement: true, reviews: [], badges: [], imageAspectRatio: '1:1', tags: [], deliveredBy: '', soldBy: '', paymentInfo: ''
+            name: '', nameAr: '', slug: '', brand: '', brandAr: '', shortDescription: '', shortDescriptionAr: '', shortDescription2: '', specTableEnabled: false, specTableColumns: ['Property', 'Value'], specTableRows: [['', '']], description: '', descriptionAr: '', AED: '', price: '', category: '', sku: '', stockQuantity: 0, colors: [], sizes: [], fastDelivery: false, freeShippingEligible: false, allowReturn: true, allowReplacement: true, reviews: [], badges: [], imageAspectRatio: '1:1', tags: [], seoTitle: '', seoDescription: '', seoKeywords: [], deliveredBy: '', soldBy: '', paymentInfo: ''
         });
         const [tagInput, setTagInput] = useState('');
+        const [seoKeywordInput, setSeoKeywordInput] = useState('');
         const [loading, setLoading] = useState(false);
         const [reviewInput, setReviewInput] = useState({ name: '', rating: 5, comment: '', image: null });
         const aspectRatioOptions = ['1:1', '4:5', '3:4', '16:9'];
@@ -446,6 +550,18 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 brandAr: product.brandAr || "",
                 shortDescription: product.shortDescription || "",
                 shortDescriptionAr: product.shortDescriptionAr || "",
+                shortDescription2: product.shortDescription2 || product.attributes?.shortDescription2 || "",
+                specTableEnabled: Boolean(product.specTableEnabled ?? product.attributes?.specTableEnabled ?? false),
+                specTableColumns: Array.isArray(product.specTableColumns) && product.specTableColumns.length > 0
+                    ? product.specTableColumns
+                    : (Array.isArray(product.attributes?.specTableColumns) && product.attributes.specTableColumns.length > 0
+                        ? product.attributes.specTableColumns
+                        : ['Property', 'Value']),
+                specTableRows: Array.isArray(product.specTableRows) && product.specTableRows.length > 0
+                    ? product.specTableRows
+                    : (Array.isArray(product.attributes?.specRows) && product.attributes.specRows.length > 0
+                        ? product.attributes.specRows
+                        : [['', '']]),
                 description: product.description || "",
                 descriptionAr: product.descriptionAr || "",
                 AED: product.AED || "",
@@ -462,9 +578,13 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 reviews: product.reviews || [],
                 badges: product.attributes?.badges || [],
                 imageAspectRatio: product.imageAspectRatio || '1:1',
+                tags: Array.isArray(product.tags) ? product.tags : [],
+                seoTitle: product.seoTitle || '',
+                seoDescription: product.seoDescription || '',
+                seoKeywords: Array.isArray(product.seoKeywords) ? product.seoKeywords : [],
                 deliveredBy: product.attributes?.deliveredBy || '',
                 soldBy: product.attributes?.soldBy || '',
-                paymentInfo: product.attributes?.paymentInfo || ''
+                paymentInfo: product.attributes?.paymentInfo || '',
             })
             // Set selected categories from product data - debug and handle all cases
             console.log('Product data for categories:', { 
@@ -552,17 +672,25 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
     }
 
     const handleImageUpload = async (key, file) => {
-        if (!file?.type?.startsWith('image/')) {
-            toast.error('Please select a valid image file')
+        const mimeType = String(file?.type || '').toLowerCase()
+        const isImage = mimeType.startsWith('image/')
+        const isVideo = mimeType.startsWith('video/') || isVideoSource(file?.name)
+
+        if (!isImage && !isVideo) {
+            toast.error('Please select a valid image or video file')
             return
         }
-        if (file.size > 5 * 1024 * 1024) {
+        if (isImage && file.size > 5 * 1024 * 1024) {
             toast.error('Single image must be 5MB or smaller')
+            return
+        }
+        if (isVideo && file.size > 50 * 1024 * 1024) {
+            toast.error('Single video must be 50MB or smaller')
             return
         }
         // Create preview URL for the file
         const previewUrl = URL.createObjectURL(file)
-        setImages(prev => ({ ...prev, [key]: { file, preview: previewUrl } }))
+        setImages(prev => ({ ...prev, [key]: { file, preview: previewUrl, type: isVideo ? 'video' : 'image' } }))
     }
 
     const handleImageDelete = async (key) => {
@@ -602,7 +730,11 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
     }
 
     const variantImageOptions = Object.entries(images)
-        .filter(([, img]) => img && (img.preview || typeof img === 'string'))
+        .filter(([, img]) => {
+            if (!img || (!img.preview && typeof img !== 'string')) return false
+            if (typeof img === 'string') return !isVideoSource(img)
+            return img.type !== 'video'
+        })
         .map(([slot, img]) => ({
             slot,
             preview: img.preview || img,
@@ -625,6 +757,8 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
             Object.entries(productInfo).forEach(([key, value]) => {
                 if (["colors", "sizes"].includes(key)) {
                     formData.append(key, JSON.stringify(value))
+                } else if (["tags", "seoKeywords", "specTableColumns", "specTableRows"].includes(key)) {
+                    formData.append(key, JSON.stringify(value || []))
                 } else if (key === 'reviews') {
                     const cleanReviews = value.map(({ name, rating, comment }) => ({ name, rating, comment }))
                     formData.append('reviews', JSON.stringify(cleanReviews))
@@ -658,6 +792,10 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
             const attributes = {
                 brand: productInfo.brand,
                 shortDescription: productInfo.shortDescription,
+                shortDescription2: productInfo.shortDescription2 || '',
+                specTableEnabled: Boolean(productInfo.specTableEnabled),
+                specTableColumns: Array.isArray(productInfo.specTableColumns) ? productInfo.specTableColumns : ['Property', 'Value'],
+                specRows: Array.isArray(productInfo.specTableRows) ? productInfo.specTableRows : [],
                 badges: productInfo.badges || [],
                 deliveredBy: productInfo.deliveredBy,
                 soldBy: productInfo.soldBy,
@@ -912,6 +1050,142 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                     <input name="shortDescriptionAr" value={productInfo.shortDescriptionAr || ''} onChange={onChangeHandler} dir="rtl" className="w-full border rounded px-3 py-2" placeholder="وصف مختصر بالعربية" />
                 </div>
 
+                {/* 2nd Short Description + Spec Table Toggle */}
+                <div className="border border-blue-200 rounded-lg p-4 bg-blue-50 space-y-3">
+                    <div className="flex items-center justify-between">
+                        <p className="text-sm font-semibold text-blue-800">Product Spec Table</p>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={productInfo.specTableEnabled || false}
+                                onChange={(e) => setProductInfo(p => ({ ...p, specTableEnabled: e.target.checked }))}
+                                className="accent-blue-600 w-4 h-4"
+                            />
+                            <span className="text-sm font-medium text-blue-700">
+                                {productInfo.specTableEnabled ? '✅ Table Enabled' : 'Table Disabled'}
+                            </span>
+                        </label>
+                    </div>
+
+                    <p className="text-xs text-blue-600">Use this separate table section to add product specs like Brand, Item Volume, Dimensions, Features.</p>
+                    {productInfo.specTableEnabled ? (
+                        <div className="rounded-md border border-blue-300 bg-white p-3 space-y-3">
+                            <div className="flex flex-wrap gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setProductInfo((prev) => ({
+                                        ...prev,
+                                        specTableColumns: [...(prev.specTableColumns || []), `Column ${(prev.specTableColumns || []).length + 1}`],
+                                        specTableRows: (prev.specTableRows || []).map((row) => ([...(Array.isArray(row) ? row : []), '']))
+                                    }))}
+                                    className="px-3 py-1.5 rounded text-xs font-medium bg-blue-100 hover:bg-blue-200 text-blue-800"
+                                >
+                                    + Add Column
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setProductInfo((prev) => {
+                                        const colCount = Math.max((prev.specTableColumns || []).length, 1)
+                                        return {
+                                            ...prev,
+                                            specTableRows: [...(prev.specTableRows || []), Array(colCount).fill('')]
+                                        }
+                                    })}
+                                    className="px-3 py-1.5 rounded text-xs font-medium bg-blue-100 hover:bg-blue-200 text-blue-800"
+                                >
+                                    + Add Row
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setProductInfo((prev) => {
+                                        const nextColumns = (prev.specTableColumns || []).length > 1
+                                            ? prev.specTableColumns.slice(0, -1)
+                                            : prev.specTableColumns
+                                        const nextRows = (prev.specTableRows || []).map((row) => (
+                                            Array.isArray(row) && row.length > 1 ? row.slice(0, -1) : row
+                                        ))
+                                        return {
+                                            ...prev,
+                                            specTableColumns: nextColumns,
+                                            specTableRows: nextRows
+                                        }
+                                    })}
+                                    disabled={(productInfo.specTableColumns || []).length <= 1}
+                                    className="px-3 py-1.5 rounded text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-40"
+                                >
+                                    - Remove Last Column
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setProductInfo((prev) => ({
+                                        ...prev,
+                                        specTableRows: (prev.specTableRows || []).length > 1 ? prev.specTableRows.slice(0, -1) : prev.specTableRows
+                                    }))}
+                                    disabled={(productInfo.specTableRows || []).length <= 1}
+                                    className="px-3 py-1.5 rounded text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-40"
+                                >
+                                    - Remove Last Row
+                                </button>
+                            </div>
+
+                            <div className="overflow-x-auto rounded border border-slate-200">
+                                <table className="min-w-full text-sm">
+                                    <thead className="bg-slate-50">
+                                        <tr>
+                                            {(productInfo.specTableColumns || []).map((col, colIndex) => (
+                                                <th key={`spec-col-${colIndex}`} className="border-b border-slate-200 p-2 min-w-[180px]">
+                                                    <input
+                                                        type="text"
+                                                        value={col || ''}
+                                                        onChange={(e) => setProductInfo((prev) => {
+                                                            const nextColumns = [...(prev.specTableColumns || [])]
+                                                            nextColumns[colIndex] = e.target.value
+                                                            return { ...prev, specTableColumns: nextColumns }
+                                                        })}
+                                                        className="w-full rounded border border-slate-300 px-2 py-1 text-xs font-medium"
+                                                        placeholder={`Column ${colIndex + 1}`}
+                                                    />
+                                                </th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {(productInfo.specTableRows || []).map((row, rowIndex) => (
+                                            <tr key={`spec-row-${rowIndex}`} className="odd:bg-white even:bg-slate-50">
+                                                {(productInfo.specTableColumns || []).map((_, colIndex) => (
+                                                    <td key={`spec-cell-${rowIndex}-${colIndex}`} className="border-t border-slate-200 p-2 min-w-[180px]">
+                                                        <input
+                                                            type="text"
+                                                            value={Array.isArray(row) ? (row[colIndex] || '') : ''}
+                                                            onChange={(e) => setProductInfo((prev) => {
+                                                                const nextRows = [...(prev.specTableRows || [])]
+                                                                const targetRow = Array.isArray(nextRows[rowIndex]) ? [...nextRows[rowIndex]] : Array((prev.specTableColumns || []).length).fill('')
+                                                                targetRow[colIndex] = e.target.value
+                                                                nextRows[rowIndex] = targetRow
+                                                                return { ...prev, specTableRows: nextRows }
+                                                            })}
+                                                            className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                                                            placeholder={`Row ${rowIndex + 1}, Col ${colIndex + 1}`}
+                                                        />
+                                                    </td>
+                                                ))}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    ) : (
+                        <p className="text-xs text-slate-500">Enable this toggle to create a separate spec table section for this product.</p>
+                    )}
+                    <ShortDescriptionRichTextEditor
+                        label="2nd Short Description"
+                        value={productInfo.shortDescription2 || ''}
+                        onChange={(nextValue) => setProductInfo(prev => ({ ...prev, shortDescription2: nextValue }))}
+                        placeholder="Optional: add bold text, bullet points, and links for About this item"
+                    />
+                </div>
+
                 <RichTextDescriptionEditor
                     label="Description (Arabic)"
                     value={productInfo.descriptionAr || ''}
@@ -932,26 +1206,30 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                             value={tagInput}
                             onChange={(e) => setTagInput(e.target.value)}
                             onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
+                                if (e.key === 'Enter' || e.key === ',') {
                                     e.preventDefault();
-                                    const trimmedTag = tagInput.trim();
-                                    if (trimmedTag && !productInfo.tags.includes(trimmedTag)) {
-                                        setProductInfo(prev => ({ ...prev, tags: [...prev.tags, trimmedTag] }));
-                                        setTagInput('');
-                                    }
+                                    const nextTags = parseTagList(tagInput)
+                                    if (nextTags.length === 0) return
+                                    setProductInfo(prev => ({ ...prev, tags: appendUniqueTags(prev.tags || [], nextTags) }))
+                                    setTagInput('')
                                 }
                             }}
+                            onBlur={() => {
+                                const nextTags = parseTagList(tagInput)
+                                if (nextTags.length === 0) return
+                                setProductInfo(prev => ({ ...prev, tags: appendUniqueTags(prev.tags || [], nextTags) }))
+                                setTagInput('')
+                            }}
                             className="flex-1 border rounded px-3 py-2"
-                            placeholder="Type a tag and press Enter (e.g., organic, vegan, trending)"
+                            placeholder="Type tags. Press comma or Enter to add each tag"
                         />
                         <button
                             type="button"
                             onClick={() => {
-                                const trimmedTag = tagInput.trim();
-                                if (trimmedTag && !productInfo.tags.includes(trimmedTag)) {
-                                    setProductInfo(prev => ({ ...prev, tags: [...prev.tags, trimmedTag] }));
-                                    setTagInput('');
-                                }
+                                const nextTags = parseTagList(tagInput)
+                                if (nextTags.length === 0) return
+                                setProductInfo(prev => ({ ...prev, tags: appendUniqueTags(prev.tags || [], nextTags) }))
+                                setTagInput('')
                             }}
                             className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition"
                         >
@@ -977,7 +1255,112 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                             ))}
                         </div>
                     )}
-                    <p className="text-xs text-gray-500 mt-1">Add relevant tags to help customers find your product (e.g., organic, eco-friendly, bestseller)</p>
+                    <p className="text-xs text-gray-500 mt-1">Use comma or Enter to create each tag as a separate point (e.g., organic, eco-friendly, bestseller).</p>
+                </div>
+
+                {/* Product SEO */}
+                <div className="bg-emerald-50/60 rounded-xl p-4 border border-emerald-100">
+                    <h4 className="text-sm font-semibold text-emerald-800 mb-3">Product SEO</h4>
+                    <div className="space-y-3">
+                        <div>
+                            <label className="block text-sm font-medium mb-1">Meta Title</label>
+                            <input
+                                name="seoTitle"
+                                value={productInfo.seoTitle || ''}
+                                onChange={onChangeHandler}
+                                maxLength={120}
+                                className="w-full border rounded px-3 py-2"
+                                placeholder="SEO title for this product page"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium mb-1">Meta Description</label>
+                            <textarea
+                                name="seoDescription"
+                                value={productInfo.seoDescription || ''}
+                                onChange={onChangeHandler}
+                                maxLength={320}
+                                rows={3}
+                                className="w-full border rounded px-3 py-2"
+                                placeholder="SEO description for this product page"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium mb-1">Meta Keywords</label>
+                            <div className="flex gap-2 mb-2">
+                                <input
+                                    type="text"
+                                    value={seoKeywordInput}
+                                    onChange={(e) => setSeoKeywordInput(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' || e.key === ',') {
+                                            e.preventDefault()
+                                            const nextKeywords = parseTagList(seoKeywordInput)
+                                            if (nextKeywords.length === 0) return
+                                            setProductInfo((prev) => ({
+                                                ...prev,
+                                                seoKeywords: appendUniqueTags(prev.seoKeywords || [], nextKeywords),
+                                            }))
+                                            setSeoKeywordInput('')
+                                        }
+                                    }}
+                                    onBlur={() => {
+                                        const nextKeywords = parseTagList(seoKeywordInput)
+                                        if (nextKeywords.length === 0) return
+                                        setProductInfo((prev) => ({
+                                            ...prev,
+                                            seoKeywords: appendUniqueTags(prev.seoKeywords || [], nextKeywords),
+                                        }))
+                                        setSeoKeywordInput('')
+                                    }}
+                                    className="flex-1 border rounded px-3 py-2"
+                                    placeholder="Type keywords. Press comma or Enter"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const nextKeywords = parseTagList(seoKeywordInput)
+                                        if (nextKeywords.length === 0) return
+                                        setProductInfo((prev) => ({
+                                            ...prev,
+                                            seoKeywords: appendUniqueTags(prev.seoKeywords || [], nextKeywords),
+                                        }))
+                                        setSeoKeywordInput('')
+                                    }}
+                                    className="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 transition"
+                                >
+                                    Add
+                                </button>
+                            </div>
+
+                            {Array.isArray(productInfo.seoKeywords) && productInfo.seoKeywords.length > 0 && (
+                                <div className="flex flex-wrap gap-2">
+                                    {productInfo.seoKeywords.map((keyword, idx) => (
+                                        <span
+                                            key={`${keyword}-${idx}`}
+                                            className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-800"
+                                        >
+                                            {keyword}
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    setProductInfo((prev) => ({
+                                                        ...prev,
+                                                        seoKeywords: prev.seoKeywords.filter((_, i) => i !== idx),
+                                                    }))
+                                                }
+                                                className="font-bold text-emerald-700 hover:text-emerald-900"
+                                            >
+                                                ×
+                                            </button>
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
                 </div>
 
                 {/* Product Badges */}
@@ -1018,7 +1401,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
 
                 {/* Images */}
                 <div>
-                    <label className="block text-sm font-medium mb-2">Product Images (up to 8)</label>
+                    <label className="block text-sm font-medium mb-2">Product Media (images/videos, up to 8)</label>
                     <div className="flex flex-wrap items-center gap-2 mb-3 text-sm">
                         <span className="text-gray-700 font-medium">Image Aspect Ratio:</span>
                         {aspectRatioOptions.map((ratio) => (
@@ -1041,25 +1424,38 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                         {Object.keys(images).map((key) => {
                             const img = images[key]
                             const hasImage = img && (img.preview || typeof img === 'string')
+                            const mediaSrc = img?.preview || img
+                            const isVideo = Boolean(hasImage && ((typeof img === 'string' && isVideoSource(img)) || img?.type === 'video' || isVideoSource(mediaSrc)))
                             return (
                                 <div key={key} className="relative border rounded flex items-center justify-center h-32 cursor-pointer bg-gray-50 hover:bg-gray-100 overflow-hidden group">
                                     <label className="absolute inset-0 w-full h-full cursor-pointer">
-                                        <input type="file" accept="image/*" className="hidden" onChange={(e)=> e.target.files && handleImageUpload(key, e.target.files[0])} />
+                                        <input type="file" accept="image/*,video/*" className="hidden" onChange={(e)=> e.target.files && handleImageUpload(key, e.target.files[0])} />
                                         {hasImage ? (
                                             <>
-                                                <Image 
-                                                    src={img.preview || img} 
-                                                    alt={`Product ${key}`}
-                                                    fill
-                                                    className="object-cover"
-                                                />
+                                                {isVideo ? (
+                                                    <video
+                                                        src={mediaSrc}
+                                                        className="h-full w-full object-cover"
+                                                        muted
+                                                        loop
+                                                        autoPlay
+                                                        playsInline
+                                                    />
+                                                ) : (
+                                                    <Image 
+                                                        src={mediaSrc} 
+                                                        alt={`Product ${key}`}
+                                                        fill
+                                                        className="object-cover"
+                                                    />
+                                                )}
                                                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                                                     <span className="text-white text-sm">Change</span>
                                                 </div>
                                             </>
                                         ) : (
                                             <div className="text-center">
-                                                <span className="text-gray-400 text-sm">+ Image {key}</span>
+                                                <span className="text-gray-400 text-sm">+ Media {key}</span>
                                             </div>
                                         )}
                                     </label>

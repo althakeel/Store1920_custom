@@ -77,6 +77,7 @@ export async function GET(request) {
           to: customer.email,
           subject: personalizedSubject,
           html: htmlContent,
+          storeId: storeObjectId?.toString(),
           fromType: 'marketing',
           tags: [{ name: 'category', value: 'promotional' }],
           headers: {
@@ -244,6 +245,7 @@ export async function POST(request) {
           to: customer.email,
           subject: personalizedSubject,
           html: htmlContent,
+          storeId: storeObjectId?.toString(),
           fromType: 'marketing',
           tags: [{ name: 'category', value: 'promotional' }],
           headers: {

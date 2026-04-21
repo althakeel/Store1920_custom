@@ -12,7 +12,8 @@ export async function POST(request) {
             trackingId, 
             trackingUrl, 
             courier,
-            orderItems 
+            orderItems,
+            storeId,
         } = await request.json();
 
         if (!email || !orderId) {
@@ -126,6 +127,7 @@ export async function POST(request) {
                 to: email,
                 subject: emailSubject,
                 html: emailBody,
+                storeId: storeId || undefined,
             });
             return NextResponse.json({ 
                 success: true, 

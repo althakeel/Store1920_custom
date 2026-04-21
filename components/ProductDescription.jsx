@@ -39,6 +39,7 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
     const [visibleReviews] = useState(2)
     const [showAllReviewsModal, setShowAllReviewsModal] = useState(false)
     const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false)
+    const [isAboutExpanded, setIsAboutExpanded] = useState(false)
     const normalizedDescription = useMemo(() => normalizeImportedRichText(product?.description || ''), [product?.description])
 
     // Calculate rating distribution
@@ -176,6 +177,28 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
 
     const descriptionPlainText = normalizedDescription.replace(/<[^>]*>/g, '').trim()
     const shouldCollapseDescription = descriptionPlainText.length > 280
+    const specTableColumns = Array.isArray(product?.specTableColumns) && product.specTableColumns.length > 0
+        ? product.specTableColumns
+        : (Array.isArray(product?.attributes?.specTableColumns) && product.attributes.specTableColumns.length > 0
+            ? product.attributes.specTableColumns
+            : ['Property', 'Value'])
+    const specTableRows = Array.isArray(product?.specTableRows)
+        ? product.specTableRows
+            .filter((row) => Array.isArray(row) && row.some((cell) => String(cell || '').trim().length > 0))
+            .map((row) => Array.from({ length: specTableColumns.length }, (_, idx) => String(row[idx] || '').trim()))
+        : (Array.isArray(product?.attributes?.specRows)
+            ? product.attributes.specRows
+                .filter((row) => Array.isArray(row) && row.some((cell) => String(cell || '').trim().length > 0))
+                .map((row) => Array.from({ length: specTableColumns.length }, (_, idx) => String(row[idx] || '').trim()))
+            : [])
+    const showSpecTable = Boolean((product?.specTableEnabled ?? product?.attributes?.specTableEnabled) && specTableRows.length > 0)
+    const normalizedShortDescription2 = useMemo(
+        () => normalizeImportedRichText(product?.shortDescription2 || product?.attributes?.shortDescription2 || ''),
+        [product?.shortDescription2, product?.attributes?.shortDescription2]
+    )
+    const aboutPlainText = normalizedShortDescription2.replace(/<[^>]*>/g, '').trim()
+    const hasShortDescription2 = aboutPlainText.length > 0
+    const shouldCollapseAbout = aboutPlainText.length > 180
 
     useEffect(() => {
         if (!showSuggestedProducts) return
@@ -208,13 +231,68 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
     // Remove fetchReviews and handleReviewAdded, use parent handler
 
     return (
-        <div className="mt-6 flex flex-col gap-4 sm:gap-6">
+        <div className="mt-3 flex flex-col gap-2 sm:gap-3">
+
+            {showSpecTable && (
+                <div className="order-1 bg-white border-t border-gray-300 pt-4 sm:pt-5">
+                    <div className="overflow-x-auto">
+                        <table className="w-full border-separate border-spacing-0">
+                            <tbody>
+                                {specTableRows.map((row, rowIdx) => (
+                                    <tr key={`spec-row-${rowIdx}`} className="align-top">
+                                        {specTableColumns.map((_, colIdx) => (
+                                            <td
+                                                key={`spec-cell-${rowIdx}-${colIdx}`}
+                                                className={`px-3 py-2 text-[14px] leading-6 ${colIdx === 0 ? 'font-semibold text-gray-900 w-[260px]' : 'text-gray-800'} ${rowIdx !== specTableRows.length - 1 ? 'border-b border-gray-100' : ''}`}
+                                            >
+                                                {row[colIdx] || '-'}
+                                            </td>
+                                        ))}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+
+            {hasShortDescription2 && (
+                <div className="order-1 bg-white border-t border-gray-200 pt-4 sm:pt-5">
+                    <h2 className="text-[30px] leading-none font-semibold text-gray-900 mb-3">About this item</h2>
+                    <div className="relative">
+                        <div
+                        className={`max-w-none text-[16px] leading-7 text-gray-900
+                        [&_p]:mb-2
+                        [&_ul]:list-disc [&_ul]:list-outside [&_ul]:pl-5 [&_ul]:mb-2
+                        [&_ol]:list-decimal [&_ol]:list-outside [&_ol]:pl-5 [&_ol]:mb-2
+                        [&_a]:text-blue-600 [&_a]:underline
+                        ${shouldCollapseAbout && !isAboutExpanded ? 'overflow-hidden [display:-webkit-box] [-webkit-line-clamp:4] [-webkit-box-orient:vertical]' : ''}`}
+                        dangerouslySetInnerHTML={{ __html: normalizedShortDescription2 }}
+                        />
+
+                        {shouldCollapseAbout && !isAboutExpanded && (
+                            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-white to-transparent" />
+                        )}
+                    </div>
+
+                    {shouldCollapseAbout && (
+                        <div className="mt-2">
+                            <button
+                                onClick={() => setIsAboutExpanded((prev) => !prev)}
+                                className="text-[12px] text-gray-600 hover:text-gray-900 hover:underline"
+                            >
+                                {isAboutExpanded ? 'View less' : 'View more'}
+                            </button>
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* Product Description Section */}
-            <div className="order-2 bg-white">
-                <div className="flex items-center justify-between mb-3">
-                    <h2 className="text-[28px] leading-none font-semibold text-gray-900">Product details</h2>
-                    <div className="hidden sm:flex items-center gap-2 text-[20px] text-gray-800">
+            <div className="order-2 bg-white border-t border-gray-200 pt-4">
+                <div className="flex items-center justify-between mb-2">
+                    <h2 className="text-[18px] leading-none font-semibold text-gray-900">Product details</h2>
+                    <div className="hidden sm:flex items-center gap-2 text-[13px] text-gray-800">
                         <button className="hover:underline">Save</button>
                         <span>|</span>
                         <button className="hover:underline">Report this item</button>
@@ -223,17 +301,17 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
 
                 <div className="relative">
                     <div
-                        className={`max-w-none text-[21px] leading-[1.7] text-gray-900
-                        [&_h1]:text-[26px] [&_h1]:font-semibold [&_h1]:mb-3
-                        [&_h2]:text-[24px] [&_h2]:font-semibold [&_h2]:mb-3
-                        [&_h3]:text-[22px] [&_h3]:font-semibold [&_h3]:mb-2
-                        [&_p]:mb-3
-                        [&_ul]:list-disc [&_ul]:list-inside [&_ul]:mb-3
-                        [&_ol]:list-decimal [&_ol]:list-inside [&_ol]:mb-3
+                        className={`max-w-none text-[14px] leading-[1.5] text-gray-900
+                        [&_h1]:text-[16px] [&_h1]:font-semibold [&_h1]:mb-2
+                        [&_h2]:text-[15px] [&_h2]:font-semibold [&_h2]:mb-2
+                        [&_h3]:text-[14px] [&_h3]:font-semibold [&_h3]:mb-1.5
+                        [&_p]:mb-2
+                        [&_ul]:list-disc [&_ul]:list-outside [&_ul]:pl-5 [&_ul]:mb-2
+                        [&_ol]:list-decimal [&_ol]:list-outside [&_ol]:pl-5 [&_ol]:mb-2
+                        [&_li_p]:mb-0 [&_li_p]:inline
                         [&_img]:max-w-full [&_img]:h-auto [&_img]:my-4
                         [&_video]:max-w-full [&_video]:w-full [&_video]:h-auto [&_video]:my-4
-                        [&_br]:block
-                        ${shouldCollapseDescription && !isDescriptionExpanded ? 'max-h-[220px] overflow-hidden' : ''}`}
+                        ${shouldCollapseDescription && !isDescriptionExpanded ? 'overflow-hidden [display:-webkit-box] [-webkit-line-clamp:6] [-webkit-box-orient:vertical]' : ''}`}
                         dangerouslySetInnerHTML={{ __html: normalizedDescription }}
                     />
 
@@ -246,83 +324,13 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
                     <div className="mt-3 text-center">
                         <button
                             onClick={() => setIsDescriptionExpanded((prev) => !prev)}
-                            className="inline-flex items-center gap-1 text-[20px] text-gray-800 hover:text-gray-900"
+                            className="inline-flex items-center gap-1 text-[13px] text-gray-800 hover:text-gray-900"
                         >
                             {isDescriptionExpanded ? 'See less' : 'See more'}
                             {isDescriptionExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                         </button>
                     </div>
                 )}
-            </div>
-
-            {/* Reviews Section */}
-            <div id="reviews" className="order-1 bg-transparent">
-                <div className="px-1 sm:px-0 py-2">
-                    {loadingReviews ? (
-                        <div className="flex justify-center py-8">
-                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
-                        </div>
-                    ) : reviews.length === 0 ? (
-                        <>
-                            <div className="border-b border-gray-200 pb-4 mb-5">
-                                <h2 className="text-lg font-semibold text-gray-900">Ratings &amp; Reviews</h2>
-                            </div>
-                            <div className="text-center py-10 bg-gray-50 rounded-xl">
-                                <p className="text-gray-500">No reviews yet. Be the first to review!</p>
-                            </div>
-                        </>
-                    ) : (
-                        <>
-                            <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 border-b border-gray-300 pb-3">
-                                <div className="flex items-center gap-2 text-gray-900 whitespace-nowrap">
-                                    <span className="text-xl sm:text-2xl leading-none font-semibold">{reviews.length.toLocaleString()} reviews</span>
-                                    <span className="text-gray-400">|</span>
-                                    <span className="text-xl sm:text-2xl leading-none font-semibold">{averageRating}</span>
-                                    <div className="flex items-center gap-0.5">
-                                        {Array(5).fill('').map((_, i) => (
-                                            <StarIcon
-                                                key={i}
-                                                size={18}
-                                                className="text-transparent"
-                                                fill={i < Math.round(averageRating) ? '#111827' : '#D1D5DB'}
-                                            />
-                                        ))}
-                                    </div>
-                                </div>
-                                <button
-                                    onClick={() => setShowVerifiedInfo(true)}
-                                    className="inline-flex items-center gap-2 rounded-sm bg-green-50 px-2.5 py-1 text-xs font-semibold text-green-700 hover:bg-green-100 transition whitespace-nowrap"
-                                >
-                                    <span className="inline-flex h-4 w-4 items-center justify-center rounded-sm bg-green-600 text-white text-[11px]">✓</span>
-                                    <span>All reviews are from verified purchases</span>
-                                </button>
-                            </div>
-
-                            <div className="mt-4 flex flex-wrap gap-3">
-                                {reviewKeywordPills.map((pill) => (
-                                    <span key={pill.label} className="rounded-full border border-gray-300 px-4 py-1.5 text-sm text-gray-800">
-                                        {pill.label}({pill.count})
-                                    </span>
-                                ))}
-                            </div>
-
-                            <div className="mt-5 space-y-7">
-                                {reviews.slice(0, visibleReviews).map((item, idx) => renderReviewItem(item, idx))}
-                            </div>
-
-                            {reviews.length > visibleReviews && (
-                                <div className="pt-8 text-center">
-                                    <button
-                                        onClick={() => setShowAllReviewsModal(true)}
-                                        className="min-w-[190px] rounded-full border border-gray-500 px-8 py-3 text-base font-medium text-gray-900 hover:bg-gray-50 transition"
-                                    >
-                                        See all reviews
-                                    </button>
-                                </div>
-                            )}
-                        </>
-                    )}
-                </div>
             </div>
 
             {/* Suggested Products Section */}

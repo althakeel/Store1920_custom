@@ -3,20 +3,48 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/useAuth";
 import axios from "axios";
 
+const SIDEBAR_ACCESS_COMPONENTS = [
+    { id: 'dashboard', label: 'Dashboard', icon: '🏠', href: '/store' },
+    { id: 'categories', label: 'Categories', icon: '📂', href: '/store/categories' },
+    { id: 'addProduct', label: 'Add Product', icon: '➕', href: '/store/add-product' },
+    { id: 'manageProduct', label: 'Manage Product', icon: '🧾', href: '/store/manage-product' },
+    { id: 'databaseImport', label: 'Database Import', icon: '🗄️', href: '/store/settings/database-import' },
+    { id: 'customize', label: 'Customize', icon: '🎨', href: '/store/customize' },
+    { id: 'promotionalOffers', label: 'Promotional Offers', icon: '🎁', href: '/store/personalized-offers' },
+    { id: 'media', label: 'Media', icon: '🖼️', href: '/store/media' },
+    { id: 'abandonedCheckout', label: 'Abandoned Checkout', icon: '🛒', href: '/store/abandoned-checkout' },
+    { id: 'coupons', label: 'Coupons', icon: '🏷️', href: '/store/coupons' },
+    { id: 'shipping', label: 'Shipping', icon: '🚚', href: '/store/shipping' },
+    { id: 'customers', label: 'Customers', icon: '👥', href: '/store/customers' },
+    { id: 'manageUsers', label: 'Manage Users', icon: '👤', href: '/store/settings/users' },
+    { id: 'orders', label: 'Orders', icon: '📦', href: '/store/orders' },
+    { id: 'balance', label: 'Balance', icon: '💰', href: '/store/balance' },
+    { id: 'salesReport', label: 'Sales Report', icon: '📊', href: '/store/sales-report' },
+    { id: 'marketingExpenses', label: 'Marketing Expenses', icon: '📉', href: '/store/marketing-expenses' },
+    { id: 'returnRequests', label: 'Return Requests', icon: '↩️', href: '/store/return-requests' },
+    { id: 'reviews', label: 'Reviews', icon: '⭐', href: '/store/reviews' },
+    { id: 'supportTickets', label: 'Support Tickets', icon: '🎫', href: '/store/tickets' },
+    { id: 'contactMessages', label: 'Contact Messages', icon: '✉️', href: '/store#contact-messages' },
+    { id: 'productNotifications', label: 'Product Notifications', icon: '🔔', href: '/store/product-notifications' },
+    { id: 'promotionalEmails', label: 'Promotional Emails', icon: '📧', href: '/store/promotional-emails' },
+    { id: 'adsTracking', label: 'Ad Tracking', icon: '📈', href: '/store/ads-tracking' },
+]
+
+const getDefaultPermissions = () => {
+    const defaults = {}
+    SIDEBAR_ACCESS_COMPONENTS.forEach((component) => {
+        defaults[component.id] = true
+    })
+    return defaults
+}
+
 export default function SettingsPage() {
     const { user, getToken } = useAuth();
     const [activeTab, setActiveTab] = useState("profile");
     const [inviteOpen, setInviteOpen] = useState(false);
     const [inviteEmail, setInviteEmail] = useState("");
     const [inviteStatus, setInviteStatus] = useState("");
-    const [invitePermissions, setInvitePermissions] = useState({
-        overview: true,
-        catalog: true,
-        orders: true,
-        customers: true,
-        marketing: true,
-        storefront: true
-    });
+    const [invitePermissions, setInvitePermissions] = useState(getDefaultPermissions());
     
     // Profile fields
     const [name, setName] = useState("");
@@ -42,16 +70,11 @@ export default function SettingsPage() {
     const [teamMembers, setTeamMembers] = useState([]);
     const [memberPermissions, setMemberPermissions] = useState({});
     
-    const dashboardComponents = [
-        { id: 'overview', label: 'Overview', icon: '📊' },
-        { id: 'catalog', label: 'Catalog', icon: '📁' },
-        { id: 'orders', label: 'Orders', icon: '📋' },
-        { id: 'customers', label: 'Customers', icon: '👥' },
-        { id: 'marketing', label: 'Marketing', icon: '📢' },
-        { id: 'storefront', label: 'Storefront', icon: '✨' },
-    ];
+    const dashboardComponents = SIDEBAR_ACCESS_COMPONENTS;
     const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
     const [currencyPreference, setCurrencyPreference] = useState("INR");
+    const [transactionalSmtp, setTransactionalSmtp] = useState({ host: '', port: 465, user: '', pass: '', secure: true, fromEmail: '', fromName: '' });
+    const [promotionalSmtp, setPromotionalSmtp] = useState({ host: '', port: 465, user: '', pass: '', secure: true, fromEmail: '', fromName: '' });
     
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState("");
@@ -63,6 +86,58 @@ export default function SettingsPage() {
         setEmail(user?.email || "");
         setImage(user?.photoURL || user?.image || "");
     }, [user]);
+
+    useEffect(() => {
+        const loadSettings = async () => {
+            try {
+                const token = await getToken();
+                if (!token) return;
+                const res = await axios.get('/api/store/profile/update', {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+
+                const profile = res.data?.profile || {};
+                const store = res.data?.store || {};
+                const smtp = res.data?.smtpSettings || {};
+
+                if (profile.name) setName(profile.name);
+                if (profile.email) setEmail(profile.email);
+                if (profile.image) setImage(profile.image);
+
+                setStoreName(store.storeName || '');
+                setStorePhone(store.storePhone || '');
+                setStoreWebsite(store.storeWebsite || '');
+                setStoreAddress(store.storeAddress || '');
+                setStoreDescription(store.storeDescription || '');
+
+                setTransactionalSmtp({
+                    host: smtp?.transactional?.host || '',
+                    port: Number(smtp?.transactional?.port || 465),
+                    user: smtp?.transactional?.user || '',
+                    pass: smtp?.transactional?.pass || '',
+                    secure: typeof smtp?.transactional?.secure === 'boolean' ? smtp.transactional.secure : true,
+                    fromEmail: smtp?.transactional?.fromEmail || '',
+                    fromName: smtp?.transactional?.fromName || '',
+                });
+
+                setPromotionalSmtp({
+                    host: smtp?.promotional?.host || '',
+                    port: Number(smtp?.promotional?.port || 465),
+                    user: smtp?.promotional?.user || '',
+                    pass: smtp?.promotional?.pass || '',
+                    secure: typeof smtp?.promotional?.secure === 'boolean' ? smtp.promotional.secure : true,
+                    fromEmail: smtp?.promotional?.fromEmail || '',
+                    fromName: smtp?.promotional?.fromName || '',
+                });
+            } catch {
+                // Keep UI usable even if settings preload fails.
+            }
+        };
+
+        if (user) {
+            loadSettings();
+        }
+    }, [user, getToken]);
     
     // Fetch team members when Dashboard Access tab is active
     useEffect(() => {
@@ -79,13 +154,9 @@ export default function SettingsPage() {
                     // Initialize permissions for each member
                     const permissions = {};
                     res.data.users?.forEach(member => {
-                        permissions[member.id] = member.permissions || {
-                            overview: true,
-                            catalog: true,
-                            orders: true,
-                            customers: true,
-                            marketing: true,
-                            storefront: true
+                        permissions[member.id] = {
+                            ...getDefaultPermissions(),
+                            ...(member.permissions || {}),
                         };
                     });
                     setMemberPermissions(permissions);
@@ -139,7 +210,27 @@ export default function SettingsPage() {
                 businessType,
                 emailNotifications,
                 twoFactorEnabled,
-                currencyPreference
+                currencyPreference,
+                smtpSettings: {
+                    transactional: {
+                        host: transactionalSmtp.host,
+                        port: Number(transactionalSmtp.port || 465),
+                        user: transactionalSmtp.user,
+                        pass: transactionalSmtp.pass,
+                        secure: Boolean(transactionalSmtp.secure),
+                        fromEmail: transactionalSmtp.fromEmail,
+                        fromName: transactionalSmtp.fromName,
+                    },
+                    promotional: {
+                        host: promotionalSmtp.host,
+                        port: Number(promotionalSmtp.port || 465),
+                        user: promotionalSmtp.user,
+                        pass: promotionalSmtp.pass,
+                        secure: Boolean(promotionalSmtp.secure),
+                        fromEmail: promotionalSmtp.fromEmail,
+                        fromName: promotionalSmtp.fromName,
+                    }
+                }
             };
             
             await axios.post("/api/store/profile/update", dataToSave, {
@@ -336,6 +427,79 @@ export default function SettingsPage() {
                                 </p>
                                 <p className="text-xs text-blue-700 mt-1">Last login: Today at 2:30 PM</p>
                             </div>
+
+                            <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
+                                <h3 className="font-semibold text-slate-900">SMTP Email Settings</h3>
+                                <p className="text-xs text-slate-600">Configure separate SMTP settings for no-reply (transactional) and promotional emails.</p>
+
+                                <div className="rounded-lg border border-slate-200 p-3 space-y-3">
+                                    <h4 className="text-sm font-semibold text-slate-800">No-Reply / Transactional SMTP</h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <label className="flex flex-col gap-1.5">
+                                            <span className="text-sm text-slate-700">SMTP Host</span>
+                                            <input type="text" value={transactionalSmtp.host} onChange={e => setTransactionalSmtp(prev => ({ ...prev, host: e.target.value }))} className="border border-slate-300 p-2.5 rounded-lg" placeholder="smtp.hostinger.com" />
+                                        </label>
+                                        <label className="flex flex-col gap-1.5">
+                                            <span className="text-sm text-slate-700">SMTP Port</span>
+                                            <input type="number" value={transactionalSmtp.port} onChange={e => setTransactionalSmtp(prev => ({ ...prev, port: Number(e.target.value || 465) }))} className="border border-slate-300 p-2.5 rounded-lg" placeholder="465" />
+                                        </label>
+                                        <label className="flex flex-col gap-1.5">
+                                            <span className="text-sm text-slate-700">SMTP User</span>
+                                            <input type="text" value={transactionalSmtp.user} onChange={e => setTransactionalSmtp(prev => ({ ...prev, user: e.target.value }))} className="border border-slate-300 p-2.5 rounded-lg" placeholder="noreply@yourdomain.com" />
+                                        </label>
+                                        <label className="flex flex-col gap-1.5">
+                                            <span className="text-sm text-slate-700">SMTP Password</span>
+                                            <input type="password" value={transactionalSmtp.pass} onChange={e => setTransactionalSmtp(prev => ({ ...prev, pass: e.target.value }))} className="border border-slate-300 p-2.5 rounded-lg" placeholder="Enter SMTP password" />
+                                        </label>
+                                        <label className="flex flex-col gap-1.5">
+                                            <span className="text-sm text-slate-700">From Email</span>
+                                            <input type="email" value={transactionalSmtp.fromEmail} onChange={e => setTransactionalSmtp(prev => ({ ...prev, fromEmail: e.target.value }))} className="border border-slate-300 p-2.5 rounded-lg" placeholder="noreply@yourdomain.com" />
+                                        </label>
+                                        <label className="flex flex-col gap-1.5">
+                                            <span className="text-sm text-slate-700">From Name</span>
+                                            <input type="text" value={transactionalSmtp.fromName} onChange={e => setTransactionalSmtp(prev => ({ ...prev, fromName: e.target.value }))} className="border border-slate-300 p-2.5 rounded-lg" placeholder="Store1920" />
+                                        </label>
+                                    </div>
+                                    <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                                        <input type="checkbox" checked={transactionalSmtp.secure} onChange={e => setTransactionalSmtp(prev => ({ ...prev, secure: e.target.checked }))} className="w-4 h-4" />
+                                        Use secure TLS/SSL
+                                    </label>
+                                </div>
+
+                                <div className="rounded-lg border border-slate-200 p-3 space-y-3">
+                                    <h4 className="text-sm font-semibold text-slate-800">Promotional SMTP</h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <label className="flex flex-col gap-1.5">
+                                            <span className="text-sm text-slate-700">SMTP Host</span>
+                                            <input type="text" value={promotionalSmtp.host} onChange={e => setPromotionalSmtp(prev => ({ ...prev, host: e.target.value }))} className="border border-slate-300 p-2.5 rounded-lg" placeholder="smtp.hostinger.com" />
+                                        </label>
+                                        <label className="flex flex-col gap-1.5">
+                                            <span className="text-sm text-slate-700">SMTP Port</span>
+                                            <input type="number" value={promotionalSmtp.port} onChange={e => setPromotionalSmtp(prev => ({ ...prev, port: Number(e.target.value || 465) }))} className="border border-slate-300 p-2.5 rounded-lg" placeholder="465" />
+                                        </label>
+                                        <label className="flex flex-col gap-1.5">
+                                            <span className="text-sm text-slate-700">SMTP User</span>
+                                            <input type="text" value={promotionalSmtp.user} onChange={e => setPromotionalSmtp(prev => ({ ...prev, user: e.target.value }))} className="border border-slate-300 p-2.5 rounded-lg" placeholder="marketing@yourdomain.com" />
+                                        </label>
+                                        <label className="flex flex-col gap-1.5">
+                                            <span className="text-sm text-slate-700">SMTP Password</span>
+                                            <input type="password" value={promotionalSmtp.pass} onChange={e => setPromotionalSmtp(prev => ({ ...prev, pass: e.target.value }))} className="border border-slate-300 p-2.5 rounded-lg" placeholder="Enter SMTP password" />
+                                        </label>
+                                        <label className="flex flex-col gap-1.5">
+                                            <span className="text-sm text-slate-700">From Email</span>
+                                            <input type="email" value={promotionalSmtp.fromEmail} onChange={e => setPromotionalSmtp(prev => ({ ...prev, fromEmail: e.target.value }))} className="border border-slate-300 p-2.5 rounded-lg" placeholder="marketing@yourdomain.com" />
+                                        </label>
+                                        <label className="flex flex-col gap-1.5">
+                                            <span className="text-sm text-slate-700">From Name</span>
+                                            <input type="text" value={promotionalSmtp.fromName} onChange={e => setPromotionalSmtp(prev => ({ ...prev, fromName: e.target.value }))} className="border border-slate-300 p-2.5 rounded-lg" placeholder="Store1920 Marketing" />
+                                        </label>
+                                    </div>
+                                    <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                                        <input type="checkbox" checked={promotionalSmtp.secure} onChange={e => setPromotionalSmtp(prev => ({ ...prev, secure: e.target.checked }))} className="w-4 h-4" />
+                                        Use secure TLS/SSL
+                                    </label>
+                                </div>
+                            </div>
                         </div>
                     )}
                     
@@ -374,7 +538,7 @@ export default function SettingsPage() {
                                                 </div>
                                                 
                                                 {/* Component Permissions */}
-                                                <div className="grid grid-cols-2 gap-2">
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                                                     {dashboardComponents.map(component => (
                                                         <label key={component.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-50 cursor-pointer">
                                                             <input 
@@ -391,8 +555,9 @@ export default function SettingsPage() {
                                                                 }}
                                                                 className="w-4 h-4"
                                                             />
-                                                            <span className="text-sm">
-                                                                {component.icon} {component.label}
+                                                            <span className="text-sm leading-tight">
+                                                                <span className="block">{component.icon} {component.label}</span>
+                                                                <span className="block text-[11px] text-slate-500">{component.href}</span>
                                                             </span>
                                                         </label>
                                                     ))}
@@ -429,7 +594,7 @@ export default function SettingsPage() {
                                 <h3 className="font-semibold text-slate-900 mb-3">Default Permissions for New Team Members</h3>
                                 <p className="text-xs text-slate-600 mb-3">Select which components new invited users will have access to by default:</p>
                                 
-                                <div className="grid grid-cols-2 gap-3 bg-slate-50 p-4 rounded-lg">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-slate-50 p-4 rounded-lg">
                                     {dashboardComponents.map(component => (
                                         <label key={component.id} className="flex items-center gap-2 cursor-pointer">
                                             <input 
@@ -443,8 +608,9 @@ export default function SettingsPage() {
                                                 }}
                                                 className="w-4 h-4"
                                             />
-                                            <span className="text-sm">
-                                                {component.icon} {component.label}
+                                            <span className="text-sm leading-tight">
+                                                <span className="block">{component.icon} {component.label}</span>
+                                                <span className="block text-[11px] text-slate-500">{component.href}</span>
                                             </span>
                                         </label>
                                     ))}
@@ -533,7 +699,7 @@ export default function SettingsPage() {
                             
                             <div>
                                 <p className="font-medium text-slate-700 text-sm mb-2">Dashboard Access Permissions:</p>
-                                <div className="grid grid-cols-2 gap-2 bg-white p-3 rounded-lg border border-slate-200">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 bg-white p-3 rounded-lg border border-slate-200">
                                     {dashboardComponents.map(component => (
                                         <label key={component.id} className="flex items-center gap-2 cursor-pointer">
                                             <input 
@@ -547,8 +713,9 @@ export default function SettingsPage() {
                                                 }}
                                                 className="w-4 h-4"
                                             />
-                                            <span className="text-xs">
-                                                {component.icon} {component.label}
+                                            <span className="text-xs leading-tight">
+                                                <span className="block">{component.icon} {component.label}</span>
+                                                <span className="block text-[10px] text-slate-500">{component.href}</span>
                                             </span>
                                         </label>
                                     ))}

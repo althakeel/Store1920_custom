@@ -210,7 +210,7 @@ export default function Cart() {
             try {
                 const token = await getToken();
                 if (token) {
-                    await axios.delete('/api/cart', {
+                    await axios.delete(`/api/cart?productId=${encodeURIComponent(key)}`, {
                         headers: { Authorization: `Bearer ${token}` },
                         data: { productId: key },
                     });

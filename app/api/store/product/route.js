@@ -9,16 +9,82 @@ import { getAuth } from '@/lib/firebase-admin';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-// Helper: Upload images to ImageKit
-const uploadImages = async (images) => {
+const parseCsvOrJsonList = (value) => {
+    if (value == null) return [];
+
+    if (Array.isArray(value)) {
+        return Array.from(new Set(value.map((item) => String(item || '').trim()).filter(Boolean)));
+    }
+
+    const raw = String(value || '').trim();
+    if (!raw) return [];
+
+    try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+            return Array.from(new Set(parsed.map((item) => String(item || '').trim()).filter(Boolean)));
+        }
+    } catch {}
+
+    return Array.from(new Set(raw.split(',').map((item) => item.trim()).filter(Boolean)));
+};
+
+const parseSpecTableColumns = (value) => {
+    if (value == null) return ['Property', 'Value'];
+    try {
+        const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+        if (Array.isArray(parsed)) {
+            const normalized = parsed.map((item) => String(item || '').trim()).filter(Boolean);
+            return normalized.length > 0 ? normalized : ['Property', 'Value'];
+        }
+    } catch {}
+    return ['Property', 'Value'];
+};
+
+const parseSpecTableRows = (value, columnCount) => {
+    if (value == null) return [];
+    try {
+        const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+        if (!Array.isArray(parsed)) return [];
+
+        return parsed
+            .map((row) => {
+                if (Array.isArray(row)) {
+                    const next = Array.from({ length: columnCount }, (_, idx) => String(row[idx] || '').trim());
+                    return next;
+                }
+                return null;
+            })
+            .filter((row) => Array.isArray(row) && row.some((cell) => cell.length > 0));
+    } catch {
+        return [];
+    }
+};
+
+const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.ogg', '.mov', '.m4v', '.avi', '.mkv']
+
+const isVideoFile = (file) => {
+    const mime = String(file?.type || '').toLowerCase()
+    if (mime.startsWith('video/')) return true
+    const fileName = String(file?.name || '').toLowerCase()
+    return VIDEO_EXTENSIONS.some((ext) => fileName.endsWith(ext))
+}
+
+// Helper: Upload media (images/videos) to ImageKit
+const uploadMedia = async (files) => {
     return Promise.all(
-        images.map(async (image) => {
-            const buffer = Buffer.from(await image.arrayBuffer());
+        files.map(async (file) => {
+            const buffer = Buffer.from(await file.arrayBuffer());
             const response = await imagekit.upload({
                 file: buffer,
-                fileName: image.name,
+                fileName: file.name,
                 folder: "products"
             });
+
+            if (isVideoFile(file)) {
+                return response.url
+            }
+
             return imagekit.url({
                 path: response.filePath,
                 transformation: [
@@ -89,6 +155,10 @@ export async function POST(request) {
         const brandAr = formData.get("brandAr") || '';
         const shortDescriptionRaw = formData.get("shortDescription");
         const shortDescriptionArRaw = formData.get("shortDescriptionAr");
+        const shortDescription2Raw = formData.get("shortDescription2") || '';
+        const specTableEnabled = String(formData.get("specTableEnabled") || "false").toLowerCase() === "true";
+        const specTableColumnsRaw = formData.get("specTableColumns");
+        const specTableRowsRaw = formData.get("specTableRows");
         const images = formData.getAll("images");
         const stockQuantity = formData.get("stockQuantity") ? Number(formData.get("stockQuantity")) : 0;
         // New: variants support
@@ -99,6 +169,10 @@ export async function POST(request) {
         const fastDelivery = String(formData.get("fastDelivery") || "false").toLowerCase() === "true";
         const freeShippingEligible = String(formData.get("freeShippingEligible") || "false").toLowerCase() === "true";
         const imageAspectRatio = formData.get("imageAspectRatio") || "1:1";
+        const tags = parseCsvOrJsonList(formData.get("tags"));
+        const seoKeywords = parseCsvOrJsonList(formData.get("seoKeywords"));
+        const seoTitle = (formData.get("seoTitle") || '').toString().trim();
+        const seoDescription = (formData.get("seoDescription") || '').toString().trim();
 
         // Base pricing (used when no variants)
         const AED = Number(formData.get("AED"));
@@ -191,7 +265,7 @@ export async function POST(request) {
         const filesToUpload = images.filter(img => typeof img !== 'string');
         const urls = images.filter(img => typeof img === 'string');
         if (filesToUpload.length > 0) {
-            const uploaded = await uploadImages(filesToUpload);
+            const uploaded = await uploadMedia(filesToUpload);
             imagesUrl = [...urls, ...uploaded];
         } else {
             imagesUrl = urls;
@@ -221,6 +295,9 @@ export async function POST(request) {
         console.log('DEBUG: categories isArray?', Array.isArray(categories));
         console.log('DEBUG: categories length:', categories.length);
         console.log('DEBUG: categories JSON:', JSON.stringify(categories));
+
+        const specTableColumns = parseSpecTableColumns(specTableColumnsRaw);
+        const specTableRows = parseSpecTableRows(specTableRowsRaw, specTableColumns.length);
         
         const product = await Product.create({
             name,
@@ -232,6 +309,10 @@ export async function POST(request) {
             descriptionAr,
             shortDescription,
             shortDescriptionAr,
+            shortDescription2: shortDescription2Raw,
+            specTableEnabled,
+            specTableColumns,
+            specTableRows,
             AED: finalAED,
             price: finalPrice,
             category: categories[0], // Keep first category for backward compatibility
@@ -245,6 +326,10 @@ export async function POST(request) {
             fastDelivery,
             freeShippingEligible,
             imageAspectRatio,
+            tags,
+            seoTitle,
+            seoDescription,
+            seoKeywords,
             stockQuantity,
             storeId,
         });
@@ -376,6 +461,10 @@ export async function PUT(request) {
         const brandAr = formData.get("brandAr") || undefined;
         const shortDescriptionRaw = formData.get("shortDescription");
         const shortDescriptionArRaw = formData.get("shortDescriptionAr");
+        const shortDescription2Raw = formData.get("shortDescription2");
+        const specTableEnabledRaw = formData.get("specTableEnabled");
+        const specTableColumnsRaw = formData.get("specTableColumns");
+        const specTableRowsRaw = formData.get("specTableRows");
         const images = formData.getAll("images");
         const stockQuantity = formData.get("stockQuantity") ? Number(formData.get("stockQuantity")) : undefined;
         // Variants support
@@ -387,6 +476,10 @@ export async function PUT(request) {
         const fastDelivery = String(formData.get("fastDelivery") || "").toLowerCase() === "true";
         const freeShippingEligible = String(formData.get("freeShippingEligible") || "").toLowerCase() === "true";
         const imageAspectRatioRaw = formData.get("imageAspectRatio");
+        const tags = parseCsvOrJsonList(formData.get("tags"));
+        const seoKeywords = parseCsvOrJsonList(formData.get("seoKeywords"));
+        const seoTitle = (formData.get("seoTitle") || '').toString().trim();
+        const seoDescription = (formData.get("seoDescription") || '').toString().trim();
         let slug = formData.get("slug")?.toString().trim() || "";
         if (slug) {
             slug = slug.toLowerCase().replace(/[^a-z0-9-]+/g, '-');
@@ -402,7 +495,7 @@ export async function PUT(request) {
         let product;
         try {
                         product = await Product.findById(productId)
-                            .select('_id storeId name slug price AED images description variants attributes inStock shortDescription imageAspectRatio categories category hasVariants freeShippingEligible fastDelivery stockQuantity sku')
+                            .select('_id storeId name slug price AED images description variants attributes inStock shortDescription shortDescriptionAr shortDescription2 specTableEnabled specTableColumns specTableRows imageAspectRatio categories category hasVariants freeShippingEligible fastDelivery stockQuantity sku')
               .lean();
         } catch (err) {
             console.error('Product.findById error:', err, 'productId:', productId);
@@ -416,7 +509,7 @@ export async function PUT(request) {
             if (images.every(img => typeof img === 'string')) {
                 imagesUrl = images;
             } else {
-                const uploaded = await uploadImages(images.filter(img => typeof img !== 'string'));
+                const uploaded = await uploadMedia(images.filter(img => typeof img !== 'string'));
                 // Keep existing URLs, append new uploads
                 imagesUrl = [...product.images, ...uploaded];
             }
@@ -445,6 +538,16 @@ export async function PUT(request) {
 
         let shortDescription = typeof shortDescriptionRaw === 'string' ? shortDescriptionRaw : product.shortDescription;
         let shortDescriptionAr = typeof shortDescriptionArRaw === 'string' ? shortDescriptionArRaw : product.shortDescriptionAr;
+        let shortDescription2 = typeof shortDescription2Raw === 'string' ? shortDescription2Raw : (product.shortDescription2 || '');
+        const specTableEnabled = specTableEnabledRaw !== null && specTableEnabledRaw !== undefined
+            ? String(specTableEnabledRaw).toLowerCase() === 'true'
+            : (product.specTableEnabled || false);
+        const specTableColumns = specTableColumnsRaw !== null && specTableColumnsRaw !== undefined
+            ? parseSpecTableColumns(specTableColumnsRaw)
+            : (Array.isArray(product.specTableColumns) && product.specTableColumns.length > 0 ? product.specTableColumns : ['Property', 'Value']);
+        const specTableRows = specTableRowsRaw !== null && specTableRowsRaw !== undefined
+            ? parseSpecTableRows(specTableRowsRaw, specTableColumns.length)
+            : (Array.isArray(product.specTableRows) ? parseSpecTableRows(product.specTableRows, specTableColumns.length) : []);
         if (attributesRaw) {
             try {
                 attributes = JSON.parse(attributesRaw) || attributes;
@@ -490,6 +593,10 @@ export async function PUT(request) {
             ...(descriptionAr !== undefined ? { descriptionAr } : {}),
             shortDescription,
             shortDescriptionAr,
+            shortDescription2,
+            specTableEnabled,
+            specTableColumns,
+            specTableRows,
             ...(brand !== undefined ? { brand } : {}),
             ...(brandAr !== undefined ? { brandAr } : {}),
             AED: finalAED,
@@ -505,6 +612,10 @@ export async function PUT(request) {
             fastDelivery,
             freeShippingEligible,
             imageAspectRatio,
+            tags,
+            seoTitle,
+            seoDescription,
+            seoKeywords,
         };
 
         // Add stockQuantity if provided
