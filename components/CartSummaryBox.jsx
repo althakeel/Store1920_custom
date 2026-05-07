@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
 import { useStorefrontI18n } from '@/lib/useStorefrontI18n';
@@ -7,6 +7,45 @@ export default function CartSummaryBox({ subtotal, shipping, total, checkoutDisa
   const router = useRouter();
   const { market, formatAmount } = useStorefrontMarket();
   const { t } = useStorefrontI18n();
+  const tabbyPublicKey = process.env.NEXT_PUBLIC_TABBY_PUBLIC_KEY || '';
+  const tabbyMerchantCode = process.env.NEXT_PUBLIC_TABBY_MERCHANT_CODE || process.env.TABBY_MERCHANT_CODE || 'Store1920';
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const initTabbyPromo = () => {
+      if (!window.TabbyPromo || !tabbyPublicKey || !tabbyMerchantCode) return;
+      const price = Number(total || 0).toFixed(2);
+      if (Number(price) <= 0) return;
+
+      try {
+        new window.TabbyPromo({
+          selector: '#tabbyPromoCart',
+          currency: 'AED',
+          price,
+          lang: 'en',
+          source: 'cart',
+          shouldInheritBg: false,
+          publicKey: tabbyPublicKey,
+          merchantCode: tabbyMerchantCode,
+        });
+      } catch (error) {
+        console.error('TabbyPromo init failed on cart page:', error);
+      }
+    };
+
+    if (window.TabbyPromo) {
+      initTabbyPromo();
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://checkout.tabby.ai/tabby-promo.js';
+    script.async = true;
+    script.onload = initTabbyPromo;
+    document.body.appendChild(script);
+  }, [total, tabbyPublicKey, tabbyMerchantCode]);
+
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 w-full">
       <div className="mb-4">
@@ -29,6 +68,7 @@ export default function CartSummaryBox({ subtotal, shipping, total, checkoutDisa
           <span>{t('cart.total')}</span>
           <span>{market.currency} {formatAmount(total)}</span>
         </div>
+        <div id="tabbyPromoCart" className="mt-3" />
       </div>
       {checkoutNote && (
         <p className="text-xs text-red-600 mb-3">{checkoutNote}</p>

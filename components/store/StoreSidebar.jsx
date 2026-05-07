@@ -1,6 +1,6 @@
 "use client"
 import { usePathname } from "next/navigation"
-import { HomeIcon, LayoutListIcon, SquarePenIcon, SquarePlusIcon, StarIcon, FolderIcon, TicketIcon, TruckIcon, RefreshCw, User as UserIcon, Users as UsersIcon, MessageSquare, Sparkles, BellIcon, MailIcon, Image as ImageIcon, ShoppingCart, Wallet, BarChart3, Target, Gift, Palette } from "lucide-react"
+import { HomeIcon, LayoutListIcon, SquarePenIcon, SquarePlusIcon, StarIcon, FolderIcon, TicketIcon, TruckIcon, RefreshCw, User as UserIcon, Users as UsersIcon, MessageSquare, Sparkles, BellIcon, MailIcon, Image as ImageIcon, ShoppingCart, Wallet, BarChart3, Target, Gift, Palette, CircleDashed, PackagePlus } from "lucide-react"
 import Link from "next/link"
 
 const StoreSidebar = ({storeInfo}) => {
@@ -13,10 +13,13 @@ const StoreSidebar = ({storeInfo}) => {
         { name: 'Manage Product', href: '/store/manage-product', icon: SquarePenIcon },
         { name: 'Database Import', href: '/store/settings/database-import', icon: RefreshCw },
         { name: 'Customize', href: '/store/customize', icon: Palette },
+        { name: 'Menu Management', href: '/store/menu-management', icon: LayoutListIcon },
         { name: 'Promotional Offers', href: '/store/personalized-offers', icon: Gift },
         { name: 'Media', href: '/store/media', icon: ImageIcon },
         { name: 'Abandoned Checkout', href: '/store/abandoned-checkout', icon: ShoppingCart },
         { name: 'Coupons', href: '/store/coupons', icon: TicketIcon },
+        { name: 'Giveaways', href: '/store/giveaways', icon: PackagePlus },
+        { name: 'Spin Wheel', href: '/store/spin-wheel', icon: CircleDashed },
         { name: 'Shipping', href: '/store/shipping', icon: TruckIcon },
         { name: 'Customers', href: '/store/customers', icon: UsersIcon },
         { name: 'Manage Users', href: '/store/settings/users', icon: UserIcon },
@@ -48,6 +51,7 @@ const StoreSidebar = ({storeInfo}) => {
             name: 'Storefront',
             links: [
                 '/store/customize',
+                '/store/menu-management',
                 '/store/media',
             ]
         },
@@ -56,6 +60,8 @@ const StoreSidebar = ({storeInfo}) => {
             links: [
                 '/store/personalized-offers',
                 '/store/coupons',
+                '/store/giveaways',
+                '/store/spin-wheel',
                 '/store/promotional-emails',
                 '/store/ads-tracking',
                 '/store/marketing-expenses',

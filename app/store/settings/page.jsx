@@ -14,6 +14,8 @@ const SIDEBAR_ACCESS_COMPONENTS = [
     { id: 'media', label: 'Media', icon: '🖼️', href: '/store/media' },
     { id: 'abandonedCheckout', label: 'Abandoned Checkout', icon: '🛒', href: '/store/abandoned-checkout' },
     { id: 'coupons', label: 'Coupons', icon: '🏷️', href: '/store/coupons' },
+    { id: 'giveaways', label: 'Giveaways', icon: '🎁', href: '/store/giveaways' },
+    { id: 'spinWheel', label: 'Spin Wheel', icon: '🎡', href: '/store/spin-wheel' },
     { id: 'shipping', label: 'Shipping', icon: '🚚', href: '/store/shipping' },
     { id: 'customers', label: 'Customers', icon: '👥', href: '/store/customers' },
     { id: 'manageUsers', label: 'Manage Users', icon: '👤', href: '/store/settings/users' },

@@ -33,7 +33,8 @@ const initialState = {
   bottomBannerImage: '',
   bottomBannerTitle: 'Shop Now. Pay Later. Ready for Summer.',
   bottomBannerCtaText: 'Shop Now',
-  bottomBannerLink: '/shop'
+  bottomBannerLink: '/shop',
+  referralRewardCoins: 25
 }
 
 export default function PreferencePage() {
@@ -296,6 +297,30 @@ export default function PreferencePage() {
             Open Banner Settings
           </Link>
         </div>
+      </div>
+
+      <div className="bg-white border rounded-xl p-5 space-y-4">
+        <h2 className="text-lg font-semibold">Referral Reward Settings</h2>
+        <p className="text-sm text-slate-600">
+          When an invited customer places their first order, the inviter receives this wallet amount.
+        </p>
+        <label className="space-y-1 block max-w-sm">
+          <span className="text-sm font-medium text-slate-700">Inviter wallet reward (coins)</span>
+          <input
+            type="number"
+            min={0}
+            step={1}
+            className="w-full border rounded-lg px-3 py-2"
+            value={Number(form.referralRewardCoins || 0)}
+            onChange={(e) => {
+              const parsed = Number(e.target.value)
+              setForm({
+                ...form,
+                referralRewardCoins: Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : 0
+              })
+            }}
+          />
+        </label>
       </div>
 
       <div>

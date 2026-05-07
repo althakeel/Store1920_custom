@@ -12,8 +12,12 @@ import Coupon from '@/models/Coupon';
 import GuestUser from '@/models/GuestUser';
 import Wallet from '@/models/Wallet';
 import PersonalizedOffer from '@/models/PersonalizedOffer';
+import StorePreference from '@/models/StorePreference';
+import FreeGiftCampaign from '@/models/FreeGiftCampaign';
 import { sendOrderConfirmationEmail, sendGuestAccountCreationEmail } from '@/lib/email';
 import { fetchNormalizedDelhiveryTracking } from '@/lib/delhivery';
+import { createTamaraSession } from '@/lib/tamara';
+import { createTabbySession } from '@/lib/tabby';
 
 const PaymentMethod = {
     COD: 'COD',
@@ -22,6 +26,14 @@ const PaymentMethod = {
     RAZORPAY: 'RAZORPAY',
     WALLET: 'WALLET'
 };
+
+async function getReferralRewardCoins(storeId) {
+    if (!storeId) return 25;
+    const preference = await StorePreference.findOne({ storeId }).select('shopShowcase.referralRewardCoins').lean();
+    const configuredValue = Number(preference?.shopShowcase?.referralRewardCoins);
+    if (!Number.isFinite(configuredValue)) return 25;
+    return Math.min(10000, Math.max(0, Math.round(configuredValue)));
+}
 
 
 
@@ -43,6 +55,7 @@ export async function POST(request) {
             addressData,
             items,
             couponCode,
+            coupon: couponPayload,
             paymentMethod,
             isGuest,
             guestInfo,
@@ -188,10 +201,17 @@ export async function POST(request) {
             );
         }
 
+        // Used to ensure referral reward is only applied for a customer's first purchase.
+        let existingOrderCountBeforeCheckout = 0;
+        if (!isGuest && userId) {
+            existingOrderCountBeforeCheckout = await Order.countDocuments({ userId });
+        }
+
         // Coupon logic
         let coupon = null;
-        if (couponCode) {
-            coupon = await Coupon.findOne({ code: couponCode }).lean();
+        const normalizedCouponCode = String(couponCode || couponPayload?.code || '').trim().toUpperCase();
+        if (normalizedCouponCode) {
+            coupon = await Coupon.findOne({ code: normalizedCouponCode }).lean();
             if (!coupon) return NextResponse.json({ error: 'Coupon not found' }, { status: 400 });
             if (coupon.forNewUser) {
                 const userorders = await Order.find({ userId }).lean();
@@ -204,6 +224,7 @@ export async function POST(request) {
 
         // Group items by store
         const ordersByStore = new Map();
+        const checkoutStoreIds = new Set();
         let grandSubtotal = 0;
         for (const item of items) {
             if (!item.id || typeof item.id !== 'string' || !item.id.match(/^[a-fA-F0-9]{24}$/)) {
@@ -308,9 +329,27 @@ export async function POST(request) {
                     // Continue with regular price
                 }
             }
+
+            if (item.freeGift?.campaignId) {
+                try {
+                    const campaign = await FreeGiftCampaign.findById(item.freeGift.campaignId)
+                        .select('_id storeId giftProductId isActive')
+                        .lean();
+                    if (
+                        campaign?.isActive &&
+                        String(campaign.giftProductId) === String(item.id) &&
+                        String(campaign.storeId) === String(product.storeId)
+                    ) {
+                        finalPrice = 0;
+                    }
+                } catch (err) {
+                    console.error('Error validating free gift campaign:', err);
+                }
+            }
             
             const storeId = product.storeId;
             if (!ordersByStore.has(storeId)) ordersByStore.set(storeId, []);
+            checkoutStoreIds.add(String(storeId));
             ordersByStore.get(storeId).push({ 
                 ...item, 
                 quantity: requestedQty, 
@@ -377,14 +416,16 @@ export async function POST(request) {
             }
             
             let total = sellerItems.reduce((acc, item) => acc + (item.price * item.quantity), 0);
-            if (couponCode && coupon) {
+            const freeShippingCoupon = Boolean(coupon?.freeShipping);
+            if (normalizedCouponCode && coupon) {
+                const normalizedDiscountValue = Number(coupon.discountValue ?? coupon.discount ?? 0);
                 if (coupon.discountType === 'percentage') {
-                    total -= (total * coupon.discount) / 100;
+                    total -= (total * normalizedDiscountValue) / 100;
                 } else {
-                    total -= Math.min(coupon.discount, total);
+                    total -= Math.min(normalizedDiscountValue, total);
                 }
             }
-            if (!isPlusMember && !isShippingFeeAdded) {
+            if (!isPlusMember && !isShippingFeeAdded && !freeShippingCoupon) {
                 total += shippingFee;
                 isShippingFeeAdded = true;
             }
@@ -714,44 +755,185 @@ export async function POST(request) {
             }
         }
 
-        // Coupon usage count
-        if (couponCode && coupon) {
-            await Coupon.findOneAndUpdate(
-                { code: couponCode },
-                { $inc: { usedCount: 1 } }
-            );
-        }
-
         // Stripe payment
         if (paymentMethod === 'STRIPE') {
             const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
-            const origin = await request.headers.get('origin');
+            const origin = request.headers.get('origin') || process.env.NEXT_PUBLIC_BASE_URL || 'https://store1920.com';
+            const primaryOrderId = orderIds[0] || '';
             const session = await stripe.checkout.sessions.create({
                 payment_method_types: ['card'],
                 line_items: [{
                     price_data: {
                         currency: 'AED',
-                        product_data: { name: 'Order' },
+                        product_data: { name: 'Order Payment' },
                         unit_amount: Math.round(fullAmount * 100)
                     },
                     quantity: 1
                 }],
                 expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
                 mode: 'payment',
-                success_url: `${origin}/loading?nextUrl=orders`,
-                cancel_url: `${origin}/cart`,
+                success_url: `${origin}/order-success?orderId=${primaryOrderId}&stripe=1`,
+                cancel_url: `${origin}/order-failed?reason=${encodeURIComponent('Payment cancelled')}`,
                 metadata: {
                     orderIds: orderIds.join(','),
-                    userId,
+                    userId: userId || '',
                     appId: 'Qui'
                 }
             });
             return NextResponse.json({ session });
         }
 
+        // Tamara BNPL payment
+        if (paymentMethod === 'TAMARA') {
+            const origin = request.headers.get('origin') || process.env.NEXT_PUBLIC_BASE_URL || 'https://store1920.com';
+            const primaryOrderId = orderIds[0] || '';
+            // Build consumer info from the saved order address
+            const primaryOrder = await Order.findById(primaryOrderId).populate('addressId').lean();
+            const addr = primaryOrder?.shippingAddress || primaryOrder?.addressId || {};
+            const fullName = addr.name || guestInfo?.name || '';
+            const nameParts = fullName.trim().split(' ');
+            const firstName = nameParts[0] || 'Customer';
+            const lastName = nameParts.slice(1).join(' ') || '-';
+            const phoneNumber = addr.phone || guestInfo?.phone || '';
+            const email = addr.email || guestInfo?.email || (userId ? (await User.findById(userId).select('email').lean())?.email : '') || '';
+
+            // Build items from all orders
+            const allOrders = await Order.find({ _id: { $in: orderIds } }).populate('orderItems.productId').lean();
+            const tamaraItems = allOrders.flatMap(o =>
+                (o.orderItems || []).map(item => ({
+                    productId: item.productId?._id?.toString() || String(item.productId),
+                    name: item.productId?.name || 'Product',
+                    sku: item.productId?._id?.toString() || String(item.productId),
+                    quantity: item.quantity,
+                    unit_price: item.price,
+                    total_amount: Number((item.price * item.quantity).toFixed(2)),
+                }))
+            );
+
+            const notificationUrl = `${origin}/api/tamara/webhook?tamaraToken=__TOKEN__`;
+
+            const tamaraResult = await createTamaraSession({
+                orderId: primaryOrderId,
+                amount: fullAmount,
+                consumer: { first_name: firstName, last_name: lastName, email, phone_number: phoneNumber },
+                shippingAddress: {
+                    first_name: firstName,
+                    last_name: lastName,
+                    line1: addr.street || '',
+                    city: addr.city || '',
+                    country_code: 'AE',
+                    phone_number: phoneNumber,
+                },
+                items: tamaraItems,
+                successUrl: `${origin}/order-success?orderId=${primaryOrderId}&tamara=1`,
+                failureUrl: `${origin}/order-failed?reason=${encodeURIComponent('Tamara payment failed')}`,
+                cancelUrl: `${origin}/order-failed?reason=${encodeURIComponent('Payment cancelled')}`,
+                notificationUrl: `${origin}/api/tamara/webhook`,
+                description: `Order #${primaryOrderId}`,
+            });
+
+            // Store Tamara order ID on our order
+            await Order.findByIdAndUpdate(primaryOrderId, { tamaraOrderId: tamaraResult.tamara_order_id });
+
+            return NextResponse.json({ checkout_url: tamaraResult.checkout_url, tamara_order_id: tamaraResult.tamara_order_id });
+        }
+
+        // Tabby BNPL payment
+        if (paymentMethod === 'TABBY') {
+            const origin = request.headers.get('origin') || process.env.NEXT_PUBLIC_BASE_URL || 'https://store1920.com';
+            const primaryOrderId = orderIds[0] || '';
+
+            const primaryOrder = await Order.findById(primaryOrderId).populate('addressId').lean();
+            const addr = primaryOrder?.shippingAddress || primaryOrder?.addressId || {};
+            const fullName = addr.name || guestInfo?.name || 'Customer';
+            const phoneNumber = addr.phone || guestInfo?.phone || '';
+            const email = addr.email || guestInfo?.email || (userId ? (await User.findById(userId).select('email').lean())?.email : '') || '';
+
+            const allOrders = await Order.find({ _id: { $in: orderIds } }).populate('orderItems.productId').lean();
+            const tabbyItems = allOrders.flatMap(o =>
+                (o.orderItems || []).map(item => ({
+                    productId: item.productId?._id?.toString() || String(item.productId),
+                    name: item.productId?.name || 'Product',
+                    sku: item.productId?._id?.toString() || String(item.productId),
+                    quantity: item.quantity,
+                    unit_price: item.price,
+                }))
+            );
+
+            const tabbyResult = await createTabbySession({
+                orderId: primaryOrderId,
+                amount: fullAmount,
+                buyer: {
+                    name: fullName,
+                    email,
+                    phone: phoneNumber,
+                },
+                shippingAddress: {
+                    address: addr.street || '',
+                    city: addr.city || '',
+                    zip: addr.zip || addr.pincode || '',
+                },
+                items: tabbyItems,
+                successUrl: `${origin}/order-success?orderId=${primaryOrderId}&tabby=1`,
+                failureUrl: `${origin}/order-failed?reason=${encodeURIComponent('Tabby payment failed')}`,
+                cancelUrl: `${origin}/order-failed?reason=${encodeURIComponent('Payment cancelled')}`,
+            });
+
+            if (!tabbyResult.web_url) {
+                throw new Error('Tabby checkout URL was not returned');
+            }
+
+            await Order.findByIdAndUpdate(primaryOrderId, { tabbyPaymentId: tabbyResult.payment_id || '' });
+
+            return NextResponse.json({ checkout_url: tabbyResult.web_url, tabby_payment_id: tabbyResult.payment_id || '' });
+        }
+
         // Clear cart for logged-in users
         if (userId) {
             await User.findByIdAndUpdate(userId, { cart: {} });
+        }
+
+        // Referral reward: inviter gets wallet credit when invited customer places first purchase.
+        if (!isGuest && userId && existingOrderCountBeforeCheckout === 0 && orderIds.length > 0) {
+            const invitedUser = await User.findById(userId)
+                .select('referredByUserId referralRewardCreditedAt')
+                .lean();
+
+            const inviterUserId = invitedUser?.referredByUserId;
+            if (inviterUserId && inviterUserId !== userId && !invitedUser?.referralRewardCreditedAt) {
+                const primaryStoreId = Array.from(checkoutStoreIds)[0] || null;
+                const referralRewardCoins = await getReferralRewardCoins(primaryStoreId);
+
+                if (referralRewardCoins > 0) {
+                    const claimResult = await User.updateOne(
+                        {
+                            _id: userId,
+                            referredByUserId: inviterUserId,
+                            referralRewardCreditedAt: null
+                        },
+                        { $set: { referralRewardCreditedAt: new Date() } }
+                    );
+
+                    if (claimResult.modifiedCount > 0) {
+                        await Wallet.findOneAndUpdate(
+                            { userId: inviterUserId },
+                            {
+                                $inc: { coins: referralRewardCoins },
+                                $push: {
+                                    transactions: {
+                                        type: 'BONUS',
+                                        coins: referralRewardCoins,
+                                        rupees: referralRewardCoins,
+                                        orderId: orderIds[orderIds.length - 1],
+                                        description: `Referral reward for inviting customer ${userId}`
+                                    }
+                                }
+                            },
+                            { upsert: true, new: true, setDefaultsOnInsert: true }
+                        );
+                    }
+                }
+            }
         }
 
         // Return orders

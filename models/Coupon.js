@@ -15,6 +15,7 @@ const CouponSchema = new mongoose.Schema({
   maxUsesPerUser: { type: Number, default: 1 }, // Times per user
   expiresAt: Date,
   isActive: { type: Boolean, default: true },
+  freeShipping: { type: Boolean, default: false },
   savingsAmount: { type: Number }, // Display savings like "Save AED 75.00"
   badgeColor: { type: String, default: "green" }, // green, orange, purple, blue
   
@@ -30,5 +31,10 @@ const CouponSchema = new mongoose.Schema({
   usageLimit: { type: Number },
   isPublic: { type: Boolean, default: true },
 }, { timestamps: true });
+
+// Indexes for query performance
+CouponSchema.index({ code: 1, isActive: 1, expiresAt: 1 });        // Main validation on checkout
+CouponSchema.index({ storeId: 1, isActive: 1, expiresAt: -1 });    // Store coupon listings
+CouponSchema.index({ forNewUser: 1, isActive: 1 });                 // New-user coupon lookups
 
 export default mongoose.models.Coupon || mongoose.model("Coupon", CouponSchema);

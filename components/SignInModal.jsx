@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Eye, EyeOff } from 'lucide-react';
 import { auth, googleProvider } from '../lib/firebase';
 import { signInWithPopup, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import Image from 'next/image';
+import Link from 'next/link';
 import GoogleIcon from '../assets/google.png';
 import Imageslider from '../assets/signin/76.webp';
 import axios from 'axios';
@@ -25,9 +26,16 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '' }
     confirmPassword: ''
   });
   const [loading, setLoading] = useState(false);
-  const [scrollPos, setScrollPos] = useState(0);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [modalSettings, setModalSettings] = useState({
+    sideImage: '',
+    sideImageLink: '',
+    sideImageClickable: false,
+    showCtaButton: false,
+    ctaButtonText: 'Shop Now',
+    ctaButtonLink: '/shop',
+  });
 
   const getAuthErrorMessage = (err, fallback = 'Something went wrong. Please try again.') => {
     const code = err?.code || '';
@@ -52,10 +60,9 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '' }
   };
 
   React.useEffect(() => {
-    const interval = setInterval(() => {
-      setScrollPos(prev => (prev + 1) % 2000);
-    }, 10);
-    return () => clearInterval(interval);
+    axios.get('/api/store/signin-modal').then(res => {
+      if (res.data) setModalSettings(prev => ({ ...prev, ...res.data }));
+    }).catch(() => {});
   }, []);
 
   React.useEffect(() => {
@@ -319,8 +326,9 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '' }
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4">
-      <div 
-        className="bg-white w-full sm:max-w-lg max-h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col relative"
+      <div
+        className="bg-white w-full max-h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex relative"
+        style={{ maxWidth: modalSettings.sideImage ? '800px' : '448px' }}
       >
         <button
           type="button"
@@ -331,69 +339,58 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '' }
           <X size={20} />
         </button>
 
-        {/* Top Section - Image */}
-        <div className="w-full bg-gradient-to-br from-amber-200 via-amber-100 to-yellow-100 relative overflow-hidden h-32 sm:h-40 flex-shrink-0">
-          {/* Image Container - Continuous Scrolling */}
-          <div 
-            className="absolute inset-0 flex"
-            style={{
-              transform: `translateX(-${scrollPos}px)`,
-              transition: 'none',
-              willChange: 'transform'
-            }}
-          >
-            {/* Render image twice for seamless loop */}
-            <div style={{ width: '2000px', height: '100%', flexShrink: 0, position: 'relative' }}>
-              <Image
-                src={Imageslider}
-                alt="Sign In 1"
-                width={2000}
-                height={320}
-                style={{ objectFit: 'cover', width: '100%', height: '100%', display: 'block' }}
-                priority
-                unoptimized
-              />
-            </div>
-            <div style={{ width: '2000px', height: '100%', flexShrink: 0, position: 'relative' }}>
-              <Image
-                src={Imageslider}
-                alt="Sign In 2"
-                width={2000}
-                height={320}
-                style={{ objectFit: 'cover', width: '100%', height: '100%', display: 'block' }}
-                priority
-                unoptimized
-              />
-            </div>
+        {/* Left Column - Side Image (only when image is set) */}
+        {modalSettings.sideImage && (
+          <div className="hidden sm:block relative w-[45%] flex-shrink-0 overflow-hidden bg-gradient-to-br from-amber-200 via-amber-100 to-yellow-100">
+            {modalSettings.sideImageClickable && modalSettings.sideImageLink ? (
+              <Link href={modalSettings.sideImageLink} onClick={onClose} className="block w-full h-full">
+                <Image
+                  src={modalSettings.sideImage}
+                  alt="Sign In Banner"
+                  fill
+                  style={{ objectFit: 'cover' }}
+                  priority
+                  unoptimized
+                />
+                {modalSettings.showCtaButton && (
+                  <div className="absolute bottom-6 left-0 right-0 flex justify-center px-4">
+                    <span className="bg-gray-900 text-white text-sm font-semibold px-5 py-2.5 rounded-lg shadow hover:bg-gray-700 transition">
+                      {modalSettings.ctaButtonText}
+                    </span>
+                  </div>
+                )}
+              </Link>
+            ) : (
+              <>
+                <Image
+                  src={modalSettings.sideImage}
+                  alt="Sign In Banner"
+                  fill
+                  style={{ objectFit: 'cover' }}
+                  priority
+                  unoptimized
+                />
+                {modalSettings.showCtaButton && (
+                  <div className="absolute bottom-6 left-0 right-0 flex justify-center px-4">
+                    {modalSettings.ctaButtonLink ? (
+                      <Link href={modalSettings.ctaButtonLink} onClick={onClose} className="bg-gray-900 text-white text-sm font-semibold px-5 py-2.5 rounded-lg shadow hover:bg-gray-700 transition">
+                        {modalSettings.ctaButtonText}
+                      </Link>
+                    ) : (
+                      <span className="bg-gray-900 text-white text-sm font-semibold px-5 py-2.5 rounded-lg shadow">
+                        {modalSettings.ctaButtonText}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
           </div>
-          
-          {/* Decorative circles */}
-          {/* <div className="absolute top-4 left-4 w-8 h-8 bg-green-400 rounded-full opacity-40 z-10" /> */}
-          {/* <div className="absolute bottom-4 right-4 w-12 h-12 bg-pink-300 rounded-full opacity-40 z-10" /> */}
-        </div>
+        )}
 
-        {/* Bottom Section - Form */}
-        <div className="w-full p-4 sm:p-6 relative overflow-y-auto custom-scrollbar flex-1">
-          <style jsx>{`
-            .custom-scrollbar::-webkit-scrollbar {
-              width: 6px;
-            }
-            .custom-scrollbar::-webkit-scrollbar-track {
-              background: transparent;
-            }
-            .custom-scrollbar::-webkit-scrollbar-thumb {
-              background: transparent;
-              border-radius: 3px;
-            }
-            .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-              background: rgba(0, 0, 0, 0.1);
-            }
-            .custom-scrollbar {
-              scrollbar-width: none;
-              -ms-overflow-style: none;
-            }
-          `}</style>
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-1">Hala! Let's get started</h2>
+        {/* Right Column - Form */}
+        <div className="flex-1 p-4 sm:p-6 overflow-y-auto" style={{ scrollbarWidth: 'none' }}>
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-1">Hala! Let&apos;s get started</h2>
           <p className="text-gray-600 text-xs sm:text-sm mb-3 sm:mb-4">Create account or sign in to your account</p>
 
           {bonusMessage && isRegister && (

@@ -5,10 +5,13 @@ import Footer from "@/components/Footer";
 import GoogleOneTap from "@/components/GoogleOneTap";
 import SupportBar from "@/components/SupportBar";
 import CartQuickSidebar from "@/components/CartQuickSidebar";
+import SpinWheelWidget from "@/components/SpinWheelWidget";
+import GiveawayCartManager from "@/components/GiveawayCartManager";
 import DynamicMetaTags from "@/components/DynamicMetaTags";
 import { Toaster } from "react-hot-toast";
 import { Suspense, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
+import { usePathname } from "next/navigation";
 import axios from "axios";
 
 function InitializeApp({ children }) {
@@ -65,6 +68,33 @@ function InitializeApp({ children }) {
 }
 
 export default function ClientLayout({ children }) {
+  const pathname = usePathname();
+  const cartSidebarAllowedPrefixes = [
+    '/',
+    '/product',
+    '/cart',
+    '/wishlist',
+    '/shop',
+    '/products',
+    '/categories',
+    '/search-results',
+    '/best-sellers',
+    '/new-arrivals',
+    '/top-selling',
+    '/trending-now',
+    '/clearance-sale',
+    '/offers',
+    '/offer',
+    '/recommended',
+    '/recently-viewed',
+    '/under-149',
+    '/under-499',
+  ];
+
+  const showCartSidebar = cartSidebarAllowedPrefixes.some(
+    (p) => pathname === p || pathname?.startsWith(p + '/')
+  );
+
   return (
     <ReduxProvider>
       <Navbar />
@@ -73,8 +103,10 @@ export default function ClientLayout({ children }) {
       <Suspense fallback={null}>
         <GoogleOneTap />
       </Suspense>
+      <GiveawayCartManager />
       <InitializeApp>{children}</InitializeApp>
-      <CartQuickSidebar />
+      <SpinWheelWidget />
+      {showCartSidebar && <CartQuickSidebar />}
       <SupportBar />
       <Footer />
     </ReduxProvider>

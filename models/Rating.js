@@ -17,4 +17,11 @@ const RatingSchema = new mongoose.Schema({
   // Add more fields as needed
 }, { timestamps: true });
 
+// Indexes for query performance
+RatingSchema.index({ productId: 1, approved: 1 });     // CRITICAL: batch ratings on product listing page
+RatingSchema.index({ productId: 1, userId: 1 });        // Check if user already rated a product
+RatingSchema.index({ userId: 1, createdAt: -1 });       // User's rating history
+RatingSchema.index({ orderId: 1 });                     // Look up ratings by order
+RatingSchema.index({ approved: 1, createdAt: -1 });     // Admin review queue
+
 export default mongoose.models.Rating || mongoose.model("Rating", RatingSchema);

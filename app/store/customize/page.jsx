@@ -79,6 +79,12 @@ const designPages = [
     href: '/store/customize/product-page',
     icon: Truck,
   },
+  {
+    title: 'Fast Delivery Page',
+    description: 'Customize the header color, title, and empty state for the fast delivery products page.',
+    href: '/store/customize/fast-delivery',
+    icon: Truck,
+  },
 ]
 
 const selectionPages = [

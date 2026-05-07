@@ -208,8 +208,8 @@ const Footer = () => {
                             ))}
                         </div>
                     <p className="text-sm text-slate-500 text-center w-full">
-    © {new Date().getFullYear()} Store1920. {t('footer.allRightsReserved')}
-</p>
+                        © {new Date().getFullYear()} Al Thakeel General Trading LLC. All rights reserved.
+                    </p>
 
                     </div>
                 </div>

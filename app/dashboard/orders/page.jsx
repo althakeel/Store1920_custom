@@ -9,7 +9,7 @@ import axios from 'axios'
 import toast from 'react-hot-toast'
 import DashboardSidebar from '@/components/DashboardSidebar'
 import { downloadInvoice } from '@/lib/generateInvoice'
-import ReviewForm from '@/components/ReviewForm'
+import DeliveryReviewModal from '@/components/DeliveryReviewModal'
 
 export default function DashboardOrdersPage() {
   const [user, setUser] = useState(undefined)
@@ -35,6 +35,9 @@ export default function DashboardOrdersPage() {
   const [cancelNote, setCancelNote] = useState('')
   const [creatingTicketForOrderId, setCreatingTicketForOrderId] = useState(null)
   const [activeReviewKey, setActiveReviewKey] = useState(null)
+  const [showDeliveryReviewModal, setShowDeliveryReviewModal] = useState(false)
+  const [selectedOrderForReview, setSelectedOrderForReview] = useState(null)
+  const [submittingDeliveryReview, setSubmittingDeliveryReview] = useState(false)
 
   const orderStatuses = [
     { value: 'ALL', label: 'All Orders', icon: '📦' },
@@ -392,6 +395,38 @@ export default function DashboardOrdersPage() {
     }
   }
 
+  const handleDeliveryReviewSubmit = async (reviewData) => {
+    try {
+      setSubmittingDeliveryReview(true)
+      const token = await auth.currentUser.getIdToken(true)
+      
+      await axios.post('/api/orders/delivery-review', {
+        orderId: reviewData.orderId,
+        rating: reviewData.rating,
+        reviewText: reviewData.reviewText,
+        images: reviewData.images,
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      
+      toast.success('Delivery review submitted successfully! Thank you for your feedback.')
+      setShowDeliveryReviewModal(false)
+      setSelectedOrderForReview(null)
+      
+      // Reload orders
+      const { data } = await axios.get('/api/orders', {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      const list = Array.isArray(data?.orders) ? data.orders : (Array.isArray(data) ? data : [])
+      setOrders(list)
+    } catch (err) {
+      console.error('Delivery review error:', err)
+      toast.error(err?.response?.data?.error || 'Failed to submit delivery review')
+    } finally {
+      setSubmittingDeliveryReview(false)
+    }
+  }
+
   if (user === undefined) return <Loading />
 
   if (user === null) {
@@ -625,6 +660,15 @@ export default function DashboardOrdersPage() {
                               {getPaymentStatus(order) ? '✓ Paid' : 'Pending'}
                             </span>
                           </div>
+                          {order.deliveryReviews && order.deliveryReviews.length > 0 && (
+                            <div>
+                              <p className="text-xs text-slate-500">Review</p>
+                              <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded bg-purple-100 text-purple-700">
+                                <span>⭐</span>
+                                <span>{order.deliveryReviews.length} {order.deliveryReviews.length === 1 ? 'Review' : 'Reviews'}</span>
+                              </span>
+                            </div>
+                          )}
                         </div>
                         <div className="flex flex-col gap-2 items-end">
                           {order.trackingUrl && (
@@ -793,7 +837,20 @@ export default function DashboardOrdersPage() {
 
                         {/* Return/Replacement Button */}
                         {(order.status === 'DELIVERED' || order.status === 'OUT_FOR_DELIVERY') && !order.returns?.some(r => r.status === 'REQUESTED' || r.status === 'APPROVED') && (
-                          <div className="flex justify-end">
+                          <div className="flex gap-3 justify-end">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setSelectedOrderForReview(order)
+                                setShowDeliveryReviewModal(true)
+                              }}
+                              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2"
+                            >
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                              </svg>
+                              Write Delivery Review
+                            </button>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation()
@@ -1409,6 +1466,18 @@ export default function DashboardOrdersPage() {
               </div>
             </div>
           )}
+
+          {/* Delivery Review Modal */}
+          <DeliveryReviewModal
+            isOpen={showDeliveryReviewModal}
+            onClose={() => {
+              setShowDeliveryReviewModal(false)
+              setSelectedOrderForReview(null)
+            }}
+            order={selectedOrderForReview}
+            onSubmit={handleDeliveryReviewSubmit}
+            isSubmitting={submittingDeliveryReview}
+          />
         </main>
       </div>
     )

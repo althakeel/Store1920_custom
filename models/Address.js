@@ -16,4 +16,7 @@ const AddressSchema = new mongoose.Schema({
   alternatePhoneCode: String,
 }, { timestamps: true });
 
+// Index for query performance
+AddressSchema.index({ userId: 1, createdAt: -1 }); // Fetch user addresses sorted by date
+
 export default mongoose.models.Address || mongoose.model("Address", AddressSchema);

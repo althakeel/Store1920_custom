@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import connectDB from '@/lib/mongodb'
 import Order from '@/models/Order'
 import { fetchNormalizedDelhiveryTracking } from '@/lib/delhivery'
+import { fetchNormalizedC3XTracking, trackByReference, normalizeC3XShipment } from '@/lib/c3xpress'
 
 const asOrderShape = (normalized, awb = '') => {
   if (!normalized) return null;
@@ -46,6 +47,26 @@ export async function GET(req) {
         const msg = (e?.message || '').includes('DELHIVERY_API_TOKEN')
           ? 'Tracking temporarily unavailable. Delhivery API token not configured.'
           : `Delhivery tracking failed: ${e?.message || 'Unknown error'}`
+        return NextResponse.json({ success: false, message: msg }, { status: 503 })
+      }
+    }
+
+    // If explicitly requested, try C3Xpress directly
+    if (carrier === 'c3xpress' && awb) {
+      try {
+        const normalized = await fetchNormalizedC3XTracking(awb.trim())
+        if (!normalized) {
+          // fallback: try by shipper reference
+          const raw = await trackByReference(awb.trim()).catch(() => null)
+          const byRef = raw ? normalizeC3XShipment(raw, awb.trim()) : null
+          if (byRef) return NextResponse.json({ success: true, order: asOrderShape(byRef, awb.trim()) })
+          return NextResponse.json({ success: false, message: 'Shipment not found on C3Xpress' }, { status: 404 })
+        }
+        return NextResponse.json({ success: true, order: asOrderShape(normalized, awb.trim()) })
+      } catch (e) {
+        const msg = (e?.message || '').includes('not configured')
+          ? 'C3Xpress not configured.'
+          : `C3Xpress tracking failed: ${e?.message || 'Unknown error'}`
         return NextResponse.json({ success: false, message: msg }, { status: 503 })
       }
     }
@@ -105,25 +126,38 @@ export async function GET(req) {
     
     // If order has a Delhivery trackingId, fetch live tracking
     try {
-      const courier = (order.courier || '').toLowerCase();
-      const trackingId = order.trackingId || order.awb || order.airwayBillNo;
-      if (trackingId && (courier.includes('delhivery') || !order.trackingUrl)) {
-        const normalized = await fetchNormalizedDelhiveryTracking(trackingId);
+      const courier = (order.courier || '').toLowerCase()
+      const trackingId = order.trackingId || order.awb || order.airwayBillNo
+
+      if (trackingId && courier.includes('c3xpress')) {
+        // C3Xpress live tracking
+        const normalized = await fetchNormalizedC3XTracking(trackingId).catch(() => null)
         if (normalized) {
-          order.delhivery = normalized.delhivery;
-          order.trackingUrl = order.trackingUrl || normalized.trackingUrl;
-          order.courier = order.courier || normalized.courier;
-          order.trackingId = order.trackingId || normalized.trackingId;
+          order.c3x = normalized.c3x
+          order.trackingUrl = order.trackingUrl || normalized.trackingUrl
+          order.courier = order.courier || normalized.courier
+          order.trackingId = order.trackingId || normalized.trackingId
+          if (normalized.c3x?.appStatus) {
+            order.status = normalized.c3x.appStatus
+          }
+        }
+      } else if (trackingId && (courier.includes('delhivery') || !order.trackingUrl)) {
+        const normalized = await fetchNormalizedDelhiveryTracking(trackingId)
+        if (normalized) {
+          order.delhivery = normalized.delhivery
+          order.trackingUrl = order.trackingUrl || normalized.trackingUrl
+          order.courier = order.courier || normalized.courier
+          order.trackingId = order.trackingId || normalized.trackingId
           
           // IMPORTANT: Update order.status to match delhivery tracking status if available
           if (normalized.delhivery?.current_status) {
-            order.status = normalized.delhivery.current_status;
+            order.status = normalized.delhivery.current_status
           }
         }
       }
     } catch (e) {
-      // Don't fail the API if Delhivery call fails; just log
-      console.error('Delhivery tracking fetch failed:', e?.message || e);
+      // Don't fail the API if courier call fails; just log
+      console.error('Live tracking fetch failed:', e?.message || e)
     }
 
     return NextResponse.json({ success: true, order });

@@ -99,7 +99,16 @@ const StorePreferenceSchema = new mongoose.Schema(
       secondaryBannerSliderItems: {
         type: [BannerSliderItemSchema],
         default: defaultSecondaryBannerSliderItems
-      }
+      },
+      referralRewardCoins: { type: Number, default: 25 }
+    },
+    signinModal: {
+      sideImage: { type: String, trim: true, default: '' },
+      sideImageLink: { type: String, trim: true, default: '' },
+      sideImageClickable: { type: Boolean, default: false },
+      showCtaButton: { type: Boolean, default: false },
+      ctaButtonText: { type: String, trim: true, default: 'Shop Now' },
+      ctaButtonLink: { type: String, trim: true, default: '/shop' },
     },
     appearanceSections: {
       type: mongoose.Schema.Types.Mixed,
@@ -189,6 +198,10 @@ if (!StorePreferenceModel.schema.path('shopShowcase.leftBlockSource')) {
 
 if (!StorePreferenceModel.schema.path('shopShowcase.sectionProductIds')) {
   missingShopShowcasePaths.sectionProductIds = { type: [String], default: [] }
+}
+
+if (!StorePreferenceModel.schema.path('shopShowcase.referralRewardCoins')) {
+  missingShopShowcasePaths.referralRewardCoins = { type: Number, default: 25 }
 }
 
 if (Object.keys(missingShopShowcasePaths).length) {

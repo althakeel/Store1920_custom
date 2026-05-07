@@ -99,6 +99,11 @@ const Navbar = () => {
       return acc + (Number.isFinite(qty) ? qty : 0);
     }, 0);
   }, [cartItems]);
+  const [navActionsVisibility, setNavActionsVisibility] = useState({
+    store: true,
+    wishlist: true,
+    cart: true,
+  });
   const products = useSelector((state) => state.product.list);
   const [signInOpen, setSignInOpen] = useState(false);
   const [signInMode, setSignInMode] = useState('login');
@@ -224,6 +229,36 @@ const Navbar = () => {
       // Ignore storage write failures.
     }
   }, [storefrontLanguage, languageHydrated]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    try {
+      const raw = window.sessionStorage.getItem('nav:actions:visibility:v1');
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (parsed && typeof parsed === 'object') {
+        setNavActionsVisibility({
+          store: parsed.store !== false,
+          wishlist: parsed.wishlist !== false,
+          cart: parsed.cart !== false,
+        });
+      }
+    } catch {
+      // Ignore cache parse failures.
+    }
+
+    const handleVisibilityUpdate = (event) => {
+      const detail = event?.detail || {};
+      setNavActionsVisibility({
+        store: detail.store !== false,
+        wishlist: detail.wishlist !== false,
+        cart: detail.cart !== false,
+      });
+    };
+
+    window.addEventListener('navActionsVisibilityUpdated', handleVisibilityUpdate);
+    return () => window.removeEventListener('navActionsVisibilityUpdated', handleVisibilityUpdate);
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -721,12 +756,26 @@ const Navbar = () => {
         return;
       }
       const token = await auth.currentUser.getIdToken();
-      const { data } = await axios.get('/api/wishlist/count', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      setWishlistCount(Number(data?.count) || 0);
+      try {
+        const { data } = await axios.get('/api/wishlist/count', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        setWishlistCount(Number(data?.count) || 0);
+      } catch (countError) {
+        // Fallback: fetch full wishlist to get count if endpoint doesn't exist
+        try {
+          const { data } = await axios.get('/api/wishlist', {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+          setWishlistCount(Array.isArray(data?.wishlist) ? data.wishlist.length : 0);
+        } catch {
+          setWishlistCount(0);
+        }
+      }
     } catch (error) {
       const isRequestCanceled =
         axios.isCancel(error) ||
@@ -1101,7 +1150,7 @@ const Navbar = () => {
           <div className="hidden lg:flex ml-auto items-center gap-0.5 flex-shrink-0 text-[12px]" style={{ color: navbarTextColor }}>
             {firebaseUser ? (
               <div className="flex items-center gap-2">
-              {isSeller && (
+              {isSeller && navActionsVisibility.store && (
                 <button
                   onClick={() => router.push('/store')}
                   className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[11px] font-semibold transition whitespace-nowrap"
@@ -1264,24 +1313,28 @@ const Navbar = () => {
               )}
             </div>
 
-            <Link href="/dashboard/wishlist" className="inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 transition whitespace-nowrap hover:bg-white/8">
-              <HeartIcon size={14} />
-              {t('navbar.wishlist')}
-            </Link>
+            {navActionsVisibility.wishlist && (
+              <Link href="/dashboard/wishlist" className="inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 transition whitespace-nowrap hover:bg-white/8">
+                <HeartIcon size={14} />
+                {t('navbar.wishlist')}
+              </Link>
+            )}
 
-            <button
-              onClick={handleCartClick}
-              className="relative inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 transition hover:bg-white/8"
-              aria-label="Cart"
-            >
-              <ShoppingCart size={18} style={{ color: navbarTextColor }} />
-              <span className="text-[13px] font-medium">{t('navbar.cart')}</span>
-              {isClient && cartCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 text-[10px] font-bold text-white bg-blue-600 rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1">
-                  {cartCount}
-                </span>
-              )}
-            </button>
+            {navActionsVisibility.cart && (
+              <button
+                onClick={handleCartClick}
+                className="relative inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 transition hover:bg-white/8"
+                aria-label="Cart"
+              >
+                <ShoppingCart size={18} style={{ color: navbarTextColor }} />
+                <span className="text-[13px] font-medium">{t('navbar.cart')}</span>
+                {isClient && cartCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 text-[10px] font-bold text-white bg-blue-600 rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1">
+                    {cartCount}
+                  </span>
+                )}
+              </button>
+            )}
           </div>
 
 
@@ -1315,14 +1368,16 @@ const Navbar = () => {
               )
             )}
             
-            <button onClick={handleCartClick} className="relative p-2 hover:bg-gray-100 rounded-full transition">
-              <ShoppingCart size={20} className="text-gray-900" />
-              {isClient && cartCount > 0 && (
-                <span className="absolute -top-1 -right-1 text-[10px] font-bold text-white bg-blue-600 rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
-                  {cartCount}
-                </span>
-              )}
-            </button>
+            {navActionsVisibility.cart && (
+              <button onClick={handleCartClick} className="relative p-2 hover:bg-gray-100 rounded-full transition">
+                <ShoppingCart size={20} className="text-gray-900" />
+                {isClient && cartCount > 0 && (
+                  <span className="absolute -top-1 -right-1 text-[10px] font-bold text-white bg-blue-600 rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                    {cartCount}
+                  </span>
+                )}
+              </button>
+            )}
           </div>
         </div>
 
@@ -1505,7 +1560,7 @@ const Navbar = () => {
                     </span>
                   )}
                 </Link>
-                {isSeller && (
+                {isSeller && navActionsVisibility.store && (
                   <Link 
                     href="/store" 
                     className="flex items-center gap-3 px-4 py-3 hover:bg-gray-100 rounded-lg transition text-gray-700 font-medium"

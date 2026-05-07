@@ -1,163 +1,427 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 
-const MAX_ITEMS = 20;
-const SKELETON_ITEMS = Array.from({ length: 8 });
-const FULL_WIDTH_MAX_ITEMS = 14;
+const MENU_CACHE_KEY = 'nav:menu:v1';
+const CATEGORIES_CACHE_KEY = 'nav:categories:v1';
+const MENU_ENABLED_CACHE_KEY = 'nav:menu:enabled:v1';
+const ACTIONS_VISIBILITY_CACHE_KEY = 'nav:actions:visibility:v1';
+const MENU_STYLE_CACHE_KEY = 'nav:menu:style:v1';
+const REFRESH_MS = 10 * 60 * 1000;
 
-const getContrastColor = (hexColor) => {
-  const hex = String(hexColor || '').replace('#', '');
-  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return '#1f2937';
-  const red = parseInt(hex.slice(0, 2), 16);
-  const green = parseInt(hex.slice(2, 4), 16);
-  const blue = parseInt(hex.slice(4, 6), 16);
-  const luminance = (0.299 * red + 0.587 * green + 0.114 * blue) / 255;
-  return luminance > 0.65 ? '#111827' : '#ffffff';
+const defaultActionsVisibility = {
+  store: true,
+  wishlist: true,
+  cart: true,
 };
 
-export default function NavbarMenuBar() {
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [logoUrl, setLogoUrl] = useState('');
-  const [logoWidth, setLogoWidth] = useState(120);
-  const [logoHeight, setLogoHeight] = useState(40);
-  const [backgroundColor, setBackgroundColor] = useState('#ffffff');
-  const [textColor, setTextColor] = useState('#1f2937');
+const defaultMenuStyle = {
+  barBackgroundColor: '#ffffff',
+  barTextColor: '#334155',
+  barHoverBackgroundColor: '#f1f5f9',
+  dropdownBackgroundColor: '#ffffff',
+  dropdownTextColor: '#334155',
+  dropdownMutedTextColor: '#64748b',
+  dropdownBorderColor: '#e2e8f0',
+};
 
-  useEffect(() => {
-    const fetchMenu = async () => {
-      try {
-        const response = await fetch('/api/store/navbar-menu', { cache: 'no-store' });
-        if (!response.ok) {
-          setItems([]);
-          setLoading(false);
-          return;
-        }
-        const data = await response.json();
-        const nextItems = Array.isArray(data.items) ? data.items.slice(0, MAX_ITEMS) : [];
-        setItems(nextItems);
-        setLogoUrl(data.logoUrl || '');
-        setLogoWidth(data.logoWidth ?? 120);
-        setLogoHeight(data.logoHeight ?? 40);
-        const nextBackgroundColor = data.backgroundColor || '#ffffff';
-        setBackgroundColor(nextBackgroundColor);
-        setTextColor(getContrastColor(nextBackgroundColor));
-      } catch (error) {
-        console.error('Navbar menu fetch error:', error);
-        setItems([]);
-      } finally {
-        setLoading(false);
-      }
-    };
+const safeJsonParse = (value, fallback) => {
+  try {
+    if (!value) return fallback;
+    const parsed = JSON.parse(value);
+    return parsed ?? fallback;
+  } catch {
+    return fallback;
+  }
+};
 
-    fetchMenu();
+const sanitizeMenuItems = (items) => {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((item) => {
+      const name = String(item?.name || item?.label || '').trim();
+      const link = String(item?.link || item?.url || '').trim() || '#';
+      const icon = String(item?.icon || '').trim();
+      const hasDropdown = Boolean(item?.hasDropdown);
+      const categoryId = String(item?.categoryId || '').trim();
+      const megaMenu = item?.megaMenu && typeof item.megaMenu === 'object' ? item.megaMenu : {};
 
-    const handleNavbarAppearanceUpdate = (event) => {
-      const detail = event?.detail || {};
-      if (typeof detail.backgroundColor === 'string' && detail.backgroundColor.trim()) {
-        setBackgroundColor(detail.backgroundColor);
-        setTextColor(getContrastColor(detail.backgroundColor));
-      }
-      if (typeof detail.logoUrl === 'string') setLogoUrl(detail.logoUrl);
-      if (detail.logoWidth) setLogoWidth(detail.logoWidth);
-      if (detail.logoHeight) setLogoHeight(detail.logoHeight);
-    };
+      const numericCols = Number(megaMenu.linkColumns);
+      const linkColumns = [1, 2, 3].includes(numericCols) ? numericCols : 1;
+      const links = Array.isArray(megaMenu.links)
+        ? megaMenu.links
+            .map((entry) => ({
+              name: String(entry?.name || '').trim(),
+              link: String(entry?.link || '').trim() || '#',
+            }))
+            .filter((entry) => entry.name)
+        : [];
 
-    if (typeof window !== 'undefined') {
-      window.addEventListener('navbarAppearanceUpdated', handleNavbarAppearanceUpdate);
-    }
+      const images = Array.isArray(megaMenu.images)
+        ? megaMenu.images
+            .map((entry) => ({
+              url: String(entry?.url || '').trim(),
+              label: String(entry?.label || '').trim(),
+              link: String(entry?.link || '').trim() || '#',
+            }))
+            .filter((entry) => entry.url)
+        : [];
 
-    return () => {
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('navbarAppearanceUpdated', handleNavbarAppearanceUpdate);
-      }
-    };
-  }, []);
-
-  if (!loading && items.length === 0) return null;
-
-  const normalizeUrl = (item) => {
-    if (item?.url) return item.url;
-    if (item?.categoryId) return `/shop?category=${item.categoryId}`;
-    return '/shop';
-  };
-
-  const menuEntries = [
-    { label: 'All', url: '/shop', isAll: true },
-    ...items.map((item) => ({
-      label: item.label || item.name || 'Menu',
-      url: normalizeUrl(item),
-      isAll: false,
-    })),
-  ];
-
-  const gridStyle = useMemo(() => {
-    if (menuEntries.length <= FULL_WIDTH_MAX_ITEMS) {
       return {
-        gridTemplateColumns: `repeat(${menuEntries.length}, minmax(0, 1fr))`,
-        width: '100%',
+        name,
+        link,
+        icon,
+        hasDropdown,
+        categoryId,
+        megaMenu: {
+          linkColumns,
+          links,
+          images,
+        },
       };
-    }
+    })
+    .filter((item) => item.name);
+};
 
-    const minColumnWidth = 88;
-    return {
-      gridTemplateColumns: `repeat(${menuEntries.length}, minmax(${minColumnWidth}px, 1fr))`,
-      minWidth: `${menuEntries.length * minColumnWidth}px`,
-    };
-  }, [menuEntries.length]);
+const isCollectionsItem = (item) => {
+  const name = String(item?.name || '').toLowerCase();
+  return item?.hasDropdown && name.includes('collection');
+};
+
+const hasMegaContent = (item) => {
+  if (!item?.hasDropdown || !item?.megaMenu) return false;
+  const links = Array.isArray(item.megaMenu.links) ? item.megaMenu.links : [];
+  const images = Array.isArray(item.megaMenu.images) ? item.megaMenu.images : [];
+  return links.length > 0 || images.some((entry) => entry?.url);
+};
+
+function MegaDropdown({ item, dropdownLinks, featuredImages, onClose, timerRef, menuStyle }) {
+  const columns = item?.megaMenu?.linkColumns || 1;
+  const hasLinks = dropdownLinks.length > 0;
+  const hasImages = featuredImages.length > 0;
 
   return (
     <div
-      className="hidden lg:block w-full border-t"
-      style={{ backgroundColor, color: textColor, borderColor: `${textColor}14` }}
+      className="absolute left-1/2 top-full z-[80] mt-1 w-[min(92vw,1100px)] min-w-[620px] -translate-x-1/2 rounded-xl border shadow-2xl"
+      style={{ borderColor: menuStyle.dropdownBorderColor, backgroundColor: menuStyle.dropdownBackgroundColor }}
+      onMouseEnter={() => {
+        if (timerRef.current) clearTimeout(timerRef.current);
+      }}
+      onMouseLeave={() => {
+        if (timerRef.current) clearTimeout(timerRef.current);
+        timerRef.current = setTimeout(onClose, 180);
+      }}
     >
-      <div className="max-w-[1400px] mx-auto px-4 py-1.5 sm:px-6">
-        <div
-          className="overflow-x-auto"
-          style={{ WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}
-        >
-          {loading && (
-            <div className="flex items-center gap-3">
-              {SKELETON_ITEMS.map((_, idx) => (
-                <div key={`skeleton-${idx}`} className="flex items-center flex-shrink-0">
-                  <div className="h-4 w-20 rounded-full bg-gray-200 animate-pulse" />
-                </div>
-              ))}
-            </div>
-          )}
-          {!loading && (
-            <div
-              className="grid w-full items-center"
-              style={gridStyle}
-            >
-              {menuEntries.map((item, index) => (
-                <div
-                  key={`${item.label}-${index}`}
-                  className="relative flex min-w-0 items-center justify-center px-2 py-0.5 text-center"
+      <div className={`mx-auto grid w-full gap-8 px-6 py-6 ${hasLinks && hasImages ? 'lg:grid-cols-[2fr,1fr]' : 'lg:grid-cols-1'}`}>
+        {hasLinks ? (
+          <div>
+            <div className={`grid gap-3 ${columns === 1 ? 'sm:grid-cols-1' : columns === 2 ? 'sm:grid-cols-2' : 'sm:grid-cols-3'}`}>
+              {dropdownLinks.map((entry, idx) => (
+                <Link
+                  key={`${entry.name}-${idx}`}
+                  href={entry.link || '#'}
+                  className="rounded-lg border px-3 py-2 text-sm transition"
+                  style={{ borderColor: menuStyle.dropdownBorderColor, color: menuStyle.dropdownTextColor }}
                 >
-                  {index > 0 ? (
-                    <span
-                      className="pointer-events-none absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[11px] font-medium"
-                      style={{ color: `${textColor}80` }}
-                    >
-                      |
-                    </span>
-                  ) : null}
-                  <Link
-                    href={item.url}
-                    className={item.isAll
-                      ? 'relative block w-full max-w-full truncate rounded-full px-3 py-1 text-center text-[12px] font-semibold uppercase tracking-[0.02em] transition hover:bg-white/14'
-                      : 'relative block w-full max-w-full truncate rounded-full px-3 py-1 text-center text-[12px] font-medium transition hover:bg-white/10'}
-                    title={item.label}
-                  >
-                    {item.label}
-                  </Link>
-                </div>
+                  {entry.name}
+                </Link>
               ))}
             </div>
-          )}
+
+            {item?.link && item.link !== '#' ? (
+              <div className="mt-4">
+                <Link href={item.link} className="text-sm font-semibold hover:underline" style={{ color: menuStyle.dropdownTextColor }}>
+                  {`View all ${item.name}`}
+                </Link>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {hasImages ? (
+          <div className={`grid gap-3 ${hasLinks ? '' : 'sm:grid-cols-2 lg:grid-cols-3'}`}>
+            {featuredImages.map((entry, idx) => (
+              <Link
+                key={`${entry.url}-${idx}`}
+                href={entry.link || '#'}
+                className="group block w-full overflow-hidden rounded-xl border"
+                style={{ borderColor: menuStyle.dropdownBorderColor }}
+              >
+                <img
+                  src={entry.url}
+                  alt={entry.label || item?.name || 'Featured image'}
+                  className="h-28 w-full object-cover transition duration-300 group-hover:scale-105"
+                  loading="lazy"
+                />
+                {entry.label ? (
+                  <div
+                    className="border-t px-3 py-2 text-xs font-semibold"
+                    style={{
+                      borderColor: menuStyle.dropdownBorderColor,
+                      backgroundColor: menuStyle.dropdownBackgroundColor,
+                      color: menuStyle.dropdownTextColor,
+                    }}
+                  >
+                    {entry.label}
+                  </div>
+                ) : null}
+              </Link>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+export default function NavbarMenuBar() {
+  const [navMenuItems, setNavMenuItems] = useState([]);
+  const [navMenuEnabled, setNavMenuEnabled] = useState(false);
+  const [categories, setCategories] = useState([]);
+  const [hoveredCategory, setHoveredCategory] = useState(null);
+  const [openMegaIndex, setOpenMegaIndex] = useState(null);
+  const [categoriesDropdownOpen, setCategoriesDropdownOpen] = useState(false);
+  const [loadedOnce, setLoadedOnce] = useState(false);
+  const [menuStyle, setMenuStyle] = useState(defaultMenuStyle);
+
+  const megaTimer = useRef(null);
+  const categoryTimer = useRef(null);
+
+  const topLevelCategories = useMemo(
+    () => categories.filter((item) => !item?.parentId),
+    [categories]
+  );
+
+  const childrenByParent = useMemo(() => {
+    const map = new Map();
+    for (const category of categories) {
+      const parent = category?.parentId ? String(category.parentId) : '';
+      if (!parent) continue;
+      if (!map.has(parent)) map.set(parent, []);
+      map.get(parent).push(category);
+    }
+    return map;
+  }, [categories]);
+
+  const hoveredChildren = useMemo(() => {
+    if (!hoveredCategory?._id) return [];
+    return childrenByParent.get(String(hoveredCategory._id)) || [];
+  }, [hoveredCategory, childrenByParent]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const cachedCategories = safeJsonParse(window.sessionStorage.getItem(CATEGORIES_CACHE_KEY), []);
+    const cachedMenu = safeJsonParse(window.sessionStorage.getItem(MENU_CACHE_KEY), []);
+    const cachedEnabled = safeJsonParse(window.sessionStorage.getItem(MENU_ENABLED_CACHE_KEY), false);
+    const cachedActions = safeJsonParse(window.sessionStorage.getItem(ACTIONS_VISIBILITY_CACHE_KEY), defaultActionsVisibility);
+    const cachedStyle = safeJsonParse(window.sessionStorage.getItem(MENU_STYLE_CACHE_KEY), defaultMenuStyle);
+
+    if (Array.isArray(cachedCategories)) setCategories(cachedCategories);
+    if (Array.isArray(cachedMenu)) setNavMenuItems(sanitizeMenuItems(cachedMenu));
+    setNavMenuEnabled(Boolean(cachedEnabled));
+    setMenuStyle({ ...defaultMenuStyle, ...(cachedStyle || {}) });
+    window.dispatchEvent(new CustomEvent('navActionsVisibilityUpdated', { detail: cachedActions }));
+
+    let active = true;
+
+    const revalidate = async () => {
+      try {
+        const [categoriesRes, settingsRes] = await Promise.all([
+          fetch('/api/categories', { cache: 'no-store' }),
+          fetch('/api/store/settings', { cache: 'no-store' }),
+        ]);
+
+        const nextCategories = categoriesRes.ok ? await categoriesRes.json() : { categories: [] };
+        const nextSettings = settingsRes.ok ? await settingsRes.json() : {};
+
+        if (!active) return;
+
+        const parsedCategories = Array.isArray(nextCategories?.categories) ? nextCategories.categories : [];
+        const parsedItems = sanitizeMenuItems(nextSettings?.navMenuItems);
+        const parsedEnabled = Boolean(nextSettings?.navMenuEnabled);
+        const parsedActions = {
+          ...defaultActionsVisibility,
+          ...(nextSettings?.navActionsVisibility || {}),
+        };
+        const parsedStyle = {
+          ...defaultMenuStyle,
+          ...(nextSettings?.navMenuStyle || {}),
+        };
+
+        setCategories(parsedCategories);
+        setNavMenuItems(parsedItems);
+        setNavMenuEnabled(parsedEnabled);
+        setMenuStyle(parsedStyle);
+
+        window.sessionStorage.setItem(CATEGORIES_CACHE_KEY, JSON.stringify(parsedCategories));
+        window.sessionStorage.setItem(MENU_CACHE_KEY, JSON.stringify(parsedItems));
+        window.sessionStorage.setItem(MENU_ENABLED_CACHE_KEY, JSON.stringify(parsedEnabled));
+        window.sessionStorage.setItem(ACTIONS_VISIBILITY_CACHE_KEY, JSON.stringify(parsedActions));
+        window.sessionStorage.setItem(MENU_STYLE_CACHE_KEY, JSON.stringify(parsedStyle));
+        window.dispatchEvent(new CustomEvent('navActionsVisibilityUpdated', { detail: parsedActions }));
+      } catch {
+        // Ignore transient fetch failures and keep cached values.
+      } finally {
+        if (active) setLoadedOnce(true);
+      }
+    };
+
+    revalidate();
+    const intervalId = setInterval(revalidate, REFRESH_MS);
+    const handleMenuUpdated = () => revalidate();
+    window.addEventListener('navMenuUpdated', handleMenuUpdated);
+
+    return () => {
+      active = false;
+      window.removeEventListener('navMenuUpdated', handleMenuUpdated);
+      clearInterval(intervalId);
+      if (megaTimer.current) clearTimeout(megaTimer.current);
+      if (categoryTimer.current) clearTimeout(categoryTimer.current);
+    };
+  }, []);
+
+  if (loadedOnce && (!navMenuEnabled || navMenuItems.length === 0)) return null;
+  if (!loadedOnce && navMenuItems.length === 0) return null;
+
+  const cssVars = {
+    '--menu-bar-bg': menuStyle.barBackgroundColor,
+    '--menu-bar-text': menuStyle.barTextColor,
+    '--menu-bar-hover-bg': menuStyle.barHoverBackgroundColor,
+    '--menu-dropdown-bg': menuStyle.dropdownBackgroundColor,
+    '--menu-dropdown-text': menuStyle.dropdownTextColor,
+    '--menu-dropdown-muted': menuStyle.dropdownMutedTextColor,
+    '--menu-dropdown-border': menuStyle.dropdownBorderColor,
+  };
+
+  return (
+    <div className="relative hidden w-full border-t lg:block" style={{ ...cssVars, borderColor: 'var(--menu-dropdown-border)', backgroundColor: 'var(--menu-bar-bg)' }}>
+      <div className="mx-auto max-w-[1400px] px-4 sm:px-6">
+        <div className="relative flex items-center gap-1 py-2">
+          {navMenuItems.map((item, index) => {
+            const dropdownLinks = Array.isArray(item?.megaMenu?.links) ? item.megaMenu.links : [];
+            const featuredImages = Array.isArray(item?.megaMenu?.images) ? item.megaMenu.images.filter((img) => img?.url) : [];
+            const shouldUseCollectionsFlyout = isCollectionsItem(item);
+            const shouldUseMega = hasMegaContent(item);
+            const itemHref = item.link || '#';
+
+            return (
+              <div
+                key={`${item.name}-${index}`}
+                className="static"
+                onMouseEnter={() => {
+                  if (megaTimer.current) clearTimeout(megaTimer.current);
+                  if (categoryTimer.current) clearTimeout(categoryTimer.current);
+
+                  if (shouldUseCollectionsFlyout) {
+                    setCategoriesDropdownOpen(true);
+                    setOpenMegaIndex(null);
+                    if (!hoveredCategory && topLevelCategories.length > 0) {
+                      setHoveredCategory(topLevelCategories[0]);
+                    }
+                  } else if (shouldUseMega) {
+                    setOpenMegaIndex(index);
+                    setCategoriesDropdownOpen(false);
+                  } else {
+                    setOpenMegaIndex(null);
+                    setCategoriesDropdownOpen(false);
+                  }
+                }}
+                onMouseLeave={() => {
+                  if (shouldUseCollectionsFlyout) {
+                    categoryTimer.current = setTimeout(() => {
+                      setCategoriesDropdownOpen(false);
+                    }, 180);
+                  }
+                  if (shouldUseMega) {
+                    megaTimer.current = setTimeout(() => {
+                      setOpenMegaIndex(null);
+                    }, 180);
+                  }
+                }}
+              >
+                <Link
+                  href={itemHref}
+                  className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition"
+                  style={{ color: 'var(--menu-bar-text)' }}
+                  onMouseEnter={(event) => {
+                    event.currentTarget.style.backgroundColor = 'var(--menu-bar-hover-bg)';
+                  }}
+                  onMouseLeave={(event) => {
+                    event.currentTarget.style.backgroundColor = 'transparent';
+                  }}
+                >
+                  {item.icon ? <img src={item.icon} alt={item.name} className="h-4 w-4 object-contain" loading="lazy" /> : null}
+                  <span>{item.name}</span>
+                </Link>
+
+                {shouldUseCollectionsFlyout && categoriesDropdownOpen ? (
+                  <div
+                    className="absolute left-0 top-full z-[80] mt-0 grid min-w-[560px] grid-cols-[220px,1fr] overflow-hidden rounded-xl border shadow-2xl"
+                    style={{ borderColor: 'var(--menu-dropdown-border)', backgroundColor: 'var(--menu-dropdown-bg)' }}
+                    onMouseEnter={() => {
+                      if (categoryTimer.current) clearTimeout(categoryTimer.current);
+                      setCategoriesDropdownOpen(true);
+                    }}
+                    onMouseLeave={() => {
+                      if (categoryTimer.current) clearTimeout(categoryTimer.current);
+                      categoryTimer.current = setTimeout(() => setCategoriesDropdownOpen(false), 180);
+                    }}
+                  >
+                    <div className="border-r" style={{ borderColor: 'var(--menu-dropdown-border)', backgroundColor: 'var(--menu-bar-hover-bg)' }}>
+                      {topLevelCategories.map((category) => (
+                        <button
+                          key={category._id || category.slug || category.name}
+                          type="button"
+                          onMouseEnter={() => setHoveredCategory(category)}
+                          className={`block w-full px-4 py-2.5 text-left text-sm transition ${hoveredCategory?._id === category._id ? 'font-semibold' : ''}`}
+                          style={hoveredCategory?._id === category._id
+                            ? { backgroundColor: 'var(--menu-dropdown-bg)', color: 'var(--menu-dropdown-text)' }
+                            : { color: 'var(--menu-dropdown-text)' }}
+                        >
+                          {category.name}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="p-4">
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--menu-dropdown-muted)' }}>
+                        {hoveredCategory?.name || 'Collections'}
+                      </p>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {hoveredChildren.length > 0 ? (
+                          hoveredChildren.map((child) => (
+                            <Link
+                              key={child._id || child.slug || child.name}
+                              href={`/shop?category=${encodeURIComponent(child.slug || child._id || '')}`}
+                              className="rounded-lg border px-3 py-2 text-sm transition"
+                              style={{ borderColor: 'var(--menu-dropdown-border)', color: 'var(--menu-dropdown-text)' }}
+                            >
+                              {child.name}
+                            </Link>
+                          ))
+                        ) : (
+                          <p className="text-sm" style={{ color: 'var(--menu-dropdown-muted)' }}>No sub-categories yet.</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {shouldUseMega && openMegaIndex === index ? (
+                  <MegaDropdown
+                    item={item}
+                    dropdownLinks={dropdownLinks}
+                    featuredImages={featuredImages}
+                    onClose={() => setOpenMegaIndex(null)}
+                    timerRef={megaTimer}
+                    menuStyle={menuStyle}
+                  />
+                ) : null}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

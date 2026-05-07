@@ -61,6 +61,8 @@ const emailHistorySchema = new mongoose.Schema({
 emailHistorySchema.index({ storeId: 1, createdAt: -1 });
 emailHistorySchema.index({ storeId: 1, status: 1 });
 emailHistorySchema.index({ storeId: 1, type: 1 });
+// TTL: auto-delete email logs older than 180 days to control collection size
+emailHistorySchema.index({ createdAt: 1 }, { expireAfterSeconds: 180 * 24 * 60 * 60 });
 
 // Auto-update updatedAt using promise middleware (no next callback required)
 emailHistorySchema.pre('save', function() {

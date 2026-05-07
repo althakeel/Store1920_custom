@@ -30,14 +30,13 @@ export async function GET(request) {
       .select('_id name slug images price mrp AED category inStock stockQuantity')
       .lean();
 
+    // Build O(1) lookup map instead of O(n*m) Array.find
+    const productMap = new Map(products.map(p => [p._id.toString(), p]));
+
     // Map products to history
-    const historyWithProducts = history.map(h => {
-      const product = products.find(p => p._id.toString() === h.productId);
-      return {
-        ...h,
-        product: product || null
-      };
-    }).filter(h => h.product !== null && h.product.name); // Filter out deleted products and invalid entries
+    const historyWithProducts = history
+      .map(h => ({ ...h, product: productMap.get(h.productId) || null }))
+      .filter(h => h.product !== null && h.product.name); // Filter out deleted products and invalid entries
 
     return NextResponse.json({ 
       success: true, 

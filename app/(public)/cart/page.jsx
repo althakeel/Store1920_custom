@@ -12,6 +12,7 @@ import { PackageIcon, Trash2Icon } from "lucide-react";
 import Image from "next/image";
 import { useAuth } from "@/lib/useAuth";
 import { trackMetaEvent } from "@/lib/metaPixelClient";
+import { getCartEntryProductId, getCartEntryQuantity, isFreeGiftEntry } from "@/lib/freeGiftUtils";
 
 export const dynamic = "force-dynamic";
 
@@ -59,14 +60,14 @@ export default function Cart() {
 
     // Fetch any cart products missing from the current product list
     useEffect(() => {
-        const cartKeys = Object.keys(cartItems || {});
-        if (cartKeys.length === 0) return;
-
-        const normalizedIds = cartKeys.filter((id) => {
-            if (typeof id !== 'string') return false;
-            const trimmed = id.trim();
-            return trimmed.length > 0 && trimmed !== 'undefined' && trimmed !== 'null';
-        });
+        const normalizedIds = [...new Set(
+            Object.entries(cartItems || {})
+                .map(([cartKey, entry]) => getCartEntryProductId(cartKey, entry))
+                .filter((id) => {
+                    const trimmed = String(id || '').trim();
+                    return trimmed.length > 0 && trimmed !== 'undefined' && trimmed !== 'null';
+                })
+        )];
         if (normalizedIds.length === 0) return;
 
         const missingIds = normalizedIds.filter(
@@ -110,19 +111,29 @@ export default function Cart() {
         const invalidKeys = [];
 
         for (const [key, value] of Object.entries(cartItems || {})) {
-            const product = products.find((p) => String(p._id) === String(key));
-            const qty = typeof value === 'number' ? value : value?.quantity || 0;
-            
+            const actualProductId = getCartEntryProductId(key, value);
+            const product = products.find((p) => String(p._id) === String(actualProductId));
+            const qty = getCartEntryQuantity(value);
+            const isFreeGift = isFreeGiftEntry(value);
+
             if (product && qty > 0) {
-                const unitPrice = (typeof value === 'object' ? value?.price : undefined) ?? product.price ?? 0;
-                arr.push({ ...product, quantity: qty, _cartPrice: unitPrice, _cartKey: key });
+                const unitPrice = isFreeGift
+                    ? 0
+                    : ((typeof value === 'object' ? value?.price : undefined) ?? product.price ?? 0);
+                arr.push({
+                    ...product,
+                    quantity: qty,
+                    _cartPrice: unitPrice,
+                    _cartKey: key,
+                    _productId: actualProductId,
+                    _isFreeGift: isFreeGift,
+                    _freeGiftTitle: typeof value === 'object' ? value?.freeGift?.title || '' : '',
+                });
                 const isOutOfStock = product.inStock === false || (typeof product.stockQuantity === 'number' && product.stockQuantity <= 0);
-                if (!isOutOfStock) {
+                if (!isOutOfStock && !isFreeGift) {
                     total += unitPrice * qty;
                 }
             } else if (!product && qty > 0) {
-                // Product not found - could be still loading or deleted
-                // Don't delete it, just skip display for now
                 console.warn('[Cart Page] Product not found in list:', key, 'qty:', qty);
                 invalidKeys.push(key);
             }
@@ -305,39 +316,50 @@ export default function Cart() {
 
                                             <div className="flex-1 min-w-0">
                                                 <h3 className="font-semibold text-gray-900 text-sm md:text-base line-clamp-2 mb-1">{item.name}</h3>
-                                                <p className="text-xs text-gray-500 mb-2">{item.category}</p>
+                                                <p className="text-xs text-gray-500 mb-1">{item.category}</p>
+                                                {item._isFreeGift ? (
+                                                    <p className="text-xs font-semibold text-green-600 mb-2">Free gift{item._freeGiftTitle ? ` • ${item._freeGiftTitle}` : ''}</p>
+                                                ) : null}
                                                 <div className="flex items-center justify-between mt-3">
                                                     <div>
-                                                        <p className="text-lg font-bold text-orange-600">{currency} {(item._cartPrice ?? item.price ?? 0).toLocaleString()}</p>
+                                                        <p className="text-lg font-bold text-orange-600">{item._isFreeGift ? 'FREE' : `${currency} ${(item._cartPrice ?? item.price ?? 0).toLocaleString()}`}</p>
                                                     </div>
                                                     <div className="flex items-center gap-3">
-                                                        <Counter productId={item._cartKey || item._id} maxQty={maxQty} />
+                                                        {item._isFreeGift ? (
+                                                            <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-semibold text-green-700">Qty 1 gift</span>
+                                                        ) : (
+                                                            <Counter productId={item._cartKey || item._id} maxQty={maxQty} />
+                                                        )}
                                                     </div>
                                                 </div>
 
                                                 <div className="flex items-center justify-between mt-3 md:hidden">
-                                                    <p className="text-sm font-semibold text-gray-900">Total: {currency}{((item._cartPrice ?? item.price ?? 0) * item.quantity).toLocaleString()}</p>
-                                                    <button
-                                                        onClick={() => handleDeleteItemFromCart(item._cartKey || item._id)}
-                                                        disabled={!!deletingKeys[item._cartKey]}
-                                                        type="button"
-                                                        className="text-red-500 hover:text-red-700 text-sm font-medium"
-                                                    >
-                                                        {deletingKeys[item._cartKey] ? 'REMOVING...' : 'REMOVE'}
-                                                    </button>
+                                                    <p className="text-sm font-semibold text-gray-900">Total: {item._isFreeGift ? 'FREE' : `${currency}${((item._cartPrice ?? item.price ?? 0) * item.quantity).toLocaleString()}`}</p>
+                                                    {!item._isFreeGift ? (
+                                                        <button
+                                                            onClick={() => handleDeleteItemFromCart(item._cartKey || item._id)}
+                                                            disabled={!!deletingKeys[item._cartKey]}
+                                                            type="button"
+                                                            className="text-red-500 hover:text-red-700 text-sm font-medium"
+                                                        >
+                                                            {deletingKeys[item._cartKey] ? 'REMOVING...' : 'REMOVE'}
+                                                        </button>
+                                                    ) : <span className="text-xs font-medium text-green-700">AUTO-ADDED</span>}
                                                 </div>
                                             </div>
 
                                             <div className="hidden md:flex flex-col items-end justify-between">
-                                                <button
-                                                    onClick={() => handleDeleteItemFromCart(item._cartKey || item._id)}
-                                                    disabled={!!deletingKeys[item._cartKey]}
-                                                    type="button"
-                                                    className="text-gray-400 hover:text-red-500 transition-colors"
-                                                >
-                                                    <Trash2Icon size={20} />
-                                                </button>
-                                                <p className="text-lg font-bold text-gray-900">{currency}{((item._cartPrice ?? item.price ?? 0) * item.quantity).toLocaleString()}</p>
+                                                {!item._isFreeGift ? (
+                                                    <button
+                                                        onClick={() => handleDeleteItemFromCart(item._cartKey || item._id)}
+                                                        disabled={!!deletingKeys[item._cartKey]}
+                                                        type="button"
+                                                        className="text-gray-400 hover:text-red-500 transition-colors"
+                                                    >
+                                                        <Trash2Icon size={20} />
+                                                    </button>
+                                                ) : <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-semibold text-green-700">AUTO-ADDED</span>}
+                                                <p className="text-lg font-bold text-gray-900">{item._isFreeGift ? 'FREE' : `${currency}${((item._cartPrice ?? item.price ?? 0) * item.quantity).toLocaleString()}`}</p>
                                             </div>
                                         </div>
                                             );

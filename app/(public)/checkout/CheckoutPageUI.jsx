@@ -16,6 +16,9 @@ import dynamic from "next/dynamic";
 import Script from "next/script";
 import Link from "next/link";
 import Image from "next/image";
+import { useStorefrontI18n } from "@/lib/useStorefrontI18n";
+import { useStorefrontMarket } from "@/lib/useStorefrontMarket";
+import { getCartEntryProductId, getCartEntryQuantity, isFreeGiftEntry } from "@/lib/freeGiftUtils";
 import Creditimage1 from '../../../assets/creditcards/19 - Copy.webp';
 import Creditimage2 from '../../../assets/creditcards/16 - Copy.webp';
 import Creditimage3 from '../../../assets/creditcards/20.webp';
@@ -28,6 +31,8 @@ const PrepaidUpsellModal = dynamic(() => import("@/components/PrepaidUpsellModal
 export default function CheckoutPage() {
   const { user, loading: authLoading, getToken } = useAuth();
   const dispatch = useDispatch();
+  const { t, isArabic } = useStorefrontI18n();
+  const { market, convertPrice } = useStorefrontMarket();
   const addressList = useSelector((state) => state.address?.list || []);
   const addressFetchError = useSelector((state) => state.address?.error);
   const { cartItems } = useSelector((state) => state.cart);
@@ -78,6 +83,7 @@ export default function CheckoutPage() {
   const [editingAddressId, setEditingAddressId] = useState(null);
   const [showAlternatePhone, setShowAlternatePhone] = useState(false);
   const [abandonSaved, setAbandonSaved] = useState(false);
+  const [tabbyCardLoaded, setTabbyCardLoaded] = useState(false);
 
   // Coupon logic
   const [coupon, setCoupon] = useState("");
@@ -88,6 +94,16 @@ export default function CheckoutPage() {
   const [couponLoading, setCouponLoading] = useState(false);
   const [storeId, setStoreId] = useState(null);
   const [formError, setFormError] = useState("");
+  const tabbyPublicKey = process.env.NEXT_PUBLIC_TABBY_PUBLIC_KEY || '';
+  const tabbyMerchantCode = process.env.NEXT_PUBLIC_TABBY_MERCHANT_CODE || process.env.TABBY_MERCHANT_CODE || 'Store1920';
+  const formatMoney = (amount) => {
+    const converted = Number(convertPrice(Number(amount || 0)) || 0);
+    return `${market.currency} ${converted.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  };
+  const formatMoneyFixed = (amount) => {
+    const converted = Number(convertPrice(Number(amount || 0)) || 0);
+    return `${market.currency} ${converted.toFixed(2)}`;
+  };
 
   const pushDataLayerEvent = (event, ecommerce) => {
     if (typeof window === 'undefined') return;
@@ -135,12 +151,14 @@ export default function CheckoutPage() {
     setCouponError("");
     
     try {
-      // Convert cartItems object to array
-      const cartItemsArray = Object.entries(cartItems || {}).map(([id, value]) => ({
-        productId: id,
-        quantity: typeof value === 'number' ? value : value?.quantity || 0,
-        variantId: typeof value === 'object' ? value?.variantId : undefined
-      }));
+      const cartItemsArray = Object.entries(cartItems || {})
+        .map(([id, value]) => ({
+          productId: getCartEntryProductId(id, value),
+          quantity: getCartEntryQuantity(value),
+          variantId: typeof value === 'object' ? value?.variantId : undefined,
+          isFreeGift: isFreeGiftEntry(value),
+        }))
+        .filter((item) => item.quantity > 0 && item.productId && !item.isFreeGift);
       
       // Calculate total for validation
       const itemsTotal = cartItemsArray.reduce((sum, item) => {
@@ -151,8 +169,7 @@ export default function CheckoutPage() {
         return sum + price * item.quantity;
       }, 0);
       
-      // Get current product IDs in cart
-      const cartProductIds = Object.keys(cartItems);
+      const cartProductIds = cartItemsArray.map((item) => item.productId);
       
       console.log('Applying coupon:', coupon.toUpperCase());
       console.log('Order total:', itemsTotal);
@@ -199,10 +216,14 @@ export default function CheckoutPage() {
 
   // Fetch only the products that are in the cart (fast targeted batch fetch)
   useEffect(() => {
-    const cartKeys = Object.keys(cartItems || {}).filter((id) => {
-      const trimmed = id?.trim();
-      return trimmed && trimmed !== 'undefined' && trimmed !== 'null';
-    });
+    const cartKeys = [...new Set(
+      Object.entries(cartItems || {})
+        .map(([id, value]) => getCartEntryProductId(id, value))
+        .filter((id) => {
+          const trimmed = String(id || '').trim();
+          return trimmed && trimmed !== 'undefined' && trimmed !== 'null';
+        })
+    )];
     if (cartKeys.length === 0) return;
 
     const missingIds = cartKeys.filter(
@@ -238,17 +259,21 @@ export default function CheckoutPage() {
     const timer = setTimeout(async () => {
       try {
         const items = cartEntries.map(([id, value]) => {
-          const quantity = typeof value === 'number' ? value : value?.quantity || 0;
-          const product = products.find((p) => p._id === id);
-          const price = product?.salePrice || product?.price || 0;
+          const productId = getCartEntryProductId(id, value);
+          const quantity = getCartEntryQuantity(value);
+          const product = products.find((p) => String(p._id) === String(productId));
+          const price = isFreeGiftEntry(value)
+            ? 0
+            : (typeof value === 'object' && value?.price !== undefined ? value.price : (product?.salePrice || product?.price || 0));
           return {
-            productId: id,
+            productId,
             quantity,
             price,
             name: product?.name || 'Product',
             variantOptions: typeof value === 'object' ? value?.variantOptions || null : null,
+            isFreeGift: isFreeGiftEntry(value),
           };
-        }).filter(it => it.quantity > 0);
+        }).filter(it => it.quantity > 0 && it.productId);
 
         if (items.length === 0) return;
 
@@ -505,14 +530,25 @@ export default function CheckoutPage() {
   console.log('Checkout - Products:', products?.map(p => ({ id: p._id, name: p.name })));
   
   for (const [key, value] of Object.entries(cartItems || {})) {
-    const product = products?.find((p) => String(p._id) === String(key));
-    const qty = typeof value === 'number' ? value : value?.quantity || 0;
+    const actualProductId = getCartEntryProductId(key, value);
+    const product = products?.find((p) => String(p._id) === String(actualProductId));
+    const qty = getCartEntryQuantity(value);
     const priceOverride = typeof value === 'number' ? undefined : value?.price;
+    const freeGift = typeof value === 'object' ? value?.freeGift : undefined;
+    const isFreeGift = isFreeGiftEntry(value);
     if (product && qty > 0) {
       if (isPurchasableProduct(product)) {
         console.log('Found purchasable product for key:', key, product.name);
-        const unitPrice = Number(priceOverride ?? product.salePrice ?? product.price ?? 0) || 0;
-        cartArray.push({ ...product, quantity: qty, _cartPrice: unitPrice, _cartKey: key });
+        const unitPrice = isFreeGift ? 0 : (Number(priceOverride ?? product.salePrice ?? product.price ?? 0) || 0);
+        cartArray.push({
+          ...product,
+          quantity: qty,
+          _cartPrice: unitPrice,
+          _cartKey: key,
+          _productId: actualProductId,
+          _isFreeGift: isFreeGift,
+          _freeGift: freeGift || null,
+        });
       }
     } else {
       console.log('No product found for key:', key);
@@ -526,15 +562,33 @@ export default function CheckoutPage() {
   // Calculate coupon discount
   const couponDiscountRaw = Number(appliedCoupon?.discountAmount || 0);
   const couponDiscount = Number.isFinite(couponDiscountRaw) ? Number(couponDiscountRaw.toFixed(2)) : 0;
+  const isFreeShippingCouponApplied = Boolean(appliedCoupon?.freeShipping);
+  const effectiveShipping = isFreeShippingCouponApplied ? 0 : shipping;
+  const shippingDiscount = isFreeShippingCouponApplied ? shipping : 0;
   const totalAfterCoupon = Math.max(0, subtotal - couponDiscount);
   
-  const total = totalAfterCoupon + shipping;
+  const total = totalAfterCoupon + effectiveShipping;
   const totalAfterWallet = total;
   const needsPaymentSelection = totalAfterWallet > 0;
   const maxCODAmount = shippingSetting?.maxCODAmount || 0;
   const hasPersonalizedOfferItem = Object.values(cartItems || {}).some(
     (entry) => typeof entry === 'object' && !!entry?.offerToken
   );
+  const buildCheckoutItems = () => cartArray.map((item) => {
+    const cartKey = item._cartKey || item._id;
+    const value = cartItems?.[cartKey];
+    const qty = getCartEntryQuantity(value) || item.quantity || 0;
+    const variantOptions = typeof value === 'object' ? value?.variantOptions : undefined;
+    const offerToken = typeof value === 'object' ? value?.offerToken : undefined;
+    const freeGift = typeof value === 'object' ? value?.freeGift : undefined;
+    return {
+      id: item._productId || item._id,
+      quantity: qty,
+      ...(variantOptions ? { variantOptions } : {}),
+      ...(offerToken ? { offerToken } : {}),
+      ...(freeGift ? { freeGift } : {}),
+    };
+  }).filter((item) => item.quantity > 0 && item.id);
   const isCODDisabledForOrder =
     hasPersonalizedOfferItem ||
     shippingSetting?.enableCOD === false ||
@@ -807,6 +861,160 @@ export default function CheckoutPage() {
     }
   };
 
+  // Stripe Payment Handler — creates order with paymentMethod STRIPE, then redirects to Stripe Checkout
+  const handleStripePayment = async (paymentPayload) => {
+    try {
+      let fetchOptions = {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(paymentPayload),
+      };
+
+      if (user && getToken) {
+        const token = await getToken();
+        fetchOptions.headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const res = await fetch('/api/orders', fetchOptions);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        const msg = errData.message || errData.error || 'Failed to initiate Stripe payment';
+        setFormError(msg);
+        setPlacingOrder(false);
+        return false;
+      }
+
+      const data = await res.json();
+
+      // Orders API returns { session: { url, id } } for STRIPE paymentMethod
+      const sessionUrl = data?.session?.url;
+      if (sessionUrl) {
+        // Redirect to Stripe-hosted checkout page
+        window.location.href = sessionUrl;
+        return true;
+      }
+
+      setFormError('Could not create Stripe checkout session. Please try again.');
+      setPlacingOrder(false);
+      return false;
+    } catch (error) {
+      setFormError(error.message || 'Stripe payment failed. Please try again.');
+      setPlacingOrder(false);
+      return false;
+    }
+  };
+
+  // Tamara BNPL Handler — creates order with paymentMethod TAMARA, then redirects to Tamara checkout
+  const handleTamaraPayment = async (paymentPayload) => {
+    try {
+      let fetchOptions = {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(paymentPayload),
+      };
+
+      if (user && getToken) {
+        const token = await getToken();
+        fetchOptions.headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const res = await fetch('/api/orders', fetchOptions);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        const msg = errData.message || errData.error || 'Failed to initiate Tamara payment';
+        setFormError(msg);
+        setPlacingOrder(false);
+        return false;
+      }
+
+      const data = await res.json();
+      const checkoutUrl = data?.checkout_url;
+      if (checkoutUrl) {
+        window.location.href = checkoutUrl;
+        return true;
+      }
+
+      setFormError('Could not create Tamara checkout session. Please try again.');
+      setPlacingOrder(false);
+      return false;
+    } catch (error) {
+      setFormError(error.message || 'Tamara payment failed. Please try again.');
+      setPlacingOrder(false);
+      return false;
+    }
+  };
+
+  // Tabby BNPL Handler — creates order with paymentMethod TABBY, then redirects to Tabby checkout
+  const handleTabbyPayment = async (paymentPayload) => {
+    try {
+      let fetchOptions = {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(paymentPayload),
+      };
+
+      if (user && getToken) {
+        const token = await getToken();
+        fetchOptions.headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const res = await fetch('/api/orders', fetchOptions);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        const msg = errData.message || errData.error || 'Failed to initiate Tabby payment';
+        setFormError(msg);
+        setPlacingOrder(false);
+        return false;
+      }
+
+      const data = await res.json();
+      const checkoutUrl = data?.checkout_url;
+      if (checkoutUrl) {
+        window.location.href = checkoutUrl;
+        return true;
+      }
+
+      setFormError('Could not create Tabby checkout session. Please try again.');
+      setPlacingOrder(false);
+      return false;
+    } catch (error) {
+      setFormError(error.message || 'Tabby payment failed. Please try again.');
+      setPlacingOrder(false);
+      return false;
+    }
+  };
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.TabbyCard) {
+      setTabbyCardLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (form.payment !== 'tabby') return;
+    if (!tabbyCardLoaded) return;
+    if (!window.TabbyCard) return;
+    if (!tabbyPublicKey || !tabbyMerchantCode) return;
+
+    const price = Number(totalAfterWallet || 0).toFixed(2);
+    if (Number(price) <= 0) return;
+
+    try {
+      new window.TabbyCard({
+        selector: '#tabbyCard',
+        currency: 'AED',
+        price,
+        lang: 'en',
+        shouldInheritBg: false,
+        publicKey: tabbyPublicKey,
+        merchantCode: tabbyMerchantCode,
+      });
+    } catch (err) {
+      console.error('TabbyCard init error:', err);
+    }
+  }, [form.payment, totalAfterWallet, tabbyPublicKey, tabbyMerchantCode, tabbyCardLoaded]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setFormError("");
@@ -874,43 +1082,36 @@ export default function CheckoutPage() {
       return;
     }
     
-    // For card payment, trigger Razorpay (allows guest checkout)
+    // For card payment, use Stripe Checkout
     if (form.payment === 'card') {
       setPlacingOrder(true);
-      // Validate phone number
       if (!resolvedPhone || resolvedPhone.length < 7 || resolvedPhone.length > 15) {
         setFormError(`Please enter a valid phone number. Got ${resolvedPhone.length} digits, need 7-15.`);
         setPlacingOrder(false);
         return;
       }
-      // Prepare payload but DON'T create order yet - wait for payment verification
       try {
-        // Build items from purchasable cart items only
-        const itemsFromStateCard = cartArray.map((item) => {
-          const value = cartItems?.[item._id];
-          const qty = typeof value === 'number' ? value : value?.quantity || item.quantity || 0;
-          const variantOptions = typeof value === 'object' ? value?.variantOptions : undefined;
-          return { id: item._id, quantity: qty, ...(variantOptions ? { variantOptions } : {}) };
-        }).filter(i => i.quantity > 0);
+        const itemsFromStateCard = buildCheckoutItems();
 
         let payload = {
           items: itemsFromStateCard,
-          paymentMethod: 'CARD',
+          paymentMethod: 'STRIPE',
           shippingFee: shipping,
           shippingMethod: shippingMethod,
           paymentStatus: 'pending',
         };
-        
-        // Add coupon data if applied
-        if (appliedCoupon && couponDiscount > 0) {
+
+        if (appliedCoupon && (couponDiscount > 0 || isFreeShippingCouponApplied)) {
           payload.coupon = {
             code: appliedCoupon.code,
             discountAmount: couponDiscount,
+            freeShipping: isFreeShippingCouponApplied,
+            shippingDiscount,
             title: appliedCoupon.title,
             description: appliedCoupon.description,
           };
         }
-        
+
         if (user) {
           const addressId = form.addressId || (addressList[0] && addressList[0]._id);
           if (addressId) {
@@ -937,15 +1138,104 @@ export default function CheckoutPage() {
             pincode: resolvedPincode || '',
           };
         }
-        
-        if (user && getToken) {
-          payload.token = await getToken();
-        }
-        
-        // Open Razorpay without creating order first
-        await handleRazorpayPayment(payload);
+
+        await handleStripePayment(payload);
       } catch (error) {
         setFormError(error.message || "Payment failed");
+        setPlacingOrder(false);
+      }
+      return;
+    }
+
+    // Tamara BNPL payment
+    if (form.payment === 'tamara') {
+      setPlacingOrder(true);
+      try {
+        const itemsForTamara = buildCheckoutItems();
+
+        let payload = {
+          items: itemsForTamara,
+          paymentMethod: 'TAMARA',
+          shippingFee: shipping,
+          shippingMethod: shippingMethod,
+          paymentStatus: 'pending',
+        };
+
+        if (user) {
+          const addressId = form.addressId || (addressList[0] && addressList[0]._id);
+          if (addressId) payload.addressId = addressId;
+        } else {
+          if (!form.name || !form.email || !resolvedPhone || !form.street || !form.city || !form.state || !resolvedCountry) {
+            setFormError("Please fill all required shipping details.");
+            setPlacingOrder(false);
+            return;
+          }
+          payload.isGuest = true;
+          payload.guestInfo = {
+            name: form.name,
+            email: form.email,
+            phone: resolvedPhone,
+            phoneCode: form.phoneCode,
+            alternatePhone: cleanedAlternatePhone || '',
+            alternatePhoneCode: form.alternatePhone ? form.alternatePhoneCode || form.phoneCode : '',
+            street: form.street,
+            city: form.city,
+            state: form.state,
+            country: resolvedCountry,
+            pincode: resolvedPincode || '',
+          };
+        }
+
+        await handleTamaraPayment(payload);
+      } catch (error) {
+        setFormError(error.message || "Tamara payment failed");
+        setPlacingOrder(false);
+      }
+      return;
+    }
+
+    // Tabby BNPL payment
+    if (form.payment === 'tabby') {
+      setPlacingOrder(true);
+      try {
+        const itemsForTabby = buildCheckoutItems();
+
+        let payload = {
+          items: itemsForTabby,
+          paymentMethod: 'TABBY',
+          shippingFee: shipping,
+          shippingMethod: shippingMethod,
+          paymentStatus: 'pending',
+        };
+
+        if (user) {
+          const addressId = form.addressId || (addressList[0] && addressList[0]._id);
+          if (addressId) payload.addressId = addressId;
+        } else {
+          if (!form.name || !form.email || !resolvedPhone || !form.street || !form.city || !form.state || !resolvedCountry) {
+            setFormError("Please fill all required shipping details.");
+            setPlacingOrder(false);
+            return;
+          }
+          payload.isGuest = true;
+          payload.guestInfo = {
+            name: form.name,
+            email: form.email,
+            phone: resolvedPhone,
+            phoneCode: form.phoneCode,
+            alternatePhone: cleanedAlternatePhone || '',
+            alternatePhoneCode: form.alternatePhone ? form.alternatePhoneCode || form.phoneCode : '',
+            street: form.street,
+            city: form.city,
+            state: form.state,
+            country: resolvedCountry,
+            pincode: resolvedPincode || '',
+          };
+        }
+
+        await handleTabbyPayment(payload);
+      } catch (error) {
+        setFormError(error.message || 'Tabby payment failed');
         setPlacingOrder(false);
       }
       return;
@@ -989,7 +1279,7 @@ export default function CheckoutPage() {
         }
         
         if (maxCODAmount > 0 && remainingAmount > maxCODAmount) {
-          setFormError(`COD is not available for orders above AED${maxCODAmount}. Your order amount is AED${remainingAmount.toFixed(2)}. Please use online payment.`);
+          setFormError(`COD is not available for orders above ${formatMoney(maxCODAmount)}. Your order amount is ${formatMoneyFixed(remainingAmount)}. Please use online payment.`);
           setPlacingOrder(false);
           return;
         }
@@ -1002,18 +1292,7 @@ export default function CheckoutPage() {
       console.log('Checkout - User object:', user);
       
       // Build items directly from cartItems to preserve variantOptions
-      const itemsFromState = cartArray.map((item) => {
-        const value = cartItems?.[item._id];
-        const qty = typeof value === 'number' ? value : value?.quantity || item.quantity || 0;
-        const variantOptions = typeof value === 'object' ? value?.variantOptions : undefined;
-        const offerToken = typeof value === 'object' ? value?.offerToken : undefined;
-        return {
-          id: item._id,
-          quantity: qty,
-          ...(variantOptions ? { variantOptions } : {}),
-          ...(offerToken ? { offerToken } : {})
-        };
-      }).filter(i => i.quantity > 0);
+      const itemsFromState = buildCheckoutItems();
       
       const finalPaymentMethod = form.payment === 'cod' ? 'COD' : form.payment.toUpperCase();
 
@@ -1026,10 +1305,12 @@ export default function CheckoutPage() {
           shippingMethod: shippingMethod,
         };
         // Add coupon data if applied
-        if (appliedCoupon && couponDiscount > 0) {
+        if (appliedCoupon && (couponDiscount > 0 || isFreeShippingCouponApplied)) {
           payload.coupon = {
             code: appliedCoupon.code,
             discountAmount: couponDiscount,
+            freeShipping: isFreeShippingCouponApplied,
+            shippingDiscount,
             title: appliedCoupon.title,
             description: appliedCoupon.description,
           };
@@ -1077,10 +1358,12 @@ export default function CheckoutPage() {
           }
         };
         // Add coupon for guest if applied
-        if (appliedCoupon && couponDiscount > 0) {
+        if (appliedCoupon && (couponDiscount > 0 || isFreeShippingCouponApplied)) {
           payload.coupon = {
             code: appliedCoupon.code,
             discountAmount: couponDiscount,
+            freeShipping: isFreeShippingCouponApplied,
+            shippingDiscount,
             title: appliedCoupon.title,
             description: appliedCoupon.description,
           };
@@ -1345,18 +1628,18 @@ export default function CheckoutPage() {
     <>
       <FbqInitiateCheckout
         value={totalAfterWallet}
-        currency="AED"
+        currency={market.currency}
         contentIds={cartArray.map((item) => String(item?._id || item?._cartKey || '')).filter(Boolean)}
         numItems={cartArray.reduce((sum, item) => sum + Number(item?.quantity || 0), 0)}
       />
       <div className="py-10 bg-white md:pb-0 pb-20 min-h-0 md:min-h-[35dvh]">
-      <div className="max-w-[1250px] mx-auto grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div className="max-w-[1250px] mx-auto grid grid-cols-1 md:grid-cols-3 gap-8" dir={isArabic ? 'rtl' : 'ltr'}>
         {/* Left column: address, form, payment */}
         <div className="md:col-span-2">
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8">
             {/* Cart Items Section */}
             <div className="mb-6">
-              <h2 className="text-xl font-bold mb-2 text-gray-900">Your order</h2>
+              <h2 className="text-xl font-bold mb-2 text-gray-900">{t('checkout.yourOrder')}</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {cartArray.map((item) => (
                   <div key={item._cartKey || item._id} className="flex items-center bg-gray-50 border border-gray-200 rounded-lg p-3 gap-3">
@@ -1364,43 +1647,52 @@ export default function CheckoutPage() {
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold text-gray-900 truncate">{item.name}</div>
                       <div className="text-xs text-gray-500 truncate">{item.brand || ''}</div>
-                      <div className="text-xs text-gray-400">AED {Number(item._cartPrice ?? item.price ?? 0).toLocaleString()}</div>
+                      {item._isFreeGift ? (
+                        <div className="text-xs font-semibold text-green-600">Free gift</div>
+                      ) : null}
+                      <div className="text-xs text-gray-400">{item._isFreeGift ? 'FREE' : formatMoney(item._cartPrice ?? item.price ?? 0)}</div>
                     </div>
                     <div className="flex flex-col items-center gap-1">
-                      <div className="flex items-center gap-1">
-                        <button 
-                          type="button" 
-                          className="px-2 py-0.5 rounded bg-gray-200 text-gray-700 hover:bg-gray-300 active:bg-gray-400" 
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            if (item.quantity > 1) {
-                              dispatch(removeFromCart({ productId: item._cartKey || item._id }));
-                            } else {
+                      {item._isFreeGift ? (
+                        <div className="rounded-full bg-green-50 px-3 py-1 text-xs font-semibold text-green-700">AUTO-ADDED</div>
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-1">
+                            <button 
+                              type="button" 
+                              className="px-2 py-0.5 rounded bg-gray-200 text-gray-700 hover:bg-gray-300 active:bg-gray-400" 
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                if (item.quantity > 1) {
+                                  dispatch(removeFromCart({ productId: item._cartKey || item._id }));
+                                } else {
+                                  dispatch(deleteItemFromCart({ productId: item._cartKey || item._id }));
+                                }
+                              }}
+                            >-</button>
+                            <span className="px-2 text-sm">{item.quantity}</span>
+                            <button 
+                              type="button" 
+                              className="px-2 py-0.5 rounded bg-gray-200 text-gray-700 hover:bg-gray-300 active:bg-gray-400" 
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                dispatch(addToCart({ productId: item._cartKey || item._id, price: item._cartPrice ?? item.price }));
+                              }}
+                            >+</button>
+                          </div>
+                          <button 
+                            type="button" 
+                            className="text-xs text-red-500 hover:text-red-700 hover:underline mt-1 active:text-red-800" 
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
                               dispatch(deleteItemFromCart({ productId: item._cartKey || item._id }));
-                            }
-                          }}
-                        >-</button>
-                        <span className="px-2 text-sm">{item.quantity}</span>
-                        <button 
-                          type="button" 
-                          className="px-2 py-0.5 rounded bg-gray-200 text-gray-700 hover:bg-gray-300 active:bg-gray-400" 
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            dispatch(addToCart({ productId: item._cartKey || item._id, price: item._cartPrice ?? item.price }));
-                          }}
-                        >+</button>
-                      </div>
-                      <button 
-                        type="button" 
-                        className="text-xs text-red-500 hover:text-red-700 hover:underline mt-1 active:text-red-800" 
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          dispatch(deleteItemFromCart({ productId: item._cartKey || item._id }));
-                        }}
-                      >Remove</button>
+                            }}
+                          >{t('checkout.remove')}</button>
+                        </>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -1408,7 +1700,7 @@ export default function CheckoutPage() {
             </div>
             {/* Shipping Method Section */}
             <div className="mb-6">
-              <h2 className="text-xl font-bold mb-4 text-gray-900">Delivery Method</h2>
+              <h2 className="text-xl font-bold mb-4 text-gray-900">{t('checkout.deliveryMethod')}</h2>
               <div className="space-y-2">
                 <label className={`block border rounded-lg p-4 cursor-pointer transition-all ${
                   shippingMethod === 'standard' 
@@ -1428,7 +1720,7 @@ export default function CheckoutPage() {
                       <div className="flex items-center gap-2">
                         <span className="text-base">📦</span>
                         <div>
-                          <div className="font-medium text-sm text-gray-900">Standard delivery mode</div>
+                          <div className="font-medium text-sm text-gray-900">{t('checkout.standardDelivery')}</div>
                           <div className="text-xs text-gray-600">{shippingSetting?.estimatedDays || '2-5'} </div>
                         </div>
                       </div>
@@ -1442,7 +1734,7 @@ export default function CheckoutPage() {
                             paymentMethod: form.payment === 'cod' ? 'COD' : 'CARD',
                             shippingState: form.state
                           });
-                          return baseShip === 0 ? 'Free' : `AED${baseShip}`;
+                          return baseShip === 0 ? 'Free' : formatMoney(baseShip);
                         })()}
                       </div>
                     </div>
@@ -1473,11 +1765,10 @@ export default function CheckoutPage() {
                             <div className="text-xs text-gray-600">{shippingSetting?.expressEstimatedDays || '1-2'} days</div>
                           </div>
                         </div>
-                        <div className="text-xs text-blue-600 ml-7">+AED{shippingSetting?.expressShippingFee || 0} extra</div>
+                        <div className="text-xs text-blue-600 ml-7">+{formatMoney(shippingSetting?.expressShippingFee || 0)} extra</div>
                       </div>
                       <div className="text-right flex-shrink-0">
                         <div className="font-bold text-lg text-blue-600">
-                          AED
                           {(() => {
                             const baseShip = calculateShipping({ 
                               cartItems: cartArray, 
@@ -1486,7 +1777,7 @@ export default function CheckoutPage() {
                               shippingState: form.state
                             });
                             const expressTotal = baseShip + Number(shippingSetting.expressShippingFee || 0);
-                            return expressTotal;
+                            return formatMoney(expressTotal);
                           })()}
                         </div>
                       </div>
@@ -1502,7 +1793,7 @@ export default function CheckoutPage() {
                 );
                 return stateCharge ? (
                   <div className="text-xs text-slate-600 mt-2">
-                    ℹ️ <span className="font-medium">Shipping charge for {form.state}:</span> AED{stateCharge.fee} (varies by state)
+                    ℹ️ <span className="font-medium">Shipping charge for {form.state}:</span> {formatMoney(stateCharge.fee)} (varies by state)
                   </div>
                 ) : null;
               })()}
@@ -1526,21 +1817,21 @@ export default function CheckoutPage() {
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
                   <div className="flex items-start justify-between">
                     <div>
-                      <h3 className="font-bold text-blue-900 mb-1">Checkout as Guest</h3>
-                      <p className="text-sm text-blue-800">You can place your order without creating an account.</p>
+                      <h3 className="font-bold text-blue-900 mb-1">{t('checkout.checkoutAsGuest')}</h3>
+                      <p className="text-sm text-blue-800">{t('checkout.guestSubtitle')}</p>
                     </div>
                     <button
                       type="button"
                       onClick={() => setShowSignIn(true)}
                       className="text-blue-600 hover:text-blue-700 text-sm font-semibold underline whitespace-nowrap ml-4"
                     >
-                      Sign In Instead
+                      {t('checkout.signInInstead')}
                     </button>
                   </div>
                 </div>
               )}
               
-              <h2 className="text-xl font-bold mb-1 mt-3 text-gray-900">Shipping details</h2>
+              <h2 className="text-xl font-bold mb-1 mt-3 text-gray-900">{t('checkout.shippingDetails')}</h2>
               {/* ...existing code for address/guest form... */}
               {/* Show address fetch error if present */}
               {addressFetchError && (
@@ -1558,13 +1849,13 @@ export default function CheckoutPage() {
                   <div className="bg-white rounded-lg border border-gray-200">
                     <div className="px-4 py-3 border-b border-gray-200">
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-semibold text-gray-700">Address</span>
+                        <span className="text-sm font-semibold text-gray-700">{t('checkout.address')}</span>
                         <button 
                           type="button"
                           className="text-xs text-blue-600 hover:text-blue-700 font-medium"
                           onClick={() => setShowAddressModal(true)}
                         >
-                          ⇄ Switch Address
+                          {t('checkout.switchAddress')}
                         </button>
                       </div>
                     </div>
@@ -1591,7 +1882,7 @@ export default function CheckoutPage() {
                             {/* Address Details */}
                             <div className="flex-1">
                               <div className="text-sm font-medium text-gray-900 mb-1">
-                                Deliver to <span className="font-bold">{selectedAddress.name?.toUpperCase() || 'HOME'}</span>
+                                {t('checkout.deliverTo')} <span className="font-bold">{selectedAddress.name?.toUpperCase() || 'HOME'}</span>
                               </div>
                               <div className="text-sm text-gray-600 leading-relaxed">
                                 {selectedAddress.street}
@@ -1619,7 +1910,7 @@ export default function CheckoutPage() {
                       >
                         <div className="flex items-center justify-center gap-2 text-blue-600 font-medium">
                           <span className="text-xl">+</span>
-                          <span>Select Delivery Address</span>
+                          <span>{t('checkout.selectDeliveryAddress')}</span>
                         </div>
                       </div>
                     )}
@@ -1633,8 +1924,8 @@ export default function CheckoutPage() {
                         <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                       </svg>
                       <div>
-                        <p className="text-sm font-semibold text-yellow-800">Phone Number Required</p>
-                        <p className="text-xs text-yellow-700 mt-1">Your address doesn't have a phone number. Please add one for delivery contact.</p>
+                        <p className="text-sm font-semibold text-yellow-800">{t('checkout.phoneRequired')}</p>
+                        <p className="text-xs text-yellow-700 mt-1">{t('checkout.phoneRequiredDesc')}</p>
                       </div>
                     </div>
                     <div className="flex gap-2">
@@ -1879,7 +2170,7 @@ export default function CheckoutPage() {
                   </select>
                 </div>
               ) : null}
-              <h2 className="text-xl font-bold mb-3 mt-4 text-gray-900">Payment methods</h2>
+              <h2 className="text-xl font-bold mb-3 mt-4 text-gray-900">{t('checkout.paymentMethods')}</h2>
 
               <div className="flex flex-col gap-2 mb-4">
                 {/* Credit Card Option */}
@@ -1899,15 +2190,15 @@ export default function CheckoutPage() {
                         <path fillRule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z" clipRule="evenodd"/>
                       </svg>
                       <div>
-                        <span className="font-semibold text-gray-900">Credit / Debit Card</span>
-                        <div className="text-xs text-gray-600">Visa, Mastercard, Amex</div>
+                        <span className="font-semibold text-gray-900">{t('checkout.creditDebitCard')}</span>
+                        <div className="text-xs text-gray-600">{t('checkout.cardSubtitle')}</div>
                       </div>
                     </div>
                     <div className="flex items-center gap-1">
-                      <Image src={Creditimage4} alt="Visa" width={24} height={16} className="object-contain"/>
-                      <Image src={Creditimage3} alt="Mastercard" width={24} height={16} className="object-contain"/>
-                      <Image src={Creditimage2} alt="Card" width={24} height={16} className="object-contain"/>
-                      <Image src={Creditimage1} alt="Card" width={24} height={16} className="object-contain"/>
+                      <Image src={Creditimage4} alt="Visa" width={24} height={16} className="object-contain mix-blend-multiply"/>
+                      <Image src={Creditimage3} alt="Mastercard" width={24} height={16} className="object-contain mix-blend-multiply"/>
+                      <Image src={Creditimage2} alt="Card" width={24} height={16} className="object-contain mix-blend-multiply"/>
+                      <Image src={Creditimage1} alt="Card" width={24} height={16} className="object-contain mix-blend-multiply"/>
                     </div>
                   </div>
                 </label>
@@ -1940,14 +2231,117 @@ export default function CheckoutPage() {
                             <path fillRule="evenodd" d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 00-2-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd"/>
                           </svg>
                           <div>
-                            <span className="font-semibold text-gray-900">Cash on Delivery</span>
-                            <div className="text-xs text-gray-600">Pay when you receive</div>
+                            <span className="font-semibold text-gray-900">{t('checkout.cashOnDelivery')}</span>
+                            <div className="text-xs text-gray-600">{t('checkout.codSubtitle')}</div>
                           </div>
                         </div>
                         {isCODDisabled && maxCODAmount > 0 && remainingAmount > maxCODAmount && (
                           <span className="text-xs text-red-600 ml-8">Max limit AED{maxCODAmount}</span>
                         )}
                       </div>
+                    </label>
+                  );
+                })()}
+
+                {/* Tamara BNPL Option */}
+                {(() => {
+                  const tamaraInstalment = totalAfterWallet > 0 ? Number((totalAfterWallet / 4).toFixed(2)) : 0;
+                  return (
+                    <label className="flex flex-col gap-0 p-4 border-2 rounded-lg transition-all cursor-pointer border-gray-200 hover:border-[#f075a3] has-[:checked]:border-[#f075a3] has-[:checked]:bg-[#fff5f9]">
+                      {/* Row 1: radio + logo + title */}
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="radio"
+                          name="payment"
+                          value="tamara"
+                          checked={form.payment === 'tamara'}
+                          onChange={handleChange}
+                          className="w-5 h-5 flex-shrink-0"
+                          style={{accentColor:'#f075a3'}}
+                        />
+                        {/* Official Tamara logo */}
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src="https://cdn.tamara.co/assets/svg/tamara-logo-badge-en.svg"
+                          alt="Tamara"
+                          width={72}
+                          height={24}
+                          className="flex-shrink-0"
+                          onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='inline'; }}
+                        />
+                        <span className="hidden text-sm font-bold text-white bg-[#f075a3] px-2 py-0.5 rounded">tamara</span>
+                        <span className="text-sm font-semibold text-gray-900">Split in up to 4 payments</span>
+                        <span className="ml-0.5 w-4 h-4 rounded-full border border-gray-400 text-gray-400 text-[10px] flex items-center justify-center flex-shrink-0" title="Pay in 4 equal interest-free instalments">?</span>
+                      </div>
+                      {/* Row 2: first payment line */}
+                      <div className="ml-8 mt-1">
+                        <p className="text-sm text-[#F75B94]">
+                          Pay <span className="font-bold text-base">{formatMoneyFixed(tamaraInstalment)}</span> today
+                        </p>
+                        <p className="text-xs text-gray-500">and the rest in 3 interest-free payments</p>
+                      </div>
+                      {/* Row 3: instalment cards — always visible */}
+                      {totalAfterWallet > 0 && (
+                        <div className="ml-8 grid grid-cols-4 gap-2 mt-3">
+                          {['Today', 'In 1 month', 'In 2 months', 'In 3 months'].map((label) => (
+                            <div key={label} className="flex flex-col items-center bg-white border border-gray-200 rounded-md pt-2 pb-1 px-1 text-center">
+                              <span className="text-xs font-bold text-gray-900">{formatMoneyFixed(tamaraInstalment)}</span>
+                              <span className="text-[10px] text-gray-500 mt-0.5 leading-tight">{label}</span>
+                              <div className="mt-1.5 h-[3px] w-full rounded-full bg-gradient-to-r from-[#f075a3] to-[#fbb6ce]" />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </label>
+                  );
+                })()}
+
+                {/* Tabby BNPL Option */}
+                {(() => {
+                  const tabbyInstalment = totalAfterWallet > 0 ? Number((totalAfterWallet / 4).toFixed(2)) : 0;
+                  return (
+                    <label className="flex flex-col gap-0 p-4 border-2 rounded-lg transition-all cursor-pointer border-gray-200 hover:border-[#3DBEA3] has-[:checked]:border-[#3DBEA3] has-[:checked]:bg-[#f0faf8]">
+                      {/* Row 1: radio + logo + title */}
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="radio"
+                          name="payment"
+                          value="tabby"
+                          checked={form.payment === 'tabby'}
+                          onChange={handleChange}
+                          className="w-5 h-5 flex-shrink-0"
+                          style={{accentColor:'#3DBEA3'}}
+                        />
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 26" style={{width:72,height:24,flexShrink:0}} aria-label="Tabby">
+                          <rect width="72" height="26" rx="6" fill="#3DBEA3"/>
+                          <text x="36" y="17.5" textAnchor="middle" fill="white" fontSize="12" fontWeight="bold" fontFamily="Arial,sans-serif" letterSpacing="1">tabby</text>
+                        </svg>
+                        <span className="text-sm font-semibold text-gray-900">Split in up to 4 payments</span>
+                        <span className="ml-0.5 w-4 h-4 rounded-full border border-gray-400 text-gray-400 text-[10px] flex items-center justify-center flex-shrink-0" title="Pay in 4 equal interest-free instalments">?</span>
+                      </div>
+                      {/* Row 2: first payment line */}
+                      <div className="ml-8 mt-1">
+                        <p className="text-sm text-[#2E9E88]">
+                          Pay <span className="font-bold text-base">{formatMoneyFixed(tabbyInstalment)}</span> today
+                        </p>
+                        <p className="text-xs text-gray-500">and the rest in 3 interest-free payments</p>
+                      </div>
+                      {/* Row 3: instalment cards — always visible */}
+                      {totalAfterWallet > 0 && (
+                        <div className="ml-8 grid grid-cols-4 gap-2 mt-3">
+                          {['Today', 'In 1 month', 'In 2 months', 'In 3 months'].map((label) => (
+                            <div key={label} className="flex flex-col items-center bg-white border border-gray-200 rounded-md pt-2 pb-1 px-1 text-center">
+                              <span className="text-xs font-bold text-gray-900">{formatMoneyFixed(tabbyInstalment)}</span>
+                              <span className="text-[10px] text-gray-500 mt-0.5 leading-tight">{label}</span>
+                              <div className="mt-1.5 h-[3px] w-full rounded-full bg-gradient-to-r from-[#3DBEA3] to-[#a7e8de]" />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {form.payment === 'tabby' && (
+                        <div className="ml-8 mt-3 border border-gray-200 rounded-lg p-2 bg-white" id="tabbyCard"></div>
+                      )}
                     </label>
                   );
                 })()}
@@ -1973,17 +2367,23 @@ export default function CheckoutPage() {
           <hr className="my-3" />
           <div className="space-y-2 mb-4 pb-4 border-b border-gray-200">
             <div className="flex justify-between text-sm text-gray-900">
-              <span>Items</span>
-              <span>AED {subtotal.toLocaleString()}</span>
+              <span>{t('checkout.items')}</span>
+              <span>{formatMoney(subtotal)}</span>
             </div>
             <div className="flex justify-between text-sm text-gray-900">
-              <span>Shipping & handling</span>
-              <span>{shipping > 0 ? `AED ${shipping.toLocaleString()}` : 'AED 0'}</span>
+              <span>{t('checkout.shippingHandling')}</span>
+              <span>{formatMoney(effectiveShipping > 0 ? effectiveShipping : 0)}</span>
             </div>
+            {isFreeShippingCouponApplied && shippingDiscount > 0 && (
+              <div className="flex justify-between text-sm text-emerald-600 font-semibold">
+                <span>{t('checkout.freeShippingCoupon')} ({appliedCoupon.code})</span>
+                <span>-{formatMoney(shippingDiscount)}</span>
+              </div>
+            )}
             {appliedCoupon && couponDiscount > 0 && (
               <div className="flex justify-between text-sm text-blue-600 font-semibold">
-                <span>Coupon discount ({appliedCoupon.code})</span>
-                <span>-AED {couponDiscount.toLocaleString()}</span>
+                <span>{t('checkout.couponDiscount')} ({appliedCoupon.code})</span>
+                <span>-{formatMoney(couponDiscount)}</span>
               </div>
             )}
           </div>
@@ -1991,16 +2391,24 @@ export default function CheckoutPage() {
           <hr className="my-3" />
           
           {/* Coupon Discount Display */}
-          {appliedCoupon && couponDiscount > 0 && (
+          {appliedCoupon && (couponDiscount > 0 || isFreeShippingCouponApplied) && (
             <div className="space-y-2 mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
               <div className="flex justify-between text-sm">
-                <span className="text-gray-700">Coupon applied</span>
+                <span className="text-gray-700">{t('checkout.couponApplied')}</span>
                 <span className="font-semibold text-gray-900">{appliedCoupon.code}</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-700">{appliedCoupon.title}</span>
-                <span className="font-semibold text-green-600">-AED {couponDiscount.toLocaleString()}</span>
-              </div>
+              {isFreeShippingCouponApplied && shippingDiscount > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-700">{t('checkout.freeShipping')}</span>
+                  <span className="font-semibold text-emerald-600">-{formatMoney(shippingDiscount)}</span>
+                </div>
+              )}
+              {couponDiscount > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-700">{appliedCoupon.title}</span>
+                  <span className="font-semibold text-green-600">-{formatMoney(couponDiscount)}</span>
+                </div>
+              )}
               <button
                 onClick={() => {
                   setAppliedCoupon(null);
@@ -2008,7 +2416,7 @@ export default function CheckoutPage() {
                 }}
                 className="text-xs text-red-600 hover:text-red-700 font-semibold"
               >
-                Remove coupon
+                {t('checkout.removeCoupon')}
               </button>
             </div>
           )}
@@ -2016,8 +2424,8 @@ export default function CheckoutPage() {
           {/* Final Total */}
           <div className="mb-4 pb-4 border-b border-gray-200">
             <div className="flex justify-between font-bold text-lg text-gray-900">
-              <span>Total to pay</span>
-              <span>AED {totalAfterWallet.toLocaleString()}</span>
+              <span>{t('checkout.totalToPay')}</span>
+              <span>{formatMoney(totalAfterWallet)}</span>
             </div>
           </div>
           <button
@@ -2033,10 +2441,10 @@ export default function CheckoutPage() {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
                 </svg>
-                Placing order...
+                {t('checkout.placingOrder')}
               </span>
             ) : (
-              'Place order'
+              t('checkout.placeOrder')
             )}
             {placingOrder && (
               <span className="absolute left-0 top-0 h-full w-full overflow-hidden rounded opacity-20">
@@ -2051,7 +2459,7 @@ export default function CheckoutPage() {
               <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
               </svg>
-              <h3 className="font-semibold text-gray-900">Safe & Secure Checkout</h3>
+              <h3 className="font-semibold text-gray-900">{t('checkout.safeCheckout')}</h3>
             </div>
             
             <div className="grid grid-cols-2 gap-3 mb-4">
@@ -2059,25 +2467,25 @@ export default function CheckoutPage() {
                 <svg className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                 </svg>
-                <span className="text-xs text-gray-700">SSL Encrypted Payment</span>
+                <span className="text-xs text-gray-700">{t('checkout.sslEncrypted')}</span>
               </div>
               <div className="flex items-start gap-2">
                 <svg className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                 </svg>
-                <span className="text-xs text-gray-700">100% Secure Transactions</span>
+                <span className="text-xs text-gray-700">{t('checkout.secureTransactions')}</span>
               </div>
               <div className="flex items-start gap-2">
                 <svg className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                 </svg>
-                <span className="text-xs text-gray-700">Your Data is Protected</span>
+                <span className="text-xs text-gray-700">{t('checkout.dataProtected')}</span>
               </div>
               <div className="flex items-start gap-2">
                 <svg className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                 </svg>
-                <span className="text-xs text-gray-700">Safe & Easy Returns</span>
+                <span className="text-xs text-gray-700">{t('checkout.easyReturns')}</span>
               </div>
             </div>
             
@@ -2087,8 +2495,8 @@ export default function CheckoutPage() {
                   <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
                 </svg>
                 <div>
-                  <p className="text-sm font-semibold text-blue-900">We protect your payment information</p>
-                  <p className="text-xs text-blue-700 mt-1">All transactions are encrypted and secure. We never store your card details.</p>
+                  <p className="text-sm font-semibold text-blue-900">{t('checkout.protectPayment')}</p>
+                  <p className="text-xs text-blue-700 mt-1">{t('checkout.protectPaymentDesc')}</p>
                 </div>
               </div>
             </div>
@@ -2096,11 +2504,11 @@ export default function CheckoutPage() {
             <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
               
               <span className="text-gray-300">•</span>
-              <a href="/terms-of-use" className="text-gray-600 hover:text-gray-900 hover:underline">Terms of Use</a>
+              <a href="/terms-and-conditions" className="text-gray-600 hover:text-gray-900 hover:underline">{t('checkout.termsOfUse')}</a>
               <span className="text-gray-300">•</span>
-              <a href="/terms-of-sale" className="text-gray-600 hover:text-gray-900 hover:underline">Terms of Sale</a>
+              <a href="/terms-of-sale" className="text-gray-600 hover:text-gray-900 hover:underline">{t('checkout.termsOfSale')}</a>
               <span className="text-gray-300">•</span>
-              <a href="/privacy-policy" className="text-gray-600 hover:text-gray-900 hover:underline">Privacy Policy</a>
+              <a href="/privacy-policy" className="text-gray-600 hover:text-gray-900 hover:underline">{t('checkout.privacyPolicy')}</a>
             </div>
           </div>
         </div>
@@ -2133,7 +2541,7 @@ export default function CheckoutPage() {
             disabled={(!form.addressId && !isGuestAddressReady) || isPlaceOrderDisabled}
             aria-busy={placingOrder}
           >
-            <span className="text-lg font-bold">AED {totalAfterWallet.toLocaleString()}</span>
+            <span className="text-lg font-bold">{formatMoney(totalAfterWallet)}</span>
             {placingOrder ? (
               <span className="inline-flex items-center gap-2">
                 <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -2251,7 +2659,7 @@ export default function CheckoutPage() {
           <div className="bg-white rounded-2xl w-full max-w-md sm:max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
             {/* Modal Header */}
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-2xl">
-              <h3 className="text-xl font-bold text-gray-900">Apply Coupon</h3>
+              <h3 className="text-xl font-bold text-gray-900">{t('checkout.applyCoupon')}</h3>
               <button onClick={() => setShowCouponModal(false)} className="text-gray-400 hover:text-gray-600 transition">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -2299,11 +2707,14 @@ export default function CheckoutPage() {
                 availableCoupons.map((cpn) => {
                   // Determine eligibility
                   // Convert cartItems object to array
-                  const cartItemsArray = Object.entries(cartItems || {}).map(([id, value]) => ({
-                    productId: id,
-                    quantity: typeof value === 'number' ? value : value?.quantity || 0,
-                    variantId: typeof value === 'object' ? value?.variantId : undefined
-                  }));
+                  const cartItemsArray = Object.entries(cartItems || {})
+                    .map(([id, value]) => ({
+                      productId: getCartEntryProductId(id, value),
+                      quantity: getCartEntryQuantity(value),
+                      variantId: typeof value === 'object' ? value?.variantId : undefined,
+                      isFreeGift: isFreeGiftEntry(value),
+                    }))
+                    .filter((item) => item.quantity > 0 && item.productId && !item.isFreeGift);
                   
                   const itemsTotal = cartItemsArray.reduce((sum, item) => {
                     const product = products.find((p) => p._id === item.productId);
@@ -2384,7 +2795,7 @@ export default function CheckoutPage() {
                             }}
                             className="ml-2 whitespace-nowrap px-3 py-1.5 rounded-md bg-green-600 hover:bg-green-700 text-white text-xs font-semibold"
                           >
-                            Use Code
+                            {t('checkout.useCode')}
                           </button>
                         ) : (
                           <button
@@ -2392,7 +2803,7 @@ export default function CheckoutPage() {
                             disabled
                             className="ml-2 whitespace-nowrap px-3 py-1.5 rounded-md bg-gray-200 text-gray-500 text-xs font-semibold cursor-not-allowed"
                           >
-                            Not Eligible
+                            {t('checkout.notEligible')}
                           </button>
                         )}
                       </div>
@@ -2415,6 +2826,7 @@ export default function CheckoutPage() {
         onLoad={() => setRazorpayLoaded(true)}
         onError={() => setFormError("Failed to load payment system")}
       />
+      <Script src="https://checkout.tabby.ai/tabby-card.js" onLoad={() => setTabbyCardLoaded(true)} />
     </>
   );
 }

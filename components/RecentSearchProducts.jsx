@@ -8,6 +8,39 @@ import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
 import ProductCard from '@/components/ProductCard';
 
+const normalizeImages = (images) => {
+  // Handle array
+  if (Array.isArray(images)) {
+    return images.filter(img => {
+      // Accept strings with content
+      if (typeof img === 'string') return img.trim().length > 0
+      // Accept objects with url/src
+      if (typeof img === 'object' && img !== null) {
+        return img.url || img.src || img.path || img.data || false
+      }
+      return false
+    })
+  }
+  
+  // Handle null/undefined
+  if (images === null || images === undefined) return []
+  
+  // Handle object - only if it has image data properties
+  if (typeof images === 'object') {
+    if (images.url || images.src || images.path || images.data) {
+      return [images]
+    }
+    return [] // Empty object has no valid image data
+  }
+  
+  // Handle string
+  if (typeof images === 'string') {
+    return images.trim().length > 0 ? [images] : []
+  }
+  
+  return []
+};
+
 export default function RecentSearchProducts() {
   const products = useSelector(state => state.product.list);
   const { user, getToken } = useAuth();
@@ -157,7 +190,8 @@ export default function RecentSearchProducts() {
       return false;
     }
     
-    if (!Array.isArray(product.images) || product.images.length === 0) {
+    const imagesArray = normalizeImages(product.images);
+    if (imagesArray.length === 0) {
       console.error('[RecentSearchProducts] Rejected - invalid images:', { images: product.images, keys: Object.keys(product) });
       return false;
     }

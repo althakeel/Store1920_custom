@@ -357,6 +357,8 @@ const BestSelling = () => {
   const [sectionDescription, setSectionDescription] = useState("Grab the best deals before they're gone!")
   const [layoutSettings, setLayoutSettings] = useState({ style: 'grid', itemsPerRow: 5, rows: 2 })
   const fetchControllerRef = useRef(null)
+  const retryTimerRef = useRef(null)
+  const featuredProductsLengthRef = useRef(0)
 
   const visibleCount = Math.max(1, Math.min(40, Number(layoutSettings.itemsPerRow || 5) * Number(layoutSettings.rows || 2)))
   const effectiveSectionTitle = sectionTitle === 'Craziest sale of the year!' ? t('featured.title') : sectionTitle
@@ -368,7 +370,7 @@ const BestSelling = () => {
       fetchControllerRef.current?.abort()
       const controller = new AbortController()
       fetchControllerRef.current = controller
-      const shouldShowSectionLoader = featuredProducts.length === 0
+      const shouldShowSectionLoader = featuredProductsLengthRef.current === 0
 
       try {
         if (shouldShowSectionLoader) {
@@ -404,7 +406,7 @@ const BestSelling = () => {
             params: { t: Date.now() },
             headers,
             signal: controller.signal,
-            timeout: 10000
+            timeout: 15000
           }),
           appearanceRequest.catch(() => ({ data: {} }))
         ])
@@ -435,11 +437,12 @@ const BestSelling = () => {
         // Fetch actual product documents
         const { data: productsData } = await axios.post('/api/products/batch', { productIds }, {
           signal: controller.signal,
-          timeout: 10000
+          timeout: 15000
         })
         if (controller.signal.aborted) return
         const products = productsData.products || []
 
+        featuredProductsLengthRef.current = products.length
         setFeaturedProducts(products)
       } catch (err) {
         if (axios.isCancel(err) || err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError') {
@@ -449,10 +452,16 @@ const BestSelling = () => {
         if (process.env.NODE_ENV !== 'production') {
           console.warn('Failed to load featured products', err)
         }
-        setError('Could not load featured products')
-        if (featuredProducts.length === 0) {
-          setFeaturedProducts([])
+
+        // Auto-retry once after 3 seconds (handles cold-start DB timeouts)
+        if (featuredProductsLengthRef.current === 0) {
+          retryTimerRef.current = setTimeout(() => {
+            fetchFeaturedAndSectionText()
+          }, 3000)
+          return
         }
+
+        setError('Could not load featured products')
       } finally {
         if (fetchControllerRef.current === controller) {
           fetchControllerRef.current = null
@@ -461,11 +470,12 @@ const BestSelling = () => {
           }
         }
       }
-    }, [getToken, featuredProducts.length])
+    }, [getToken])
 
   useEffect(() => {
     return () => {
       fetchControllerRef.current?.abort()
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
     }
   }, [])
 

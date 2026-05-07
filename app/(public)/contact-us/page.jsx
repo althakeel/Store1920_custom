@@ -1,134 +1,226 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+
+const NAVBAR_APPEARANCE_CACHE_KEY = 'navbarAppearanceCache';
+const DEFAULT_BG = '#8f3404';
+
+function hexToRgb(hex) {
+  const clean = hex.replace('#', '');
+  const bigint = parseInt(clean, 16);
+  return { r: (bigint >> 16) & 255, g: (bigint >> 8) & 255, b: bigint & 255 };
+}
 
 export default function ContactUs() {
-  const [form, setForm] = useState({
-    name: '',
-    email: '',
-    message: '',
-  });
+  const [form, setForm] = useState({ name: '', email: '', message: '' });
   const [submitted, setSubmitted] = useState(false);
+  const [navBg, setNavBg] = useState(DEFAULT_BG);
 
-  const handleChange = (e) => {
-    setForm((prev) => ({
-      ...prev,
-      [e.target.name]: e.target.value,
-    }));
-  };
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(NAVBAR_APPEARANCE_CACHE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.backgroundColor) setNavBg(parsed.backgroundColor);
+      }
+    } catch {}
+  }, []);
+
+  const { r, g, b } = hexToRgb(navBg);
+
+  const handleChange = (e) => setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
 
   const handleSubmit = (e) => {
     e.preventDefault();
     setSubmitted(true);
-
-    // TODO: Send data to backend / API
-    // Example:
-    // fetch('/api/contact', { method: 'POST', body: JSON.stringify(form) });
+    // TODO: fetch('/api/contact', { method: 'POST', body: JSON.stringify(form) });
   };
 
   return (
-    <div className="max-w-[1450px] mx-auto py-12 px-4">
-      <h1 className="text-3xl font-bold mb-6 text-center">Contact Us</h1>
-
-      {/* Success Message */}
-      {submitted && (
-        <div className="mb-6 rounded-md border border-green-300 bg-green-50 px-4 py-3 text-green-700">
-          Thank you for contacting us. Our team will get back to you shortly.
+    <div className="w-full">
+      {/* Hero banner */}
+      <div
+        className="w-full py-16 px-4 flex flex-col items-center text-center"
+        style={{ background: `linear-gradient(135deg, rgba(${r},${g},${b},1) 0%, rgba(${r},${g},${b},0.78) 100%)` }}
+      >
+        <div className="w-14 h-14 rounded-2xl bg-white/20 flex items-center justify-center mb-4 shadow-lg">
+          <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-7 h-7">
+            <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+          </svg>
         </div>
-      )}
+        <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight drop-shadow">Get in Touch</h1>
+        <p className="mt-2 text-white/80 text-sm sm:text-base max-w-md">
+          Have a question or need help? We&apos;re here for you — send us a message and we&apos;ll respond quickly.
+        </p>
+      </div>
 
-      {/* Contact Form */}
-      {!submitted && (
-        <form
-          onSubmit={handleSubmit}
-          className="space-y-5 bg-white p-6 rounded-xl shadow"
-        >
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Full Name
-            </label>
-            <input
-              type="text"
-              name="name"
-              value={form.name}
-              onChange={handleChange}
-              required
-              placeholder="Enter your name"
-              className="w-full rounded border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-orange-400"
-            />
+      {/* Content */}
+      <div className="max-w-5xl mx-auto px-4 py-12">
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+
+          {/* Left — info cards */}
+          <div className="lg:col-span-2 flex flex-col gap-4">
+            {[
+              {
+                icon: (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                    <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81a19.79 19.79 0 01-3.07-8.7A2 2 0 012.18 1h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 8.15a16 16 0 006.94 6.94l1.52-1.52a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/>
+                  </svg>
+                ),
+                label: 'Customer Support',
+                value: '+91 7592875212',
+                href: 'tel:+917592875212',
+              },
+              {
+                icon: (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>
+                  </svg>
+                ),
+                label: 'Email Us',
+                value: 'support@store1920.com',
+                href: 'mailto:support@store1920.com',
+              },
+              {
+                icon: (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                  </svg>
+                ),
+                label: 'Response Time',
+                value: 'Within 24 hours',
+                href: null,
+              },
+              {
+                icon: (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                    <path d="M12 22s-8-4.5-8-11.8A8 8 0 0112 2a8 8 0 018 8.2c0 7.3-8 11.8-8 11.8z"/><circle cx="12" cy="10" r="3"/>
+                  </svg>
+                ),
+                label: 'Website',
+                value: 'www.store1920.com',
+                href: 'https://www.store1920.com',
+              },
+            ].map(({ icon, label, value, href }) => (
+              <div key={label} className="flex items-start gap-4 bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4 hover:shadow-md transition-shadow">
+                <div
+                  className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                  style={{ backgroundColor: `rgba(${r},${g},${b},0.1)`, color: navBg }}
+                >
+                  {icon}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-0.5">{label}</p>
+                  {href ? (
+                    <a href={href} className="text-sm font-medium text-gray-800 hover:underline break-all" style={{ '--tw-ring-color': navBg }}>
+                      {value}
+                    </a>
+                  ) : (
+                    <p className="text-sm font-medium text-gray-800">{value}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+
+            {/* Business info card */}
+            <div className="bg-gray-50 rounded-2xl border border-gray-100 px-5 py-4 text-sm text-gray-600">
+              <p className="font-semibold text-gray-700 mb-2">Store1920</p>
+              <p>Registered business providing quality products online. All communications are handled by our dedicated support team.</p>
+            </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Email Address
-            </label>
-            <input
-              type="email"
-              name="email"
-              value={form.email}
-              onChange={handleChange}
-              required
-              placeholder="Enter your email"
-              className="w-full rounded border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-orange-400"
-            />
+          {/* Right — form */}
+          <div className="lg:col-span-3">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              {/* Card top bar */}
+              <div className="h-1 w-full" style={{ background: `linear-gradient(90deg, rgba(${r},${g},${b},1), rgba(${r},${g},${b},0.5))` }} />
+
+              <div className="p-7">
+                {submitted ? (
+                  <div className="flex flex-col items-center justify-center py-14 text-center gap-4">
+                    <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ backgroundColor: `rgba(${r},${g},${b},0.1)` }}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke={navBg} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-8 h-8">
+                        <polyline points="20 6 9 17 4 12"/>
+                      </svg>
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold text-gray-900">Message Sent!</h3>
+                      <p className="text-sm text-gray-500 mt-1">Thanks for reaching out. We&apos;ll get back to you within 24 hours.</p>
+                    </div>
+                    <button
+                      onClick={() => { setSubmitted(false); setForm({ name: '', email: '', message: '' }); }}
+                      className="mt-2 text-sm font-semibold px-5 py-2 rounded-xl text-white transition-opacity hover:opacity-90"
+                      style={{ backgroundColor: navBg }}
+                    >
+                      Send Another Message
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <h2 className="text-xl font-bold text-gray-900 mb-1">Send us a message</h2>
+                    <p className="text-sm text-gray-400 mb-6">Fill in the form below and we&apos;ll get back to you shortly.</p>
+
+                    <form onSubmit={handleSubmit} className="space-y-5">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Full Name</label>
+                          <input
+                            type="text"
+                            name="name"
+                            value={form.name}
+                            onChange={handleChange}
+                            required
+                            placeholder="John Doe"
+                            className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-800 placeholder-gray-300 focus:outline-none focus:ring-2 focus:border-transparent transition"
+                            style={{ '--tw-ring-color': `rgba(${r},${g},${b},0.4)` }}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Email Address</label>
+                          <input
+                            type="email"
+                            name="email"
+                            value={form.email}
+                            onChange={handleChange}
+                            required
+                            placeholder="john@example.com"
+                            className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-800 placeholder-gray-300 focus:outline-none focus:ring-2 focus:border-transparent transition"
+                            style={{ '--tw-ring-color': `rgba(${r},${g},${b},0.4)` }}
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Message</label>
+                        <textarea
+                          name="message"
+                          value={form.message}
+                          onChange={handleChange}
+                          required
+                          rows={6}
+                          placeholder="Describe your issue or question in detail..."
+                          className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-800 placeholder-gray-300 focus:outline-none focus:ring-2 focus:border-transparent transition resize-none"
+                          style={{ '--tw-ring-color': `rgba(${r},${g},${b},0.4)` }}
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        className="w-full flex items-center justify-center gap-2 rounded-xl py-3 font-bold text-white text-sm shadow-md transition-opacity hover:opacity-90 active:scale-[0.98]"
+                        style={{ backgroundColor: navBg, boxShadow: `0 4px 14px rgba(${r},${g},${b},0.35)` }}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                          <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                        </svg>
+                        Send Message
+                      </button>
+                    </form>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Message
-            </label>
-            <textarea
-              name="message"
-              value={form.message}
-              onChange={handleChange}
-              required
-              rows={5}
-              placeholder="Write your message here..."
-              className="w-full rounded border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-orange-400"
-            />
-          </div>
-
-          <button
-            type="submit"
-            className="inline-flex items-center justify-center rounded-md bg-orange-500 px-6 py-2 font-semibold text-white hover:bg-orange-600 transition"
-          >
-            Send Message
-          </button>
-        </form>
-      )}
-
-      {/* Business Contact Info (MANDATORY for Razorpay) */}
-      <div className="mt-10 rounded-lg border bg-gray-50 p-6 text-sm text-gray-700">
-        <p className="mb-2">
-          <strong>Business Name:</strong> Nilaas
-        </p>
-        <p className="mb-2">
-          <strong>Website:</strong>{' '}
-          <a
-            href="https://www.store1920.com"
-            className="text-orange-600 hover:underline"
-          >
-            https://www.store1920.com
-          </a>
-        </p>
-        <p className="mb-2">
-          <strong>Email:</strong>{' '}
-          <a
-            href="mailto:support@store1920.com"
-            className="text-orange-600 hover:underline"
-          >
-            support@store1920.com
-          </a>
-        </p>
-        <p className="mb-1">
-          <strong>Customer Support:</strong>{' '}
-          <a
-            href="tel:+919526367551"
-            className="text-orange-600 hover:underline"
-          >
-            +91 7592875212
-          </a>
-        </p>
+        </div>
       </div>
     </div>
   );

@@ -24,6 +24,52 @@ const sanitizeDisplayText = (value) => String(value ?? '')
   .replace(/\s+/g, ' ')
   .trim();
 
+// Extract a string URL from a raw image entry (string or object)
+const getImageSrc = (image) => {
+  if (!image) return null;
+  if (typeof image === 'string') return image.trim() || null;
+  if (typeof image === 'object') {
+    return (
+      image.url || image.src || image.path || image.data || null
+    );
+  }
+  return null;
+};
+
+// Normalize images to array format
+const normalizeImages = (images) => {
+  // Handle array
+  if (Array.isArray(images)) {
+    return images.filter(img => {
+      // Accept strings with content
+      if (typeof img === 'string') return img.trim().length > 0
+      // Accept objects with url/src
+      if (typeof img === 'object' && img !== null) {
+        return img.url || img.src || img.path || img.data || false
+      }
+      return false
+    })
+  }
+  
+  // Handle null/undefined
+  if (images === null || images === undefined) return []
+  
+  // Handle object - only if it has image data properties
+  if (typeof images === 'object') {
+    if (images.url || images.src || images.path || images.data) {
+      return [images]
+    }
+    return [] // Empty object has no valid image data
+  }
+  
+  // Handle string
+  if (typeof images === 'string') {
+    return images.trim().length > 0 ? [images] : []
+  }
+  
+  return []
+}
+
 const DEFAULT_BADGE_STYLES = [
   { label: 'Price Lower Than Usual', backgroundColor: '#007600', textColor: '#ffffff', borderRadius: 0 },
   { label: 'Hot Deal', backgroundColor: '#cc0c39', textColor: '#ffffff', borderRadius: 0 },
@@ -72,7 +118,8 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     }
   });
   const [timeNow, setTimeNow] = useState(() => new Date());
-  const [mainImage, setMainImage] = useState(product.images?.[0]);
+  const imagesArray = normalizeImages(product.images).map(getImageSrc).filter(Boolean);
+  const [mainImage, setMainImage] = useState(imagesArray?.[0]);
   const [quantity, setQuantity] = useState(1);
   const [isInWishlist, setIsInWishlist] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
@@ -200,7 +247,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const relatedProducts = useMemo(() => {
     if (Array.isArray(recommendedProducts) && recommendedProducts.length > 0) {
       return recommendedProducts
-        .filter((candidate) => candidate && candidate.name && candidate.slug && Array.isArray(candidate.images) && candidate.images.length > 0)
+        .filter((candidate) => candidate && candidate.name && candidate.slug && normalizeImages(candidate.images).length > 0)
         .slice(0, 8);
     }
 
@@ -210,7 +257,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     return allProducts
       .filter((candidate) => {
         if (!candidate || String(candidate._id || '') === currentProductId) return false;
-        if (!candidate.name || !candidate.slug || !Array.isArray(candidate.images) || candidate.images.length === 0) return false;
+        if (!candidate.name || !candidate.slug || normalizeImages(candidate.images).length === 0) return false;
         if (product?.category && candidate.category && String(candidate.category) === String(product.category)) return true;
 
         const candidateTags = Array.isArray(candidate.tags) ? candidate.tags : [];
@@ -414,8 +461,9 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     if (!selectedVariant?.options) return null;
     if (selectedVariant.options.image) return selectedVariant.options.image;
     const slot = Number(selectedVariant.options.imageSlot);
-    if (Number.isFinite(slot) && slot > 0 && Array.isArray(product.images)) {
-      return product.images[slot - 1] || null;
+    const productImagesArray = normalizeImages(product.images);
+    if (Number.isFinite(slot) && slot > 0 && productImagesArray.length > 0) {
+      return productImagesArray[slot - 1] || null;
     }
     return null;
   })();
@@ -461,6 +509,46 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     : 0;
   const convertedEffPrice = convertPrice(effPrice);
   const convertedEffAED = convertPrice(effAED);
+  const tabbyPromoSelector = `#tabbyPromoProduct-${String(product?._id || product?.id || 'default')}`;
+  const tabbyPublicKey = process.env.NEXT_PUBLIC_TABBY_PUBLIC_KEY || '';
+  const tabbyMerchantCode = process.env.NEXT_PUBLIC_TABBY_MERCHANT_CODE || process.env.TABBY_MERCHANT_CODE || 'Store1920';
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const initTabbyPromo = () => {
+      if (!window.TabbyPromo || !tabbyPublicKey || !tabbyMerchantCode) return;
+
+      const price = Number(convertedEffPrice || 0).toFixed(2);
+      if (Number(price) <= 0) return;
+
+      try {
+        new window.TabbyPromo({
+          selector: tabbyPromoSelector,
+          currency: 'AED',
+          price,
+          lang: isArabic ? 'ar' : 'en',
+          source: 'product',
+          shouldInheritBg: false,
+          publicKey: tabbyPublicKey,
+          merchantCode: tabbyMerchantCode,
+        });
+      } catch (error) {
+        console.error('TabbyPromo init failed on product page:', error);
+      }
+    };
+
+    if (window.TabbyPromo) {
+      initTabbyPromo();
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://checkout.tabby.ai/tabby-promo.js';
+    script.async = true;
+    script.onload = initTabbyPromo;
+    document.body.appendChild(script);
+  }, [tabbyPromoSelector, convertedEffPrice, isArabic, tabbyPublicKey, tabbyMerchantCode]);
 
   const deliveredByText = String(
     product?.attributes?.deliveredBy ??
@@ -695,7 +783,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
             name: product.name,
             price: effPrice,
             AED: effAED,
-            images: product.images,
+            images: normalizeImages(product.images),
             discount: discountPercent,
             inStock: product.inStock,
             addedAt: new Date().toISOString()
@@ -1003,7 +1091,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const allFbtCards = [{
     _id: 'main-product',
     name: product.name,
-    image: product.images?.[0],
+    image: normalizeImages(product.images)?.[0],
     price: Number(effPrice || 0),
     isMain: true,
     checked: true,
@@ -1011,7 +1099,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   }, ...fbtProducts.map((item) => ({
     _id: item._id,
     name: item.name,
-    image: item.images?.[0],
+    image: normalizeImages(item.images)?.[0],
     price: Number(item.price || 0),
     isMain: false,
     checked: Boolean(selectedFbtProducts[item._id]),
@@ -1078,7 +1166,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
           <div className="space-y-4 lg:min-w-0 lg:sticky lg:top-24 lg:self-start">
             <div className="hidden lg:flex gap-3 items-start">
               <div className="flex flex-col gap-1.5 w-[56px] xl:w-[64px] flex-shrink-0 overflow-y-auto max-h-[720px] scrollbar-hide">
-                {product.images?.map((image, index) => (
+                {imagesArray?.map((image, index) => (
                   <button
                     key={index}
                     onClick={() => setMainImage(image)}
@@ -1087,7 +1175,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                     }`}
                   >
                     <Image
-                      src={image || 'https://ik.imagekit.io/jrstupuke/placeholder.png'}
+                      src={getImageSrc(image) || 'https://ik.imagekit.io/jrstupuke/placeholder.png'}
                       alt={`${safeProductName} ${index + 1}`}
                       width={60}
                       height={60}
@@ -1222,14 +1310,14 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                         width: panelSize,
                         height: panelSize,
                         backgroundImage: `url(${mainImage})`,
-                        backgroundSize: '280% 280%',
+                        backgroundSize: '400% 400%',
                         backgroundPosition: `${zoomPos.x * 100}% ${zoomPos.y * 100}%`,
                         backgroundRepeat: 'no-repeat',
                         backgroundColor: '#fff',
-                        zIndex: 80,
+                        zIndex: 9999,
                         border: '1px solid #e5e7eb',
                         borderRadius: '8px',
-                        boxShadow: '0 8px 32px rgba(0,0,0,0.14)',
+                        boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
                         pointerEvents: 'none',
                       }}
                     />
@@ -1284,7 +1372,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
             {/* Mobile Thumbnail Gallery */}
             <div className="lg:hidden -mx-4 sm:mx-0 px-4 sm:px-0 flex gap-2 overflow-x-auto pb-2 scrollbar-hide cursor-grab active:cursor-grabbing">
-              {product.images?.map((image, index) => (
+              {imagesArray?.map((image, index) => (
                 <button
                   key={index}
                   onClick={() => setMainImage(image)}
@@ -1295,7 +1383,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   }`}
                 >
                   <Image
-                    src={image || 'https://ik.imagekit.io/jrstupuke/placeholder.png'}
+                    src={getImageSrc(image) || 'https://ik.imagekit.io/jrstupuke/placeholder.png'}
                     alt={`${safeProductName} ${index + 1}`}
                     width={56}
                     height={56}
@@ -1688,25 +1776,6 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 )}
               </div>
 
-              {/* Pay later line */}
-              <button
-                type="button"
-                onClick={() => setShowPayLaterModal(true)}
-                className="inline-flex flex-wrap items-center gap-2 text-[13px] text-gray-500 hover:text-gray-700 transition"
-              >
-                <span>{t('product.installments', { amount: `${currency}${(Number(convertedEffPrice || 0) / 4).toFixed(2)}` })}</span>
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 26" className="h-[22px] w-auto" aria-label="Tabby">
-                  <rect width="72" height="26" rx="13" fill="#3DBEA3"/>
-                  <text x="36" y="17.5" textAnchor="middle" fill="white" fontSize="12" fontWeight="bold" fontFamily="Arial,sans-serif" letterSpacing="0.3">tabby</text>
-                </svg>
-                <span className="text-gray-400">or</span>
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 84 26" className="h-[22px] w-auto" aria-label="Tamara">
-                  <defs><linearGradient id="tg1" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor="#3D1DBF"/><stop offset="100%" stopColor="#0FB49A"/></linearGradient></defs>
-                  <rect width="84" height="26" rx="13" fill="url(#tg1)"/>
-                  <text x="42" y="17.5" textAnchor="middle" fill="white" fontSize="12" fontWeight="bold" fontFamily="Arial,sans-serif" letterSpacing="0.3">tamara</text>
-                </svg>
-              </button>
-
             {/* Delivery & Returns (buybox info) */}
             <div className="text-sm text-gray-600 space-y-1 pb-3 border-b border-gray-200">
               <div className="flex items-center gap-2">
@@ -1778,22 +1847,6 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   >
                     {isArabic ? 'اشترِ الآن' : 'Buy Now'}
                   </button>
-
-                  {/* Subscribe & Save */}
-                  <div className="p-3 border border-gray-200 rounded-lg bg-gray-50 space-y-2">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="radio" name="purchaseType" defaultChecked className="accent-yellow-400" />
-                      <span className="text-sm font-medium text-gray-900">One-time purchase</span>
-                    </label>
-
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="radio" name="purchaseType" className="accent-yellow-400" />
-                      <div>
-                        <span className="text-sm font-medium text-gray-900">Subscribe & Save</span>
-                        <p className="text-xs text-gray-600 mt-0.5">Save 5% and get free delivery</p>
-                      </div>
-                    </label>
-                  </div>
                 </div>
               ) : (
                 <div className="flex items-center gap-3">
@@ -1854,6 +1907,28 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   </button>
                 </div>
               )}
+
+              <div className="flex w-full flex-col items-center pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowPayLaterModal(true)}
+                  className="inline-flex max-w-full flex-wrap items-center justify-center gap-2 text-center text-[13px] text-gray-500 transition hover:text-gray-700"
+                >
+                  <span>{t('product.installments', { amount: `${currency}${(Number(convertedEffPrice || 0) / 4).toFixed(2)}` })}</span>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 26" className="h-[22px] w-auto" aria-label="Tabby">
+                    <rect width="72" height="26" rx="6" fill="#3DBEA3"/>
+                    <text x="36" y="17.5" textAnchor="middle" fill="white" fontSize="12" fontWeight="bold" fontFamily="Arial,sans-serif" letterSpacing="1">tabby</text>
+                  </svg>
+                  <span className="text-gray-400">or</span>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 84 26" className="h-[22px] w-auto" aria-label="Tamara">
+                    <defs><linearGradient id="tg1" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor="#3D1DBF"/><stop offset="100%" stopColor="#0FB49A"/></linearGradient></defs>
+                    <rect width="84" height="26" rx="13" fill="url(#tg1)"/>
+                    <text x="42" y="17.5" textAnchor="middle" fill="white" fontSize="12" fontWeight="bold" fontFamily="Arial,sans-serif" letterSpacing="0.3">tamara</text>
+                  </svg>
+                </button>
+
+                <div id={`tabbyPromoProduct-${String(product?._id || product?.id || 'default')}`} className="product-tabby-promo mt-1 flex w-full justify-center text-center" />
+              </div>
             </div>
 
             {/* Color Options */}
@@ -2060,7 +2135,10 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
               <p>Select Tabby as your payment method at checkout to pay in interest free installments:</p>
               <p className="flex items-center gap-2 flex-wrap">
                 <span>pay in 4 interest free installments with</span>
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 26" className="h-[22px] w-auto" aria-label="Tabby"><rect width="72" height="26" rx="13" fill="#3DBEA3"/><text x="36" y="17.5" textAnchor="middle" fill="white" fontSize="12" fontWeight="bold" fontFamily="Arial,sans-serif" letterSpacing="0.3">tabby</text></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 26" className="h-[22px] w-auto" aria-label="Tabby">
+                  <rect width="72" height="26" rx="6" fill="#3DBEA3"/>
+                  <text x="36" y="17.5" textAnchor="middle" fill="white" fontSize="12" fontWeight="bold" fontFamily="Arial,sans-serif" letterSpacing="1">tabby</text>
+                </svg>
               </p>
               <p className="flex items-center gap-2 flex-wrap">
                 <span>pay in 4 interest free installments with</span>
@@ -2167,6 +2245,17 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
         .scrollbar-thin {
           scrollbar-width: thin;
           scrollbar-color: #d1d5db transparent;
+        }
+        :global(.product-tabby-promo) {
+          text-align: center;
+        }
+        :global(.product-tabby-promo > *) {
+          margin-left: auto !important;
+          margin-right: auto !important;
+        }
+        :global(.product-tabby-promo iframe) {
+          margin-left: auto !important;
+          margin-right: auto !important;
         }
         .product-page-grid {
           display: grid;

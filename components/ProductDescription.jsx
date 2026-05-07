@@ -55,13 +55,8 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
         : 0
 
     const reviewKeywordPills = useMemo(() => {
-        const fallbackPills = [
-            { label: 'Charges Fine', count: 1 },
-            { label: 'Immediate Use', count: 1 },
-            { label: 'First Class', count: 1 }
-        ]
-
-        if (!Array.isArray(reviews) || reviews.length === 0) return fallbackPills
+        // No fallback pills - only show real reviews from backend
+        if (!Array.isArray(reviews) || reviews.length === 0) return []
 
         const stopWords = new Set([
             'the', 'and', 'for', 'that', 'this', 'with', 'you', 'your', 'are', 'was', 'were', 'from', 'have',
@@ -116,7 +111,7 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
             .filter((pill, idx, arr) => arr.findIndex((x) => x.label === pill.label) === idx)
             .slice(0, 3)
 
-        return pills.length > 0 ? pills : fallbackPills
+        return pills  // Return only real pills from backend reviews, no fallback
     }, [reviews])
 
     const openReviewImage = (img, fromAllReviewsModal = false) => {

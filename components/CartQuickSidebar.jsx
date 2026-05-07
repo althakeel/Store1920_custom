@@ -11,6 +11,7 @@ import { useStorefrontMarket } from '@/lib/useStorefrontMarket'
 import { useStorefrontI18n } from '@/lib/useStorefrontI18n'
 import { addToCart, deleteItemFromCart, fetchCart, removeFromCart, uploadCart } from '@/lib/features/cart/cartSlice'
 import { useAuth } from '@/lib/useAuth'
+import { getCartEntryProductId, getCartEntryQuantity, isFreeGiftEntry } from '@/lib/freeGiftUtils'
 
 const getQty = (entry) => {
   if (typeof entry === 'number') return entry
@@ -51,20 +52,24 @@ export default function CartQuickSidebar() {
 
   const cartRows = useMemo(() => {
     const rows = []
-    for (const [productId, entry] of Object.entries(cartItems || {})) {
-      const qty = getQty(entry)
+    for (const [cartKey, entry] of Object.entries(cartItems || {})) {
+      const qty = getCartEntryQuantity(entry)
       if (qty <= 0) continue
+      const productId = getCartEntryProductId(cartKey, entry)
       const product = productMap.get(String(productId))
       if (!product) continue
 
-      const unitPrice = Number(entry?.price ?? product?.price ?? 0)
+      const isFreeGift = isFreeGiftEntry(entry)
+      const unitPrice = isFreeGift ? 0 : Number(entry?.price ?? product?.price ?? 0)
       const convertedUnitPrice = convertPrice(unitPrice)
       rows.push({
-        productId,
+        productId: cartKey,
+        actualProductId: productId,
         qty,
         name: product.name || 'Product',
         image: getImageSrc(product),
         convertedUnitPrice,
+        isFreeGift,
       })
     }
     return rows
@@ -236,28 +241,32 @@ export default function CartQuickSidebar() {
                 </div>
                 <p className="mt-1 line-clamp-2 text-[10px] text-slate-600">{item.name}</p>
                 <p className="mt-0.5 text-[11px] font-semibold text-slate-900">
-                  {market.currency} {Number(item.convertedUnitPrice || 0).toFixed(2)}
+                  {item.isFreeGift ? 'FREE' : `${market.currency} ${Number(item.convertedUnitPrice || 0).toFixed(2)}`}
                 </p>
                 <div className="mt-1 flex items-center justify-between gap-1">
-                  <div className="inline-flex items-center rounded-md border border-slate-200">
-                    <button
-                      type="button"
-                      onClick={() => handleDecrease(item.productId)}
-                      className="inline-flex h-5 w-5 items-center justify-center text-slate-600 hover:bg-slate-100"
-                      aria-label={item.qty === 1 ? 'Delete item' : 'Decrease quantity'}
-                    >
-                      {item.qty === 1 ? <Trash2 size={12} /> : <Minus size={12} />}
-                    </button>
-                    <span className="min-w-[22px] text-center text-[10px] font-semibold text-slate-700">{item.qty}</span>
-                    <button
-                      type="button"
-                      onClick={() => handleIncrease(item.productId)}
-                      className="inline-flex h-5 w-5 items-center justify-center text-slate-600 hover:bg-slate-100"
-                      aria-label="Increase quantity"
-                    >
-                      <Plus size={12} />
-                    </button>
-                  </div>
+                  {item.isFreeGift ? (
+                    <div className="rounded-full bg-green-50 px-2 py-1 text-[10px] font-semibold text-green-700">Free gift</div>
+                  ) : (
+                    <div className="inline-flex items-center rounded-md border border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => handleDecrease(item.productId)}
+                        className="inline-flex h-5 w-5 items-center justify-center text-slate-600 hover:bg-slate-100"
+                        aria-label={item.qty === 1 ? 'Delete item' : 'Decrease quantity'}
+                      >
+                        {item.qty === 1 ? <Trash2 size={12} /> : <Minus size={12} />}
+                      </button>
+                      <span className="min-w-[22px] text-center text-[10px] font-semibold text-slate-700">{item.qty}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleIncrease(item.productId)}
+                        className="inline-flex h-5 w-5 items-center justify-center text-slate-600 hover:bg-slate-100"
+                        aria-label="Increase quantity"
+                      >
+                        <Plus size={12} />
+                      </button>
+                    </div>
+                  )}
                   <button
                     type="button"
                     onClick={() => handleDelete(item.productId)}

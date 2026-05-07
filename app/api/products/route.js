@@ -39,6 +39,20 @@ export async function POST(request) {
         const body = await request.json();
         const { name, description, shortDescription, AED, price, images, category, sku, inStock, hasVariants, variants, attributes, hasBulkPricing, bulkPricing, fastDelivery, freeShippingEligible, allowReturn, allowReplacement, storeId, slug, imageAspectRatio = '1:1' } = body;
 
+        // Normalize images to array format
+        let normalizedImages = [];
+        if (Array.isArray(images)) {
+            normalizedImages = images.filter(img => {
+                if (typeof img === 'string') return img.trim().length > 0;
+                if (typeof img === 'object' && img !== null) return img.url || img.src || img.path || img.data;
+                return false;
+            });
+        } else if (typeof images === 'object' && images !== null && (images.url || images.src || images.path || images.data)) {
+            normalizedImages = [images];
+        } else if (typeof images === 'string' && images.trim().length > 0) {
+            normalizedImages = [images];
+        }
+
         // Generate slug from name if not provided
         const productSlug = slug || name
             .toLowerCase()
@@ -58,7 +72,7 @@ export async function POST(request) {
             shortDescription,
             AED,
             price,
-            images,
+            images: normalizedImages,
             category,
             sku,
             inStock,
@@ -173,15 +187,13 @@ export async function GET(request){
         try {
             products = await Product.find(matchStage)
                 .select('name nameAr slug description descriptionAr shortDescription shortDescriptionAr brand brandAr price mrp AED images category categories sku hasVariants variants attributes fastDelivery freeShippingEligible stockQuantity imageAspectRatio createdAt')
-                .populate('category', 'name nameAr slug')
-                .populate('categories', 'name nameAr slug')
                 .sort({ createdAt: -1 })
                 .skip(offset)
                 .limit(limit)
                 .lean()
                 .exec();
         } catch (populateError) {
-            console.error('Products populate error:', populateError);
+            console.error('Products query error:', populateError);
             products = await Product.find(matchStage)
                 .select('name nameAr slug description descriptionAr shortDescription shortDescriptionAr brand brandAr price mrp AED images category categories sku hasVariants variants attributes fastDelivery freeShippingEligible stockQuantity imageAspectRatio createdAt')
                 .sort({ createdAt: -1 })

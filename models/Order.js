@@ -60,6 +60,10 @@ const OrderSchema = new mongoose.Schema({
   razorpayOrderId: String,                                  // Razorpay order ID
   razorpaySignature: String,                                // Webhook signature for verification
   razorpaySettlement: RazorpaySettlementSchema,            // Settlement details
+
+  // Tamara BNPL
+  tamaraOrderId: { type: String, index: true },             // Tamara order ID (if BNPL payment)
+  tabbyPaymentId: { type: String, index: true },            // Tabby payment ID (if BNPL payment)
   
   // Return & Replacement
   returns: [{
@@ -74,7 +78,27 @@ const OrderSchema = new mongoose.Schema({
     rejectionReason: String,
     sellerNotes: String,
   }],
+
+  // Delivery Reviews
+  deliveryReviews: [{
+    userId: String,
+    rating: { type: Number, min: 1, max: 5 },
+    reviewText: String,
+    images: [String],
+    createdAt: { type: Date, default: Date.now },
+    updatedAt: Date,
+  }],
+  averageDeliveryRating: { type: Number, default: 0 },
+
   // Add more fields as needed
 }, { timestamps: true });
+
+// Indexes for query performance
+OrderSchema.index({ userId: 1, createdAt: -1 });              // Fetch user orders sorted by date
+OrderSchema.index({ userId: 1, status: 1 });                  // Filter user orders by status
+OrderSchema.index({ userId: 1, isCouponUsed: 1 });            // Coupon eligibility checks
+OrderSchema.index({ storeId: 1, createdAt: -1 });             // Store order history
+OrderSchema.index({ storeId: 1, status: 1, createdAt: -1 }); // Store dashboard filtered by status
+OrderSchema.index({ status: 1, createdAt: -1 });              // Global status queries / admin
 
 export default mongoose.models.Order || mongoose.model("Order", OrderSchema);

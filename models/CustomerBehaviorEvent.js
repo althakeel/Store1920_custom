@@ -34,5 +34,7 @@ CustomerBehaviorEventSchema.index({ 'identifier.firebaseUid': 1, createdAt: -1 }
 CustomerBehaviorEventSchema.index({ 'identifier.userId': 1, createdAt: -1 });
 CustomerBehaviorEventSchema.index({ 'identifier.emailHash': 1, createdAt: -1 });
 CustomerBehaviorEventSchema.index({ 'identifier.phoneHash': 1, createdAt: -1 });
+// TTL: auto-delete events older than 90 days to control collection size
+CustomerBehaviorEventSchema.index({ createdAt: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 });
 
 export default mongoose.models.CustomerBehaviorEvent || mongoose.model('CustomerBehaviorEvent', CustomerBehaviorEventSchema);

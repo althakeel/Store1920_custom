@@ -7,20 +7,45 @@ import PageTitle from '@/components/PageTitle';
 import Loading from '@/components/Loading';
 import { TruckIcon, ZapIcon } from 'lucide-react';
 
+const DEFAULT_PAGE_SETTINGS = {
+  headerTitle: 'Fast Delivery Products',
+  headerSubtitle: 'Get these products delivered quickly! Lightning-fast shipping on all items below.',
+  headerBgColor: '#1e40af',
+  headerBgImage: '',
+  emptyStateTitle: 'No Fast Delivery Products Available',
+  emptyStateMessage: 'Check back soon for products with fast delivery options!',
+  emptyStateBgColor: '#f8fafc'
+}
+
 export default function FastDeliveryPage() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [pageSettings, setPageSettings] = useState(DEFAULT_PAGE_SETTINGS);
 
   useEffect(() => {
-    fetchFastDeliveryProducts();
+    fetchFastDeliveryData();
   }, []);
 
-  const fetchFastDeliveryProducts = async () => {
+  const fetchFastDeliveryData = async () => {
     try {
       setLoading(true);
-      const { data } = await axios.get('/api/products?fastDelivery=true');
-      setProducts(data.products || []);
+      
+      // Fetch products
+      const productsRes = await axios.get('/api/products?fastDelivery=true');
+      setProducts(productsRes.data.products || []);
+      
+      // Fetch page customization settings
+      try {
+        const settingsRes = await axios.get('/api/store/appearance/sections/public');
+        setPageSettings({
+          ...DEFAULT_PAGE_SETTINGS,
+          ...(settingsRes.data?.fastDeliveryPage || {})
+        });
+      } catch (_) {
+        // Use defaults if settings endpoint fails
+        setPageSettings(DEFAULT_PAGE_SETTINGS);
+      }
     } catch (error) {
       console.error('Error fetching fast delivery products:', error);
       setError('Failed to load fast delivery products');
@@ -35,20 +60,29 @@ export default function FastDeliveryPage() {
 
   return (
     <>
-      <PageTitle title="Fast Delivery Products" />
+      <PageTitle title={pageSettings.headerTitle} />
       <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white -mt-12">
         {/* Header Section */}
-        <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white py-12 px-4">
+        <div 
+          className="text-white py-12 px-4"
+          style={{
+            background: pageSettings.headerBgImage 
+              ? `linear-gradient(rgba(30, 64, 175, 0.8), rgba(30, 64, 175, 0.8)), url('${pageSettings.headerBgImage}')`
+              : pageSettings.headerBgColor,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center'
+          }}
+        >
           <div className="max-w-7xl mx-auto">
             <div className="flex items-center justify-center gap-3 mb-4">
               <TruckIcon size={40} className="animate-bounce" />
               <ZapIcon size={32} className="text-yellow-300" />
             </div>
             <h1 className="text-3xl md:text-5xl font-bold text-center mb-4">
-              Fast Delivery Products
+              {pageSettings.headerTitle}
             </h1>
             <p className="text-center text-blue-100 text-lg max-w-2xl mx-auto">
-              Get these products delivered quickly! Lightning-fast shipping on all items below.
+              {pageSettings.headerSubtitle}
             </p>
           </div>
         </div>
@@ -59,20 +93,23 @@ export default function FastDeliveryPage() {
             <div className="text-center py-16">
               <div className="text-red-500 text-lg mb-4">{error}</div>
               <button
-                onClick={fetchFastDeliveryProducts}
+                onClick={fetchFastDeliveryData}
                 className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
               >
                 Try Again
               </button>
             </div>
           ) : products.length === 0 ? (
-            <div className="text-center py-16">
+            <div 
+              className="text-center py-16 rounded-lg"
+              style={{ backgroundColor: pageSettings.emptyStateBgColor }}
+            >
               <TruckIcon size={80} className="mx-auto text-gray-300 mb-6" />
               <h2 className="text-2xl font-bold text-gray-800 mb-3">
-                No Fast Delivery Products Available
+                {pageSettings.emptyStateTitle}
               </h2>
               <p className="text-gray-600 mb-6">
-                Check back soon for products with fast delivery options!
+                {pageSettings.emptyStateMessage}
               </p>
               <a
                 href="/products"

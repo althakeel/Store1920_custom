@@ -4,6 +4,7 @@ import AbandonedCart from "@/models/AbandonedCart";
 import Product from "@/models/Product";
 import { getAuth } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
+import { getCartEntryProductId, getCartEntryQuantity, isFreeGiftEntry } from "@/lib/freeGiftUtils";
 
 
 // Update user cart 
@@ -37,9 +38,10 @@ export async function POST(request){
         if (cart && Object.keys(cart).length > 0) {
             try {
                 const cartItems = Object.entries(cart).map(([productId, entry]) => ({
-                    productId,
-                    quantity: typeof entry === 'number' ? entry : Number(entry?.quantity || 0)
-                })).filter((it) => it.quantity > 0);
+                    productId: getCartEntryProductId(productId, entry),
+                    quantity: getCartEntryQuantity(entry),
+                    isFreeGift: isFreeGiftEntry(entry),
+                })).filter((it) => it.quantity > 0 && it.productId && !it.isFreeGift);
 
                 const productIds = cartItems.map(it => it.productId);
                 const products = await Product.find({ _id: { $in: productIds } })

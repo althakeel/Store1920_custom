@@ -1,4 +1,113 @@
+"use client";
+
+import { useStorefrontI18n } from "@/lib/useStorefrontI18n";
+
 export default function TermsAndConditions() {
+  const { isArabic } = useStorefrontI18n();
+
+  if (isArabic) {
+    return (
+      <div className="bg-gray-50 max-w-[1450px] mx-auto" dir="rtl">
+        <div className="max-w-4xl mx-auto py-12 px-4 text-gray-800 min-h-[60vh]">
+          <h1 className="text-3xl font-bold mb-3">الشروط والأحكام</h1>
+          <p className="mb-3">
+            يتم تشغيل هذا الموقع بواسطة <strong>Store1920.com</strong>. باستخدامك للموقع أو إتمام أي طلب شراء، فإنك توافق على الشروط
+            والأحكام الواردة في هذه الصفحة.
+          </p>
+          <p className="mb-8">
+            يرجى قراءة هذه البنود بعناية قبل استخدام خدماتنا. إذا كنت لا توافق على أي جزء منها، يرجى عدم استخدام الموقع أو إتمام الطلب.
+          </p>
+
+          <div className="space-y-6 bg-white border border-gray-200 rounded-xl p-6">
+            <section>
+              <h2 className="text-xl font-semibold mb-2">1. قبول الشروط</h2>
+              <p>
+                باستخدام الموقع، تؤكد أنك تبلغ السن القانونية أو لديك موافقة ولي الأمر، وتتعهد باستخدام الخدمات بشكل قانوني فقط.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="text-xl font-semibold mb-2">2. استخدام الموقع</h2>
+              <ul className="list-disc mr-6 space-y-1">
+                <li>يُمنع استخدام الموقع لأي غرض غير قانوني أو احتيالي.</li>
+                <li>يُمنع إرسال أي برمجيات ضارة أو محتوى مسيء.</li>
+                <li>يحق لنا إيقاف الخدمة عند مخالفة الشروط.</li>
+              </ul>
+            </section>
+
+            <section>
+              <h2 className="text-xl font-semibold mb-2">3. الأسعار والمنتجات</h2>
+              <p>
+                نسعى لتقديم معلومات دقيقة عن الأسعار والتوفر، لكن قد تحدث أخطاء غير مقصودة. نحتفظ بحق تعديل الأسعار أو تحديث تفاصيل
+                المنتجات دون إشعار مسبق.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="text-xl font-semibold mb-2">4. الطلبات والدفع</h2>
+              <p>
+                يتم تأكيد الطلب بعد قبول الدفع أو تأكيد الطلب من طرفنا. قد نطلب تحققًا إضافيًا قبل قبول بعض الطلبات، ويحق لنا رفض أي طلب
+                عند الضرورة.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="text-xl font-semibold mb-2">5. الشحن والتسليم</h2>
+              <p>
+                مواعيد التسليم تقديرية وقد تتأثر بعوامل تشغيلية أو لوجستية. تنتقل مسؤولية المنتج إليك بعد التسليم للعنوان المسجل في الطلب.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="text-xl font-semibold mb-2">6. الإرجاع والاسترداد</h2>
+              <p>
+                تتم عمليات الإرجاع والاسترداد وفق سياسة الإرجاع والاسترداد المعتمدة لدينا، والتي قد تختلف حسب نوع المنتج وحالته.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="text-xl font-semibold mb-2">7. الحساب والبيانات</h2>
+              <p>
+                أنت مسؤول عن صحة بياناتك أثناء الطلب. أي معلومات غير دقيقة قد تؤدي إلى تأخير الطلب أو إلغائه.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="text-xl font-semibold mb-2">8. الملكية الفكرية</h2>
+              <p>
+                جميع المحتويات في الموقع (النصوص، الصور، الشعارات، والتصميمات) محمية بحقوق الملكية الفكرية، ولا يجوز نسخها أو إعادة استخدامها
+                دون إذن كتابي.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="text-xl font-semibold mb-2">9. حدود المسؤولية</h2>
+              <p>
+                لا نتحمل المسؤولية عن أي خسائر غير مباشرة أو تبعية ناتجة عن استخدام الموقع أو تأخر الخدمة، وذلك بالحد الأقصى المسموح به
+                قانونًا.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="text-xl font-semibold mb-2">10. التعديلات على الشروط</h2>
+              <p>
+                نحتفظ بحق تحديث هذه الشروط في أي وقت. استمرارك في استخدام الموقع بعد نشر التحديثات يُعد موافقة على النسخة المحدثة.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="text-xl font-semibold mb-2">11. التواصل</h2>
+              <p>
+                لأي استفسار بخصوص الشروط والأحكام، يرجى التواصل عبر البريد الإلكتروني:
+                <a href="mailto:support@Store1920.com" className="text-orange-600 underline mr-1">support@Store1920.com</a>
+              </p>
+            </section>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-gray-50 max-w-[1450px] mx-auto">
       <div className="max-w-4xl mx-auto py-12 px-4 text-gray-800 min-h-[60vh]">

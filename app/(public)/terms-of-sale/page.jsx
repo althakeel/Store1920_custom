@@ -1,6 +1,102 @@
 'use client'
 
+import { useStorefrontI18n } from "@/lib/useStorefrontI18n";
+
 export default function TermsOfSalePage() {
+  const { isArabic } = useStorefrontI18n();
+
+  if (isArabic) {
+    return (
+      <div className="bg-gray-50" dir="rtl">
+        <div className="max-w-[1250px] mx-auto px-4 py-10 min-h-[60vh]">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">شروط البيع</h1>
+          <p className="text-gray-600 mb-8">
+            توضح شروط البيع هذه البنود والأحكام المنظمة لعمليات بيع المنتجات عبر Store1920.com. بإتمامك أي عملية شراء، فإنك توافق على الالتزام بهذه الشروط.
+          </p>
+
+          <div className="space-y-6 bg-white border border-gray-200 rounded-xl p-6">
+            <section>
+              <h2 className="font-semibold text-gray-900 mb-2">1. العرض والقبول</h2>
+              <p className="text-gray-700">
+                تعتبر المنتجات المعروضة عرضًا للبيع، ويُعد إتمام الطلب قبولًا منك بالشراء. يصبح الطلب مؤكدًا بعد إرسال إشعار التأكيد من طرفنا عبر البريد الإلكتروني أو الرسائل.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="font-semibold text-gray-900 mb-2">2. معلومات المنتجات والتوفر</h2>
+              <p className="text-gray-700 mb-3">
+                نبذل جهدًا لتقديم معلومات دقيقة حول المنتجات والأسعار والتوفر، وقد تحدث اختلافات بسيطة بسبب التحديثات أو ظروف التشغيل.
+              </p>
+              <ul className="list-disc mr-6 mb-3 text-gray-700">
+                <li>صور المنتجات لأغراض التوضيح وقد تختلف قليلًا عن المنتج الفعلي</li>
+                <li>التوفر يخضع للتحديث اللحظي</li>
+                <li>يحق لنا تحديث الوصف أو إيقاف أي منتج دون إشعار مسبق</li>
+              </ul>
+            </section>
+
+            <section>
+              <h2 className="font-semibold text-gray-900 mb-2">3. الأسعار والضرائب</h2>
+              <p className="text-gray-700">
+                قد تتغير الأسعار من وقت لآخر. السعر المعتمد هو السعر الظاهر عند تأكيد الطلب، وقد تُطبق رسوم أو ضرائب إضافية حسب الوجهة والأنظمة المعمول بها.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="font-semibold text-gray-900 mb-2">4. الدفع</h2>
+              <p className="text-gray-700 mb-3">
+                يجب إتمام الدفع بنجاح قبل معالجة الطلب، باستثناء الحالات التي نسمح فيها بطريقة دفع بديلة مثل الدفع عند الاستلام.
+              </p>
+              <ul className="list-disc mr-6 text-gray-700">
+                <li>نقبل بطاقات الدفع والطرق الإلكترونية المتاحة في صفحة الدفع</li>
+                <li>فشل عملية الدفع قد يؤدي إلى إلغاء الطلب تلقائيًا</li>
+                <li>استرداد مبالغ الإلغاء يتم وفق المدد البنكية المعتمدة</li>
+              </ul>
+            </section>
+
+            <section>
+              <h2 className="font-semibold text-gray-900 mb-2">5. الشحن والتسليم</h2>
+              <p className="text-gray-700">
+                أوقات التسليم تقديرية وقد تتأثر بعوامل تشغيلية أو لوجستية. تنتقل مسؤولية المنتج عند التسليم إلى العنوان المسجل في الطلب.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="font-semibold text-gray-900 mb-2">6. الإلغاء والإرجاع</h2>
+              <p className="text-gray-700">
+                يمكن طلب الإلغاء قبل الشحن وفق سياسة المتجر، وبعد الشحن تطبق سياسة الإرجاع والاسترداد المعتمدة لكل فئة منتجات.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="font-semibold text-gray-900 mb-2">7. حدود المسؤولية</h2>
+              <p className="text-gray-700">
+                لا نتحمل المسؤولية عن الخسائر غير المباشرة أو التأخيرات الخارجة عن إرادتنا، ويكون الحد الأقصى للمسؤولية بقيمة الطلب المدفوع حيثما يسمح القانون.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="font-semibold text-gray-900 mb-2">8. تسوية النزاعات والقانون الواجب التطبيق</h2>
+              <p className="text-gray-700">
+                تخضع هذه الشروط للقوانين المعمول بها في دولة الإمارات العربية المتحدة، وتكون المحاكم المختصة وفقًا للتشريعات السارية.
+              </p>
+            </section>
+
+            <section className="border-t pt-4">
+              <h2 className="font-semibold text-gray-900 mb-2">معلومات التواصل</h2>
+              <p className="text-gray-700 mb-2">للاستفسارات المتعلقة بشروط البيع، يرجى التواصل معنا عبر:</p>
+              <div className="bg-blue-50 p-4 rounded-lg">
+                <p className="text-gray-700 mb-1"><strong>اسم النشاط:</strong> Store1920</p>
+                <p className="text-gray-700 mb-1"><strong>الموقع:</strong> https://www.Store1920.com</p>
+                <p className="text-gray-700 mb-1"><strong>البريد الإلكتروني:</strong> support@Store1920.com</p>
+                <p className="text-gray-700"><strong>الهاتف:</strong> +91 7592875212</p>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-gray-50">
       <div className="max-w-[1250px] mx-auto px-4 py-10 min-h-[60vh]">
@@ -16,7 +112,7 @@ export default function TermsOfSalePage() {
           <section>
             <h2 className="font-semibold text-gray-900 mb-2">1. Offer & Acceptance</h2>
             <p className="text-gray-700 mb-3">
-              All product listings on Store1920.com constitute an offer to sell. When you add a product to your cart and proceed to checkout, you are making an offer to purchase. Your offer is accepted when we confirm your order via email or SMS, at which point a binding contract is formed between you and Store1920.com (operated by Nilaas).
+              All product listings on Store1920.com constitute an offer to sell. When you add a product to your cart and proceed to checkout, you are making an offer to purchase. Your offer is accepted when we confirm your order via email or SMS, at which point a binding contract is formed between you and Store1920.com (operated by Store1920).
             </p>
             <p className="text-gray-700">
               We reserve the right to reject any order or require additional verification before acceptance without providing reason or liability.
@@ -278,7 +374,7 @@ export default function TermsOfSalePage() {
               For questions, disputes, or complaints regarding these Terms of Sale, please contact us:
             </p>
             <div className="bg-blue-50 p-4 rounded-lg">
-              <p className="text-gray-700 mb-1"><strong>Business Name:</strong> Nilaas</p>
+              <p className="text-gray-700 mb-1"><strong>Business Name:</strong> Store1920</p>
               <p className="text-gray-700 mb-1"><strong>Website:</strong> https://www.Store1920.com</p>
               <p className="text-gray-700 mb-1"><strong>Email:</strong> support@Store1920.com</p>
               <p className="text-gray-700"><strong>Phone:</strong> +91 7592875212</p>

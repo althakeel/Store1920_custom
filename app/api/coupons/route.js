@@ -53,6 +53,7 @@ export async function GET(request) {
           description: coupon.description,
           discountType: coupon.discountType,
           discountValue: coupon.discountValue || coupon.discount,
+          freeShipping: Boolean(coupon.freeShipping),
           minOrderValue: coupon.minOrderValue || coupon.minPrice || 0,
           maxDiscount: coupon.maxDiscount,
           badgeColor: coupon.badgeColor || '#10B981',
@@ -194,6 +195,7 @@ export async function POST(request) {
         discountType: coupon.discountType,
         discountValue: coupon.discountValue || coupon.discount,
         discountAmount,
+        freeShipping: Boolean(coupon.freeShipping),
       },
     });
   } catch (error) {

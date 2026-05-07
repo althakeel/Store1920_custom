@@ -18,6 +18,9 @@ const UserSchema = new mongoose.Schema({
   _id: { type: String, required: true }, // Firebase UID as string
   firebaseUid: { type: String, unique: true, sparse: true }, // Firebase UID reference
   legacySourceId: { type: String, unique: true, sparse: true },
+  referralCode: { type: String, unique: true, sparse: true },
+  referredByUserId: { type: String, default: null, index: true },
+  referralRewardCreditedAt: { type: Date, default: null },
   name: String,
   email: { type: String, unique: true, sparse: true },
   phone: String,
@@ -27,10 +30,14 @@ const UserSchema = new mongoose.Schema({
     of: mongoose.Schema.Types.Mixed,
     default: {}
   },
-  // Location tracking
+  // Location tracking — capped at 20 most-recent entries (enforced by atomic $push/$slice in route)
   locations: {
     type: [LocationHistorySchema],
-    default: []
+    default: [],
+    validate: {
+      validator: (arr) => arr.length <= 20,
+      message: 'locations array must not exceed 20 entries',
+    },
   },
   lastLocation: {
     city: String,
@@ -51,7 +58,7 @@ const UserSchema = new mongoose.Schema({
     promotional: { type: Boolean, default: true },
     orders: { type: Boolean, default: true },
     updates: { type: Boolean, default: true }
-  }
+  },
   // Add other fields as needed
 }, { timestamps: true, _id: false }); // Disable auto ObjectId generation
 

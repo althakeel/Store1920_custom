@@ -11,10 +11,7 @@ export default function OrderSuccess() {
       <OrderSuccessContent />
     </Suspense>
   );
-
 }
-
-
 
 function OrderSuccessContent() {
   const params = useSearchParams();
@@ -22,6 +19,7 @@ function OrderSuccessContent() {
   const [orders, setOrders] = useState(null);
   const [loading, setLoading] = useState(true);
   const { user, getToken } = useAuth();
+  const [copied, setCopied] = useState(false);
 
   const pushDataLayerEvent = (event, ecommerce) => {
     if (typeof window === 'undefined') return;
@@ -89,161 +87,181 @@ function OrderSuccessContent() {
   const paidAmount = isPaid ? total : 0;
   const dueAmount = isPaid ? 0 : total;
 
-  // Meta Pixel Purchase event with attribution data
-  useEffect(() => {
-    if (order && typeof window !== 'undefined' && window.fbq) {
-      const orderEventId = String(order?._id || order?.shortOrderNumber || params.get('orderId') || 'unknown');
-      const purchaseEventKey = `meta_purchase_sent_${orderEventId}`;
+  const copyOrderNumber = () => {
+    navigator.clipboard.writeText(getOrderNumber(order));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
-      // Prevent duplicate browser Purchase events (StrictMode/re-renders/back navigation)
-      if (sessionStorage.getItem(purchaseEventKey)) return;
-
-      window.fbq('track', 'Purchase', {
-        value: total,
-        currency: 'AED',
-        content_type: 'product',
-        order_id: orderEventId
-      });
-
-      sessionStorage.setItem(purchaseEventKey, '1');
-    }
-  }, [order, total, params]);
-
-  useEffect(() => {
-    if (!order || typeof window === 'undefined') return;
-
-    const orderEventId = String(order?._id || order?.shortOrderNumber || params.get('orderId') || 'unknown');
-    const purchaseEventKey = `gtm_purchase_sent_${orderEventId}`;
-    if (sessionStorage.getItem(purchaseEventKey)) return;
-
-    pushDataLayerEvent('purchase', {
-      transaction_id: orderEventId,
-      value: Number(total || 0),
-      currency: 'AED',
-      items: products.map((item, idx) => {
-        const productRef = typeof item.productId === 'object' ? item.productId : null;
-        return {
-          item_id: String(productRef?._id || item.productId || item._id || idx),
-          item_name: productRef?.name || item.name || 'Product',
-          price: Number(item.price || 0),
-          quantity: Number(item.quantity || 0),
-        };
-      }),
-    });
-
-    sessionStorage.setItem(purchaseEventKey, '1');
-  }, [order, params, products, total]);
-
-  // Render logic moved inside returned JSX to avoid early returns
+  // Render logic
   return (
     <>
       {loading ? (
         <Loading />
       ) : !orders || orders.length === 0 ? (
-        <div className='p-8 text-center text-red-600'>Order not found or failed.</div>
+        <div className='min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4'>
+          <div className='text-center'>
+            <div className='text-red-600 text-6xl mb-4'>⚠️</div>
+            <p className='text-xl font-semibold text-slate-700'>Order not found</p>
+            <button 
+              onClick={() => router.push('/')}
+              className='mt-6 bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition'
+            >
+              Back to Home
+            </button>
+          </div>
+        </div>
       ) : (
-        <div className='min-h-screen bg-gray-50 flex flex-col items-center justify-center py-8'>
-          <div className='max-w-2xl w-full bg-white rounded-xl shadow p-8'>
-            <div className='text-center mb-8'>
-              <div className='flex flex-col items-center gap-2'>
-                <span className='text-green-600 text-2xl'>✔️</span>
-                <h2 className='text-2xl font-bold text-green-700'>Thank you</h2>
-                <p className='text-gray-500'>Your order has been received.</p>
+        <div className='min-h-screen bg-gradient-to-br from-green-50 to-blue-50 py-12 px-4 sm:px-6 lg:px-8'>
+          <div className='max-w-4xl mx-auto'>
+            {/* Success Header */}
+            <div className='text-center mb-12 animate-fade-in'>
+              <div className='inline-flex items-center justify-center w-20 h-20 bg-green-100 rounded-full mb-6'>
+                <svg className='w-12 h-12 text-green-600' fill='currentColor' viewBox='0 0 20 20'>
+                  <path fillRule='evenodd' d='M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z' clipRule='evenodd'/>
+                </svg>
+              </div>
+              <h1 className='text-4xl font-bold text-green-600 mb-2'>Order Confirmed!</h1>
+              <p className='text-lg text-slate-600'>Thank you for your purchase</p>
+            </div>
+
+            {/* Order Number Card */}
+            <div className='bg-white rounded-xl shadow-lg p-8 mb-8'>
+              <div className='text-center'>
+                <p className='text-slate-500 text-sm font-medium mb-2'>ORDER NUMBER</p>
+                <p className='text-4xl font-bold text-slate-900 font-mono mb-4'>{getOrderNumber(order)}</p>
+                <button 
+                  onClick={copyOrderNumber}
+                  className='inline-flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition text-sm'
+                >
+                  {copied ? '✓ Copied' : '📋 Copy Order Number'}
+                </button>
               </div>
             </div>
-            <div className='bg-gray-100 rounded-lg py-6 mb-8 text-center'>
-              <div className='text-sm text-gray-500 mb-2'>Order no.</div>
-              <div className='text-3xl font-bold text-red-600 mb-2'>
-                {getOrderNumber(order)}
-              </div>
-              <button className='text-xs text-gray-400 hover:text-gray-600' onClick={() => navigator.clipboard.writeText(getOrderNumber(order))}>Copy order number</button>
-            </div>
-            <div className='flex flex-col md:flex-row justify-between items-center bg-gray-50 rounded-lg p-4 mb-8 gap-4'>
-              <div className='text-sm'>
-                <div><span className='font-semibold'>Order no.:</span> {getOrderNumber(order)}</div>
-                <div><span className='font-semibold'>Order date:</span> {orderDate}</div>
-              </div>
-              <div className='text-sm'>
-                <div><span className='font-semibold'>Total:</span> {currency} {total.toLocaleString()}</div>
-                <div><span className='font-semibold'>Payment method:</span> {paymentMethod}</div>
-                <div><span className='font-semibold'>Paid:</span> {currency} {paidAmount.toLocaleString()}</div>
-                <div><span className='font-semibold'>To pay:</span> {currency} {dueAmount.toLocaleString()}</div>
-              </div>
-            </div>
-            <div className='bg-gray-50 rounded-lg p-4'>
-              <div className='mb-4 text-lg font-semibold'>Order summary</div>
-              <table className='w-full text-sm mb-4'>
-                <thead>
-                  <tr className='border-b'>
-                    <th className='text-left py-2'>Product</th>
-                    <th className='text-right py-2'>Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {products.map((item, idx) => {
-                    const p = typeof item.productId === 'object' ? item.productId : null;
-                    const key = (p && p._id) || (typeof item.productId === 'string' ? item.productId : idx);
-                    const name = p?.name || item.name || 'Product';
-                    const image = Array.isArray(p?.images) && p.images[0] ? p.images[0] : null;
-                    return (
-                      <tr key={key} className='border-b'>
-                        <td className='py-2 flex items-center gap-3'>
-                          {image && (
-                            <img src={image} alt={name} className='w-12 h-12 rounded object-cover border' />
-                          )}
-                          <span className='truncate max-w-[240px]'>{name} {item.quantity > 1 ? `× ${item.quantity}` : ''}</span>
-                        </td>
-                        <td className='py-2 text-right'>{currency} {(Number(item.price) * Number(item.quantity)).toLocaleString()}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              <div className='grid grid-cols-2 gap-2 text-sm mb-2'>
-                <div className='text-gray-600'>Items</div>
-                <div className='text-right'>{currency} {subtotal.toLocaleString()}</div>
-                <div className='text-gray-600'>Discount</div>
-                <div className='text-right'>-{currency} {discount ? discount.toLocaleString() : '0'}</div>
-                <div className='text-gray-600'>Shipping &amp; handling</div>
-                <div className='text-right'>{currency} {shipping.toLocaleString()}</div>
-                {walletDiscount > 0 && (
-                  <>
-                    <div className='text-gray-600'>Wallet discount</div>
-                    <div className='text-right'>-{currency} {walletDiscount.toLocaleString()}</div>
-                  </>
-                )}
-                <div className='font-semibold text-gray-900'>Total</div>
-                <div className='font-semibold text-right'>{currency} {total.toLocaleString()}</div>
-              </div>
-            </div>
-            {order?.shippingAddress && (
-              <div className='bg-white rounded-lg shadow border border-gray-100 p-4 mt-6'>
-                <div className='font-semibold text-gray-900 mb-2'>Shipping address</div>
-                <div className='text-sm text-gray-700 space-y-1'>
-                  <div className='font-medium'>{order.shippingAddress.name}</div>
-                  <div>{order.shippingAddress.street}</div>
-                  <div>{order.shippingAddress.city}, {order.shippingAddress.state} {order.shippingAddress.zip}</div>
-                  <div>{order.shippingAddress.country}</div>
-                  {order.shippingAddress.phone && (
-                    <div>Phone: {(order.shippingAddress.phoneCode || '+91')} {order.shippingAddress.phone}</div>
-                  )}
-                  {order.shippingAddress.alternatePhone && (
-                    <div className='text-gray-600'>Alternate: {(order.shippingAddress.alternatePhoneCode || order.shippingAddress.phoneCode || '+91')} {order.shippingAddress.alternatePhone}</div>
+
+            {/* Order Details Grid */}
+            <div className='grid grid-cols-1 md:grid-cols-2 gap-6 mb-8'>
+              <div className='bg-white rounded-xl shadow-lg p-6'>
+                <h3 className='text-lg font-bold text-slate-900 mb-4'>Order Details</h3>
+                <div className='space-y-3 text-sm'>
+                  <div className='flex justify-between'>
+                    <span className='text-slate-600'>Order Date:</span>
+                    <span className='font-semibold text-slate-900'>{orderDate}</span>
+                  </div>
+                  <div className='flex justify-between'>
+                    <span className='text-slate-600'>Payment Method:</span>
+                    <span className='font-semibold text-slate-900'>{paymentMethod}</span>
+                  </div>
+                  <div className='flex justify-between pt-2 border-t'>
+                    <span className='text-slate-600'>Amount Paid:</span>
+                    <span className='font-bold text-green-600'>{currency} {paidAmount.toLocaleString()}</span>
+                  </div>
+                  {dueAmount > 0 && (
+                    <div className='flex justify-between pt-2 border-t'>
+                      <span className='text-slate-600'>Amount Due:</span>
+                      <span className='font-bold text-orange-600'>{currency} {dueAmount.toLocaleString()}</span>
+                    </div>
                   )}
                 </div>
               </div>
-            )}
+
+              {order?.shippingAddress && (
+                <div className='bg-white rounded-xl shadow-lg p-6'>
+                  <h3 className='text-lg font-bold text-slate-900 mb-4'>Shipping Address</h3>
+                  <div className='space-y-2 text-sm text-slate-700'>
+                    <p className='font-semibold text-slate-900'>{order.shippingAddress.name}</p>
+                    <p>{order.shippingAddress.street}</p>
+                    <p>{order.shippingAddress.city}, {order.shippingAddress.state} {order.shippingAddress.zip}</p>
+                    <p>{order.shippingAddress.country}</p>
+                    {order.shippingAddress.phone && (
+                      <p className='pt-2 border-t'>Phone: {(order.shippingAddress.phoneCode || '+91')} {order.shippingAddress.phone}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Order Summary */}
+            <div className='bg-white rounded-xl shadow-lg p-8 mb-8'>
+              <h3 className='text-lg font-bold text-slate-900 mb-6'>Order Summary</h3>
+              <div className='space-y-4'>
+                {products.map((item, idx) => {
+                  const p = typeof item.productId === 'object' ? item.productId : null;
+                  const key = (p && p._id) || (typeof item.productId === 'string' ? item.productId : idx);
+                  const name = p?.name || item.name || 'Product';
+                  const image = Array.isArray(p?.images) && p.images[0] ? p.images[0] : null;
+                  return (
+                    <div key={key} className='flex gap-4 pb-4 border-b last:border-0 last:pb-0'>
+                      {image && (
+                        <img src={image} alt={name} className='w-16 h-16 rounded-lg object-cover border border-slate-200' />
+                      )}
+                      <div className='flex-1'>
+                        <p className='font-semibold text-slate-900'>{name}</p>
+                        <p className='text-sm text-slate-600'>Qty: {item.quantity}</p>
+                      </div>
+                      <p className='font-bold text-slate-900'>{currency} {(Number(item.price) * Number(item.quantity)).toLocaleString()}</p>
+                    </div>
+                  );
+                })}
+
+                <div className='mt-6 space-y-2 pt-4 border-t'>
+                  <div className='flex justify-between text-sm'>
+                    <span className='text-slate-600'>Subtotal:</span>
+                    <span>{currency} {subtotal.toLocaleString()}</span>
+                  </div>
+                  {discount > 0 && (
+                    <div className='flex justify-between text-sm'>
+                      <span className='text-slate-600'>Discount:</span>
+                      <span className='text-green-600'>-{currency} {discount.toLocaleString()}</span>
+                    </div>
+                  )}
+                  <div className='flex justify-between text-sm'>
+                    <span className='text-slate-600'>Shipping:</span>
+                    <span>{currency} {shipping.toLocaleString()}</span>
+                  </div>
+                  {walletDiscount > 0 && (
+                    <div className='flex justify-between text-sm'>
+                      <span className='text-slate-600'>Wallet Discount:</span>
+                      <span className='text-green-600'>-{currency} {walletDiscount.toLocaleString()}</span>
+                    </div>
+                  )}
+                  <div className='flex justify-between text-lg font-bold pt-2 border-t'>
+                    <span>Total:</span>
+                    <span className='text-green-600'>{currency} {total.toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className='flex flex-col sm:flex-row gap-4 justify-center'>
+              <button 
+                onClick={() => router.push('/dashboard/orders')}
+                className='px-8 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition'
+              >
+                📦 Track Order
+              </button>
+              <button 
+                onClick={() => router.push('/')}
+                className='px-8 py-3 bg-slate-600 text-white font-semibold rounded-lg hover:bg-slate-700 transition'
+              >
+                🛍️ Continue Shopping
+              </button>
+            </div>
+
             {!user && (
-              <div className='bg-yellow-50 border border-yellow-200 rounded-lg p-4 mt-8 text-center'>
-                <div className='text-yellow-800 font-semibold mb-2'>
-                  Please sign in to view your order history and track details.<br />
-                  Guests can track their order using the order ID only.
-                </div>
+              <div className='mt-8 bg-blue-50 border-2 border-blue-200 rounded-xl p-6 text-center'>
+                <p className='text-blue-900 font-semibold mb-3'>
+                  Sign in to view your complete order history and track details
+                </p>
+                <button 
+                  onClick={() => router.push('/profile')}
+                  className='px-6 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition'
+                >
+                  Sign In
+                </button>
               </div>
             )}
-            <div className='text-center mt-4'>
-              <button className='bg-orange-500 text-white px-6 py-2 rounded-lg font-bold' onClick={() => router.push('/')}>Continue Shopping</button>
-            </div>
           </div>
         </div>
       )}

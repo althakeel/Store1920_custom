@@ -12,6 +12,7 @@ const apiProtectedRoutes = [
 
 // Public endpoints that don't require authentication
 const publicEndpoints = [
+  '/api/store/settings', // Allow GET requests to view navbar/menu settings (public storefront)
   '/api/store/categories', // Allow GET requests to view categories
   '/api/store/featured-products', // Allow GET requests to view featured products (public)
   '/api/store/carousel-products', // Allow GET requests to view carousel products (public)

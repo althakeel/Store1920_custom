@@ -54,7 +54,8 @@ const DEFAULT_SHOWCASE = {
   secondaryBannerSliderItems: [
     { id: 'secondary-banner-slider-1', image: '', link: '/shop', alt: 'Lower Banner 1' },
     { id: 'secondary-banner-slider-2', image: '', link: '/shop', alt: 'Lower Banner 2' }
-  ]
+  ],
+  referralRewardCoins: 25
 }
 
 function normalizeBannerSliderHeight(value, fallback) {
@@ -119,6 +120,11 @@ async function getUserIdFromRequest(request) {
 }
 
 function normalizeShopShowcase(data = {}) {
+  const parsedReferralRewardCoins = Number(data.referralRewardCoins)
+  const referralRewardCoins = Number.isFinite(parsedReferralRewardCoins)
+    ? Math.min(10000, Math.max(0, Math.round(parsedReferralRewardCoins)))
+    : DEFAULT_SHOWCASE.referralRewardCoins
+
   return {
     enabled: typeof data.enabled === 'boolean' ? data.enabled : DEFAULT_SHOWCASE.enabled,
     featuredSectionTitle: normalizeString(data.featuredSectionTitle, DEFAULT_SHOWCASE.featuredSectionTitle),
@@ -164,7 +170,8 @@ function normalizeShopShowcase(data = {}) {
     secondaryBannerSliderMobileInterval: Math.max(1500, Number(data.secondaryBannerSliderMobileInterval) || DEFAULT_SHOWCASE.secondaryBannerSliderMobileInterval),
     secondaryBannerSliderDesktopHeight: normalizeBannerSliderHeight(data.secondaryBannerSliderDesktopHeight, DEFAULT_SHOWCASE.secondaryBannerSliderDesktopHeight),
     secondaryBannerSliderMobileHeight: normalizeBannerSliderHeight(data.secondaryBannerSliderMobileHeight, DEFAULT_SHOWCASE.secondaryBannerSliderMobileHeight),
-    secondaryBannerSliderItems: normalizeSecondaryBannerSliderItems(data.secondaryBannerSliderItems)
+    secondaryBannerSliderItems: normalizeSecondaryBannerSliderItems(data.secondaryBannerSliderItems),
+    referralRewardCoins
   }
 }
 

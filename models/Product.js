@@ -56,5 +56,8 @@ ProductSchema.index({ category: 1, inStock: 1 }); // For category filtering
 ProductSchema.index({ price: 1, AED: 1 }); // For discount calculations and price sorting
 ProductSchema.index({ tags: 1, inStock: 1 }); // For tag-based filtering
 ProductSchema.index({ fastDelivery: 1, inStock: 1 }); // For fast delivery filter
+ProductSchema.index({ brand: 1, inStock: 1 });                    // Brand page filtering
+ProductSchema.index({ storeId: 1, category: 1, inStock: 1 });    // Store + category listings
+ProductSchema.index({ name: 'text', brand: 'text', shortDescription: 'text' }); // Full-text search
 
 export default mongoose.models.Product || mongoose.model("Product", ProductSchema);

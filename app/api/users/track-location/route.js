@@ -96,48 +96,38 @@ export async function POST(request) {
 
     // If user is authenticated, save to their profile
     if (userId) {
-      let user = await User.findById(userId);
+      const lastLocation = {
+        city: locationData.city,
+        state: locationData.state,
+        country: locationData.country,
+        latitude: locationData.latitude,
+        longitude: locationData.longitude,
+        timestamp: new Date(),
+      };
 
-      if (!user) {
-        user = await User.create({
-          _id: userId,
-          locations: [trackingData],
-          lastLocation: {
-            city: locationData.city,
-            state: locationData.state,
-            country: locationData.country,
-            latitude: locationData.latitude,
-            longitude: locationData.longitude,
-            timestamp: new Date(),
+      // Atomic upsert — no need to load the full document into memory.
+      // $push + $slice keeps only the 20 most-recent entries, capping array growth.
+      const result = await User.updateOne(
+        { _id: userId },
+        {
+          $push: { locations: { $each: [trackingData], $slice: -20 } },
+          $set: { lastLocation },
+          $setOnInsert: {
+            _id: userId,
+            firstVisitLocation: {
+              city: locationData.city,
+              state: locationData.state,
+              country: locationData.country,
+              timestamp: new Date(),
+            },
           },
-          firstVisitLocation: {
-            city: locationData.city,
-            state: locationData.state,
-            country: locationData.country,
-            timestamp: new Date(),
-          },
-        });
-      } else {
-        // Update existing user
-        if (!user.locations) user.locations = [];
-        user.locations.push(trackingData);
+        },
+        { upsert: true }
+      );
 
-        // Keep only last 100 location records
-        if (user.locations.length > 100) {
-          user.locations = user.locations.slice(-100);
-        }
-
-        user.lastLocation = {
-          city: locationData.city,
-          state: locationData.state,
-          country: locationData.country,
-          latitude: locationData.latitude,
-          longitude: locationData.longitude,
-          timestamp: new Date(),
-        };
-
-        await user.save();
-      }
+      // If the doc was newly created (upserted) we still need firstVisitLocation set.
+      // $setOnInsert above handles that automatically during the upsert.
+      void result; // suppress unused-variable lint
     }
 
     return NextResponse.json({

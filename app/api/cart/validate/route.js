@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Product from '@/models/Product';
+import { getCartEntryProductId, getCartEntryQuantity, isFreeGiftEntry } from '@/lib/freeGiftUtils';
 
 export async function POST(req) {
     try {
@@ -16,8 +17,10 @@ export async function POST(req) {
         const validItems = [];
         
         // Check each product in cart
-        for (const [productId, quantity] of Object.entries(cartItems)) {
-            if (!productId || !quantity) continue;
+        for (const [cartKey, entry] of Object.entries(cartItems)) {
+            const productId = getCartEntryProductId(cartKey, entry);
+            const quantity = getCartEntryQuantity(entry);
+            if (!productId || !quantity || isFreeGiftEntry(entry)) continue;
             
             try {
                 const product = await Product.findById(productId)

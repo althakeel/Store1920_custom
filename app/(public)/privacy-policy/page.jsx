@@ -1,6 +1,86 @@
 'use client';
 
+import { useStorefrontI18n } from "@/lib/useStorefrontI18n";
+
 export default function PrivacyPolicyPage() {
+  const { isArabic } = useStorefrontI18n();
+
+  if (isArabic) {
+    return (
+      <div className="bg-gray-50" dir="rtl">
+        <div className="max-w-[1250px] mx-auto px-4 py-10 min-h-[60vh]">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">سياسة الخصوصية</h1>
+          <p className="text-gray-600 mb-8">
+            توضح سياسة الخصوصية هذه كيف يقوم Store1920.com بجمع واستخدام وحفظ وحماية معلوماتك الشخصية عند استخدام الموقع والخدمات.
+          </p>
+
+          <div className="space-y-6 bg-white border border-gray-200 rounded-xl p-6">
+            <section>
+              <h2 className="font-semibold text-gray-900 mb-2">1. المعلومات التي نجمعها</h2>
+              <p className="text-gray-700">
+                نجمع المعلومات التي تقدمها أثناء التسجيل والشراء مثل الاسم ورقم الهاتف والبريد الإلكتروني وعنوان التوصيل، بالإضافة إلى بيانات
+                تقنية مثل عنوان IP ونوع الجهاز والمتصفح وبيانات الاستخدام.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="font-semibold text-gray-900 mb-2">2. استخدام المعلومات</h2>
+              <p className="text-gray-700">
+                نستخدم معلوماتك لمعالجة الطلبات، وتقديم الدعم، وتحسين تجربة الاستخدام، ومنع الاحتيال، والالتزام بالمتطلبات القانونية.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="font-semibold text-gray-900 mb-2">3. مشاركة المعلومات</h2>
+              <p className="text-gray-700">
+                قد نشارك البيانات مع شركاء موثوقين مثل مزودي الدفع وشركات الشحن وأدوات التحليلات لأغراض تشغيلية وقانونية فقط. نحن لا نبيع
+                بياناتك الشخصية.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="font-semibold text-gray-900 mb-2">4. ملفات تعريف الارتباط</h2>
+              <p className="text-gray-700">
+                نستخدم ملفات تعريف الارتباط لتحسين أداء الموقع وتذكر تفضيلاتك وتحليل الزيارات. يمكنك تعطيلها من إعدادات المتصفح مع احتمال
+                تأثر بعض الوظائف.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="font-semibold text-gray-900 mb-2">5. أمان البيانات</h2>
+              <p className="text-gray-700">
+                نطبق إجراءات أمنية مناسبة مثل الاتصالات المشفرة وضوابط الوصول لحماية بياناتك. ورغم ذلك، لا توجد وسيلة نقل عبر الإنترنت
+                مضمونة بنسبة 100%.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="font-semibold text-gray-900 mb-2">6. حقوقك</h2>
+              <p className="text-gray-700">
+                يمكنك طلب الوصول إلى بياناتك أو تصحيحها أو حذفها وفق الأنظمة المطبقة عبر التواصل معنا على support@Store1920.com.
+              </p>
+            </section>
+
+            <section>
+              <h2 className="font-semibold text-gray-900 mb-2">7. تحديثات السياسة</h2>
+              <p className="text-gray-700">
+                قد نقوم بتحديث سياسة الخصوصية من وقت لآخر، وسيتم نشر النسخة المحدثة على هذه الصفحة.
+              </p>
+            </section>
+
+            <section className="border-t pt-4">
+              <h2 className="font-semibold text-gray-900 mb-2">معلومات التواصل</h2>
+              <p className="text-gray-700 mb-1"><strong>اسم النشاط:</strong> Store1920</p>
+              <p className="text-gray-700 mb-1"><strong>الموقع:</strong> https://www.Store1920.com</p>
+              <p className="text-gray-700 mb-1"><strong>البريد الإلكتروني:</strong> support@Store1920.com</p>
+              <p className="text-gray-700"><strong>الدعم:</strong> +91 7592875212</p>
+            </section>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-gray-50">
       <div className="max-w-[1250px] mx-auto px-4 py-10 min-h-[60vh]">
@@ -9,7 +89,7 @@ export default function PrivacyPolicyPage() {
         </h1>
         <p className="text-gray-600 mb-8">
           This Privacy Policy explains how <strong>Store1920.com</strong>, owned
-          and operated by <strong>Nilaas</strong>, collects, uses, stores, and
+          and operated by <strong>Store1920</strong>, collects, uses, stores, and
           protects your personal information when you use our website and
           services.
         </p>
@@ -152,7 +232,7 @@ export default function PrivacyPolicyPage() {
               11. Changes to This Policy
             </h2>
             <p className="text-gray-700">
-              Nilaas reserves the right to update this Privacy Policy at any time.
+              Store1920 reserves the right to update this Privacy Policy at any time.
               Any changes will be posted on this page along with an updated
               &ldquo;Last Updated&rdquo; date.
             </p>
@@ -164,7 +244,7 @@ export default function PrivacyPolicyPage() {
               12. Contact Information
             </h2>
             <p className="text-gray-700 mb-1">
-              <strong>Business Name:</strong> Nilaas
+              <strong>Business Name:</strong> Store1920
             </p>
             <p className="text-gray-700 mb-1">
               <strong>Website:</strong> https://www.Store1920.com

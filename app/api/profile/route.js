@@ -32,6 +32,9 @@ export async function GET(request) {
         email: user?.email || "",
         phone: user?.phone || "",
         image: user?.image || "",
+        referralCode: user?.referralCode || "",
+        referredByUserId: user?.referredByUserId || null,
+        referralRewardCreditedAt: user?.referralRewardCreditedAt || null,
       },
     });
   } catch (error) {
@@ -73,6 +76,9 @@ export async function PATCH(request) {
         email: user?.email || "",
         phone: user?.phone || "",
         image: user?.image || "",
+        referralCode: user?.referralCode || "",
+        referredByUserId: user?.referredByUserId || null,
+        referralRewardCreditedAt: user?.referralRewardCreditedAt || null,
       },
     });
   } catch (error) {

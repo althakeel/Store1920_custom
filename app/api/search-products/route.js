@@ -55,35 +55,31 @@ export async function GET(request) {
     await dbConnect();
     
     console.log(`Search for keyword: ${keyword}`);
-    
-    // Strategy 1: Try exact phrase match
-    let products = await Product.find({
-      $or: [
-        { name: { $regex: keyword, $options: 'i' } },
-      ],
-      inStock: true
-    })
-    .select('_id name slug images price mrp AED category tags inStock')
-    .limit(limit)
-    .lean();
 
-    // Strategy 2: Word boundary match
-    if (products.length === 0) {
-      const wordBoundaryRegex = new RegExp(`\\b${keyword}\\b`, 'i');
-      products = await Product.find({
-        $or: [
-          { name: wordBoundaryRegex },
-          { category: wordBoundaryRegex },
-          { tags: wordBoundaryRegex },
-        ],
-        inStock: true
-      })
-      .select('_id name slug images price mrp AED category tags inStock')
+    const selectFields = '_id name slug images price mrp AED category tags inStock';
+
+    // Strategy 1: Full-text search using MongoDB text index (fastest)
+    let products = await Product.find(
+      { $text: { $search: keyword }, inStock: true },
+      { score: { $meta: 'textScore' } }
+    )
+      .select(selectFields)
+      .sort({ score: { $meta: 'textScore' } })
       .limit(limit)
       .lean();
+
+    // Strategy 2: Regex name match (handles partial words not caught by text index)
+    if (products.length === 0) {
+      products = await Product.find({
+        name: { $regex: keyword, $options: 'i' },
+        inStock: true,
+      })
+        .select(selectFields)
+        .limit(limit)
+        .lean();
     }
 
-    // Strategy 3: Partial match
+    // Strategy 3: Broad partial match across key fields
     if (products.length === 0) {
       const partialRegex = new RegExp(keyword, 'i');
       products = await Product.find({
@@ -93,32 +89,29 @@ export async function GET(request) {
           { tags: partialRegex },
           { shortDescription: partialRegex },
         ],
-        inStock: true
+        inStock: true,
       })
-      .select('_id name slug images price mrp AED category tags inStock')
-      .limit(limit)
-      .lean();
+        .select(selectFields)
+        .limit(limit)
+        .lean();
     }
 
-    // Strategy 4: Prefix match
+    // Strategy 4: Prefix match (last resort before fallback)
     if (products.length === 0 && keyword.length > 2) {
       const prefixRegex = new RegExp(`^${keyword.substring(0, 3)}`, 'i');
       products = await Product.find({
-        $or: [
-          { name: prefixRegex },
-          { category: prefixRegex },
-        ],
-        inStock: true
+        $or: [{ name: prefixRegex }, { category: prefixRegex }],
+        inStock: true,
       })
-      .select('_id name slug images price mrp AED category tags inStock')
-      .limit(limit)
-      .lean();
+        .select(selectFields)
+        .limit(limit)
+        .lean();
     }
 
-    // Strategy 5: Fallback to popular products
+    // Strategy 5: Fallback to latest products
     if (products.length === 0) {
       products = await Product.find({ inStock: true })
-        .select('_id name slug images price mrp AED category tags inStock')
+        .select(selectFields)
         .sort({ createdAt: -1 })
         .limit(limit)
         .lean();

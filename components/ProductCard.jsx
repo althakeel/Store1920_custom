@@ -14,12 +14,47 @@ import { useStorefrontI18n } from '@/lib/useStorefrontI18n'
 
 import toast from 'react-hot-toast'
 
+// Normalize images to array format
+const normalizeImages = (images) => {
+    // Handle array
+    if (Array.isArray(images)) {
+        return images.filter(img => {
+            // Accept strings with content
+            if (typeof img === 'string') return img.trim().length > 0
+            // Accept objects with url/src
+            if (typeof img === 'object' && img !== null) {
+                return img.url || img.src || img.path || img.data || false
+            }
+            return false
+        })
+    }
+    
+    // Handle null/undefined
+    if (images === null || images === undefined) return []
+    
+    // Handle object - only if it has image data properties
+    if (typeof images === 'object') {
+        if (images.url || images.src || images.path || images.data) {
+            return [images]
+        }
+        return [] // Empty object has no valid image data
+    }
+    
+    // Handle string
+    if (typeof images === 'string') {
+        return images.trim().length > 0 ? [images] : []
+    }
+    
+    return []
+}
+
 // Pick a usable image source with graceful fallbacks
 const getImageSrc = (product) => {
-    if (Array.isArray(product.images) && product.images.length) {
-        const first = product.images[0]
-        if (first?.url) return first.url
-        if (first?.src) return first.src
+    const imagesArray = normalizeImages(product.images)
+    if (imagesArray.length) {
+        const first = imagesArray[0]
+        if (typeof first === 'object' && first?.url) return first.url
+        if (typeof first === 'object' && first?.src) return first.src
         if (typeof first === 'string' && first.trim() !== '') return first
     }
     return 'https://ik.imagekit.io/jrstupuke/placeholder.png'
@@ -29,13 +64,14 @@ const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.ogg', '.mov', '.m4v', '.avi', '.mkv
 
 const getPrimaryMedia = (product) => {
     const fallback = 'https://ik.imagekit.io/jrstupuke/placeholder.png'
-    if (!Array.isArray(product?.images) || product.images.length === 0) {
+    const imagesArray = normalizeImages(product?.images)
+    if (!imagesArray || imagesArray.length === 0) {
         return { type: 'image', src: fallback }
     }
 
-    const first = product.images[0]
-    const raw = (first?.url || first?.src || (typeof first === 'string' ? first : '') || '').toString().trim()
-    const src = raw || fallback
+    const first = imagesArray[0]
+    const raw = (typeof first === 'object' ? (first?.url || first?.src) : first) || ''
+    const src = (raw || '').toString().trim() || fallback
     const normalized = src.toLowerCase().split('?')[0]
     const isVideo = VIDEO_EXTENSIONS.some((ext) => normalized.endsWith(ext))
 
@@ -105,10 +141,7 @@ const ProductCard = ({ product }) => {
         return null;
     }
     
-    if (!Array.isArray(product.images) || product.images.length === 0) {
-        console.error('[ProductCard] Rejected: missing/invalid images. Image type:', typeof product.images, 'Keys:', Object.keys(product).join(','));
-        return null;
-    }
+    // Do not reject missing images; card media falls back to placeholder.
     
     // Cart item detection: has ALL three cart-specific keys
     if (product.hasOwnProperty('quantity') && 
@@ -315,7 +348,7 @@ const ProductCard = ({ product }) => {
                         name: product.name,
                         price: priceNum,
                         AED: AEDNum,
-                        images: product.images,
+                        images: normalizeImages(product.images),
                         inStock: product.inStock,
                         addedAt: new Date().toISOString(),
                     })
@@ -346,7 +379,7 @@ const ProductCard = ({ product }) => {
     return (
         <Link href={`/product/${product.slug || product._id || ''}`} className="group w-full">
             <div className="relative flex h-full flex-col overflow-hidden rounded-[20px] border border-[#d9dde5] bg-white shadow-[0_2px_14px_rgba(15,23,42,0.06)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(15,23,42,0.12)]">
-                <div className={`relative w-full overflow-hidden bg-[#f8f8f8] ${getAspectRatioClass(product.aspectRatio)}`}>
+                <div className={`relative w-full overflow-hidden bg-[#f8f8f8] transition-transform duration-300 group-hover:scale-[1.04] ${getAspectRatioClass(product.aspectRatio)}`}>
                     {primaryBadge ? (
                         <span className="absolute left-3 top-3 z-20 rounded-[8px] bg-[#0d615d] px-3 py-1 text-[11px] font-semibold text-white shadow-sm">
                             {primaryBadge}
@@ -363,7 +396,7 @@ const ProductCard = ({ product }) => {
                     {media.type === 'video' ? (
                         <video
                             src={media.src}
-                            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]"
+                            className="h-full w-full object-cover"
                             muted
                             loop
                             autoPlay
@@ -375,7 +408,7 @@ const ProductCard = ({ product }) => {
                             src={media.src || getImageSrc(product)}
                             alt={displayName}
                             fill
-                            className="object-cover transition-transform duration-300 group-hover:scale-[1.04]"
+                            className="object-cover"
                             onError={(e) => {
                                 if (e.currentTarget.src !== 'https://ik.imagekit.io/jrstupuke/placeholder.png') {
                                     e.currentTarget.src = 'https://ik.imagekit.io/jrstupuke/placeholder.png'
