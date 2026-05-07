@@ -16,10 +16,12 @@ const defaultActionsVisibility = {
   cart: true,
 };
 
+const DEFAULT_NAVBAR_BG = '#8f3404';
+
 const defaultMenuStyle = {
-  barBackgroundColor: '#ffffff',
-  barTextColor: '#334155',
-  barHoverBackgroundColor: '#f1f5f9',
+  barBackgroundColor: DEFAULT_NAVBAR_BG,
+  barTextColor: '#ffffff',
+  barHoverBackgroundColor: 'rgba(0,0,0,0.15)',
   dropdownBackgroundColor: '#ffffff',
   dropdownTextColor: '#334155',
   dropdownMutedTextColor: '#64748b',
@@ -221,7 +223,7 @@ export default function NavbarMenuBar() {
     if (Array.isArray(cachedCategories)) setCategories(cachedCategories);
     if (Array.isArray(cachedMenu)) setNavMenuItems(sanitizeMenuItems(cachedMenu));
     setNavMenuEnabled(Boolean(cachedEnabled));
-    setMenuStyle({ ...defaultMenuStyle, ...(cachedStyle || {}) });
+    setMenuStyle({ ...defaultMenuStyle, ...(cachedStyle || {}), barBackgroundColor: cachedStyle?.barBackgroundColor || DEFAULT_NAVBAR_BG });
     window.dispatchEvent(new CustomEvent('navActionsVisibilityUpdated', { detail: cachedActions }));
 
     let active = true;
@@ -245,8 +247,10 @@ export default function NavbarMenuBar() {
           ...defaultActionsVisibility,
           ...(nextSettings?.navActionsVisibility || {}),
         };
+        const navbarBg = nextSettings?.navbarAppearance?.backgroundColor || DEFAULT_NAVBAR_BG;
         const parsedStyle = {
           ...defaultMenuStyle,
+          barBackgroundColor: navbarBg,
           ...(nextSettings?.navMenuStyle || {}),
         };
 
@@ -271,11 +275,19 @@ export default function NavbarMenuBar() {
     revalidate();
     const intervalId = setInterval(revalidate, REFRESH_MS);
     const handleMenuUpdated = () => revalidate();
+    const handleNavbarAppearance = (e) => {
+      const bg = e?.detail?.backgroundColor;
+      if (bg) {
+        setMenuStyle((prev) => ({ ...prev, barBackgroundColor: bg }));
+      }
+    };
     window.addEventListener('navMenuUpdated', handleMenuUpdated);
+    window.addEventListener('navbarAppearanceUpdated', handleNavbarAppearance);
 
     return () => {
       active = false;
       window.removeEventListener('navMenuUpdated', handleMenuUpdated);
+      window.removeEventListener('navbarAppearanceUpdated', handleNavbarAppearance);
       clearInterval(intervalId);
       if (megaTimer.current) clearTimeout(megaTimer.current);
       if (categoryTimer.current) clearTimeout(categoryTimer.current);
@@ -297,8 +309,8 @@ export default function NavbarMenuBar() {
 
   return (
     <div className="relative hidden w-full border-t lg:block" style={{ ...cssVars, borderColor: 'var(--menu-dropdown-border)', backgroundColor: 'var(--menu-bar-bg)' }}>
-      <div className="mx-auto max-w-[1400px] px-4 sm:px-6">
-        <div className="relative flex items-center gap-1 py-2">
+      <div className="mx-auto max-w-[1400px] px-4 sm:px-6 overflow-x-auto scrollbar-hide">
+        <div className="relative flex items-center py-2 whitespace-nowrap">
           {navMenuItems.map((item, index) => {
             const dropdownLinks = Array.isArray(item?.megaMenu?.links) ? item.megaMenu.links : [];
             const featuredImages = Array.isArray(item?.megaMenu?.images) ? item.megaMenu.images.filter((img) => img?.url) : [];
@@ -309,7 +321,7 @@ export default function NavbarMenuBar() {
             return (
               <div
                 key={`${item.name}-${index}`}
-                className="static"
+                className="static inline-flex items-center"
                 onMouseEnter={() => {
                   if (megaTimer.current) clearTimeout(megaTimer.current);
                   if (categoryTimer.current) clearTimeout(categoryTimer.current);
@@ -341,16 +353,13 @@ export default function NavbarMenuBar() {
                   }
                 }}
               >
+                {index > 0 && (
+                  <span className="px-2 text-xs select-none opacity-40" style={{ color: 'var(--menu-bar-text)' }}>|</span>
+                )}
                 <Link
                   href={itemHref}
-                  className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition"
+                  className="inline-flex items-center gap-1.5 px-2 py-1.5 text-sm font-semibold uppercase tracking-wide transition-opacity hover:opacity-70"
                   style={{ color: 'var(--menu-bar-text)' }}
-                  onMouseEnter={(event) => {
-                    event.currentTarget.style.backgroundColor = 'var(--menu-bar-hover-bg)';
-                  }}
-                  onMouseLeave={(event) => {
-                    event.currentTarget.style.backgroundColor = 'transparent';
-                  }}
                 >
                   {item.icon ? <img src={item.icon} alt={item.name} className="h-4 w-4 object-contain" loading="lazy" /> : null}
                   <span>{item.name}</span>

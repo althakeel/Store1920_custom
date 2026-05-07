@@ -1,17 +1,23 @@
-import { getAuth } from 'firebase-admin/auth';
 import Order from '@/models/Order';
-import { connectDB } from '@/lib/mongoose';
-import { verifyAuth } from '@/middlewares/authMiddleware';
+import connectDB from '@/lib/mongodb';
+import { getAuth } from '@/lib/firebase-admin';
 
 export async function POST(request) {
   try {
     await connectDB();
-    
+
     // Verify authentication
-    const authResult = await verifyAuth(request);
-    if (!authResult.authenticated) {
+    const authHeader = request.headers.get('authorization') || '';
+    if (!authHeader.startsWith('Bearer ')) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
     }
+    let decoded;
+    try {
+      decoded = await getAuth().verifyIdToken(authHeader.slice(7));
+    } catch {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
+    }
+    const authResult = { userId: decoded.uid, email: decoded.email };
 
     const userId = authResult.userId;
     const body = await request.json();

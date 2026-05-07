@@ -48,6 +48,8 @@ export default function StoreSpinWheelPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [hasSaved, setHasSaved] = useState(false);
   const [form, setForm] = useState({
     isEnabled: false,
     campaignName: "Spin & Win",
@@ -90,6 +92,8 @@ export default function StoreSpinWheelPage() {
             ? data.campaign.slices
             : defaultSlices,
         });
+        setHasSaved(true);
+        setEditing(false);
       }
     } catch (error) {
       console.error("Failed to fetch spin campaign:", error);
@@ -155,6 +159,8 @@ export default function StoreSpinWheelPage() {
         return;
       }
       setMessage("Spin campaign saved successfully.");
+      setHasSaved(true);
+      setEditing(false);
       await fetchCampaign();
     } catch (error) {
       console.error("Failed to save spin campaign:", error);
@@ -172,6 +178,70 @@ export default function StoreSpinWheelPage() {
     );
   }
 
+  // Summary view — shown after a campaign is saved
+  if (hasSaved && !editing) {
+    return (
+      <div className="max-w-2xl mx-auto p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">Spin Wheel Campaign</h1>
+            <p className="text-sm text-slate-500 mt-1">Your campaign is configured.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="px-5 py-2.5 rounded-xl bg-orange-500 text-white font-semibold hover:bg-orange-600"
+          >
+            Edit Campaign
+          </button>
+        </div>
+
+        {message && (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            {message}
+          </div>
+        )}
+
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-semibold text-slate-700">Status</span>
+            <span className={`px-3 py-1 rounded-full text-sm font-semibold ${form.isEnabled ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+              {form.isEnabled ? "Enabled" : "Disabled"}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-slate-500">Campaign Name</span>
+            <span className="text-sm font-medium text-slate-800">{form.campaignName}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-slate-500">Coupon Prefix</span>
+            <span className="text-sm font-medium text-slate-800">{form.couponPrefix}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-slate-500">Daily Limit</span>
+            <span className="text-sm font-medium text-slate-800">{form.dailySpinLimit} spin(s)</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-slate-500">Spin Interval</span>
+            <span className="text-sm font-medium text-slate-800 capitalize">{form.spinInterval}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-slate-500">Home Page Only</span>
+            <span className="text-sm font-medium text-slate-800">{form.homePageOnly ? "Yes" : "No"}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-slate-500">Show After</span>
+            <span className="text-sm font-medium text-slate-800">{form.showAfterSeconds}s</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-slate-500">Wheel Slices</span>
+            <span className="text-sm font-medium text-slate-800">{form.slices.length} slice(s)</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-6xl mx-auto p-6 space-y-6">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -179,14 +249,25 @@ export default function StoreSpinWheelPage() {
           <h1 className="text-2xl font-bold text-slate-900">Spin Wheel Campaign</h1>
           <p className="text-sm text-slate-600">Configure rewards, probability weights, and enable or disable the campaign.</p>
         </div>
-        <button
-          type="button"
-          onClick={saveCampaign}
-          disabled={saving}
-          className="px-5 py-3 rounded-xl bg-orange-500 text-white font-semibold hover:bg-orange-600 disabled:opacity-60"
-        >
-          {saving ? "Saving..." : "Save Campaign"}
-        </button>
+        <div className="flex items-center gap-3">
+          {hasSaved && (
+            <button
+              type="button"
+              onClick={() => { setEditing(false); setMessage(""); }}
+              className="px-5 py-3 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={saveCampaign}
+            disabled={saving}
+            className="px-5 py-3 rounded-xl bg-orange-500 text-white font-semibold hover:bg-orange-600 disabled:opacity-60"
+          >
+            {saving ? "Saving..." : "Save Campaign"}
+          </button>
+        </div>
       </div>
 
       {message && (
