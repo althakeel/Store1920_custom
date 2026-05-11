@@ -13,48 +13,31 @@ import { localizeRecord } from "@/lib/storefrontLanguage";
 // Skeleton Loader Components
 const ProductDetailsSkeleton = () => (
     <div className="animate-pulse">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 lg:gap-8 items-start">
-            <div>
-                <div className="h-[360px] sm:h-[420px] md:h-[500px] rounded-2xl bg-slate-200" />
-                <div className="mt-3 flex gap-2 overflow-hidden">
+        <div className="grid grid-cols-1 gap-0 lg:gap-8 items-start lg:grid-cols-[minmax(360px,460px)_minmax(340px,1fr)_250px] xl:grid-cols-[minmax(400px,500px)_minmax(360px,1fr)_270px]">
+            <div className="space-y-4 lg:min-w-0 lg:sticky lg:top-24 lg:self-start">
+                <div className="hidden lg:flex gap-3 items-start">
+                    <div className="flex flex-col gap-1.5 w-[56px] xl:w-[64px] flex-shrink-0">
+                        {[1, 2, 3, 4, 5].map(i => (
+                            <div key={i} className="h-[52px] w-[52px] xl:h-[60px] xl:w-[60px] rounded bg-slate-200" />
+                        ))}
+                    </div>
+                    <div className="flex-1">
+                        <div className="h-[360px] sm:h-[420px] md:h-[500px] lg:min-h-[520px] rounded-xl bg-slate-200" />
+                    </div>
+                </div>
+
+                <div className="lg:hidden">
+                    <div className="h-[360px] sm:h-[420px] md:h-[500px] rounded-xl bg-slate-200" />
+                </div>
+
+                <div className="mt-3 flex gap-2 overflow-hidden lg:hidden">
                     {[1, 2, 3, 4, 5].map(i => (
                         <div key={i} className="h-16 w-16 sm:h-20 sm:w-20 rounded-lg bg-slate-200" />
                     ))}
                 </div>
-
-                <div className="mt-8 space-y-5">
-                    <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-                        <div className="h-7 w-56 rounded bg-slate-200" />
-                        <div className="h-6 w-64 rounded bg-slate-200" />
-                    </div>
-
-                    <div className="flex gap-3">
-                        {[1, 2, 3].map((i) => (
-                            <div key={i} className="h-8 w-28 rounded-full border border-slate-200 bg-slate-100" />
-                        ))}
-                    </div>
-
-                    {[1, 2].map((i) => (
-                        <div key={i} className="space-y-2.5">
-                            <div className="h-4 w-44 rounded bg-slate-200" />
-                            <div className="h-4 w-24 rounded bg-slate-200" />
-                            <div className="h-4 w-full rounded bg-slate-200" />
-                            <div className="h-4 w-10/12 rounded bg-slate-200" />
-                        </div>
-                    ))}
-
-                    <div className="pt-2">
-                        <div className="h-8 w-52 rounded bg-slate-200 mb-4" />
-                        <div className="space-y-2.5">
-                            <div className="h-4 w-full rounded bg-slate-200" />
-                            <div className="h-4 w-11/12 rounded bg-slate-200" />
-                            <div className="h-4 w-9/12 rounded bg-slate-200" />
-                        </div>
-                    </div>
-                </div>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-4 lg:min-w-0">
                 <div className="h-6 w-24 rounded-full bg-slate-200" />
                 <div className="h-9 w-5/6 rounded bg-slate-200" />
                 <div className="h-5 w-1/2 rounded bg-slate-200" />
@@ -79,6 +62,50 @@ const ProductDetailsSkeleton = () => (
                     <div className="h-4 w-2/3 rounded bg-slate-200" />
                     <div className="h-4 w-3/4 rounded bg-slate-200" />
                     <div className="h-4 w-1/3 rounded bg-slate-200" />
+                </div>
+            </div>
+
+            <div className="mt-4 lg:mt-0">
+                <div className="rounded-xl border border-slate-200 p-4 space-y-3">
+                    <div className="h-6 w-24 rounded bg-slate-200" />
+                    <div className="h-8 w-32 rounded bg-slate-200" />
+                    <div className="h-4 w-full rounded bg-slate-200" />
+                    <div className="h-4 w-4/5 rounded bg-slate-200" />
+                    <div className="h-11 w-full rounded-lg bg-slate-200" />
+                    <div className="h-11 w-full rounded-lg bg-slate-200" />
+                    <div className="h-3 w-2/3 rounded bg-slate-200" />
+                    <div className="h-3 w-1/2 rounded bg-slate-200" />
+                </div>
+            </div>
+        </div>
+
+        <div className="mt-8 space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                <div className="h-7 w-56 rounded bg-slate-200" />
+                <div className="h-6 w-64 rounded bg-slate-200" />
+            </div>
+
+            <div className="flex gap-3">
+                {[1, 2, 3].map((i) => (
+                    <div key={i} className="h-8 w-28 rounded-full border border-slate-200 bg-slate-100" />
+                ))}
+            </div>
+
+            {[1, 2].map((i) => (
+                <div key={i} className="space-y-2.5">
+                    <div className="h-4 w-44 rounded bg-slate-200" />
+                    <div className="h-4 w-24 rounded bg-slate-200" />
+                    <div className="h-4 w-full rounded bg-slate-200" />
+                    <div className="h-4 w-10/12 rounded bg-slate-200" />
+                </div>
+            ))}
+
+            <div className="pt-2">
+                <div className="h-8 w-52 rounded bg-slate-200 mb-4" />
+                <div className="space-y-2.5">
+                    <div className="h-4 w-full rounded bg-slate-200" />
+                    <div className="h-4 w-11/12 rounded bg-slate-200" />
+                    <div className="h-4 w-9/12 rounded bg-slate-200" />
                 </div>
             </div>
         </div>

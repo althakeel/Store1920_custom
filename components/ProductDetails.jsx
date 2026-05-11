@@ -1163,7 +1163,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
         <div className="product-page-grid gap-0 lg:gap-8 items-start">
 
           {/* LEFT: Media gallery */}
-          <div className="space-y-4 lg:min-w-0 lg:sticky lg:top-24 lg:self-start">
+          <div className="space-y-4 lg:min-w-0 lg:sticky lg:top-24 lg:self-start relative z-20">
             <div className="hidden lg:flex gap-3 items-start">
               <div className="flex flex-col gap-1.5 w-[56px] xl:w-[64px] flex-shrink-0 overflow-y-auto max-h-[720px] scrollbar-hide">
                 {imagesArray?.map((image, index) => (
@@ -1314,7 +1314,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                         backgroundPosition: `${zoomPos.x * 100}% ${zoomPos.y * 100}%`,
                         backgroundRepeat: 'no-repeat',
                         backgroundColor: '#fff',
-                        zIndex: 9999,
+                        zIndex: 2147483647,
                         border: '1px solid #e5e7eb',
                         borderRadius: '8px',
                         boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
@@ -1397,7 +1397,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
           </div>
 
           {/* MIDDLE: Product details */}
-          <div className="min-w-0">
+          <div className="min-w-0 relative z-0">
             <div className="hidden lg:block bg-white space-y-4">
               <div>
                 <h1 className="text-[38px] leading-[1.2] font-medium text-gray-900">{safeProductName}</h1>
@@ -1668,7 +1668,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
           </div>
 
           {/* RIGHT: Product Info (buy box, meta) */}
-          <div className="bg-white rounded-lg p-3 lg:p-4 space-y-3 lg:sticky lg:top-24 lg:self-start border border-gray-200">
+          <div className="bg-white rounded-lg p-3 lg:p-4 space-y-3 lg:sticky lg:top-24 lg:self-start border border-gray-200 relative z-0">
 
             {/* Special Offer - Countdown Timer */}
             {offerData?.countdownTimer && (
