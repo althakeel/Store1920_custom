@@ -466,6 +466,7 @@ const OrderSummary = ({ totalPrice, items }) => {
                                 onChange={e => setGuestInfo({...guestInfo, name: e.target.value})}
                                 className='border border-slate-300 p-2.5 w-full rounded-lg outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 text-sm'
                             />
+                            <div>
                             <input
                                 type="email"
                                 placeholder="Email Address *"
@@ -473,6 +474,8 @@ const OrderSummary = ({ totalPrice, items }) => {
                                 onChange={e => setGuestInfo({...guestInfo, email: e.target.value})}
                                 className='border border-slate-300 p-2.5 w-full rounded-lg outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 text-sm'
                             />
+                            <p className="text-xs text-gray-400 mt-1">📧 Sign in later with this email or phone to see this order in your account history.</p>
+                            </div>
                             <input
                                 type="tel"
                                 placeholder="Phone Number *"
@@ -531,6 +534,7 @@ const OrderSummary = ({ totalPrice, items }) => {
                                 onChange={e => setGuestInfo({...guestInfo, name: e.target.value})}
                                 className='border border-slate-300 p-2.5 w-full rounded-lg outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 text-sm'
                             />
+                            <div>
                             <input
                                 type="email"
                                 placeholder="Email Address *"
@@ -538,6 +542,8 @@ const OrderSummary = ({ totalPrice, items }) => {
                                 onChange={e => setGuestInfo({...guestInfo, email: e.target.value})}
                                 className='border border-slate-300 p-2.5 w-full rounded-lg outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 text-sm'
                             />
+                            <p className="text-xs text-gray-400 mt-1">📧 Sign in later with this email or phone to see this order in your account history.</p>
+                            </div>
                             <input
                                 type="tel"
                                 placeholder="Phone Number *"

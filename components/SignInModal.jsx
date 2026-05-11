@@ -429,8 +429,8 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '' }
               <div>
                 <input
                   type="text"
-                  placeholder="Full Name"
-                  className={`border rounded-lg px-3 sm:px-4 py-2 sm:py-2.5 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent text-xs sm:text-sm w-full ${
+                  placeholder="Enter your full name"
+                  className={`border rounded-lg px-3 sm:px-4 py-2 sm:py-2.5 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent text-xs sm:text-sm w-full placeholder:text-gray-400 placeholder:opacity-100 ${
                     fieldErrors.name ? 'border-red-500' : 'border-gray-300'
                   }`}
                   value={name}
@@ -483,8 +483,8 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '' }
                   </select>
                   <input
                     type="tel"
-                    placeholder="Phone Number"
-                    className={`flex-1 border rounded-lg px-3 sm:px-4 py-2 sm:py-2.5 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent text-xs sm:text-sm ${
+                    placeholder="Enter phone number"
+                    className={`flex-1 border rounded-lg px-3 sm:px-4 py-2 sm:py-2.5 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent text-xs sm:text-sm placeholder:text-gray-400 placeholder:opacity-100 ${
                       fieldErrors.phone ? 'border-red-500' : 'border-gray-300'
                     }`}
                     value={phoneNumber}
@@ -530,8 +530,8 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '' }
             <div>
               <input
                 type="email"
-                placeholder="Email"
-                className={`border rounded-lg px-3 sm:px-4 py-2 sm:py-2.5 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent text-xs sm:text-sm w-full ${
+                placeholder="Enter your email"
+                className={`border rounded-lg px-3 sm:px-4 py-2 sm:py-2.5 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent text-xs sm:text-sm w-full placeholder:text-gray-400 placeholder:opacity-100 ${
                   fieldErrors.email ? 'border-red-500' : 'border-gray-300'
                 }`}
                 value={email}
@@ -565,8 +565,8 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '' }
               <div className="relative">
                 <input
                   type={showPassword ? "text" : "password"}
-                  placeholder="Password"
-                  className={`border rounded-lg px-3 sm:px-4 py-2 sm:py-2.5 pr-10 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent text-xs sm:text-sm w-full ${
+                  placeholder="Enter your password"
+                  className={`border rounded-lg px-3 sm:px-4 py-2 sm:py-2.5 pr-10 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent text-xs sm:text-sm w-full placeholder:text-gray-400 placeholder:opacity-100 ${
                     fieldErrors.password ? 'border-red-500' : 'border-gray-300'
                   }`}
                   value={password}
@@ -616,8 +616,8 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '' }
                 <div className="relative">
                   <input
                     type={showConfirmPassword ? "text" : "password"}
-                    placeholder="Confirm Password"
-                    className={`border rounded-lg px-3 sm:px-4 py-2 sm:py-2.5 pr-10 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent text-xs sm:text-sm w-full ${
+                    placeholder="Confirm your password"
+                    className={`border rounded-lg px-3 sm:px-4 py-2 sm:py-2.5 pr-10 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent text-xs sm:text-sm w-full placeholder:text-gray-400 placeholder:opacity-100 ${
                       fieldErrors.confirmPassword ? 'border-red-500' : 'border-gray-300'
                     }`}
                     value={confirmPassword}

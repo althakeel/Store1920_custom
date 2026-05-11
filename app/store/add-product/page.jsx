@@ -363,10 +363,11 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
         const [isSlugManuallyEdited, setIsSlugManuallyEdited] = useState(false);
         const [images, setImages] = useState({ "1": null, "2": null, "3": null, "4": null, "5": null, "6": null, "7": null, "8": null });
         const [productInfo, setProductInfo] = useState({
-            name: '', nameAr: '', slug: '', brand: '', brandAr: '', shortDescription: '', shortDescriptionAr: '', shortDescription2: '', specTableEnabled: false, specTableTitle: 'Product information', specTableColumns: ['Property', 'Value'], specTableRows: [['', '']], description: '', descriptionAr: '', AED: '', price: '', category: '', sku: '', stockQuantity: 0, colors: [], sizes: [], fastDelivery: false, freeShippingEligible: false, allowReturn: true, allowReplacement: true, reviews: [], badges: [], imageAspectRatio: '1:1', tags: [], seoTitle: '', seoDescription: '', seoKeywords: [], deliveredBy: '', soldBy: '', paymentInfo: ''
+            name: '', nameAr: '', slug: '', brand: '', brandAr: '', shortDescription: '', shortDescriptionAr: '', shortDescription2: '', specTableEnabled: false, specTableTitle: 'Product information', specTableColumns: ['Property', 'Value'], specTableRows: [['', '']], description: '', descriptionAr: '', AED: '', price: '', category: '', sku: '', stockQuantity: '', colors: [], sizes: [], fastDelivery: false, freeShippingEligible: false, allowReturn: true, allowReplacement: true, reviews: [], badges: [], imageAspectRatio: '1:1', tags: [], seoTitle: '', seoDescription: '', seoKeywords: [], deliveredBy: '', soldBy: '', paymentInfo: ''
         });
         const [tagInput, setTagInput] = useState('');
         const [seoKeywordInput, setSeoKeywordInput] = useState('');
+        const [showArabic, setShowArabic] = useState(false);
         const [loading, setLoading] = useState(false);
         const [reviewInput, setReviewInput] = useState({ name: '', rating: 5, comment: '', image: null });
         const aspectRatioOptions = ['1:1', '4:5', '3:4', '16:9'];
@@ -609,7 +610,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 price: product.price || "",
                 category: product.category?._id || product.category || "",
                 sku: product.sku || "",
-                stockQuantity: product.stockQuantity || 0,
+                stockQuantity: product.stockQuantity ?? '',
                 colors: product.colors || [],
                 sizes: product.sizes || [],
                 fastDelivery: product.fastDelivery || false,
@@ -951,182 +952,158 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
 
     return (
 
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-blue-50 via-pink-50 to-yellow-50 p-4 overflow-y-auto">
-            <div className="w-full max-w-4xl my-8">
-                <form onSubmit={onSubmitHandler} className="bg-white/90 p-8 rounded-2xl shadow-2xl space-y-8 max-h-[calc(100vh-4rem)] overflow-y-auto border-4 border-blue-100">
-                    <h2 className="text-3xl font-bold sticky top-0 bg-gradient-to-r from-blue-100 via-pink-100 to-yellow-100 py-4 border-b-2 border-blue-200 mb-6 rounded-t-2xl text-center tracking-wide text-blue-700 shadow">{product ? "Edit Product" : "Add New Product"}</h2>
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-gradient-to-br from-slate-100 via-zinc-100 to-stone-100 overflow-y-auto">
+            <div className="w-full max-w-6xl px-4 sm:px-6 py-6">
+                <form onSubmit={onSubmitHandler} className="bg-white/95 p-4 sm:p-6 rounded-3xl shadow-[0_24px_70px_rgba(15,23,42,0.14)] space-y-4 border border-slate-200">
+                    <h2 className="text-xl font-semibold sticky top-0 z-10 bg-white/95 backdrop-blur-sm py-3 px-2 border-b border-slate-200 mb-4 text-center text-slate-800 tracking-tight">{product ? "✏️ Edit Product" : "➕ Add New Product"}</h2>
+
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
+                {/* LEFT COLUMN */}
+                <div className="space-y-4">
 
                 {/* Basic Info */}
-                <div className="bg-blue-50/60 rounded-xl p-6 shadow mb-6 border border-blue-100">
-                  <h3 className="text-lg font-semibold text-blue-700 mb-4 flex items-center gap-2"><span className="inline-block w-2 h-2 bg-blue-400 rounded-full"></span> Basic Information</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50/70 shadow-[0_8px_24px_rgba(15,23,42,0.06)] overflow-hidden">
+                                    <div className="flex items-center gap-2 px-4 py-3 bg-white border-b border-slate-200">
+                                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-indigo-100 text-indigo-700 text-xs">📦</span>
+                                        <h3 className="text-sm font-semibold text-slate-800 tracking-wide">Basic Information</h3>
+                  </div>
+                  <div className="p-4 grid grid-cols-2 gap-3">
                     <div>
-                        <label className="block text-sm font-medium mb-1 text-blue-800">Product Name</label>
-                        <input name="name" value={productInfo.name} onChange={onChangeHandler} className="w-full border-2 border-blue-200 rounded px-3 py-2 focus:ring-2 focus:ring-blue-300" placeholder="Enter product name" />
+                        <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Product Name</label>
+                        <input name="name" value={productInfo.name} onChange={onChangeHandler} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 outline-none transition" placeholder="Enter product name" />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium mb-1 text-blue-800">Product Name (Arabic)</label>
-                        <input name="nameAr" value={productInfo.nameAr} onChange={onChangeHandler} dir="rtl" className="w-full border-2 border-blue-100 rounded px-3 py-2 focus:ring-2 focus:ring-blue-300" placeholder="أدخل اسم المنتج بالعربية" />
+                        <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Slug <span className="normal-case text-green-500">(auto)</span></label>
+                        <input name="slug" value={productInfo.slug} onChange={onChangeHandler} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-600 outline-none" placeholder="Auto-generated" />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium mb-1 text-blue-800">Product Slug <span className="text-xs text-green-600">(auto-generated, editable)</span></label>
-                        <input 
-                            name="slug" 
-                            value={productInfo.slug} 
-                            onChange={onChangeHandler}
-                            className="w-full border-2 border-blue-100 rounded px-3 py-2 bg-white text-gray-700" 
-                            placeholder="Auto-generated from product name (you can edit)" 
-                        />
+                        <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Brand</label>
+                        <input name="brand" value={productInfo.brand} onChange={onChangeHandler} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200" placeholder="Brand (optional)" />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium mb-1 text-blue-800">Brand</label>
-                        <input name="brand" value={productInfo.brand} onChange={onChangeHandler} className="w-full border-2 border-blue-100 rounded px-3 py-2" placeholder="Brand (optional)" />
+                        <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">SKU</label>
+                        <input name="sku" value={productInfo.sku || ""} onChange={onChangeHandler} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200" placeholder="Optional" />
                     </div>
-                    <div>
-                        <label className="block text-sm font-medium mb-1 text-blue-800">Brand (Arabic)</label>
-                        <input name="brandAr" value={productInfo.brandAr} onChange={onChangeHandler} dir="rtl" className="w-full border-2 border-blue-100 rounded px-3 py-2" placeholder="العلامة التجارية بالعربية" />
-                    </div>
-                    <div className="md:col-span-2">
-                        <label className="block text-sm font-medium mb-2 text-blue-800">Categories (Select Multiple)</label>
-                        <div className="border-2 border-blue-100 rounded px-3 py-3 bg-white max-h-48 overflow-y-auto space-y-2">
+                    <div className="col-span-2">
+                        <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Categories</label>
+                        <div className="border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 max-h-28 overflow-y-auto space-y-1">
                             {dbCategories.length === 0 ? (
-                                <p className="text-sm text-gray-500">No categories available</p>
+                                <p className="text-xs text-gray-400">No categories available</p>
                             ) : (
                                 dbCategories.map(cat => (
-                                    <label key={cat._id} className="flex items-center gap-3 cursor-pointer hover:bg-blue-50 p-2 rounded transition">
-                                        <input
-                                            type="checkbox"
-                                            checked={selectedCategories.includes(cat._id)}
-                                            onChange={(e) => {
-                                                if (e.target.checked) {
-                                                    setSelectedCategories([...selectedCategories, cat._id])
-                                                } else {
-                                                    setSelectedCategories(selectedCategories.filter(id => id !== cat._id))
-                                                }
-                                            }}
-                                            className="w-4 h-4 rounded cursor-pointer accent-blue-500"
-                                        />
-                                        <span className="text-sm font-medium text-blue-700">{cat.name}</span>
+                                    <label key={cat._id} className="flex items-center gap-2 cursor-pointer hover:bg-white p-1 rounded transition">
+                                        <input type="checkbox" checked={selectedCategories.includes(cat._id)} onChange={(e) => { if (e.target.checked) { setSelectedCategories([...selectedCategories, cat._id]) } else { setSelectedCategories(selectedCategories.filter(id => id !== cat._id)) } }} className="w-3 h-3 rounded cursor-pointer accent-indigo-500" />
+                                        <span className="text-xs text-gray-700">{cat.name}</span>
                                     </label>
                                 ))
                             )}
                         </div>
                         {selectedCategories.length > 0 && (
-                            <div className="mt-2 flex flex-wrap gap-2">
-                                {selectedCategories.map(catId => {
-                                    const cat = dbCategories.find(c => c._id === catId)
-                                    return cat ? (
-                                        <span key={catId} className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-blue-200 text-blue-900 border border-blue-400">
-                                            {cat.name}
-                                            <button
-                                                type="button"
-                                                onClick={() => setSelectedCategories(prev => prev.filter(id => id !== catId))}
-                                                className="ml-1 text-blue-700 hover:text-blue-900 font-bold"
-                                            >
-                                                ×
-                                            </button>
-                                        </span>
-                                    ) : null
-                                })}
+                            <div className="mt-2 flex flex-wrap gap-1">
+                                {selectedCategories.map(catId => { const cat = dbCategories.find(c => c._id === catId); return cat ? (<span key={catId} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">{cat.name}<button type="button" onClick={() => setSelectedCategories(prev => prev.filter(id => id !== catId))} className="ml-1 hover:text-indigo-900 font-bold">×</button></span>) : null })}
                             </div>
                         )}
                     </div>
                     <div>
-                        <label className="block text-sm font-medium mb-1 text-blue-800">SKU</label>
-                        <input name="sku" value={productInfo.sku || ""} onChange={onChangeHandler} className="w-full border-2 border-blue-100 rounded px-3 py-2" placeholder="Stock Keeping Unit (optional)" />
+                        <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Stock Qty</label>
+                        <input type="number" name="stockQuantity" value={productInfo.stockQuantity === 0 || productInfo.stockQuantity == null ? "" : productInfo.stockQuantity} onChange={onChangeHandler} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200" placeholder="e.g. 100" min="0" />
                     </div>
-                    <div>
-                        <label className="block text-sm font-medium mb-1 text-blue-800">Stock Quantity</label>
-                        <input 
-                            type="number" 
-                            name="stockQuantity" 
-                            value={productInfo.stockQuantity || 0} 
-                            onChange={onChangeHandler} 
-                            className="w-full border-2 border-blue-100 rounded px-3 py-2" 
-                            placeholder="Available stock quantity" 
-                            min="0"
-                        />
-                    </div>
-                    <div className="flex flex-col gap-3 mt-6 md:col-span-2">
-                        <label className="inline-flex items-center gap-2">
-                            <input type="checkbox" checked={productInfo.fastDelivery} onChange={(e)=> setProductInfo(p=>({...p, fastDelivery: e.target.checked}))} className="accent-green-500" />
-                            <span className="text-sm font-medium text-green-700">Fast Delivery</span>
-                        </label>
-                        <label className="inline-flex items-center gap-2">
-                            <input type="checkbox" checked={productInfo.freeShippingEligible} onChange={(e)=> setProductInfo(p=>({...p, freeShippingEligible: e.target.checked}))} className="accent-teal-500" />
-                            <span className="text-sm font-medium text-teal-700">Free Shipping for this product</span>
-                        </label>
-                        <label className="inline-flex items-center gap-2">
-                            <input type="checkbox" checked={productInfo.allowReturn} onChange={(e)=> setProductInfo(p=>({...p, allowReturn: e.target.checked}))} className="accent-purple-500" />
-                            <span className="text-sm font-medium text-purple-700">Allow Return (7 days after delivery)</span>
-                        </label>
-                        <label className="inline-flex items-center gap-2">
-                            <input type="checkbox" checked={productInfo.allowReplacement} onChange={(e)=> setProductInfo(p=>({...p, allowReplacement: e.target.checked}))} className="accent-pink-500" />
-                            <span className="text-sm font-medium text-pink-700">Allow Replacement (7 days after delivery)</span>
-                        </label>
+                    <div className="col-span-2 grid grid-cols-2 gap-2 pt-1 border-t border-gray-100 mt-1">
+                        <label className="flex items-center gap-2 text-xs cursor-pointer group"><input type="checkbox" checked={productInfo.fastDelivery} onChange={(e)=> setProductInfo(p=>({...p, fastDelivery: e.target.checked}))} className="accent-green-500 w-3.5 h-3.5" /><span className="text-gray-600 group-hover:text-green-700">⚡ Fast Delivery</span></label>
+                        <label className="flex items-center gap-2 text-xs cursor-pointer group"><input type="checkbox" checked={productInfo.freeShippingEligible} onChange={(e)=> setProductInfo(p=>({...p, freeShippingEligible: e.target.checked}))} className="accent-teal-500 w-3.5 h-3.5" /><span className="text-gray-600 group-hover:text-teal-700">🚚 Free Shipping</span></label>
+                        <label className="flex items-center gap-2 text-xs cursor-pointer group"><input type="checkbox" checked={productInfo.allowReturn} onChange={(e)=> setProductInfo(p=>({...p, allowReturn: e.target.checked}))} className="accent-purple-500 w-3.5 h-3.5" /><span className="text-gray-600 group-hover:text-purple-700">↩ Return 7d</span></label>
+                        <label className="flex items-center gap-2 text-xs cursor-pointer group"><input type="checkbox" checked={productInfo.allowReplacement} onChange={(e)=> setProductInfo(p=>({...p, allowReplacement: e.target.checked}))} className="accent-pink-500 w-3.5 h-3.5" /><span className="text-gray-600 group-hover:text-pink-700">🔄 Replace 7d</span></label>
                     </div>
                   </div>
                 </div>
 
                 {/* Pricing */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50/70 shadow-[0_8px_24px_rgba(15,23,42,0.06)] overflow-hidden">
+                                    <div className="flex items-center gap-2 px-4 py-3 bg-white border-b border-slate-200">
+                                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-xs">💰</span>
+                                        <h3 className="text-sm font-semibold text-slate-800 tracking-wide">Pricing</h3>
+                  </div>
+                  <div className="p-4 grid grid-cols-2 gap-3">
                     <div>
-                        <label className="block text-sm font-medium mb-1">Regular Price (AED) - AED</label>
-                        <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-medium">AED</span>
-                            <input type="number" step="0.01" name="AED" value={productInfo.AED} onChange={onChangeHandler} className="w-full border rounded px-3 py-2 pl-14" placeholder="0.00" />
-                        </div>
+                        <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Regular Price</label>
+                        <div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-bold">AED</span><input type="number" step="0.01" name="AED" value={productInfo.AED} onChange={onChangeHandler} className="w-full border border-gray-200 rounded-lg px-3 py-2 pl-12 text-sm outline-none focus:ring-2 focus:ring-emerald-200" placeholder="0.00" /></div>
                     </div>
                     <div>
-                        <label className="block text-sm font-medium mb-1">Sale Price - AED</label>
-                        <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-medium">AED</span>
-                            <input type="number" step="0.01" name="price" value={productInfo.price} onChange={onChangeHandler} className="w-full border rounded px-3 py-2 pl-14" placeholder="0.00" />
-                        </div>
+                        <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Sale Price</label>
+                        <div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-bold">AED</span><input type="number" step="0.01" name="price" value={productInfo.price} onChange={onChangeHandler} className="w-full border border-gray-200 rounded-lg px-3 py-2 pl-12 text-sm outline-none focus:ring-2 focus:ring-emerald-200" placeholder="0.00" /></div>
                     </div>
+                  </div>
                 </div>
 
-                {/* Descriptions */}
-                <div>
-                    <label className="block text-sm font-medium mb-1">Short Description</label>
-                    <input name="shortDescription" value={productInfo.shortDescription || ''} onChange={onChangeHandler} className="w-full border rounded px-3 py-2" placeholder="One-liner overview" />
+                {/* Short Description + Arabic Toggle */}
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50/70 shadow-[0_8px_24px_rgba(15,23,42,0.06)] overflow-hidden">
+                                    <div className="flex items-center gap-2 px-4 py-3 bg-white border-b border-slate-200">
+                                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-violet-100 text-violet-700 text-xs">✏️</span>
+                                        <h3 className="text-sm font-semibold text-slate-800 tracking-wide">Short Description</h3>
+                  </div>
+                  <div className="p-4">
+                  <input name="shortDescription" value={productInfo.shortDescription || ''} onChange={onChangeHandler} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-200" placeholder="One-liner overview shown on product cards" />
+                  </div>
                 </div>
 
-                <div>
-                    <label className="block text-sm font-medium mb-1">Short Description (Arabic)</label>
-                    <input name="shortDescriptionAr" value={productInfo.shortDescriptionAr || ''} onChange={onChangeHandler} dir="rtl" className="w-full border rounded px-3 py-2" placeholder="وصف مختصر بالعربية" />
+                {/* Arabic Toggle Section */}
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50/70 shadow-[0_8px_24px_rgba(15,23,42,0.06)] overflow-hidden">
+                                    <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-slate-200">
+                    <div className="flex items-center gap-2">
+                                            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-amber-100 text-amber-700 text-xs">AE</span>
+                                            <span className="text-sm font-semibold text-slate-800">Arabic Content</span>
+                                            {showArabic && <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">Active</span>}
+                    </div>
+                                        <button type="button" onClick={() => setShowArabic(v => !v)} className={`px-4 py-1.5 rounded-full text-xs font-semibold transition ${showArabic ? 'bg-amber-500 text-white hover:bg-amber-600' : 'bg-white border border-amber-300 text-amber-700 hover:bg-amber-50'}`}>
+                      {showArabic ? 'Hide Arabic' : 'Enable Arabic'}
+                    </button>
+                  </div>
+                  {showArabic && (
+                    <div className="px-4 pb-4 space-y-3 pt-4">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Name (Arabic)</label>
+                          <input name="nameAr" value={productInfo.nameAr} onChange={onChangeHandler} dir="rtl" className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-amber-200" placeholder="أدخل اسم المنتج" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Brand (Arabic)</label>
+                          <input name="brandAr" value={productInfo.brandAr} onChange={onChangeHandler} dir="rtl" className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-amber-200" placeholder="العلامة التجارية" />
+                        </div>
+                        <div className="col-span-2">
+                          <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Short Description (Arabic)</label>
+                          <input name="shortDescriptionAr" value={productInfo.shortDescriptionAr || ''} onChange={onChangeHandler} dir="rtl" className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-amber-200" placeholder="وصف مختصر بالعربية" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Description (Arabic)</label>
+                        <RichTextDescriptionEditor label="" value={productInfo.descriptionAr || ''} onChange={(nextValue) => setProductInfo(prev => ({ ...prev, descriptionAr: nextValue }))} placeholder="اكتب وصفًا تفصيليًا للمنتج بالعربية..." getAuthTokenOrThrow={getAuthTokenOrThrow} dir="rtl" />
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* 2nd Short Description + Spec Table Toggle */}
-                <div className="border border-blue-200 rounded-lg p-4 bg-blue-50 space-y-3">
-                    <div className="flex items-center justify-between">
-                        <p className="text-sm font-semibold text-blue-800">Product Spec Table</p>
-                        <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                                type="checkbox"
-                                checked={productInfo.specTableEnabled || false}
-                                onChange={(e) => setProductInfo(p => ({ ...p, specTableEnabled: e.target.checked }))}
-                                className="accent-blue-600 w-4 h-4"
-                            />
-                            <span className="text-sm font-medium text-blue-700">
-                                {productInfo.specTableEnabled ? '✅ Table Enabled' : 'Table Disabled'}
-                            </span>
-                        </label>
-                    </div>
-
-                    <p className="text-xs text-blue-600">Use this separate table section to add product specs like Brand, Item Volume, Dimensions, Features.</p>
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50/70 shadow-[0_8px_24px_rgba(15,23,42,0.06)] overflow-hidden">
+                                    <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-slate-200">
                     <div className="flex items-center gap-2">
-                        <label className="text-xs font-medium text-blue-800 whitespace-nowrap">Table Title:</label>
-                        <input
-                            type="text"
-                            value={productInfo.specTableTitle || ''}
-                            onChange={(e) => setProductInfo(p => ({ ...p, specTableTitle: e.target.value }))}
-                            className="flex-1 rounded border border-blue-300 bg-white px-2 py-1 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-400"
-                            placeholder="e.g. Product information"
-                        />
+                                            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-sky-100 text-sky-700 text-xs">📊</span>
+                                            <h3 className="text-sm font-semibold text-slate-800 tracking-wide">Spec Table</h3>
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                                            <span className="text-xs text-slate-500">{productInfo.specTableEnabled ? 'Enabled' : 'Disabled'}</span>
+                                            <div className={`relative w-9 h-5 rounded-full transition-colors ${productInfo.specTableEnabled ? 'bg-sky-200' : 'bg-slate-200'}`}>
+                        <input type="checkbox" checked={productInfo.specTableEnabled || false} onChange={(e) => setProductInfo(p => ({ ...p, specTableEnabled: e.target.checked }))} className="sr-only" />
+                        <div onClick={() => setProductInfo(p => ({ ...p, specTableEnabled: !p.specTableEnabled }))} className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform cursor-pointer ${productInfo.specTableEnabled ? 'translate-x-4' : 'translate-x-0.5'}`}></div>
+                      </div>
+                    </label>
+                  </div>
+                  <div className="p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Table Title:</label>
+                        <input type="text" value={productInfo.specTableTitle || ''} onChange={(e) => setProductInfo(p => ({ ...p, specTableTitle: e.target.value }))} className="flex-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-sky-200" placeholder="e.g. Product information" />
                     </div>
                     {productInfo.specTableEnabled ? (
-                        <div className="rounded-md border border-blue-300 bg-white p-3 space-y-3">
+                        <>
                             <div className="flex flex-wrap gap-2">
                                 <button
                                     type="button"
@@ -1231,231 +1208,92 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                                     </tbody>
                                 </table>
                             </div>
-                        </div>
+                        </>
                     ) : (
-                        <p className="text-xs text-slate-500">Enable this toggle to create a separate spec table section for this product.</p>
+                        <p className="text-xs text-gray-400 italic">Toggle on to add a spec/details table to this product.</p>
                     )}
+                    <div className="pt-2 border-t border-gray-100">
                     <ShortDescriptionRichTextEditor
-                        label="2nd Short Description"
+                        label="2nd Short Description (About this item)"
                         value={productInfo.shortDescription2 || ''}
                         onChange={(nextValue) => setProductInfo(prev => ({ ...prev, shortDescription2: nextValue }))}
                         placeholder="Optional: add bold text, bullet points, and links for About this item"
                     />
+                    </div>
+                  </div>
                 </div>
 
-                <RichTextDescriptionEditor
-                    label="Description (Arabic)"
-                    value={productInfo.descriptionAr || ''}
-                    onChange={(nextValue) => setProductInfo(prev => ({ ...prev, descriptionAr: nextValue }))}
-                    placeholder="اكتب وصفًا تفصيليًا للمنتج بالعربية... يمكنك استخدام الأدوات للتنسيق وإضافة الصور والفيديو والروابط والجداول وأكثر"
-                    getAuthTokenOrThrow={getAuthTokenOrThrow}
-                    dir="rtl"
-                />
-
-
-
                 {/* Tags */}
-                <div>
-                    <label className="block text-sm font-medium mb-2">Product Tags</label>
-                    <div className="flex gap-2 mb-2">
-                        <input
-                            type="text"
-                            value={tagInput}
-                            onChange={(e) => setTagInput(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ',') {
-                                    e.preventDefault();
-                                    const nextTags = parseTagList(tagInput)
-                                    if (nextTags.length === 0) return
-                                    setProductInfo(prev => ({ ...prev, tags: appendUniqueTags(prev.tags || [], nextTags) }))
-                                    setTagInput('')
-                                }
-                            }}
-                            onBlur={() => {
-                                const nextTags = parseTagList(tagInput)
-                                if (nextTags.length === 0) return
-                                setProductInfo(prev => ({ ...prev, tags: appendUniqueTags(prev.tags || [], nextTags) }))
-                                setTagInput('')
-                            }}
-                            className="flex-1 border rounded px-3 py-2"
-                            placeholder="Type tags. Press comma or Enter to add each tag"
-                        />
-                        <button
-                            type="button"
-                            onClick={() => {
-                                const nextTags = parseTagList(tagInput)
-                                if (nextTags.length === 0) return
-                                setProductInfo(prev => ({ ...prev, tags: appendUniqueTags(prev.tags || [], nextTags) }))
-                                setTagInput('')
-                            }}
-                            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition"
-                        >
-                            Add Tag
-                        </button>
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50/70 shadow-[0_8px_24px_rgba(15,23,42,0.06)] overflow-hidden">
+                                    <div className="flex items-center gap-2 px-4 py-3 bg-white border-b border-slate-200">
+                                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-lime-100 text-lime-700 text-xs">🏷️</span>
+                                        <h3 className="text-sm font-semibold text-slate-800 tracking-wide">Product Tags</h3>
+                  </div>
+                  <div className="p-4">
+                  <div className="flex gap-2 mb-2">
+                    <input type="text" value={tagInput} onChange={(e) => setTagInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); const nextTags = parseTagList(tagInput); if (nextTags.length === 0) return; setProductInfo(prev => ({ ...prev, tags: appendUniqueTags(prev.tags || [], nextTags) })); setTagInput('') } }} onBlur={() => { const nextTags = parseTagList(tagInput); if (nextTags.length === 0) return; setProductInfo(prev => ({ ...prev, tags: appendUniqueTags(prev.tags || [], nextTags) })); setTagInput('') }} className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-green-200" placeholder="Type tags, press comma or Enter" />
+                    <button type="button" onClick={() => { const nextTags = parseTagList(tagInput); if (nextTags.length === 0) return; setProductInfo(prev => ({ ...prev, tags: appendUniqueTags(prev.tags || [], nextTags) })); setTagInput('') }} className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 font-medium">Add</button>
+                  </div>
+                  {productInfo.tags && productInfo.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {productInfo.tags.map((tag, idx) => (<span key={idx} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-800 border border-green-200">{tag}<button type="button" onClick={() => setProductInfo(prev => ({ ...prev, tags: prev.tags.filter((_, i) => i !== idx) }))} className="ml-1 text-green-500 hover:text-green-900 font-bold">×</button></span>))}
                     </div>
-                    {productInfo.tags && productInfo.tags.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
-                            {productInfo.tags.map((tag, idx) => (
-                                <span
-                                    key={idx}
-                                    className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800"
-                                >
-                                    {tag}
-                                    <button
-                                        type="button"
-                                        onClick={() => setProductInfo(prev => ({ ...prev, tags: prev.tags.filter((_, i) => i !== idx) }))}
-                                        className="ml-1 text-green-600 hover:text-green-900 font-bold"
-                                    >
-                                        ×
-                                    </button>
-                                </span>
-                            ))}
-                        </div>
-                    )}
-                    <p className="text-xs text-gray-500 mt-1">Use comma or Enter to create each tag as a separate point (e.g., organic, eco-friendly, bestseller).</p>
+                  )}
+                  </div>
                 </div>
 
                 {/* Product SEO */}
-                <div className="bg-emerald-50/60 rounded-xl p-4 border border-emerald-100">
-                    <h4 className="text-sm font-semibold text-emerald-800 mb-3">Product SEO</h4>
-                    <div className="space-y-3">
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50/70 shadow-[0_8px_24px_rgba(15,23,42,0.06)] overflow-hidden">
+                                    <div className="flex items-center gap-2 px-4 py-3 bg-white border-b border-slate-200">
+                                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-cyan-100 text-cyan-700 text-xs">🔍</span>
+                                        <h3 className="text-sm font-semibold text-slate-800 tracking-wide">SEO</h3>
+                  </div>
+                  <div className="p-4 space-y-3">
+                        <div><label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Meta Title</label><input name="seoTitle" value={productInfo.seoTitle || ''} onChange={onChangeHandler} maxLength={120} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-cyan-200" placeholder="SEO title" /></div>
+                        <div><label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Meta Description</label><textarea name="seoDescription" value={productInfo.seoDescription || ''} onChange={onChangeHandler} maxLength={320} rows={2} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-cyan-200" placeholder="SEO description" /></div>
                         <div>
-                            <label className="block text-sm font-medium mb-1">Meta Title</label>
-                            <input
-                                name="seoTitle"
-                                value={productInfo.seoTitle || ''}
-                                onChange={onChangeHandler}
-                                maxLength={120}
-                                className="w-full border rounded px-3 py-2"
-                                placeholder="SEO title for this product page"
-                            />
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium mb-1">Meta Description</label>
-                            <textarea
-                                name="seoDescription"
-                                value={productInfo.seoDescription || ''}
-                                onChange={onChangeHandler}
-                                maxLength={320}
-                                rows={3}
-                                className="w-full border rounded px-3 py-2"
-                                placeholder="SEO description for this product page"
-                            />
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium mb-1">Meta Keywords</label>
+                            <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Meta Keywords</label>
                             <div className="flex gap-2 mb-2">
-                                <input
-                                    type="text"
-                                    value={seoKeywordInput}
-                                    onChange={(e) => setSeoKeywordInput(e.target.value)}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter' || e.key === ',') {
-                                            e.preventDefault()
-                                            const nextKeywords = parseTagList(seoKeywordInput)
-                                            if (nextKeywords.length === 0) return
-                                            setProductInfo((prev) => ({
-                                                ...prev,
-                                                seoKeywords: appendUniqueTags(prev.seoKeywords || [], nextKeywords),
-                                            }))
-                                            setSeoKeywordInput('')
-                                        }
-                                    }}
-                                    onBlur={() => {
-                                        const nextKeywords = parseTagList(seoKeywordInput)
-                                        if (nextKeywords.length === 0) return
-                                        setProductInfo((prev) => ({
-                                            ...prev,
-                                            seoKeywords: appendUniqueTags(prev.seoKeywords || [], nextKeywords),
-                                        }))
-                                        setSeoKeywordInput('')
-                                    }}
-                                    className="flex-1 border rounded px-3 py-2"
-                                    placeholder="Type keywords. Press comma or Enter"
-                                />
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        const nextKeywords = parseTagList(seoKeywordInput)
-                                        if (nextKeywords.length === 0) return
-                                        setProductInfo((prev) => ({
-                                            ...prev,
-                                            seoKeywords: appendUniqueTags(prev.seoKeywords || [], nextKeywords),
-                                        }))
-                                        setSeoKeywordInput('')
-                                    }}
-                                    className="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 transition"
-                                >
-                                    Add
-                                </button>
+                                <input type="text" value={seoKeywordInput} onChange={(e) => setSeoKeywordInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); const kw = parseTagList(seoKeywordInput); if (!kw.length) return; setProductInfo((prev) => ({ ...prev, seoKeywords: appendUniqueTags(prev.seoKeywords || [], kw) })); setSeoKeywordInput('') } }} onBlur={() => { const kw = parseTagList(seoKeywordInput); if (!kw.length) return; setProductInfo((prev) => ({ ...prev, seoKeywords: appendUniqueTags(prev.seoKeywords || [], kw) })); setSeoKeywordInput('') }} className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-cyan-200" placeholder="Keywords, comma or Enter" />
+                                <button type="button" onClick={() => { const kw = parseTagList(seoKeywordInput); if (!kw.length) return; setProductInfo((prev) => ({ ...prev, seoKeywords: appendUniqueTags(prev.seoKeywords || [], kw) })); setSeoKeywordInput('') }} className="px-3 py-2 bg-cyan-600 text-white rounded-lg text-sm hover:bg-cyan-700 font-medium">Add</button>
                             </div>
-
-                            {Array.isArray(productInfo.seoKeywords) && productInfo.seoKeywords.length > 0 && (
-                                <div className="flex flex-wrap gap-2">
-                                    {productInfo.seoKeywords.map((keyword, idx) => (
-                                        <span
-                                            key={`${keyword}-${idx}`}
-                                            className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-800"
-                                        >
-                                            {keyword}
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    setProductInfo((prev) => ({
-                                                        ...prev,
-                                                        seoKeywords: prev.seoKeywords.filter((_, i) => i !== idx),
-                                                    }))
-                                                }
-                                                className="font-bold text-emerald-700 hover:text-emerald-900"
-                                            >
-                                                ×
-                                            </button>
-                                        </span>
-                                    ))}
-                                </div>
-                            )}
+                            {Array.isArray(productInfo.seoKeywords) && productInfo.seoKeywords.length > 0 && (<div className="flex flex-wrap gap-1">{productInfo.seoKeywords.map((keyword, idx) => (<span key={`${keyword}-${idx}`} className="inline-flex items-center gap-1 rounded-full bg-cyan-50 border border-cyan-200 px-2 py-0.5 text-xs text-cyan-800">{keyword}<button type="button" onClick={() => setProductInfo((prev) => ({ ...prev, seoKeywords: prev.seoKeywords.filter((_, i) => i !== idx) }))} className="font-bold text-cyan-600 hover:text-cyan-900">×</button></span>))}</div>)}
                         </div>
-                    </div>
+                  </div>
                 </div>
 
                 {/* Product Badges */}
-                <div>
-                    <label className="block text-sm font-medium mb-2">Product Badges (Optional)</label>
-                    <div className="flex flex-wrap gap-2 mb-2">
-                        {availableBadgeOptions.map((badge) => (
-                            <button
-                                key={badge}
-                                type="button"
-                                onClick={() => {
-                                    if (productInfo.badges.includes(badge)) {
-                                        setProductInfo(prev => ({ ...prev, badges: prev.badges.filter(b => b !== badge) }))
-                                    } else {
-                                        setProductInfo(prev => ({ ...prev, badges: [...prev.badges, badge] }))
-                                    }
-                                }}
-                                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                                    productInfo.badges.includes(badge)
-                                        ? 'bg-teal-500 text-white'
-                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                }`}
-                            >
-                                {productInfo.badges.includes(badge) ? '✓ ' : ''}{badge}
-                            </button>
-                        ))}
-                    </div>
-                    <p className="text-xs text-gray-500">Select badges to display on the product page. Badge options come from /store/customize/product-page.</p>
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50/70 shadow-[0_8px_24px_rgba(15,23,42,0.06)] overflow-hidden">
+                                    <div className="flex items-center gap-2 px-4 py-3 bg-white border-b border-slate-200">
+                                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-pink-100 text-pink-700 text-xs">🎖️</span>
+                                        <h3 className="text-sm font-semibold text-slate-800 tracking-wide">Product Badges</h3>
+                  </div>
+                  <div className="p-4 flex flex-wrap gap-2">
+                    {availableBadgeOptions.map((badge) => (<button key={badge} type="button" onClick={() => { if (productInfo.badges.includes(badge)) { setProductInfo(prev => ({ ...prev, badges: prev.badges.filter(b => b !== badge) })) } else { setProductInfo(prev => ({ ...prev, badges: [...prev.badges, badge] })) } }} className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${productInfo.badges.includes(badge) ? 'bg-rose-500 text-white border-rose-500 shadow-sm' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'}`}>{productInfo.badges.includes(badge) ? '✓ ' : ''}{badge}</button>))}
+                  </div>
                 </div>
 
+                {/* Description Rich Text */}
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50/70 shadow-[0_8px_24px_rgba(15,23,42,0.06)] overflow-hidden">
+                                    <div className="flex items-center gap-2 px-4 py-3 bg-white border-b border-slate-200">
+                                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-slate-700 text-xs">📝</span>
+                                        <h3 className="text-sm font-semibold text-slate-800 tracking-wide">Description</h3>
+                  </div>
+                  <div className="p-4">
                 <RichTextDescriptionEditor
-                    label="Description (Rich Text)"
+                    label=""
                     value={productInfo.description || ''}
                     onChange={(nextValue) => setProductInfo(prev => ({ ...prev, description: nextValue }))}
-                    placeholder="Write a detailed product description... Use the toolbar to format text, add images, videos, links, tables and more!"
+                    placeholder="Write a detailed product description..."
                     getAuthTokenOrThrow={getAuthTokenOrThrow}
                 />
+                  </div>
+                </div>
 
+                </div>{/* END LEFT COLUMN */}
+
+                {/* RIGHT COLUMN */}
+                <div className="space-y-4">
                 {/* Images */}
                 <div>
                     <label className="block text-sm font-medium mb-2">Product Media (images/videos, up to 8)</label>
@@ -1742,6 +1580,9 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                         </div>
                     )}
                 </div>
+
+                </div>{/* END RIGHT COLUMN */}
+                </div>{/* END TWO-COLUMN GRID */}
 
                     <div className="sticky bottom-0 bg-white pt-4 border-t flex gap-2">
                         <button disabled={loading} className="bg-slate-800 text-white px-6 py-2 rounded hover:bg-slate-900 transition">

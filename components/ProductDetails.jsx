@@ -1515,6 +1515,28 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 )}
               </div>
 
+              {/* Pay-later — center column, below price */}
+              <div className="flex flex-col items-start gap-1 mt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPayLaterModal(true)}
+                  className="inline-flex max-w-full flex-wrap items-center gap-2 text-[13px] text-gray-500 transition hover:text-gray-700"
+                >
+                  <span>{t('product.installments', { amount: `${currency}${(Number(convertedEffPrice || 0) / 4).toFixed(2)}` })}</span>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 26" className="h-[22px] w-auto" aria-label="Tabby">
+                    <rect width="72" height="26" rx="6" fill="#3DBEA3"/>
+                    <text x="36" y="17.5" textAnchor="middle" fill="white" fontSize="12" fontWeight="bold" fontFamily="Arial,sans-serif" letterSpacing="1">tabby</text>
+                  </svg>
+                  <span className="text-gray-400">or</span>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 84 26" className="h-[22px] w-auto" aria-label="Tamara">
+                    <defs><linearGradient id="tg-center" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor="#3D1DBF"/><stop offset="100%" stopColor="#0FB49A"/></linearGradient></defs>
+                    <rect width="84" height="26" rx="13" fill="url(#tg-center)"/>
+                    <text x="42" y="17.5" textAnchor="middle" fill="white" fontSize="12" fontWeight="bold" fontFamily="Arial,sans-serif" letterSpacing="0.3">tamara</text>
+                  </svg>
+                </button>
+                <div id={`tabbyPromoProduct-${String(product?._id || product?.id || 'default')}`} className="product-tabby-promo flex w-full justify-start text-left" />
+              </div>
+
               <ProductDescription
                 product={product}
                 reviews={reviews}
@@ -1908,27 +1930,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 </div>
               )}
 
-              <div className="flex w-full flex-col items-center pt-1">
-                <button
-                  type="button"
-                  onClick={() => setShowPayLaterModal(true)}
-                  className="inline-flex max-w-full flex-wrap items-center justify-center gap-2 text-center text-[13px] text-gray-500 transition hover:text-gray-700"
-                >
-                  <span>{t('product.installments', { amount: `${currency}${(Number(convertedEffPrice || 0) / 4).toFixed(2)}` })}</span>
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 26" className="h-[22px] w-auto" aria-label="Tabby">
-                    <rect width="72" height="26" rx="6" fill="#3DBEA3"/>
-                    <text x="36" y="17.5" textAnchor="middle" fill="white" fontSize="12" fontWeight="bold" fontFamily="Arial,sans-serif" letterSpacing="1">tabby</text>
-                  </svg>
-                  <span className="text-gray-400">or</span>
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 84 26" className="h-[22px] w-auto" aria-label="Tamara">
-                    <defs><linearGradient id="tg1" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor="#3D1DBF"/><stop offset="100%" stopColor="#0FB49A"/></linearGradient></defs>
-                    <rect width="84" height="26" rx="13" fill="url(#tg1)"/>
-                    <text x="42" y="17.5" textAnchor="middle" fill="white" fontSize="12" fontWeight="bold" fontFamily="Arial,sans-serif" letterSpacing="0.3">tamara</text>
-                  </svg>
-                </button>
 
-                <div id={`tabbyPromoProduct-${String(product?._id || product?.id || 'default')}`} className="product-tabby-promo mt-1 flex w-full justify-center text-center" />
-              </div>
             </div>
 
             {/* Color Options */}

@@ -1015,6 +1015,28 @@ export async function GET(request) {
             try {
                 const decodedToken = await getAuth().verifyIdToken(idToken);
                 userId = decodedToken.uid;
+                // Auto-link guest orders matching this user's email or phone
+                const userEmail = decodedToken.email || null;
+                const userPhone = decodedToken.phone_number || null;
+                const orClauses = [];
+                if (userEmail) orClauses.push({ guestEmail: userEmail });
+                if (userPhone) {
+                    // Strip leading + for flexible matching
+                    const phoneDigits = userPhone.replace(/^\+/, '');
+                    orClauses.push({ guestPhone: { $in: [userPhone, phoneDigits] } });
+                }
+                if (orClauses.length > 0) {
+                    await Order.updateMany(
+                        {
+                            isGuest: true,
+                            $and: [
+                                { $or: [{ userId: { $exists: false } }, { userId: null }] },
+                                { $or: orClauses }
+                            ]
+                        },
+                        { $set: { userId, isGuest: false } }
+                    ).catch(() => {/* non-fatal */});
+                }
             } catch (e) {
                 // Not signed in, userId remains null
             }

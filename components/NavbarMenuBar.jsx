@@ -8,6 +8,7 @@ const CATEGORIES_CACHE_KEY = 'nav:categories:v1';
 const MENU_ENABLED_CACHE_KEY = 'nav:menu:enabled:v1';
 const ACTIONS_VISIBILITY_CACHE_KEY = 'nav:actions:visibility:v1';
 const MENU_STYLE_CACHE_KEY = 'nav:menu:style:v1';
+const NAVBAR_APPEARANCE_CACHE_KEY = 'navbarAppearanceCache';
 const REFRESH_MS = 10 * 60 * 1000;
 
 const defaultActionsVisibility = {
@@ -17,6 +18,7 @@ const defaultActionsVisibility = {
 };
 
 const DEFAULT_NAVBAR_BG = '#8f3404';
+const NAVBAR_CONTAINER_CLASS = 'mx-auto w-full max-w-[1400px] px-4 sm:px-6';
 
 const defaultMenuStyle = {
   barBackgroundColor: DEFAULT_NAVBAR_BG,
@@ -36,6 +38,32 @@ const safeJsonParse = (value, fallback) => {
   } catch {
     return fallback;
   }
+};
+
+const readCachedNavbarBg = () => {
+  if (typeof window === 'undefined') return DEFAULT_NAVBAR_BG;
+
+  const cachedAppearance = safeJsonParse(window.localStorage.getItem(NAVBAR_APPEARANCE_CACHE_KEY), null);
+  const cachedBg = typeof cachedAppearance?.backgroundColor === 'string' ? cachedAppearance.backgroundColor.trim() : '';
+  return cachedBg || DEFAULT_NAVBAR_BG;
+};
+
+const getContrastColor = (hexColor) => {
+  const hex = String(hexColor || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return '#ffffff';
+  const red = parseInt(hex.slice(0, 2), 16);
+  const green = parseInt(hex.slice(2, 4), 16);
+  const blue = parseInt(hex.slice(4, 6), 16);
+  const luminance = (0.299 * red + 0.587 * green + 0.114 * blue) / 255;
+  return luminance > 0.65 ? '#111827' : '#ffffff';
+};
+
+const getMenuBarBorderColor = (textColor) => {
+  return textColor === '#111827' ? 'rgba(15, 23, 42, 0.12)' : 'rgba(255, 255, 255, 0.14)';
+};
+
+const getMenuBarHoverColor = (textColor) => {
+  return textColor === '#111827' ? 'rgba(15, 23, 42, 0.06)' : 'rgba(255, 255, 255, 0.08)';
 };
 
 const sanitizeMenuItems = (items) => {
@@ -219,11 +247,12 @@ export default function NavbarMenuBar() {
     const cachedEnabled = safeJsonParse(window.sessionStorage.getItem(MENU_ENABLED_CACHE_KEY), false);
     const cachedActions = safeJsonParse(window.sessionStorage.getItem(ACTIONS_VISIBILITY_CACHE_KEY), defaultActionsVisibility);
     const cachedStyle = safeJsonParse(window.sessionStorage.getItem(MENU_STYLE_CACHE_KEY), defaultMenuStyle);
+    const cachedNavbarBg = readCachedNavbarBg();
 
     if (Array.isArray(cachedCategories)) setCategories(cachedCategories);
     if (Array.isArray(cachedMenu)) setNavMenuItems(sanitizeMenuItems(cachedMenu));
     setNavMenuEnabled(Boolean(cachedEnabled));
-    setMenuStyle({ ...defaultMenuStyle, ...(cachedStyle || {}), barBackgroundColor: cachedStyle?.barBackgroundColor || DEFAULT_NAVBAR_BG });
+    setMenuStyle({ ...defaultMenuStyle, ...(cachedStyle || {}), barBackgroundColor: cachedNavbarBg });
     window.dispatchEvent(new CustomEvent('navActionsVisibilityUpdated', { detail: cachedActions }));
 
     let active = true;
@@ -247,11 +276,11 @@ export default function NavbarMenuBar() {
           ...defaultActionsVisibility,
           ...(nextSettings?.navActionsVisibility || {}),
         };
-        const navbarBg = nextSettings?.navbarAppearance?.backgroundColor || DEFAULT_NAVBAR_BG;
+        const navbarBg = readCachedNavbarBg();
         const parsedStyle = {
           ...defaultMenuStyle,
-          barBackgroundColor: navbarBg,
           ...(nextSettings?.navMenuStyle || {}),
+          barBackgroundColor: navbarBg,
         };
 
         setCategories(parsedCategories);
@@ -279,6 +308,8 @@ export default function NavbarMenuBar() {
       const bg = e?.detail?.backgroundColor;
       if (bg) {
         setMenuStyle((prev) => ({ ...prev, barBackgroundColor: bg }));
+      } else {
+        setMenuStyle((prev) => ({ ...prev, barBackgroundColor: readCachedNavbarBg() }));
       }
     };
     window.addEventListener('navMenuUpdated', handleMenuUpdated);
@@ -297,10 +328,15 @@ export default function NavbarMenuBar() {
   if (loadedOnce && (!navMenuEnabled || navMenuItems.length === 0)) return null;
   if (!loadedOnce && navMenuItems.length === 0) return null;
 
+  const menuBarTextColor = getContrastColor(menuStyle.barBackgroundColor);
+  const menuBarBorderColor = getMenuBarBorderColor(menuBarTextColor);
+  const menuBarHoverColor = getMenuBarHoverColor(menuBarTextColor);
+
   const cssVars = {
     '--menu-bar-bg': menuStyle.barBackgroundColor,
-    '--menu-bar-text': menuStyle.barTextColor,
-    '--menu-bar-hover-bg': menuStyle.barHoverBackgroundColor,
+    '--menu-bar-text': menuBarTextColor,
+    '--menu-bar-hover-bg': menuBarHoverColor,
+    '--menu-bar-border': menuBarBorderColor,
     '--menu-dropdown-bg': menuStyle.dropdownBackgroundColor,
     '--menu-dropdown-text': menuStyle.dropdownTextColor,
     '--menu-dropdown-muted': menuStyle.dropdownMutedTextColor,
@@ -308,8 +344,15 @@ export default function NavbarMenuBar() {
   };
 
   return (
-    <div className="relative hidden w-full border-t lg:block" style={{ ...cssVars, borderColor: 'var(--menu-dropdown-border)', backgroundColor: 'var(--menu-bar-bg)' }}>
-      <div className="mx-auto max-w-[1400px] px-4 sm:px-6 overflow-x-auto scrollbar-hide">
+    <div
+      className="relative hidden w-full lg:block"
+      style={{
+        ...cssVars,
+        backgroundColor: 'var(--menu-bar-bg)',
+        boxShadow: 'inset 0 1px 0 var(--menu-bar-border)',
+      }}
+    >
+      <div className={`${NAVBAR_CONTAINER_CLASS} overflow-x-auto scrollbar-hide`}>
         <div className="relative flex items-center py-2 whitespace-nowrap">
           {navMenuItems.map((item, index) => {
             const dropdownLinks = Array.isArray(item?.megaMenu?.links) ? item.megaMenu.links : [];

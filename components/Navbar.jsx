@@ -30,6 +30,7 @@ const NAVBAR_SELECTED_ADDRESS_KEY = 'navbarSelectedAddressId';
 const NAVBAR_APPEARANCE_CACHE_KEY = 'navbarAppearanceCache';
 
 const DEFAULT_NAVBAR_APPEARANCE = { logoUrl: '', logoWidth: 120, logoHeight: 40, backgroundColor: '#8f3404' };
+const NAVBAR_CONTAINER_CLASS = 'mx-auto w-full max-w-[1400px] px-4 sm:px-6';
 
 const readCachedNavbarAppearance = () => {
   if (typeof window === 'undefined') return DEFAULT_NAVBAR_APPEARANCE;
@@ -269,6 +270,7 @@ const Navbar = () => {
         const parsed = JSON.parse(cached);
         if (parsed && typeof parsed.logoUrl === 'string') {
           setNavbarAppearance(parsed);
+            window.dispatchEvent(new CustomEvent('navbarAppearanceUpdated', { detail: parsed }));
         }
       }
     } catch {
@@ -315,6 +317,9 @@ const Navbar = () => {
           window.localStorage.setItem(NAVBAR_APPEARANCE_CACHE_KEY, JSON.stringify(nextAppearance));
         } catch {
           // Ignore storage write failures.
+        }
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('navbarAppearanceUpdated', { detail: nextAppearance }));
         }
         console.log('[Navbar] Applied Appearance:', { 
           usingCustomLogo: !!data.logoUrl, 
@@ -936,7 +941,7 @@ const Navbar = () => {
       </div>
 
       <div className="relative z-50 hidden lg:block border-b border-gray-200 bg-white shadow-sm">
-        <div className="mx-auto flex max-w-[1400px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
+        <div className={`${NAVBAR_CONTAINER_CLASS} flex items-center justify-between gap-4 py-3`}>
           <div className="h-9 w-32 animate-pulse rounded-md bg-gray-200" />
           <div className="flex items-center gap-3">
             <div className="h-4 w-28 animate-pulse rounded-full bg-gray-100" />
@@ -1059,7 +1064,7 @@ const Navbar = () => {
         className="relative z-50 hidden lg:block border-b shadow-[0_12px_28px_rgba(15,23,42,0.06)] before:absolute before:inset-x-0 before:top-0 before:h-1"
         style={{ backgroundColor: navbarAppearance.backgroundColor, color: navbarTextColor, borderColor: `${navbarTextColor}18` }}
       >
-      <div className="max-w-[1400px] mx-auto px-4 sm:px-6">
+      <div className={NAVBAR_CONTAINER_CLASS}>
         <div className="flex items-center py-2.5 transition-all gap-3">
 
           {/* Left Side - Hamburger (Mobile) + Logo */}

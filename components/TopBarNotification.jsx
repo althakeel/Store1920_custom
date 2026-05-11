@@ -4,6 +4,9 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Bell, Gift, Truck } from 'lucide-react'
 
+const NAVBAR_APPEARANCE_CACHE_KEY = 'navbarAppearanceCache'
+const DEFAULT_NAVBAR_BG = '#8f3404'
+
 const DEFAULT_ITEMS = [
   {
     id: 'shipping',
@@ -68,6 +71,24 @@ function formatCountdown(msLeft) {
   return { hours, minutes, seconds }
 }
 
+function readCachedNavbarBg() {
+  if (typeof window === 'undefined') return DEFAULT_NAVBAR_BG
+
+  try {
+    const raw = window.localStorage.getItem(NAVBAR_APPEARANCE_CACHE_KEY)
+    if (!raw) return DEFAULT_NAVBAR_BG
+
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed.backgroundColor === 'string' && parsed.backgroundColor.trim()) {
+      return parsed.backgroundColor.trim()
+    }
+  } catch {
+    // Ignore storage parse failures and fall back to default.
+  }
+
+  return DEFAULT_NAVBAR_BG
+}
+
 function TopItem({ item, icon, onAction }) {
   const content = (
     <div className="px-3 py-1 text-center md:px-5">
@@ -110,10 +131,33 @@ const TopBarNotification = () => {
   )
 
   const [now, setNow] = useState(() => Date.now())
+  const [navbarBg, setNavbarBg] = useState(DEFAULT_NAVBAR_BG)
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    setNavbarBg(readCachedNavbarBg())
+
+    const handleNavbarAppearanceUpdate = (event) => {
+      const nextBg = event?.detail?.backgroundColor
+      if (typeof nextBg === 'string' && nextBg.trim()) {
+        setNavbarBg(nextBg.trim())
+        return
+      }
+
+      setNavbarBg(readCachedNavbarBg())
+    }
+
+    window.addEventListener('navbarAppearanceUpdated', handleNavbarAppearanceUpdate)
+
+    return () => {
+      window.removeEventListener('navbarAppearanceUpdated', handleNavbarAppearanceUpdate)
+    }
   }, [])
 
   const countdown = formatCountdown(countdownTarget - now)
@@ -145,7 +189,7 @@ const TopBarNotification = () => {
   if (!isEnabled) return null
 
   return (
-    <div className="bg-[#11131a] border-b-2 border-b-[#ff7a00] border-t border-zinc-700/90 text-white">
+    <div className="border-b-2 border-b-[#ff7a00] border-t border-zinc-700/90 text-white" style={{ backgroundColor: navbarBg }}>
       <div className="mx-auto max-w-[1400px] overflow-x-auto">
         <div className="grid min-w-[940px] grid-cols-[1fr_1fr_250px_1fr] items-stretch">
           {styledItems.slice(0, 2).map((item, index) => (
