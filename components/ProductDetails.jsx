@@ -1922,10 +1922,10 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
                   <button
                     type="button"
-                    onClick={() => router.push('/cart')}
+                    onClick={() => router.push('/checkout')}
                     className="h-12 px-6 rounded-lg bg-orange-500 text-white font-bold text-sm hover:bg-orange-600 transition whitespace-nowrap"
                   >
-                    {isArabic ? 'اذهب إلى السلة' : 'Go to cart'}
+                    {isArabic ? 'المتابعة إلى الدفع' : 'Proceed to checkout'}
                   </button>
                 </div>
               )}
@@ -2036,15 +2036,16 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
         </div>
       </div>
 
-      {/* Full product description below the grid */}
+      {/* Full product description below the grid (mobile only to avoid desktop duplication) */}
       <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 pb-8">
         <ProductDescription
           product={product}
           reviews={reviews}
           loadingReviews={loadingReviewsLocal || loadingReviews}
           onReviewAdded={onReviewAdded}
-          showSuggestedProducts={true}
+          showSuggestedProducts={false}
           showMainDescription={true}
+          showOverviewSections={false}
         />
       </div>
 

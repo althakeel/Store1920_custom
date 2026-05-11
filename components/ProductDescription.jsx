@@ -29,7 +29,7 @@ const toTitleCase = (value) => value
     .join(' ')
 
 // Updated design - Noon.com style v2
-const ProductDescription = ({ product, reviews = [], loadingReviews = false, onReviewAdded, showSuggestedProducts = true, showMainDescription = true }) => {
+const ProductDescription = ({ product, reviews = [], loadingReviews = false, onReviewAdded, showSuggestedProducts = true, showMainDescription = true, showOverviewSections = true }) => {
 
     // Use reviews and loadingReviews from props only
     const [suggestedProducts, setSuggestedProducts] = useState([])
@@ -228,7 +228,7 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
     return (
         <div className="mt-3 flex flex-col gap-2 sm:gap-3">
 
-            {showSpecTable && (
+            {showOverviewSections && showSpecTable && (
                 <div className="order-1 bg-white border-t border-gray-300 pt-4 sm:pt-5">
                     <h3 className="text-[28px] leading-none font-semibold text-gray-900 mb-3">{product?.attributes?.specTableTitle || 'Product information'}</h3>
                     <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
@@ -262,7 +262,7 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
                 </div>
             )}
 
-            {hasShortDescription2 && (
+            {showOverviewSections && hasShortDescription2 && (
                 <div className="order-1 bg-white border-t border-gray-200 pt-4 sm:pt-5">
                     <h2 className="text-[30px] leading-none font-semibold text-gray-900 mb-3">About this item</h2>
                     <div className="relative">

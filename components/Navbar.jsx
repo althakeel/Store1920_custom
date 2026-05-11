@@ -59,7 +59,15 @@ const readPersistedLanguage = () => {
   }
 
   const cookieMatch = document.cookie.match(new RegExp(`(?:^|; )${STOREFRONT_LANGUAGE_COOKIE}=([^;]+)`));
-  return cookieMatch?.[1] === 'ar' ? 'ar' : 'en';
+  if (cookieMatch?.[1] === 'ar' || cookieMatch?.[1] === 'en') {
+    return cookieMatch[1];
+  }
+
+  const browserLanguages = Array.isArray(window.navigator?.languages) && window.navigator.languages.length > 0
+    ? window.navigator.languages
+    : [window.navigator?.language || ''];
+  const prefersArabic = browserLanguages.some((entry) => /^ar(?:-|$)/i.test(String(entry || '')));
+  return prefersArabic ? 'ar' : 'en';
 };
 
 const getContrastColor = (hexColor) => {
