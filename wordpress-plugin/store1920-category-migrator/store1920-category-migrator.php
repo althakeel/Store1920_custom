@@ -13,6 +13,7 @@ if (!defined('ABSPATH')) {
 class Store1920CategoryMigrator {
     const OPTION_KEY = 'store1920_category_migrator_settings';
     const NOTICE_KEY = 'store1920_category_migrator_notice';
+    const DEFAULT_BATCH_SIZE = 200;
 
     public function __construct() {
         add_action('admin_menu', array($this, 'register_admin_page'));
@@ -45,6 +46,19 @@ class Store1920CategoryMigrator {
         );
     }
 
+    private function get_settings() {
+        return get_option(self::OPTION_KEY, array(
+            'api_url' => '',
+            'migration_token' => '',
+            'store_username' => '',
+            'batch_size' => self::DEFAULT_BATCH_SIZE,
+        ));
+    }
+
+    private function get_setting($settings, $key, $default = '') {
+        return isset($settings[$key]) ? trim((string) $settings[$key]) : $default;
+    }
+
     public function render_admin_notice() {
         $notice = get_transient(self::NOTICE_KEY);
         if (!$notice) {
@@ -68,12 +82,7 @@ class Store1920CategoryMigrator {
             return;
         }
 
-        $settings = get_option(self::OPTION_KEY, array(
-            'api_url' => '',
-            'migration_token' => '',
-            'store_username' => '',
-            'batch_size' => 200,
-        ));
+        $settings = $this->get_settings();
 
         ?>
         <div class="wrap">
@@ -158,6 +167,43 @@ class Store1920CategoryMigrator {
         return $payload;
     }
 
+    private function build_request_payload($token, $store_username, $categories) {
+        return wp_json_encode(array(
+            'migrationToken' => $token,
+            'storeUsername' => $store_username,
+            'categories' => $categories,
+        ));
+    }
+
+    private function post_categories_chunk($api_url, $token, $store_username, $chunk) {
+        return wp_remote_post($api_url, array(
+            'timeout' => 120,
+            'headers' => array(
+                'Content-Type' => 'application/json',
+                'x-migration-token' => $token,
+                'Authorization' => 'Bearer ' . $token,
+            ),
+            'body' => $this->build_request_payload($token, $store_username, $chunk),
+        ));
+    }
+
+    private function extract_api_error($response) {
+        $status_code = wp_remote_retrieve_response_code($response);
+        $body = wp_remote_retrieve_body($response);
+        $decoded = json_decode($body, true);
+
+        if (is_array($decoded) && !empty($decoded['error'])) {
+            return sprintf('%s (HTTP %d)', $decoded['error'], $status_code);
+        }
+
+        $trimmed = trim((string) $body);
+        if ($trimmed !== '') {
+            return sprintf('%s (HTTP %d)', $trimmed, $status_code);
+        }
+
+        return sprintf('Unknown API error (HTTP %d)', $status_code);
+    }
+
     public function handle_push_categories() {
         if (!current_user_can('manage_options')) {
             wp_die('Unauthorized');
@@ -165,11 +211,11 @@ class Store1920CategoryMigrator {
 
         check_admin_referer('store1920_push_categories');
 
-        $settings = get_option(self::OPTION_KEY, array());
-        $api_url = isset($settings['api_url']) ? trim($settings['api_url']) : '';
-        $token = isset($settings['migration_token']) ? trim($settings['migration_token']) : '';
-        $store_username = isset($settings['store_username']) ? trim($settings['store_username']) : '';
-        $batch_size = isset($settings['batch_size']) ? max(20, min(500, intval($settings['batch_size']))) : 200;
+        $settings = $this->get_settings();
+        $api_url = $this->get_setting($settings, 'api_url');
+        $token = $this->get_setting($settings, 'migration_token');
+        $store_username = $this->get_setting($settings, 'store_username');
+        $batch_size = isset($settings['batch_size']) ? max(20, min(500, intval($settings['batch_size']))) : self::DEFAULT_BATCH_SIZE;
 
         if (!$api_url || !$token || !$store_username) {
             $this->set_notice('Missing API URL, migration token, or store username.', false);
@@ -188,18 +234,7 @@ class Store1920CategoryMigrator {
         $total_sent = 0;
 
         foreach ($chunks as $chunk) {
-            $response = wp_remote_post($api_url, array(
-                'timeout' => 120,
-                'headers' => array(
-                    'Content-Type' => 'application/json',
-                    'x-migration-token' => $token,
-                ),
-                'body' => wp_json_encode(array(
-                    'migrationToken' => $token,
-                    'storeUsername' => $store_username,
-                    'categories' => $chunk,
-                )),
-            ));
+            $response = $this->post_categories_chunk($api_url, $token, $store_username, $chunk);
 
             if (is_wp_error($response)) {
                 $this->set_notice('Push failed: ' . $response->get_error_message(), false);
@@ -208,10 +243,9 @@ class Store1920CategoryMigrator {
             }
 
             $status_code = wp_remote_retrieve_response_code($response);
-            $body = json_decode(wp_remote_retrieve_body($response), true);
 
             if ($status_code < 200 || $status_code >= 300) {
-                $error_message = isset($body['error']) ? $body['error'] : 'Unknown API error';
+                $error_message = $this->extract_api_error($response);
                 $this->set_notice('Push failed: ' . $error_message, false);
                 wp_safe_redirect(admin_url('admin.php?page=store1920-category-migrator'));
                 exit;
