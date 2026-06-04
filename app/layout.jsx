@@ -1,4 +1,3 @@
-import { Outfit } from "next/font/google";
 import "./globals.css";
 import Script from "next/script";
 import React from "react";
@@ -9,8 +8,6 @@ import {
   STOREFRONT_LANGUAGE_COOKIE,
   STOREFRONT_LANGUAGE_KEY,
 } from "@/lib/storefrontLanguage";
-
-const outfit = Outfit({ subsets: ["latin"], weight: ["400", "500", "600"] });
 
 export const metadata = {
   title: "store1920 - Shop smarter",
@@ -110,7 +107,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
           `}
         </Script> */}
       </head>
-      <body className={`${outfit.className} antialiased`} suppressHydrationWarning>
+      <body className="antialiased" suppressHydrationWarning>
         {/* Google Tag Manager (noscript required for browsers with JS disabled) */}
         <noscript>
           <iframe
