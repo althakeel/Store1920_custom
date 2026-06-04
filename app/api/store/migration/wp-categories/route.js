@@ -16,7 +16,7 @@ function slugify(value = '') {
     .replace(/^-|-$/g, '')
 }
 
-function getMigrationTokenFromRequest(request) {
+function getMigrationTokenFromRequest(request, body = {}) {
   const headerToken = normalizeText(request.headers.get('x-migration-token'))
   if (headerToken) return headerToken
 
@@ -24,6 +24,12 @@ function getMigrationTokenFromRequest(request) {
   if (authHeader.toLowerCase().startsWith('bearer ')) {
     return normalizeText(authHeader.slice(7))
   }
+
+  const queryToken = normalizeText(new URL(request.url).searchParams.get('migrationToken'))
+  if (queryToken) return queryToken
+
+  const bodyToken = normalizeText(body?.migrationToken)
+  if (bodyToken) return bodyToken
 
   return ''
 }
@@ -46,6 +52,8 @@ async function ensureUniqueSlug(baseSlug, legacySourceId) {
 
 export async function POST(request) {
   try {
+    const body = await request.json().catch(() => ({}))
+
     const expectedToken = normalizeText(process.env.WP_MIGRATION_TOKEN || process.env.MIGRATION_SHARED_TOKEN)
     if (!expectedToken) {
       return NextResponse.json(
@@ -54,12 +62,11 @@ export async function POST(request) {
       )
     }
 
-    const providedToken = getMigrationTokenFromRequest(request)
+    const providedToken = getMigrationTokenFromRequest(request, body)
     if (!providedToken || providedToken !== expectedToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const body = await request.json()
     const storeUsername = normalizeText(body?.storeUsername).toLowerCase()
     const incomingCategories = Array.isArray(body?.categories) ? body.categories : []
 

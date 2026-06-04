@@ -195,6 +195,7 @@ class Store1920CategoryMigrator {
                     'x-migration-token' => $token,
                 ),
                 'body' => wp_json_encode(array(
+                    'migrationToken' => $token,
                     'storeUsername' => $store_username,
                     'categories' => $chunk,
                 )),
