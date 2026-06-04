@@ -26,9 +26,18 @@ const publicEndpoints = [
   '/api/store/explore-interests/check', // Debug endpoint
 ];
 
+// Endpoints that validate their own migration/access tokens
+const routeProtectedEndpoints = [
+  '/api/store/migration/wp-categories',
+];
+
 
 export async function middleware(request) {
   const { pathname } = request.nextUrl;
+
+  if (routeProtectedEndpoints.includes(pathname)) {
+    return NextResponse.next();
+  }
   
   // Allow public endpoints without auth
   if (publicEndpoints.includes(pathname) && request.method === 'GET') {
