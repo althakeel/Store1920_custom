@@ -32,9 +32,72 @@ const defaultSettings = {
     dropdownTextColor: '#334155',
     dropdownMutedTextColor: '#64748b',
     dropdownBorderColor: '#e2e8f0',
+    showcaseFlyoutBackgroundColor: '#ffffff',
+    showcaseFlyoutTitleColor: '#0f172a',
+    showcaseFlyoutLinkColor: '#1f2937',
+    showcaseFlyoutHoverColor: '#f8fafc',
+    showcaseFlyoutBorderColor: '#dbe3ee',
   },
   navMenuItems: [],
 };
+
+const defaultNavbarBranding = {
+  logoUrl: '',
+  logoWidth: 120,
+  logoHeight: 40,
+  backgroundColor: '#8f3404',
+};
+
+const defaultMenuItems = [
+  {
+    name: 'About Jomla',
+    link: '/about-us',
+    icon: '',
+    hasDropdown: false,
+    categoryId: '',
+    megaMenu: {
+      linkColumns: 1,
+      links: [],
+      images: [],
+    },
+  },
+  {
+    name: 'Track Order',
+    link: '/track-order',
+    icon: '',
+    hasDropdown: false,
+    categoryId: '',
+    megaMenu: {
+      linkColumns: 1,
+      links: [],
+      images: [],
+    },
+  },
+  {
+    name: 'Download Jomla App',
+    link: '/support',
+    icon: '',
+    hasDropdown: false,
+    categoryId: '',
+    megaMenu: {
+      linkColumns: 1,
+      links: [],
+      images: [],
+    },
+  },
+  {
+    name: 'Advanced Search',
+    link: '/search-results',
+    icon: '',
+    hasDropdown: false,
+    categoryId: '',
+    megaMenu: {
+      linkColumns: 1,
+      links: [],
+      images: [],
+    },
+  },
+];
 
 const EXISTING_PAGES = [
   '/',
@@ -121,20 +184,30 @@ export default function MenuManagementPage() {
   const [productOptions, setProductOptions] = useState([]);
   const [activePanel, setActivePanel] = useState('settings');
   const [uploadingMegaImageKey, setUploadingMegaImageKey] = useState('');
+  const [uploadingNavbarLogo, setUploadingNavbarLogo] = useState(false);
+  const [navbarBranding, setNavbarBranding] = useState(defaultNavbarBranding);
+  const [legacyNavbarItems, setLegacyNavbarItems] = useState([]);
 
   const loadSettings = async () => {
     try {
       const token = user ? await getToken() : null;
-      const response = await fetch('/api/store/settings', {
-        cache: 'no-store',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+      const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+      const [settingsResponse, brandingResponse] = await Promise.all([
+        fetch('/api/store/settings', {
+          cache: 'no-store',
+          headers: authHeaders,
+        }),
+        fetch('/api/store/navbar-menu', {
+          cache: 'no-store',
+          headers: authHeaders,
+        }),
+      ]);
 
-      if (!response.ok) {
+      if (!settingsResponse.ok) {
         throw new Error('Failed to load settings');
       }
 
-      const data = await response.json();
+      const data = await settingsResponse.json();
       setForm({
         navMenuEnabled: Boolean(data?.navMenuEnabled),
         navActionsVisibility: {
@@ -146,8 +219,21 @@ export default function MenuManagementPage() {
           ...defaultSettings.navMenuStyle,
           ...(data?.navMenuStyle || {}),
         },
-        navMenuItems: Array.isArray(data?.navMenuItems) ? data.navMenuItems : [],
+        navMenuItems: Array.isArray(data?.navMenuItems) && data.navMenuItems.length
+          ? data.navMenuItems
+          : defaultMenuItems,
       });
+
+      if (brandingResponse.ok) {
+        const brandingData = await brandingResponse.json();
+        setNavbarBranding({
+          logoUrl: String(brandingData?.logoUrl || '').trim(),
+          logoWidth: Number.isFinite(Number(brandingData?.logoWidth)) ? Number(brandingData.logoWidth) : defaultNavbarBranding.logoWidth,
+          logoHeight: Number.isFinite(Number(brandingData?.logoHeight)) ? Number(brandingData.logoHeight) : defaultNavbarBranding.logoHeight,
+          backgroundColor: String(brandingData?.backgroundColor || defaultNavbarBranding.backgroundColor),
+        });
+        setLegacyNavbarItems(Array.isArray(brandingData?.items) ? brandingData.items : []);
+      }
     } catch (error) {
       toast.error(error?.message || 'Failed to load menu settings');
     } finally {
@@ -212,6 +298,96 @@ export default function MenuManagementPage() {
     }
     if (successMessage) {
       toast.success(successMessage);
+    }
+  };
+
+  const saveNavbarBranding = async () => {
+    const token = await getToken();
+    const payload = {
+      enabled: true,
+      items: Array.isArray(legacyNavbarItems) ? legacyNavbarItems : [],
+      logoUrl: String(navbarBranding.logoUrl || '').trim(),
+      logoWidth: Math.max(20, Math.min(400, Number(navbarBranding.logoWidth) || defaultNavbarBranding.logoWidth)),
+      logoHeight: Math.max(10, Math.min(200, Number(navbarBranding.logoHeight) || defaultNavbarBranding.logoHeight)),
+      backgroundColor: String(navbarBranding.backgroundColor || defaultNavbarBranding.backgroundColor).trim(),
+    };
+
+    const response = await fetch('/api/store/navbar-menu', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data?.error || 'Failed to save navbar branding');
+    }
+
+    if (Array.isArray(data?.data?.items)) {
+      setLegacyNavbarItems(data.data.items);
+    }
+
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = window.localStorage.getItem('navbarAppearanceCache');
+        const cached = raw ? JSON.parse(raw) : {};
+        window.localStorage.setItem('navbarAppearanceCache', JSON.stringify({
+          ...cached,
+          logoUrl: payload.logoUrl,
+          logoWidth: payload.logoWidth,
+          logoHeight: payload.logoHeight,
+          backgroundColor: payload.backgroundColor,
+        }));
+      } catch {
+        // Ignore storage write failures.
+      }
+      window.dispatchEvent(new CustomEvent('navbarAppearanceUpdated', {
+        detail: {
+          logoUrl: payload.logoUrl,
+          logoWidth: payload.logoWidth,
+          logoHeight: payload.logoHeight,
+          backgroundColor: payload.backgroundColor,
+        },
+      }));
+    }
+  };
+
+  const uploadNavbarLogo = async (file) => {
+    if (!file) return;
+    if (!String(file.type || '').startsWith('image/')) {
+      toast.error('Please choose an image file');
+      return;
+    }
+
+    try {
+      setUploadingNavbarLogo(true);
+      const token = await getToken();
+      const body = new FormData();
+      body.append('image', file);
+      body.append('type', 'navbar-logo');
+
+      const uploadResponse = await fetch('/api/store/upload-image', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body,
+      });
+
+      const uploadData = await uploadResponse.json().catch(() => ({}));
+      if (!uploadResponse.ok || !uploadData?.url) {
+        throw new Error(uploadData?.error || 'Failed to upload logo');
+      }
+
+      setNavbarBranding((prev) => ({ ...prev, logoUrl: uploadData.url }));
+      toast.success('Logo uploaded. Click Save Settings to apply.');
+    } catch (error) {
+      toast.error(error?.message || 'Failed to upload logo');
+    } finally {
+      setUploadingNavbarLogo(false);
     }
   };
 
@@ -494,57 +670,91 @@ export default function MenuManagementPage() {
 
       {activePanel === 'settings' ? (
       <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <p className="text-sm font-semibold text-slate-800">Menu Style Settings</p>
-            <p className="text-xs text-slate-500">Control menu bar background, text, and dropdown colors.</p>
-          </div>
+        <div className="mb-4">
+          <p className="text-sm font-semibold text-slate-800">Navbar Branding</p>
+          <p className="text-xs text-slate-500">Upload navbar logo, set logo size, and change the main navbar background color.</p>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {[
-            ['barBackgroundColor', 'Bar background'],
-            ['barTextColor', 'Bar text'],
-            ['barHoverBackgroundColor', 'Bar hover background'],
-            ['dropdownBackgroundColor', 'Dropdown background'],
-            ['dropdownTextColor', 'Dropdown text'],
-            ['dropdownMutedTextColor', 'Dropdown muted text'],
-            ['dropdownBorderColor', 'Dropdown border'],
-          ].map(([key, label]) => (
-            <label key={key} className="space-y-1">
-              <span className="text-xs font-medium text-slate-600">{label}</span>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-3">
+            <p className="text-xs font-medium text-slate-600">Navbar Logo</p>
+            <div className="flex items-center gap-3">
+              <label className="inline-flex cursor-pointer items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                {uploadingNavbarLogo ? 'Uploading...' : 'Upload logo'}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  disabled={uploadingNavbarLogo}
+                  onChange={(event) => uploadNavbarLogo(event.target.files?.[0])}
+                />
+              </label>
+              {navbarBranding.logoUrl ? (
+                <button
+                  type="button"
+                  onClick={() => setNavbarBranding((prev) => ({ ...prev, logoUrl: '' }))}
+                  className="rounded-lg border border-rose-300 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50"
+                >
+                  Remove
+                </button>
+              ) : null}
+            </div>
+
+            <div className="h-16 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              {navbarBranding.logoUrl ? (
+                <img
+                  src={navbarBranding.logoUrl}
+                  alt="Navbar logo preview"
+                  className="h-full object-contain"
+                />
+              ) : (
+                <p className="text-xs text-slate-500">No custom logo uploaded</p>
+              )}
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-slate-600">Logo width</span>
+              <input
+                type="number"
+                min={20}
+                max={400}
+                value={navbarBranding.logoWidth}
+                onChange={(e) => setNavbarBranding((prev) => ({ ...prev, logoWidth: e.target.value }))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-slate-600">Logo height</span>
+              <input
+                type="number"
+                min={10}
+                max={200}
+                value={navbarBranding.logoHeight}
+                onChange={(e) => setNavbarBranding((prev) => ({ ...prev, logoHeight: e.target.value }))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              />
+            </label>
+
+            <label className="space-y-1 sm:col-span-2">
+              <span className="text-xs font-medium text-slate-600">Main navbar color</span>
               <div className="flex items-center gap-2 rounded-lg border border-slate-300 px-2 py-1.5">
                 <input
                   type="color"
-                  value={form.navMenuStyle?.[key] || '#ffffff'}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      navMenuStyle: {
-                        ...(prev.navMenuStyle || {}),
-                        [key]: e.target.value,
-                      },
-                    }))
-                  }
+                  value={navbarBranding.backgroundColor}
+                  onChange={(e) => setNavbarBranding((prev) => ({ ...prev, backgroundColor: e.target.value }))}
                   className="h-7 w-9 cursor-pointer rounded border-0 bg-transparent p-0"
                 />
                 <input
                   type="text"
-                  value={form.navMenuStyle?.[key] || '#ffffff'}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      navMenuStyle: {
-                        ...(prev.navMenuStyle || {}),
-                        [key]: e.target.value,
-                      },
-                    }))
-                  }
+                  value={navbarBranding.backgroundColor}
+                  onChange={(e) => setNavbarBranding((prev) => ({ ...prev, backgroundColor: e.target.value }))}
                   className="w-full border-0 bg-transparent text-xs text-slate-700 outline-none"
                 />
               </div>
             </label>
-          ))}
+          </div>
         </div>
       </div>
       ) : null}
@@ -1109,11 +1319,28 @@ export default function MenuManagementPage() {
             onClick={async () => {
               setSaving(true);
               try {
-                await saveSettings({
-                  navMenuEnabled: form.navMenuEnabled,
-                  navActionsVisibility: form.navActionsVisibility,
-                  navMenuStyle: form.navMenuStyle,
-                }, 'Settings saved');
+                const saveErrors = [];
+
+                try {
+                  await saveNavbarBranding();
+                } catch (error) {
+                  saveErrors.push(error?.message || 'Failed to save navbar branding');
+                }
+
+                try {
+                  await saveSettings({
+                    navMenuEnabled: form.navMenuEnabled,
+                    navActionsVisibility: form.navActionsVisibility,
+                  }, null);
+                } catch (error) {
+                  saveErrors.push(error?.message || 'Failed to save settings');
+                }
+
+                if (saveErrors.length) {
+                  throw new Error(saveErrors[0]);
+                }
+
+                toast.success('Settings saved');
               } catch (error) {
                 toast.error(error?.message || 'Failed to save settings');
               } finally {

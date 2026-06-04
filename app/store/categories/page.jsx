@@ -9,6 +9,11 @@ import { MdEdit, MdCategory, MdOutlineCheckCircleOutline } from 'react-icons/md'
 import Loading from '@/components/Loading';
 
 const MAX_CATEGORIES = 10;
+const DEFAULT_CATEGORY_IMAGE = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%23eff6ff'/%3E%3Cstop offset='100%25' stop-color='%23e2e8f0'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='160' height='160' rx='28' fill='url(%23g)'/%3E%3Ccircle cx='80' cy='64' r='24' fill='%23bfdbfe'/%3E%3Cpath d='M38 124c10-22 29-34 42-34s32 12 42 34' fill='%2394a3b8'/%3E%3C/svg%3E";
+
+function getCategoryImageSrc(src = '') {
+  return String(src || '').trim() || DEFAULT_CATEGORY_IMAGE;
+}
 
 function slugify(text = '') {
   return text
@@ -632,8 +637,23 @@ export default function StoreCategoryMenu() {
   const selectedMenuCategorySet = new Set(selectedMenuCategoryIds);
   const allBrowseVisibleSelected = browseVisibleCategoryIds.length > 0 && browseVisibleCategoryIds.every((id) => selectedCategorySet.has(id));
   const allMenuCategoriesSelected = categories.length > 0 && categories.every((category) => selectedMenuCategorySet.has(getMenuCategoryIdentifier(category)));
+  const usedSystemCategoryIds = new Set(
+    categories
+      .flatMap((category) => [
+        String(category?.systemCategoryId || '').trim(),
+        String(category?.id || '').trim(),
+      ])
+      .filter(Boolean)
+  );
 
   const openSystemCategory = (category) => {
+    const existingMenuCategoryIndex = categories.findIndex((entry) => {
+      const entrySystemId = String(entry?.systemCategoryId || entry?.id || '').trim();
+      return entrySystemId === String(category._id)
+        || slugify(entry?.name || '') === slugify(category?.name || '')
+        || String(entry?.url || '').trim() === String(buildSystemCategoryMenuUrl(category)).trim();
+    });
+
     setFormData({
       name: category.name,
       image: category.image || '',
@@ -641,6 +661,7 @@ export default function StoreCategoryMenu() {
       parentId: category.parentId || '',
     });
     setImagePreview(category.image || '');
+    setEditingIdx(existingMenuCategoryIndex >= 0 ? existingMenuCategoryIndex : null);
     setShowForm(true);
     setActiveTab('my-categories');
   };
@@ -649,6 +670,7 @@ export default function StoreCategoryMenu() {
     const meta = getCategoryLevelMeta(depth);
     const isSelected = selectedCategorySet.has(String(category._id));
     const hasChildren = Array.isArray(category.children) && category.children.length > 0;
+    const isUsedInMenu = usedSystemCategoryIds.has(String(category._id));
 
     return (
       <div key={String(category._id)} className={`rounded-2xl border shadow-sm ${meta.cardClassName} ${isSelected ? 'ring-2 ring-blue-100 border-blue-500' : ''}`}>
@@ -668,13 +690,14 @@ export default function StoreCategoryMenu() {
             </button>
 
             <div className="relative h-20 w-20 flex-shrink-0 overflow-hidden rounded-xl border border-white/70 bg-white shadow-sm">
-              {category.image && (
-                <img
-                  src={category.image}
-                  alt={category.name}
-                  className="h-full w-full object-cover"
-                />
-              )}
+              <img
+                src={getCategoryImageSrc(category.image)}
+                alt={category.name}
+                className="h-full w-full object-cover"
+                onError={(event) => {
+                  event.currentTarget.src = DEFAULT_CATEGORY_IMAGE;
+                }}
+              />
               <div className={`absolute left-2 top-2 rounded-full px-2 py-0.5 text-[10px] font-bold ${meta.badgeClassName}`}>
                 {meta.label}
               </div>
@@ -711,16 +734,18 @@ export default function StoreCategoryMenu() {
                   >
                     {isSelected ? 'Selected' : 'Select'}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => openSystemCategory(category)}
-                    className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${meta.useClassName}`}
-                  >
-                    <span className="flex items-center gap-2">
-                      <FiCheckCircle />
-                      Use
-                    </span>
-                  </button>
+                  {!isUsedInMenu && (
+                    <button
+                      type="button"
+                      onClick={() => openSystemCategory(category)}
+                      className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${meta.useClassName}`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <FiCheckCircle />
+                        Use
+                      </span>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -746,7 +771,7 @@ export default function StoreCategoryMenu() {
   if (!user) return <div className="p-6 text-red-500">Please login</div>;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100 p-4 md:p-6">
+    <div className="min-h-screen bg-white p-4 md:p-6">
       <div className="max-w-6xl mx-auto">
         {/* Header Section */}
         <div className="mb-12">
@@ -987,9 +1012,12 @@ export default function StoreCategoryMenu() {
                           <div className="col-span-1 flex items-center justify-center">
                             <div className="relative">
                               <img
-                                src={imagePreview}
+                                src={getCategoryImageSrc(imagePreview)}
                                 alt="Preview"
                                 className="w-40 h-40 object-cover rounded-xl border-2 border-blue-200 shadow-lg"
+                                onError={(event) => {
+                                  event.currentTarget.src = DEFAULT_CATEGORY_IMAGE;
+                                }}
                               />
                               <div className="absolute -top-2 -right-2 bg-emerald-500 rounded-full p-1">
                                 <MdOutlineCheckCircleOutline className="text-white text-xl" />
@@ -1042,9 +1070,14 @@ export default function StoreCategoryMenu() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {categories.map((cat, idx) => (
+                  (() => {
+                    const imageSrc = getCategoryImageSrc(cat.image);
+                    const isFallbackImage = imageSrc === DEFAULT_CATEGORY_IMAGE;
+
+                    return (
                   <div key={idx} className={`group bg-white rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden border ${selectedMenuCategorySet.has(getMenuCategoryIdentifier(cat)) ? 'border-blue-500 ring-2 ring-blue-100' : 'border-slate-100'}`}>
                     {/* Image */}
-                    <div className="relative h-48 overflow-hidden bg-slate-100">
+                    <div className="relative h-48 overflow-hidden bg-white p-3">
                       <button
                         type="button"
                         onClick={() => toggleMenuCategorySelection(getMenuCategoryIdentifier(cat))}
@@ -1058,11 +1091,18 @@ export default function StoreCategoryMenu() {
                         <FiCheckCircle size={16} />
                       </button>
                       <img
-                        src={cat.image}
+                        src={imageSrc}
                         alt={cat.name}
-                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                        className="w-full h-full rounded-xl object-contain transition-transform duration-300 group-hover:scale-[1.02]"
+                        onError={(event) => {
+                          event.currentTarget.src = DEFAULT_CATEGORY_IMAGE;
+                        }}
                       />
-                      <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition duration-300" />
+                      {isFallbackImage ? (
+                        <div className="absolute inset-x-3 bottom-3 rounded-xl bg-white/90 px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500 ring-1 ring-slate-200">
+                          No image available
+                        </div>
+                      ) : null}
                     </div>
 
                     {/* Content */}
@@ -1102,6 +1142,8 @@ export default function StoreCategoryMenu() {
                       </div>
                     </div>
                   </div>
+                    );
+                  })()
                 ))}
               </div>
             )}

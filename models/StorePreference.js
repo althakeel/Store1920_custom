@@ -22,6 +22,17 @@ const BannerSliderItemSchema = new mongoose.Schema(
   { _id: false }
 )
 
+const ProductBannerSchema = new mongoose.Schema(
+  {
+    image: { type: String, trim: true, default: '' },
+    title: { type: String, trim: true, default: 'Product Title' },
+    subtitle: { type: String, trim: true, default: 'Order now' },
+    buttonText: { type: String, trim: true, default: 'Order now' },
+    link: { type: String, trim: true, default: '/shop' }
+  },
+  { _id: false }
+)
+
 const defaultBannerSliderItems = [
   { id: 'banner-slider-1', image: '', link: '/category/sofas', alt: 'Banner 1' },
   { id: 'banner-slider-2', image: '', link: '/category/beds', alt: 'Banner 2' }
@@ -30,6 +41,13 @@ const defaultBannerSliderItems = [
 const defaultSecondaryBannerSliderItems = [
   { id: 'secondary-banner-slider-1', image: '', link: '/shop', alt: 'Lower Banner 1' },
   { id: 'secondary-banner-slider-2', image: '', link: '/shop', alt: 'Lower Banner 2' }
+]
+
+const defaultProductBanners = [
+  { image: '', title: 'Product Title', subtitle: 'Order now', buttonText: 'Order now', link: '/shop' },
+  { image: '', title: 'Product Title', subtitle: 'Order now', buttonText: 'Order now', link: '/shop' },
+  { image: '', title: 'Product Title', subtitle: 'Order now', buttonText: 'Order now', link: '/shop' },
+  { image: '', title: 'Product Title', subtitle: 'Order now', buttonText: 'Order now', link: '/shop' }
 ]
 
 const StorePreferenceSchema = new mongoose.Schema(
@@ -67,6 +85,8 @@ const StorePreferenceSchema = new mongoose.Schema(
       mainBannerSubtitleColor: { type: String, trim: true, default: '#e5e7eb' },
       mainBannerCtaBgColor: { type: String, trim: true, default: '#ef2d2d' },
       mainBannerCtaTextColor: { type: String, trim: true, default: '#ffffff' },
+      mainBannerDesktopHeight: { type: Number, default: 320 },
+      mainBannerMobileHeight: { type: Number, default: 100 },
       sectionTitle: { type: String, trim: true, default: 'More Reasons to Shop' },
       leftBlockBadgeText: { type: String, trim: true, default: '' },
       leftBlockSource: { type: String, enum: ['category', 'product'], default: 'category' },
@@ -77,11 +97,28 @@ const StorePreferenceSchema = new mongoose.Schema(
       productIds: { type: [String], default: [] },
       topBannerImage: { type: String, trim: true, default: '' },
       topBannerTitle: { type: String, trim: true, default: 'SUPER SAVES FOR SUMMER' },
+      topBannerTitleEnabled: { type: Boolean, default: true },
+      topBannerSubtitle: { type: String, trim: true, default: '' },
+      topBannerSubtitleEnabled: { type: Boolean, default: true },
+      topBannerCtaText: { type: String, trim: true, default: 'Order now' },
+      topBannerCtaEnabled: { type: Boolean, default: true },
+      topBannerCtaBgColor: { type: String, trim: true, default: '#ef2d2d' },
+      topBannerCtaTextColor: { type: String, trim: true, default: '#ffffff' },
       topBannerLink: { type: String, trim: true, default: '/shop' },
       bottomBannerImage: { type: String, trim: true, default: '' },
       bottomBannerTitle: { type: String, trim: true, default: 'Shop Now. Pay Later. Ready for Summer.' },
+      bottomBannerTitleEnabled: { type: Boolean, default: true },
+      bottomBannerSubtitle: { type: String, trim: true, default: '' },
+      bottomBannerSubtitleEnabled: { type: Boolean, default: true },
       bottomBannerCtaText: { type: String, trim: true, default: 'Shop Now' },
+      bottomBannerCtaEnabled: { type: Boolean, default: true },
+      bottomBannerCtaBgColor: { type: String, trim: true, default: '#ef2d2d' },
+      bottomBannerCtaTextColor: { type: String, trim: true, default: '#ffffff' },
       bottomBannerLink: { type: String, trim: true, default: '/shop' },
+      productBanners: {
+        type: [ProductBannerSchema],
+        default: defaultProductBanners
+      },
       bannerSliderEnabled: { type: Boolean, default: true },
       bannerSliderDesktopInterval: { type: Number, default: 4000 },
       bannerSliderMobileInterval: { type: Number, default: 3000 },
@@ -96,6 +133,7 @@ const StorePreferenceSchema = new mongoose.Schema(
       secondaryBannerSliderMobileInterval: { type: Number, default: 3000 },
       secondaryBannerSliderDesktopHeight: { type: Number, default: 220 },
       secondaryBannerSliderMobileHeight: { type: Number, default: 120 },
+      secondaryBannerSliderPlacement: { type: String, enum: ['above_top_deals', 'below_top_deals', 'below_small_banners'], default: 'above_top_deals' },
       secondaryBannerSliderItems: {
         type: [BannerSliderItemSchema],
         default: defaultSecondaryBannerSliderItems
@@ -134,6 +172,14 @@ if (!StorePreferenceModel.schema.path('shopShowcase.mainBannerCtaEnabled')) {
   missingShopShowcasePaths.mainBannerCtaEnabled = { type: Boolean, default: true }
 }
 
+if (!StorePreferenceModel.schema.path('shopShowcase.mainBannerDesktopHeight')) {
+  missingShopShowcasePaths.mainBannerDesktopHeight = { type: Number, default: 320 }
+}
+
+if (!StorePreferenceModel.schema.path('shopShowcase.mainBannerMobileHeight')) {
+  missingShopShowcasePaths.mainBannerMobileHeight = { type: Number, default: 100 }
+}
+
 if (!StorePreferenceModel.schema.path('shopShowcase.bannerSliderEnabled')) {
   missingShopShowcasePaths.bannerSliderEnabled = { type: Boolean, default: true }
 }
@@ -165,6 +211,13 @@ if (!StorePreferenceModel.schema.path('shopShowcase.bannerSliderItems')) {
   }
 }
 
+if (!StorePreferenceModel.schema.path('shopShowcase.productBanners')) {
+  missingShopShowcasePaths.productBanners = {
+    type: [ProductBannerSchema],
+    default: defaultProductBanners
+  }
+}
+
 if (!StorePreferenceModel.schema.path('shopShowcase.secondaryBannerSliderEnabled')) {
   missingShopShowcasePaths.secondaryBannerSliderEnabled = { type: Boolean, default: true }
 }
@@ -185,6 +238,10 @@ if (!StorePreferenceModel.schema.path('shopShowcase.secondaryBannerSliderMobileH
   missingShopShowcasePaths.secondaryBannerSliderMobileHeight = { type: Number, default: 120 }
 }
 
+if (!StorePreferenceModel.schema.path('shopShowcase.secondaryBannerSliderPlacement')) {
+  missingShopShowcasePaths.secondaryBannerSliderPlacement = { type: String, enum: ['above_top_deals', 'below_top_deals', 'below_small_banners'], default: 'above_top_deals' }
+}
+
 if (!StorePreferenceModel.schema.path('shopShowcase.secondaryBannerSliderItems')) {
   missingShopShowcasePaths.secondaryBannerSliderItems = {
     type: [BannerSliderItemSchema],
@@ -202,6 +259,58 @@ if (!StorePreferenceModel.schema.path('shopShowcase.sectionProductIds')) {
 
 if (!StorePreferenceModel.schema.path('shopShowcase.referralRewardCoins')) {
   missingShopShowcasePaths.referralRewardCoins = { type: Number, default: 25 }
+}
+
+if (!StorePreferenceModel.schema.path('shopShowcase.topBannerSubtitle')) {
+  missingShopShowcasePaths.topBannerSubtitle = { type: String, trim: true, default: '' }
+}
+
+if (!StorePreferenceModel.schema.path('shopShowcase.topBannerCtaText')) {
+  missingShopShowcasePaths.topBannerCtaText = { type: String, trim: true, default: 'Order now' }
+}
+
+if (!StorePreferenceModel.schema.path('shopShowcase.bottomBannerSubtitle')) {
+  missingShopShowcasePaths.bottomBannerSubtitle = { type: String, trim: true, default: '' }
+}
+
+if (!StorePreferenceModel.schema.path('shopShowcase.topBannerTitleEnabled')) {
+  missingShopShowcasePaths.topBannerTitleEnabled = { type: Boolean, default: true }
+}
+
+if (!StorePreferenceModel.schema.path('shopShowcase.topBannerSubtitleEnabled')) {
+  missingShopShowcasePaths.topBannerSubtitleEnabled = { type: Boolean, default: true }
+}
+
+if (!StorePreferenceModel.schema.path('shopShowcase.topBannerCtaEnabled')) {
+  missingShopShowcasePaths.topBannerCtaEnabled = { type: Boolean, default: true }
+}
+
+if (!StorePreferenceModel.schema.path('shopShowcase.topBannerCtaBgColor')) {
+  missingShopShowcasePaths.topBannerCtaBgColor = { type: String, trim: true, default: '#ef2d2d' }
+}
+
+if (!StorePreferenceModel.schema.path('shopShowcase.topBannerCtaTextColor')) {
+  missingShopShowcasePaths.topBannerCtaTextColor = { type: String, trim: true, default: '#ffffff' }
+}
+
+if (!StorePreferenceModel.schema.path('shopShowcase.bottomBannerTitleEnabled')) {
+  missingShopShowcasePaths.bottomBannerTitleEnabled = { type: Boolean, default: true }
+}
+
+if (!StorePreferenceModel.schema.path('shopShowcase.bottomBannerSubtitleEnabled')) {
+  missingShopShowcasePaths.bottomBannerSubtitleEnabled = { type: Boolean, default: true }
+}
+
+if (!StorePreferenceModel.schema.path('shopShowcase.bottomBannerCtaEnabled')) {
+  missingShopShowcasePaths.bottomBannerCtaEnabled = { type: Boolean, default: true }
+}
+
+if (!StorePreferenceModel.schema.path('shopShowcase.bottomBannerCtaBgColor')) {
+  missingShopShowcasePaths.bottomBannerCtaBgColor = { type: String, trim: true, default: '#ef2d2d' }
+}
+
+if (!StorePreferenceModel.schema.path('shopShowcase.bottomBannerCtaTextColor')) {
+  missingShopShowcasePaths.bottomBannerCtaTextColor = { type: String, trim: true, default: '#ffffff' }
 }
 
 if (Object.keys(missingShopShowcasePaths).length) {

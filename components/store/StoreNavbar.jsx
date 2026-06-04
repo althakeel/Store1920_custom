@@ -14,7 +14,7 @@ import { auth } from "@/lib/firebase";
 const StoreNavbar = ({ storeInfo }) => {
     const { user, getToken } = useAuth();
     const [showConfirm, setShowConfirm] = useState(false);
-    const [navbarLogo, setNavbarLogo] = useState({ url: '', width: 120, height: 40 });
+    const [navbarLogo, setNavbarLogo] = useState({ url: '', width: 120, height: 40, backgroundColor: '#ffffff' });
 
     useEffect(() => {
         const fetchLogo = async () => {
@@ -30,15 +30,36 @@ const StoreNavbar = ({ storeInfo }) => {
                 });
                 if (!res.ok) return;
                 const data = await res.json();
-                if (data.logoUrl) {
-                    setNavbarLogo({ url: data.logoUrl, width: data.logoWidth || 120, height: data.logoHeight || 40 });
-                }
+                setNavbarLogo((prev) => ({
+                    url: data.logoUrl || prev.url,
+                    width: data.logoWidth || prev.width || 120,
+                    height: data.logoHeight || prev.height || 40,
+                    backgroundColor: data.backgroundColor || prev.backgroundColor || '#ffffff',
+                }));
             } catch (e) {
                 // silently fail, fall back to default logo
             }
         };
         if (user) fetchLogo();
     }, [user]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return undefined;
+
+        const handleNavbarAppearanceUpdate = (event) => {
+            const detail = event?.detail || {};
+            setNavbarLogo((prev) => ({
+                ...prev,
+                url: typeof detail.logoUrl === 'string' ? detail.logoUrl : prev.url,
+                width: Number.isFinite(Number(detail.logoWidth)) ? Number(detail.logoWidth) : prev.width,
+                height: Number.isFinite(Number(detail.logoHeight)) ? Number(detail.logoHeight) : prev.height,
+                backgroundColor: typeof detail.backgroundColor === 'string' ? detail.backgroundColor : prev.backgroundColor,
+            }));
+        };
+
+        window.addEventListener('navbarAppearanceUpdated', handleNavbarAppearanceUpdate);
+        return () => window.removeEventListener('navbarAppearanceUpdated', handleNavbarAppearanceUpdate);
+    }, []);
 
     const handleLogout = async () => {
         try {
@@ -52,8 +73,8 @@ const StoreNavbar = ({ storeInfo }) => {
     };
 
     return (
-        <div className="flex items-center justify-between px-12 py-3 border-b border-slate-200 transition-all">
-            <Link href="/store" className="relative text-4xl font-semibold text-slate-700">
+        <div className="flex items-center justify-between px-12 py-3 border-b border-slate-200 bg-white text-slate-900 shadow-sm transition-all">
+            <Link href="/store" className="relative text-4xl font-semibold text-slate-900">
                 {navbarLogo.url ? (
                   <img
                     src={navbarLogo.url}
@@ -71,11 +92,11 @@ const StoreNavbar = ({ storeInfo }) => {
                   />
                 )}
             </Link>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 text-slate-700">
                 <p>Hi, {storeInfo?.name || user?.displayName || user?.name || user?.email || ''}</p>
                 <button
                     onClick={() => setShowConfirm(true)}
-                    className="ml-4 px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 transition"
+                    className="ml-4 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition shadow-sm"
                 >
                     Logout
                 </button>

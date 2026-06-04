@@ -105,6 +105,38 @@ const appendUniqueTags = (existing = [], incoming = []) => {
     return merged
 }
 
+const mergeSpecTableRows = (existingRows = [], incomingRows = [], columnCount = 2) => {
+    const normalizedExisting = Array.isArray(existingRows)
+        ? existingRows
+            .map((row) => Array.isArray(row)
+                ? Array.from({ length: columnCount }, (_, idx) => String(row[idx] || '').trim())
+                : null
+            )
+            .filter((row) => row && row.some((cell) => cell.length > 0))
+        : []
+
+    const normalizedIncoming = Array.isArray(incomingRows)
+        ? incomingRows
+            .map((row) => Array.isArray(row)
+                ? Array.from({ length: columnCount }, (_, idx) => String(row[idx] || '').trim())
+                : null
+            )
+            .filter((row) => row && row.some((cell) => cell.length > 0))
+        : []
+
+    const seen = new Set(normalizedExisting.map((row) => JSON.stringify(row)))
+    const merged = [...normalizedExisting]
+
+    normalizedIncoming.forEach((row) => {
+        const key = JSON.stringify(row)
+        if (seen.has(key)) return
+        seen.add(key)
+        merged.push(row)
+    })
+
+    return merged
+}
+
 const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.ogg', '.mov', '.m4v', '.avi', '.mkv']
 const DEFAULT_BADGE_OPTIONS = [
     'Price Lower Than Usual',
@@ -363,7 +395,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
         const [isSlugManuallyEdited, setIsSlugManuallyEdited] = useState(false);
         const [images, setImages] = useState({ "1": null, "2": null, "3": null, "4": null, "5": null, "6": null, "7": null, "8": null });
         const [productInfo, setProductInfo] = useState({
-            name: '', nameAr: '', slug: '', brand: '', brandAr: '', shortDescription: '', shortDescriptionAr: '', shortDescription2: '', specTableEnabled: false, specTableTitle: 'Product information', specTableColumns: ['Property', 'Value'], specTableRows: [['', '']], description: '', descriptionAr: '', AED: '', price: '', category: '', sku: '', stockQuantity: '', colors: [], sizes: [], fastDelivery: false, freeShippingEligible: false, allowReturn: true, allowReplacement: true, reviews: [], badges: [], imageAspectRatio: '1:1', tags: [], seoTitle: '', seoDescription: '', seoKeywords: [], deliveredBy: '', soldBy: '', paymentInfo: ''
+            name: '', nameAr: '', slug: '', brand: '', brandAr: '', shortDescription: '', shortDescriptionAr: '', shortDescription2: '', specTableEnabled: false, specTableTitle: 'Product information', specTableColumns: ['Property', 'Value'], specTableRows: [['', '']], description: '', descriptionAr: '', AED: '', price: '', category: '', sku: '', stockQuantity: 50, colors: [], sizes: [], fastDelivery: false, freeShippingEligible: false, allowReturn: true, allowReplacement: true, reviews: [], badges: [], imageAspectRatio: '1:1', tags: [], seoTitle: '', seoDescription: '', seoKeywords: [], deliveredBy: '', soldBy: '', paymentInfo: ''
         });
         const [tagInput, setTagInput] = useState('');
         const [seoKeywordInput, setSeoKeywordInput] = useState('');
@@ -373,6 +405,8 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
         const aspectRatioOptions = ['1:1', '4:5', '3:4', '16:9'];
         const [hasVariants, setHasVariants] = useState(false);
         const [bulkOptions, setBulkOptions] = useState([]);
+        const [aiAdditionalDetails, setAiAdditionalDetails] = useState('');
+        const [aiLoading, setAiLoading] = useState(false);
     const router = useRouter();
     // ...existing state declarations...
 
@@ -628,6 +662,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 soldBy: product.attributes?.soldBy || '',
                 paymentInfo: product.attributes?.paymentInfo || '',
             })
+            setAiAdditionalDetails(product.attributes?.additionalDetails || '')
             // Set selected categories from product data - debug and handle all cases
             console.log('Product data for categories:', { 
                 categories: product.categories, 
@@ -685,6 +720,18 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
             setImages(imgState)
         }
     }, [product, isFormInitialized])
+
+    useEffect(() => {
+        if (product || dbCategories.length === 0) return
+        setSelectedCategories(prev => (prev.length > 0 ? prev : dbCategories.map(cat => cat._id)))
+    }, [dbCategories, product])
+
+    useEffect(() => {
+        setProductInfo(prev => ({
+            ...prev,
+            category: selectedCategories[0] || ''
+        }))
+    }, [selectedCategories])
     
     // Reset form initialization flag when product changes or modal closes
     useEffect(() => {
@@ -711,6 +758,15 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
         } else {
             setProductInfo(prev => ({ ...prev, [name]: value }))
         }
+    }
+
+    const toggleCategorySelection = (categoryId, checked) => {
+        setSelectedCategories(prev => {
+            if (checked) {
+                return prev.includes(categoryId) ? prev : [...prev, categoryId]
+            }
+            return prev.filter(id => id !== categoryId)
+        })
     }
 
     const handleImageUpload = async (key, file) => {
@@ -762,6 +818,113 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
             }
             return updated;
         });
+    }
+
+    const fileToBase64 = (file) => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader()
+            reader.onload = () => {
+                const result = String(reader.result || '')
+                const base64 = result.includes(',') ? result.split(',')[1] : result
+                resolve(base64)
+            }
+            reader.onerror = () => reject(new Error('Failed to read image file'))
+            reader.readAsDataURL(file)
+        })
+    }
+
+    const getFirstImageFileFromSlots = () => {
+        const mediaValues = Object.values(images)
+        for (const media of mediaValues) {
+            if (!media || typeof media === 'string') continue
+            const file = media.file
+            if (!file) continue
+            const mime = String(file.type || '').toLowerCase()
+            if (mime.startsWith('image/')) return file
+        }
+        return null
+    }
+
+    const handleAiAutofill = async () => {
+        try {
+            const sourceImage = getFirstImageFileFromSlots()
+            if (!sourceImage) {
+                toast.error('Upload at least one image in Product Media before AI autofill')
+                return
+            }
+
+            const mimeType = String(sourceImage.type || '').toLowerCase()
+            if (!mimeType.startsWith('image/')) {
+                toast.error('AI autofill currently supports image files only')
+                return
+            }
+
+            setAiLoading(true)
+            const token = await getAuthTokenOrThrow()
+            const base64Image = await fileToBase64(sourceImage)
+
+            const { data } = await axios.post('/api/store/ai', {
+                base64Image,
+                mimeType,
+                additionalContext: aiAdditionalDetails || '',
+                includeArabic: showArabic,
+            }, {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            })
+
+            setProductInfo((prev) => {
+                const nextName = data?.name || prev.name
+                const nextColumns = Array.isArray(data?.specTableColumns) && data.specTableColumns.length > 1
+                    ? data.specTableColumns.slice(0, 2)
+                    : prev.specTableColumns
+
+                const nextRows = mergeSpecTableRows(
+                    prev.specTableRows,
+                    data?.specTableRows,
+                    nextColumns.length || 2
+                )
+
+                const next = {
+                    ...prev,
+                    name: nextName,
+                    slug: isSlugManuallyEdited ? prev.slug : slugifyValue(nextName),
+                    brand: data?.brand || prev.brand,
+                    shortDescription: data?.shortDescription || prev.shortDescription,
+                    shortDescription2: data?.shortDescription2 || prev.shortDescription2,
+                    description: data?.description || prev.description,
+                    nameAr: showArabic ? (data?.nameAr || prev.nameAr) : prev.nameAr,
+                    brandAr: showArabic ? (data?.brandAr || prev.brandAr) : prev.brandAr,
+                    shortDescriptionAr: showArabic ? (data?.shortDescriptionAr || prev.shortDescriptionAr) : prev.shortDescriptionAr,
+                    descriptionAr: showArabic ? (data?.descriptionAr || prev.descriptionAr) : prev.descriptionAr,
+                    specTableEnabled: nextRows.length > 0 ? true : prev.specTableEnabled,
+                    specTableTitle: data?.specTableTitle || prev.specTableTitle,
+                    specTableColumns: nextColumns,
+                    specTableRows: nextRows,
+                    tags: appendUniqueTags(prev.tags || [], data?.tags || []),
+                    seoTitle: data?.seoTitle || prev.seoTitle,
+                    seoDescription: data?.seoDescription || prev.seoDescription,
+                    seoKeywords: appendUniqueTags(prev.seoKeywords || [], data?.seoKeywords || []),
+                    badges: appendUniqueTags(prev.badges || [], data?.badges || []),
+                    deliveredBy: data?.deliveredBy || prev.deliveredBy,
+                    soldBy: data?.soldBy || prev.soldBy,
+                    paymentInfo: data?.paymentInfo || prev.paymentInfo,
+                }
+
+                return next
+            })
+
+            toast.success(showArabic ? 'Product details auto-filled (English + Arabic)' : 'Product details auto-filled from image')
+        } catch (error) {
+            const status = Number(error?.response?.status)
+            const fallback = status === 429
+                ? 'AI rate limit reached. Please wait a moment and try again.'
+                : 'AI autofill failed'
+            toast.error(normalizeErrorMessage(error?.response?.data?.error || error?.response?.data || error?.message, fallback))
+        } finally {
+            setAiLoading(false)
+        }
     }
 
     const addReview = () => {
@@ -843,6 +1006,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 deliveredBy: productInfo.deliveredBy,
                 soldBy: productInfo.soldBy,
                 paymentInfo: productInfo.paymentInfo,
+                additionalDetails: aiAdditionalDetails || '',
                 ...(bulkEnabled ? { variantType: 'bulk_bundles' } : {})
             }
             formData.append('attributes', JSON.stringify(attributes))
@@ -992,7 +1156,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                             ) : (
                                 dbCategories.map(cat => (
                                     <label key={cat._id} className="flex items-center gap-2 cursor-pointer hover:bg-white p-1 rounded transition">
-                                        <input type="checkbox" checked={selectedCategories.includes(cat._id)} onChange={(e) => { if (e.target.checked) { setSelectedCategories([...selectedCategories, cat._id]) } else { setSelectedCategories(selectedCategories.filter(id => id !== cat._id)) } }} className="w-3 h-3 rounded cursor-pointer accent-indigo-500" />
+                                        <input type="checkbox" checked={selectedCategories.includes(cat._id)} onChange={(e) => toggleCategorySelection(cat._id, e.target.checked)} className="w-3 h-3 rounded cursor-pointer accent-indigo-500" />
                                         <span className="text-xs text-gray-700">{cat.name}</span>
                                     </label>
                                 ))
@@ -1006,7 +1170,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                     </div>
                     <div>
                         <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Stock Qty</label>
-                        <input type="number" name="stockQuantity" value={productInfo.stockQuantity === 0 || productInfo.stockQuantity == null ? "" : productInfo.stockQuantity} onChange={onChangeHandler} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200" placeholder="e.g. 100" min="0" />
+                        <input type="number" name="stockQuantity" value={productInfo.stockQuantity ?? ''} onChange={onChangeHandler} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200" placeholder="e.g. 100" min="0" />
                     </div>
                     <div className="col-span-2 grid grid-cols-2 gap-2 pt-1 border-t border-gray-100 mt-1">
                         <label className="flex items-center gap-2 text-xs cursor-pointer group"><input type="checkbox" checked={productInfo.fastDelivery} onChange={(e)=> setProductInfo(p=>({...p, fastDelivery: e.target.checked}))} className="accent-green-500 w-3.5 h-3.5" /><span className="text-gray-600 group-hover:text-green-700">⚡ Fast Delivery</span></label>
@@ -1294,6 +1458,40 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
 
                 {/* RIGHT COLUMN */}
                 <div className="space-y-4">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 shadow-[0_8px_24px_rgba(15,23,42,0.06)] overflow-hidden">
+                    <div className="flex items-center gap-2 px-4 py-3 bg-white border-b border-slate-200">
+                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-100 text-blue-700 text-xs">AI</span>
+                        <h3 className="text-sm font-semibold text-slate-800 tracking-wide">AI Auto Fill</h3>
+                    </div>
+                    <div className="p-4 space-y-3">
+                        <p className="text-xs text-gray-600">
+                            Upload at least one image in Product Media, then click auto fill. AI will populate name, descriptions,
+                            tags, SEO, badges, and specification rows.
+                        </p>
+                        <div>
+                            <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">
+                                Extra Details For AI (Optional)
+                            </label>
+                            <textarea
+                                value={aiAdditionalDetails}
+                                onChange={(e) => setAiAdditionalDetails(e.target.value)}
+                                rows={3}
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-200"
+                                placeholder="Example: material is stainless steel, 2-year warranty, package includes charger and carry case"
+                            />
+                            <p className="mt-1 text-xs text-gray-500">This helps AI include product-specific details you want in the final listing.</p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={handleAiAutofill}
+                            disabled={aiLoading}
+                            className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-60"
+                        >
+                            {aiLoading ? 'Auto filling...' : 'Auto Fill From First Uploaded Image'}
+                        </button>
+                    </div>
+                </div>
+
                 {/* Images */}
                 <div>
                     <label className="block text-sm font-medium mb-2">Product Media (images/videos, up to 8)</label>

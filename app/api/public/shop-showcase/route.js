@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import connectDB from '@/lib/mongodb'
 import StorePreference from '@/models/StorePreference'
-import Store from '@/models/Store'
 import Product from '@/models/Product'
 import Category from '@/models/Category'
 import mongoose from 'mongoose'
@@ -22,6 +21,8 @@ const DEFAULT_SHOWCASE = {
   mainBannerSubtitleColor: '#e5e7eb',
   mainBannerCtaBgColor: '#ef2d2d',
   mainBannerCtaTextColor: '#ffffff',
+  mainBannerDesktopHeight: 320,
+  mainBannerMobileHeight: 100,
   sectionTitle: 'More Reasons to Shop',
   leftBlockBadgeText: '',
   leftBlockSource: 'category',
@@ -32,11 +33,30 @@ const DEFAULT_SHOWCASE = {
   productIds: [],
   topBannerImage: '',
   topBannerTitle: 'SUPER SAVES FOR SUMMER',
+  topBannerTitleEnabled: true,
+  topBannerSubtitle: '',
+  topBannerSubtitleEnabled: true,
+  topBannerCtaText: 'Order now',
+  topBannerCtaEnabled: true,
+  topBannerCtaBgColor: '#ef2d2d',
+  topBannerCtaTextColor: '#ffffff',
   topBannerLink: '/shop',
   bottomBannerImage: '',
   bottomBannerTitle: 'Shop Now. Pay Later. Ready for Summer.',
+  bottomBannerTitleEnabled: true,
+  bottomBannerSubtitle: '',
+  bottomBannerSubtitleEnabled: true,
   bottomBannerCtaText: 'Shop Now',
+  bottomBannerCtaEnabled: true,
+  bottomBannerCtaBgColor: '#ef2d2d',
+  bottomBannerCtaTextColor: '#ffffff',
   bottomBannerLink: '/shop',
+  productBanners: [
+    { image: '', title: 'Product Title', subtitle: 'Order now', buttonText: 'Order now', link: '/shop' },
+    { image: '', title: 'Product Title', subtitle: 'Order now', buttonText: 'Order now', link: '/shop' },
+    { image: '', title: 'Product Title', subtitle: 'Order now', buttonText: 'Order now', link: '/shop' },
+    { image: '', title: 'Product Title', subtitle: 'Order now', buttonText: 'Order now', link: '/shop' },
+  ],
   bannerSliderEnabled: true,
   bannerSliderDesktopInterval: 4000,
   bannerSliderMobileInterval: 3000,
@@ -51,6 +71,7 @@ const DEFAULT_SHOWCASE = {
   secondaryBannerSliderMobileInterval: 3000,
   secondaryBannerSliderDesktopHeight: 220,
   secondaryBannerSliderMobileHeight: 120,
+  secondaryBannerSliderPlacement: 'above_top_deals',
   secondaryBannerSliderItems: [
     { id: 'secondary-banner-slider-1', image: '', link: '/shop', alt: 'Lower Banner 1' },
     { id: 'secondary-banner-slider-2', image: '', link: '/shop', alt: 'Lower Banner 2' }
@@ -61,6 +82,12 @@ function normalizeBannerSliderHeight(value, fallback) {
   const numeric = Number(value)
   if (!Number.isFinite(numeric)) return fallback
   return Math.min(400, Math.max(80, Math.round(numeric)))
+}
+
+function normalizeMainBannerHeight(value, fallback) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return fallback
+  return Math.min(700, Math.max(80, Math.round(numeric)))
 }
 
 function normalizeBannerSliderItems(items) {
@@ -93,6 +120,28 @@ function normalizeSecondaryBannerSliderItems(items) {
   return normalized.length ? normalized : DEFAULT_SHOWCASE.secondaryBannerSliderItems
 }
 
+function normalizeSecondaryBannerSliderPlacement(value) {
+  if (value === 'below_top_deals') return 'below_top_deals'
+  if (value === 'below_small_banners') return 'below_small_banners'
+  return 'above_top_deals'
+}
+
+function normalizeProductBanners(items) {
+  if (!Array.isArray(items)) return DEFAULT_SHOWCASE.productBanners
+
+  const normalized = items
+    .slice(0, 4)
+    .map((item, index) => ({
+      image: (item?.image || '').toString().trim(),
+      title: (item?.title || '').toString().trim(),
+      subtitle: (item?.subtitle || '').toString().trim(),
+      buttonText: (item?.buttonText || '').toString().trim(),
+      link: (item?.link || '').toString().trim(),
+    }))
+
+  return normalized.length ? normalized : DEFAULT_SHOWCASE.productBanners
+}
+
 function normalize(data = {}) {
   return {
     ...DEFAULT_SHOWCASE,
@@ -102,6 +151,29 @@ function normalize(data = {}) {
     categoryIds: Array.isArray(data.categoryIds) ? data.categoryIds.slice(0, 4).map(String) : [],
     sectionProductIds: Array.isArray(data.sectionProductIds) ? data.sectionProductIds.slice(0, 4).map(String) : [],
     productIds: Array.isArray(data.productIds) ? data.productIds.slice(0, 20).map(String) : [],
+    topBannerTitle: (data.topBannerTitle || '').toString().trim(),
+    topBannerTitleEnabled: typeof data.topBannerTitleEnabled === 'boolean' ? data.topBannerTitleEnabled : DEFAULT_SHOWCASE.topBannerTitleEnabled,
+    topBannerSubtitle: (data.topBannerSubtitle || '').toString().trim(),
+    topBannerSubtitleEnabled: typeof data.topBannerSubtitleEnabled === 'boolean' ? data.topBannerSubtitleEnabled : DEFAULT_SHOWCASE.topBannerSubtitleEnabled,
+    topBannerCtaText: (data.topBannerCtaText || '').toString().trim(),
+    topBannerCtaEnabled: typeof data.topBannerCtaEnabled === 'boolean' ? data.topBannerCtaEnabled : DEFAULT_SHOWCASE.topBannerCtaEnabled,
+    topBannerCtaBgColor: (data.topBannerCtaBgColor || DEFAULT_SHOWCASE.topBannerCtaBgColor).toString().trim(),
+    topBannerCtaTextColor: (data.topBannerCtaTextColor || DEFAULT_SHOWCASE.topBannerCtaTextColor).toString().trim(),
+    topBannerImage: (data.topBannerImage || '').toString().trim(),
+    topBannerLink: (data.topBannerLink || '').toString().trim(),
+    bottomBannerTitle: (data.bottomBannerTitle || '').toString().trim(),
+    bottomBannerTitleEnabled: typeof data.bottomBannerTitleEnabled === 'boolean' ? data.bottomBannerTitleEnabled : DEFAULT_SHOWCASE.bottomBannerTitleEnabled,
+    bottomBannerSubtitle: (data.bottomBannerSubtitle || '').toString().trim(),
+    bottomBannerSubtitleEnabled: typeof data.bottomBannerSubtitleEnabled === 'boolean' ? data.bottomBannerSubtitleEnabled : DEFAULT_SHOWCASE.bottomBannerSubtitleEnabled,
+    bottomBannerCtaText: (data.bottomBannerCtaText || '').toString().trim(),
+    bottomBannerCtaEnabled: typeof data.bottomBannerCtaEnabled === 'boolean' ? data.bottomBannerCtaEnabled : DEFAULT_SHOWCASE.bottomBannerCtaEnabled,
+    bottomBannerCtaBgColor: (data.bottomBannerCtaBgColor || DEFAULT_SHOWCASE.bottomBannerCtaBgColor).toString().trim(),
+    bottomBannerCtaTextColor: (data.bottomBannerCtaTextColor || DEFAULT_SHOWCASE.bottomBannerCtaTextColor).toString().trim(),
+    bottomBannerImage: (data.bottomBannerImage || '').toString().trim(),
+    bottomBannerLink: (data.bottomBannerLink || '').toString().trim(),
+    productBanners: normalizeProductBanners(data.productBanners),
+    mainBannerDesktopHeight: normalizeMainBannerHeight(data.mainBannerDesktopHeight, DEFAULT_SHOWCASE.mainBannerDesktopHeight),
+    mainBannerMobileHeight: normalizeMainBannerHeight(data.mainBannerMobileHeight, DEFAULT_SHOWCASE.mainBannerMobileHeight),
     bannerSliderEnabled: typeof data.bannerSliderEnabled === 'boolean' ? data.bannerSliderEnabled : DEFAULT_SHOWCASE.bannerSliderEnabled,
     bannerSliderDesktopInterval: Math.max(1500, Number(data.bannerSliderDesktopInterval) || DEFAULT_SHOWCASE.bannerSliderDesktopInterval),
     bannerSliderMobileInterval: Math.max(1500, Number(data.bannerSliderMobileInterval) || DEFAULT_SHOWCASE.bannerSliderMobileInterval),
@@ -113,6 +185,7 @@ function normalize(data = {}) {
     secondaryBannerSliderMobileInterval: Math.max(1500, Number(data.secondaryBannerSliderMobileInterval) || DEFAULT_SHOWCASE.secondaryBannerSliderMobileInterval),
     secondaryBannerSliderDesktopHeight: normalizeBannerSliderHeight(data.secondaryBannerSliderDesktopHeight, DEFAULT_SHOWCASE.secondaryBannerSliderDesktopHeight),
     secondaryBannerSliderMobileHeight: normalizeBannerSliderHeight(data.secondaryBannerSliderMobileHeight, DEFAULT_SHOWCASE.secondaryBannerSliderMobileHeight),
+    secondaryBannerSliderPlacement: normalizeSecondaryBannerSliderPlacement(data.secondaryBannerSliderPlacement),
     secondaryBannerSliderItems: normalizeSecondaryBannerSliderItems(data.secondaryBannerSliderItems)
   }
 }
@@ -130,18 +203,15 @@ export async function GET() {
   try {
     await connectDB()
 
-    // Keep the same public store source used by /api/store/featured-products (first store).
-    const store = await Store.findOne().select('_id').lean()
-
-    const preference = store?._id
-      ? await StorePreference.findOne({ storeId: store._id }).lean()
-      : await StorePreference.findOne().sort({ updatedAt: -1 }).lean()
+    // Serve the latest saved showcase config so admin banner changes appear immediately.
+    const preference = await StorePreference.findOne().sort({ updatedAt: -1 }).lean()
 
     const config = normalize(preference?.shopShowcase || DEFAULT_SHOWCASE)
 
     const validSectionProductIds = (config.sectionProductIds || []).filter((id) => mongoose.Types.ObjectId.isValid(id))
     const validProductIds = (config.productIds || []).filter((id) => mongoose.Types.ObjectId.isValid(id))
     const validCategoryIds = (config.categoryIds || []).filter((id) => mongoose.Types.ObjectId.isValid(id))
+    const shouldFallbackToCategories = validCategoryIds.length === 0
 
     const [sectionProducts, products, categories] = await Promise.all([
       validSectionProductIds.length
@@ -158,17 +228,37 @@ export async function GET() {
         ? Category.find({ _id: { $in: validCategoryIds } })
             .select('_id name slug image')
             .lean()
-        : Promise.resolve([])
+        : shouldFallbackToCategories
+          ? Category.find({})
+            .sort({ createdAt: 1, name: 1 })
+            .select('_id name slug image')
+            .limit(9)
+            .lean()
+          : Promise.resolve([])
     ])
 
-    return NextResponse.json({
-      config,
-      sectionProducts: orderByIds(sectionProducts, validSectionProductIds),
-      products: orderByIds(products, validProductIds),
-      categories: orderByIds(categories, validCategoryIds)
-    })
+    return NextResponse.json(
+      {
+        config,
+        sectionProducts: orderByIds(sectionProducts, validSectionProductIds),
+        products: orderByIds(products, validProductIds),
+        categories: orderByIds(categories, validCategoryIds)
+      },
+      {
+        headers: {
+          'Cache-Control': 'no-store, max-age=0'
+        }
+      }
+    )
   } catch (error) {
     console.error('[public shop-showcase GET] error:', error)
-    return NextResponse.json({ config: DEFAULT_SHOWCASE, sectionProducts: [], products: [], categories: [] })
+    return NextResponse.json(
+      { config: DEFAULT_SHOWCASE, sectionProducts: [], products: [], categories: [] },
+      {
+        headers: {
+          'Cache-Control': 'no-store, max-age=0'
+        }
+      }
+    )
   }
 }

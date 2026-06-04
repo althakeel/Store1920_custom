@@ -3,6 +3,10 @@ import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import axios from "axios";
 import { toast } from "react-hot-toast";
+import TrackingTimeline from "@/components/TrackingTimeline";
+import AnimatedProgressTracker from "@/components/AnimatedProgressTracker";
+import styles from "./tracking.module.css";
+import { RefreshCw } from "lucide-react";
 
 function TrackOrderPageInner() {
   const [phoneNumber, setPhoneNumber] = useState('')
@@ -12,6 +16,27 @@ function TrackOrderPageInner() {
   const [order, setOrder] = useState(null)
   const [notFound, setNotFound] = useState(false)
   const [forceDelhivery, setForceDelhivery] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+
+  const handleRefresh = async () => {
+    if (refreshing || !order) return;
+    setRefreshing(true);
+    try {
+      const params = new URLSearchParams();
+      if (order.trackingId) params.append("awb", order.trackingId);
+      if (phoneNumber.trim()) params.append("phone", phoneNumber.trim());
+      
+      const res = await axios.get(`/api/track-order?${params.toString()}`);
+      if (res.data.success && res.data.order) {
+        setOrder(res.data.order);
+        toast.success("Tracking updated!");
+      }
+    } catch (error) {
+      toast.error("Failed to refresh tracking");
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     const orderId = searchParams.get("orderId");
@@ -219,29 +244,7 @@ function TrackOrderPageInner() {
                 </div>
 
                 {/* Progress Tracker */}
-                <div className="relative">
-                  <div className="flex justify-between mb-2">
-                    {getStatusSteps(order.status).map((step, idx) => (
-                      <div key={idx} className="flex flex-col items-center flex-1">
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 ${
-                          step.completed ? 'bg-blue-500 border-blue-500' : 'bg-white border-slate-300'
-                        }`}>
-                          {step.completed ? (
-                            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                          ) : (
-                            <span className="text-slate-400 text-sm">{idx + 1}</span>
-                          )}
-                        </div>
-                        <p className={`text-xs mt-2 text-center ${step.completed ? 'text-slate-800 font-medium' : 'text-slate-500'}`}>
-                          {step.name}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="absolute top-5 left-0 right-0 h-0.5 bg-slate-200 -z-10" style={{marginLeft: '5%', marginRight: '5%'}}></div>
-                </div>
+                <AnimatedProgressTracker steps={getStatusSteps(order.status)} />
               </div>
 
               {/* Tracking Info */}
@@ -293,67 +296,65 @@ function TrackOrderPageInner() {
                   </div>
               {/* Delhivery Timeline */}
               {order.delhivery?.events?.length > 0 && (
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                  <h3 className="text-lg font-semibold text-slate-800 mb-4">Shipment Updates</h3>
-                  <div className="relative">
-                    <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-slate-200"/>
-                    <ul className="space-y-4">
-                      {order.delhivery.events.map((ev, idx) => (
-                        <li key={idx} className="relative pl-10">
-                          <span className="absolute left-2 top-1.5 w-4 h-4 rounded-full bg-blue-500 border-2 border-white shadow"/>
-                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                            <div className="font-medium text-slate-800">{ev.status}</div>
-                            <div className="text-xs text-slate-500">{new Date(ev.time).toLocaleString()}</div>
-                          </div>
-                          <div className="text-sm text-slate-600">{ev.location}</div>
-                          {ev.remarks && <div className="text-xs text-slate-500 mt-0.5">{ev.remarks}</div>}
-                        </li>
-                      ))}
-                    </ul>
+                <div className={`bg-white rounded-xl shadow-sm border border-slate-200 p-6 ${styles["tracking-card-enter"]}`}>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-slate-800">Shipment Updates (Delhivery)</h3>
+                    <button
+                      onClick={handleRefresh}
+                      disabled={refreshing}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-sm font-medium transition disabled:opacity-50"
+                    >
+                      <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
+                      {refreshing ? "Refreshing..." : "Refresh"}
+                    </button>
                   </div>
+                  <TrackingTimeline events={order.delhivery.events} type="delhivery" />
                 </div>
               )}
 
               {/* C3Xpress Timeline */}
               {order.c3x?.events?.length > 0 && (
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                  <h3 className="text-lg font-semibold text-slate-800 mb-1">Shipment Updates</h3>
+                <div className={`bg-white rounded-xl shadow-sm border border-slate-200 p-6 ${styles["tracking-card-enter"]}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-lg font-semibold text-slate-800">Shipment Updates (C3Xpress)</h3>
+                    <button
+                      onClick={handleRefresh}
+                      disabled={refreshing}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-sm font-medium transition disabled:opacity-50"
+                    >
+                      <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
+                      {refreshing ? "Refreshing..." : "Refresh"}
+                    </button>
+                  </div>
                   {order.c3x.origin && order.c3x.destination && (
+                    <p className="text-sm text-slate-500 mb-2">
+                      <span className="font-medium">Route:</span> {order.c3x.origin} → {order.c3x.destination}
+                    </p>
+                  )}
+                  {order.c3x.weight && (
+                    <p className="text-sm text-slate-500 mb-2">
+                      <span className="font-medium">Weight:</span> {order.c3x.weight} kg
+                    </p>
+                  )}
+                  {order.c3x.pieces && (
+                    <p className="text-sm text-slate-500 mb-2">
+                      <span className="font-medium">Pieces:</span> {order.c3x.pieces}
+                    </p>
+                  )}
+                  {order.c3x.lastLocation && (
                     <p className="text-sm text-slate-500 mb-4">
-                      {order.c3x.origin} → {order.c3x.destination}
+                      <span className="font-medium">Last Location:</span> {order.c3x.lastLocation}
                     </p>
                   )}
                   {order.c3x.isDelivered && order.c3x.deliveredTo && (
-                    <div className="mb-4 flex items-center gap-2 text-sm font-medium text-green-700 bg-green-50 border border-green-200 rounded-lg px-4 py-2">
+                    <div className={`mb-4 flex items-center gap-2 text-sm font-medium text-green-700 bg-green-50 border border-green-200 rounded-lg px-4 py-2 ${styles["status-badge-active"]}`}>
                       <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                       </svg>
                       Delivered to: {order.c3x.deliveredTo}
                     </div>
                   )}
-                  <div className="relative">
-                    <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-slate-200"/>
-                    <ul className="space-y-4">
-                      {order.c3x.events.map((ev, idx) => (
-                        <li key={idx} className="relative pl-10">
-                          <span className={`absolute left-2 top-1.5 w-4 h-4 rounded-full border-2 border-white shadow ${
-                            ev.status === 'POD' ? 'bg-green-500' :
-                            ev.status === 'WC'  ? 'bg-yellow-500' :
-                            'bg-blue-500'
-                          }`}/>
-                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                            <div className="font-medium text-slate-800">{ev.status === 'POD' ? 'Delivered' : ev.status}</div>
-                            <div className="text-xs text-slate-500">{ev.time}</div>
-                          </div>
-                          {ev.location && <div className="text-sm text-slate-600">{ev.location}</div>}
-                          {ev.remarks && <div className="text-xs text-slate-500 mt-0.5">{ev.remarks}</div>}
-                          {ev.deliveredTo && (
-                            <div className="text-xs text-green-600 mt-0.5">Received by: {ev.deliveredTo}</div>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+                  <TrackingTimeline events={order.c3x.events} type="c3xpress" />
                 </div>
               )}
                   {/* More tracking details/help */}

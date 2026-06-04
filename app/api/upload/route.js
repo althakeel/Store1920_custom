@@ -30,6 +30,8 @@ export async function POST(request) {
     }
 
     const formData = await request.formData();
+    const uploadContext = String(formData.get('uploadContext') || '').trim().toLowerCase();
+    const isShowcaseBannerUpload = uploadContext === 'showcase-banner';
     const files = [...formData.getAll('files'), ...formData.getAll('file')].filter(Boolean);
     
     if (!files || files.length === 0) {
@@ -44,8 +46,13 @@ export async function POST(request) {
       
       // Determine folder based on file type
       const isVideo = file.type.startsWith('video/');
-      const folder = isVideo ? 'returns/videos' : 'returns/images';
-      const fileName = `return_${Date.now()}_${Math.random().toString(36).substring(7)}_${file.name}`;
+      const folder = isVideo
+        ? 'returns/videos'
+        : isShowcaseBannerUpload
+          ? 'store/showcase-banners'
+          : 'returns/images';
+      const filePrefix = isShowcaseBannerUpload ? 'showcase' : 'return';
+      const fileName = `${filePrefix}_${Date.now()}_${Math.random().toString(36).substring(7)}_${file.name}`;
       
       // Upload to ImageKit
       const response = await imagekit.upload({
@@ -54,15 +61,9 @@ export async function POST(request) {
         folder: folder
       });
       
-      // Return optimized URL
-      const transformation = isVideo 
-        ? [] // No transformation for videos
-        : [{ quality: "auto" }, { format: "webp" }, { width: "800" }];
-      
-      const url = imagekit.url({
-        path: response.filePath,
-        transformation: transformation
-      });
+      // Return original uploaded asset URL without transformations.
+      // This preserves exact source quality (important for banner text clarity).
+      const url = response.url;
       
       uploadedUrls.push(url);
     }

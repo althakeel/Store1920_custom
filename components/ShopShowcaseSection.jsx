@@ -1,23 +1,27 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import styles from './ShopShowcaseSection.module.css'
 import axios from 'axios'
 import Link from 'next/link'
-import Image from 'next/image'
+import bannerStyles from './ShopShowcaseSectionBanners.module.css'
+import productGridStyles from './ShopShowcaseSectionProducts.module.css'
+import {
+  Baby,
+  Bike,
+  Car,
+  ChevronRight,
+  Headphones,
+  Info,
+  Laptop,
+  Search,
+  Smartphone,
+  Truck,
+  ToyBrick,
+  Tv,
+  Watch,
+} from 'lucide-react'
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket'
-
-function formatCountdown(target) {
-  if (!target) return null
-  const end = Date.parse(target)
-  if (Number.isNaN(end)) return null
-
-  const diff = Math.max(0, end - Date.now())
-  const totalSec = Math.floor(diff / 1000)
-  const h = Math.floor(totalSec / 3600)
-  const m = Math.floor((totalSec % 3600) / 60)
-  const s = totalSec % 60
-  return `${h}h : ${m}m : ${s}s`
-}
 
 function getCategoryHref(category) {
   if (category?.slug) return `/shop?category=${encodeURIComponent(category.slug)}`
@@ -36,24 +40,104 @@ function getProductImage(product) {
   return ''
 }
 
+function isIconImageUrl(value) {
+  const icon = String(value || '').trim()
+  if (!icon) return false
+  return icon.startsWith('http://') || icon.startsWith('https://') || icon.startsWith('/') || icon.startsWith('data:image/')
+}
+
+function getOriginalImageUrl(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  return raw.replace(/\/tr:[^/]+\//i, '/')
+}
+
+const DEFAULT_FLYOUT_IMAGE = '/assets/payments/tabby_logo.png'
+
+function getCategoryIconByName(name) {
+  const text = String(name || '').toLowerCase()
+  if (text.includes('mobile') || text.includes('phone')) return Smartphone
+  if (text.includes('electronic') || text.includes('appliance') || text.includes('tv')) return Tv
+  if (text.includes('computer') || text.includes('laptop')) return Laptop
+  if (text.includes('headphone') || text.includes('audio')) return Headphones
+  if (text.includes('watch')) return Watch
+  if (text.includes('sport')) return Bike
+  if (text.includes('baby')) return Baby
+  if (text.includes('car') || text.includes('auto')) return Car
+  if (text.includes('toy')) return ToyBrick
+  return Info
+}
+
 export default function ShopShowcaseSection() {
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState({ config: null, sectionProducts: [], products: [], categories: [] })
-  const [tick, setTick] = useState(0)
+  const [storeMenuItems, setStoreMenuItems] = useState([])
+  const [menuStyle, setMenuStyle] = useState({
+    showcaseFlyoutBackgroundColor: '#ffffff',
+    showcaseFlyoutTitleColor: '#0f172a',
+    showcaseFlyoutLinkColor: '#1f2937',
+    showcaseFlyoutHoverColor: '#f8fafc',
+    showcaseFlyoutBorderColor: '#dbe3ee',
+  })
+  const [hoveredMenuIndex, setHoveredMenuIndex] = useState(null)
+  const closeFlyoutTimerRef = useRef(null)
   const { market, convertPrice } = useStorefrontMarket()
 
-  const formatPrice = (product) => {
-    const amount = Number(product?.price ?? product?.AED ?? 0)
-    return `${market.currency} ${convertPrice(amount).toFixed(2)}`
+  const clearFlyoutCloseTimer = () => {
+    if (closeFlyoutTimerRef.current) {
+      window.clearTimeout(closeFlyoutTimerRef.current)
+      closeFlyoutTimerRef.current = null
+    }
+  }
+
+  const scheduleFlyoutClose = () => {
+    clearFlyoutCloseTimer()
+    closeFlyoutTimerRef.current = window.setTimeout(() => {
+      setHoveredMenuIndex(null)
+    }, 180)
   }
 
   useEffect(() => {
     const load = async () => {
       try {
-        const res = await axios.get('/api/public/shop-showcase')
-        setData(res.data || { config: null, sectionProducts: [], products: [], categories: [] })
+        const cacheBuster = Date.now()
+        const [showcaseRes, settingsRes, navbarRes] = await Promise.all([
+          axios.get('/api/public/shop-showcase', {
+            headers: { 'Cache-Control': 'no-cache' },
+            params: { t: cacheBuster }
+          }),
+          axios.get('/api/store/settings').catch(() => ({ data: {} })),
+          axios.get('/api/store/navbar-menu').catch(() => ({ data: {} })),
+        ])
+
+        setData(showcaseRes.data || { config: null, sectionProducts: [], products: [], categories: [] })
+        const advancedItems = Array.isArray(settingsRes.data?.navMenuItems) ? settingsRes.data.navMenuItems : []
+        const resolvedMenuStyle = settingsRes.data?.navMenuStyle && typeof settingsRes.data.navMenuStyle === 'object'
+          ? settingsRes.data.navMenuStyle
+          : {}
+        const legacyItems = Array.isArray(navbarRes.data?.items)
+          ? navbarRes.data.items.map((item) => ({
+              name: String(item?.name || item?.label || '').trim(),
+              link: String(item?.link || item?.url || '#').trim() || '#',
+              icon: String(item?.icon || '').trim(),
+              hasDropdown: false,
+              categoryId: String(item?.categoryId || '').trim(),
+              megaMenu: { linkColumns: 1, links: [], images: [] },
+            }))
+          : []
+
+        setStoreMenuItems(advancedItems.length ? advancedItems : legacyItems)
+        setMenuStyle((prev) => ({
+          ...prev,
+          showcaseFlyoutBackgroundColor: String(resolvedMenuStyle.showcaseFlyoutBackgroundColor || prev.showcaseFlyoutBackgroundColor),
+          showcaseFlyoutTitleColor: String(resolvedMenuStyle.showcaseFlyoutTitleColor || prev.showcaseFlyoutTitleColor),
+          showcaseFlyoutLinkColor: String(resolvedMenuStyle.showcaseFlyoutLinkColor || prev.showcaseFlyoutLinkColor),
+          showcaseFlyoutHoverColor: String(resolvedMenuStyle.showcaseFlyoutHoverColor || prev.showcaseFlyoutHoverColor),
+          showcaseFlyoutBorderColor: String(resolvedMenuStyle.showcaseFlyoutBorderColor || prev.showcaseFlyoutBorderColor),
+        }))
       } catch {
         setData({ config: null, sectionProducts: [], products: [], categories: [] })
+        setStoreMenuItems([])
       } finally {
         setLoading(false)
       }
@@ -61,214 +145,392 @@ export default function ShopShowcaseSection() {
     load()
   }, [])
 
-  useEffect(() => {
-    const timer = setInterval(() => setTick((v) => v + 1), 1000)
-    return () => clearInterval(timer)
-  }, [])
-
   const config = data.config
-  const countdownText = useMemo(() => formatCountdown(config?.countdownEnd), [config?.countdownEnd, tick])
-  const dealsBackgrounds = ['#f8fafc', '#eff6ff', '#ecfeff', '#f5f3ff', '#fff7ed']
-  const dealsBackgroundColor = dealsBackgrounds[Math.floor(tick / 30) % dealsBackgrounds.length]
-  const showcaseProducts = data.products || []
-  const leftBlockProducts = data.sectionProducts || []
-  const leftBlockUsesProducts = config?.leftBlockSource === 'product' && leftBlockProducts.length > 0
-  const leftBlockItems = leftBlockUsesProducts ? leftBlockProducts.slice(0, 4) : (data.categories || []).slice(0, 4)
-  const [featuredLeftItem, ...secondaryLeftItems] = leftBlockItems
-  const leftBlockCountLabel = (config?.leftBlockBadgeText || `${leftBlockItems.length}`.padStart(2, '0')).trim()
-  const rotatingProducts = useMemo(() => {
-    if (!showcaseProducts.length) return []
+  const categoryMenuItems = useMemo(() => {
+    const categories = Array.isArray(data?.categories) ? data.categories : []
 
-    const pageSize = 4
-    const totalPages = Math.ceil(showcaseProducts.length / pageSize)
-    const pageIndex = Math.floor(tick / 30) % totalPages
-    const start = pageIndex * pageSize
-    const chunk = showcaseProducts.slice(start, start + pageSize)
+    return categories
+      .filter((category) => String(category?.name || '').trim())
+      .slice(0, 12)
+      .map((category) => ({
+        title: String(category.name || '').trim(),
+        href: getCategoryHref(category),
+        iconImage: String(category?.icon || category?.image || category?.iconUrl || '').trim(),
+        icon: getCategoryIconByName(category?.name),
+      }))
+  }, [data?.categories])
 
-    if (chunk.length === pageSize || showcaseProducts.length <= pageSize) {
-      return chunk
+  const storeNavigationItems = useMemo(() => {
+    const navItems = (Array.isArray(storeMenuItems) ? storeMenuItems : [])
+      .map((item) => ({
+        title: String(item?.name || item?.label || '').trim(),
+        href: String(item?.link || item?.url || '#').trim() || '#',
+        hasDropdown: Boolean(item?.hasDropdown),
+        dropdownLinks: Array.isArray(item?.megaMenu?.links) ? item.megaMenu.links : [],
+        dropdownImages: Array.isArray(item?.megaMenu?.images) ? item.megaMenu.images : [],
+        linkColumns: Number(item?.megaMenu?.linkColumns) > 0 ? Number(item.megaMenu.linkColumns) : 1,
+        iconImage: String(item?.icon || item?.image || item?.iconUrl || '').trim(),
+        icon: getCategoryIconByName(item?.name || item?.label),
+      }))
+      .filter((item) => item.title)
+
+    return navItems.length ? navItems : categoryMenuItems
+  }, [categoryMenuItems, storeMenuItems])
+
+  const bannerBlocks = useMemo(() => ([
+    {
+      href: config?.topBannerLink || '/shop',
+      image: config?.topBannerImage || '',
+      title: config?.topBannerTitle || '',
+      showTitle: typeof config?.topBannerTitleEnabled === 'boolean' ? config.topBannerTitleEnabled : true,
+      subtitle: config?.topBannerSubtitle || '',
+      showSubtitle: typeof config?.topBannerSubtitleEnabled === 'boolean' ? config.topBannerSubtitleEnabled : true,
+      ctaText: config?.topBannerCtaText || '',
+      showCta: typeof config?.topBannerCtaEnabled === 'boolean' ? config.topBannerCtaEnabled : true,
+      ctaBgColor: config?.topBannerCtaBgColor || '#ef2d2d',
+      ctaTextColor: config?.topBannerCtaTextColor || '#ffffff',
+      accent: 'from-sky-200 via-sky-100 to-white',
+      textColor: 'text-white',
+      ctaClass: 'bg-rose-600 hover:bg-rose-700',
+      imageClass: 'object-cover object-center'
+    },
+    {
+      href: config?.bottomBannerLink || '/shop',
+      image: config?.bottomBannerImage || '',
+      title: config?.bottomBannerTitle || '',
+      showTitle: typeof config?.bottomBannerTitleEnabled === 'boolean' ? config.bottomBannerTitleEnabled : true,
+      subtitle: config?.bottomBannerSubtitle || '',
+      showSubtitle: typeof config?.bottomBannerSubtitleEnabled === 'boolean' ? config.bottomBannerSubtitleEnabled : true,
+      ctaText: config?.bottomBannerCtaText || '',
+      showCta: typeof config?.bottomBannerCtaEnabled === 'boolean' ? config.bottomBannerCtaEnabled : true,
+      ctaBgColor: config?.bottomBannerCtaBgColor || '#ef2d2d',
+      ctaTextColor: config?.bottomBannerCtaTextColor || '#ffffff',
+      accent: 'from-[#180000] via-[#520000] to-[#d61f1f]',
+      textColor: 'text-white',
+      ctaClass: 'bg-rose-600 hover:bg-rose-700',
+      imageClass: 'object-cover object-center'
     }
+  ]), [config])
 
-    return [...chunk, ...showcaseProducts.slice(0, pageSize - chunk.length)]
-  }, [showcaseProducts, tick])
+  const hoveredMenuItem = useMemo(() => {
+    if (hoveredMenuIndex == null) return null
+    return storeNavigationItems[hoveredMenuIndex] || null
+  }, [hoveredMenuIndex, storeNavigationItems])
+
+  const hoveredDropdownLinks = useMemo(() => {
+    const links = Array.isArray(hoveredMenuItem?.dropdownLinks) ? hoveredMenuItem.dropdownLinks : []
+    return links
+      .map((dropdownItem, dropdownIndex) => ({
+        title: String(
+          dropdownItem?.title || dropdownItem?.label || dropdownItem?.name || `Option ${dropdownIndex + 1}`
+        ).trim(),
+        href: String(dropdownItem?.link || dropdownItem?.url || '#').trim() || '#',
+      }))
+      .filter((dropdownItem) => dropdownItem.title)
+  }, [hoveredMenuItem])
+
+  const hoveredDropdownImages = useMemo(() => {
+    const images = Array.isArray(hoveredMenuItem?.dropdownImages) ? hoveredMenuItem.dropdownImages : []
+    const normalized = images
+      .map((imageItem) => ({
+        src: String(imageItem?.url || imageItem?.image || '').trim() || DEFAULT_FLYOUT_IMAGE,
+        alt: String(imageItem?.label || '').trim(),
+        href: String(imageItem?.link || '#').trim() || '#',
+      }))
+      .filter((imageItem) => imageItem.src)
+
+    if (normalized.length) return normalized
+
+    return [
+      {
+        src: DEFAULT_FLYOUT_IMAGE,
+        alt: '',
+        href: '#',
+      },
+    ]
+  }, [hoveredMenuItem])
+
+  useEffect(() => {
+    return () => {
+      clearFlyoutCloseTimer()
+    }
+  }, [])
 
   if (loading || !config || config.enabled === false) return null
 
   return (
     <section className="max-w-[1400px] mx-auto px-4 sm:px-6 mt-6">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-        <div className="flex h-full flex-col rounded-xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
-          <div className="mb-3 flex items-start justify-between gap-3 text-slate-900">
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500">
-                {leftBlockUsesProducts ? 'Selected Products' : 'Selected Categories'}
-              </p>
-              <h3 className="mt-1 text-lg font-extrabold leading-5 tracking-tight">
-                {config.sectionTitle || 'More Reasons to Shop'}
-              </h3>
-            </div>
-            <div className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-600">
-              {leftBlockCountLabel}
-            </div>
-          </div>
-
-          <div className="flex flex-1 flex-col gap-3">
-            {featuredLeftItem ? (
-              <Link
-                href={leftBlockUsesProducts ? getProductHref(featuredLeftItem) : getCategoryHref(featuredLeftItem)}
-                className="group relative overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_5px_rgba(15,23,42,0.08)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_16px_rgba(15,23,42,0.14)]"
-              >
-                <div className="relative h-[190px] overflow-hidden bg-white">
-                  {(leftBlockUsesProducts ? getProductImage(featuredLeftItem) : featuredLeftItem.image) ? (
-                    <Image
-                      src={leftBlockUsesProducts ? getProductImage(featuredLeftItem) : featuredLeftItem.image}
-                      alt={featuredLeftItem.name || (leftBlockUsesProducts ? 'Product' : 'Category')}
-                      fill
-                      className="object-cover transition duration-500 group-hover:scale-[1.05]"
-                    />
-                  ) : null}
-                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-slate-950/20 to-transparent" />
-                  <span className="absolute left-3 top-3 rounded border border-slate-200 bg-white/90 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-700">
-                    {leftBlockUsesProducts ? 'Featured Product' : 'Featured Category'}
-                  </span>
-                </div>
-
-                <div className="absolute inset-x-0 bottom-0 p-3">
-                  <p className="line-clamp-2 text-[15px] font-extrabold leading-5 text-white">
-                    {featuredLeftItem.name}
-                  </p>
-                  <div className="mt-2 flex items-center justify-between gap-3">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/80">
-                      {leftBlockUsesProducts ? 'Shop this pick' : 'Open collection'}
-                    </p>
-                    {leftBlockUsesProducts ? (
-                      <p className="text-[14px] font-black text-emerald-300">
-                        {formatPrice(featuredLeftItem)}
-                      </p>
-                    ) : null}
-                  </div>
-                </div>
-              </Link>
-            ) : null}
-
-            <div className="grid flex-1 grid-cols-2 gap-2.5">
-              {secondaryLeftItems.map((item) => (
-                <Link
-                  key={String(item._id)}
-                  href={leftBlockUsesProducts ? getProductHref(item) : getCategoryHref(item)}
-                  className="group flex min-h-[132px] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_5px_rgba(15,23,42,0.08)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_16px_rgba(15,23,42,0.14)]"
-                >
-                  <div className="relative h-[84px] overflow-hidden bg-white">
-                    {(leftBlockUsesProducts ? getProductImage(item) : item.image) ? (
-                      <Image
-                        src={leftBlockUsesProducts ? getProductImage(item) : item.image}
-                        alt={item.name || (leftBlockUsesProducts ? 'Product' : 'Category')}
-                        fill
-                        className="object-cover transition duration-300 group-hover:scale-[1.04]"
-                      />
-                    ) : null}
-                    <span className="absolute left-2 top-2 rounded border border-slate-200 bg-white/95 px-2 py-1 text-[8px] font-semibold uppercase tracking-[0.16em] text-slate-700">
-                      {leftBlockUsesProducts ? 'Product' : 'Category'}
-                    </span>
-                  </div>
-
-                  <div className="flex flex-1 flex-col px-2.5 py-2.5">
-                    <p className="line-clamp-2 text-[12px] font-semibold leading-4 text-slate-800">
-                      {item.name}
-                    </p>
-                    <div className="mt-auto pt-2 text-[11px] font-bold text-slate-500">
-                      {leftBlockUsesProducts ? formatPrice(item) : 'Explore'}
-                    </div>
-                  </div>
-                </Link>
-              ))}
-
-              <Link
-                href="/shop"
-                className="flex min-h-[132px] flex-col justify-between rounded-xl border border-dashed border-slate-300 bg-white p-3 transition hover:bg-slate-50"
-              >
-                <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-                  Discover More
-                </span>
-                <div>
-                  <p className="text-sm font-bold text-slate-900">
-                    {leftBlockUsesProducts ? 'See all products' : 'Browse all categories'}
-                  </p>
-                  <p className="mt-1 text-[11px] leading-4 text-slate-500">
-                    Explore the full storefront collection.
-                  </p>
-                </div>
-                <span className="text-lg text-slate-400">→</span>
-              </Link>
-            </div>
-          </div>
-        </div>
-
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[280px_minmax(0,1fr)]">
         <div
-          className="rounded-xl p-3 shadow-sm border border-slate-200 transition-colors duration-700"
-          style={{ backgroundColor: dealsBackgroundColor }}
+          className="relative hidden h-full lg:block"
+          onMouseEnter={clearFlyoutCloseTimer}
+          onMouseLeave={scheduleFlyoutClose}
         >
-          <div className="flex items-center justify-between mb-3 text-slate-900">
-            <h3 className="font-extrabold text-lg tracking-tight">{config.dealsTitle || 'MEGA DEALS'}</h3>
-            {countdownText ? <span className="text-[11px] bg-slate-100 text-slate-700 px-2.5 py-1 rounded-full font-semibold">{countdownText}</span> : null}
-          </div>
+          <aside className="flex h-full flex-col overflow-hidden rounded-none border border-slate-200 bg-white shadow-sm">
+            <div
+              className="flex items-center justify-between bg-[#222] px-4 py-3 text-white"
+              onMouseEnter={() => {
+                clearFlyoutCloseTimer()
+                setHoveredMenuIndex(null)
+              }}
+            >
+              <div className="flex items-center gap-2 text-[14px] font-semibold">
+                <span className="text-lg leading-none">☰</span>
+                <span>All Categories</span>
+              </div>
+              <ChevronRight size={18} className="text-white/70" />
+            </div>
 
-          <div className="grid grid-cols-2 gap-2.5 auto-rows-fr">
-            {rotatingProducts.map((product) => (
-              <Link
-                key={String(product._id)}
-                href={getProductHref(product)}
-                className="group flex h-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_5px_rgba(15,23,42,0.08)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_16px_rgba(15,23,42,0.14)]"
+            <div
+              className={styles.leftMenuScroll}
+              onMouseEnter={(event) => {
+                if (event.target === event.currentTarget) {
+                  clearFlyoutCloseTimer()
+                  setHoveredMenuIndex(null)
+                }
+              }}
+            >
+              {storeNavigationItems.map((menuItem, index) => {
+                const isActive = hoveredMenuIndex === index
+                const hasFlyout = Boolean(menuItem.hasDropdown && menuItem.dropdownLinks.length)
+
+                return (
+                  <div
+                    key={`${menuItem.title}-${menuItem.href}-${index}`}
+                    className="border-b border-slate-200"
+                    onMouseEnter={() => {
+                      clearFlyoutCloseTimer()
+                      setHoveredMenuIndex(index)
+                    }}
+                  >
+                    <Link
+                      href={menuItem.href}
+                      className={`flex items-center gap-3 px-4 py-3 text-[13px] text-slate-800 transition-colors duration-200 ${
+                        isActive ? 'bg-slate-100' : 'hover:bg-slate-50'
+                      }`}
+                    >
+                      {isIconImageUrl(menuItem.iconImage) ? (
+                        <span className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-sm">
+                          <img
+                            src={menuItem.iconImage}
+                            alt={menuItem.title}
+                            className="h-4 w-4 object-contain"
+                            loading="lazy"
+                          />
+                        </span>
+                      ) : (
+                        <span className="flex h-5 w-5 items-center justify-center text-slate-700">
+                          <menuItem.icon size={16} />
+                        </span>
+                      )}
+                      <span className="min-w-0 flex-1 pr-2">
+                        <span className="block text-[13px] leading-5 font-medium">{menuItem.title}</span>
+                      </span>
+                      <ChevronRight
+                        size={16}
+                        className={`${hasFlyout ? 'text-slate-700' : 'text-slate-400'}`}
+                      />
+                    </Link>
+                  </div>
+                )
+              })}
+            </div>
+          </aside>
+
+          {hoveredMenuItem?.hasDropdown && (hoveredDropdownLinks.length || hoveredDropdownImages.length) ? (
+            <div
+              className="absolute left-[calc(100%-1px)] top-0 z-30 w-[500px] overflow-hidden rounded-none border shadow-sm"
+              style={{
+                backgroundColor: menuStyle.showcaseFlyoutBackgroundColor,
+                borderColor: menuStyle.showcaseFlyoutBorderColor,
+              }}
+              onMouseEnter={clearFlyoutCloseTimer}
+              onMouseLeave={scheduleFlyoutClose}
+            >
+              <div
+                className="border-b px-5 py-3"
+                style={{
+                  borderColor: menuStyle.showcaseFlyoutBorderColor,
+                  background: `linear-gradient(180deg, ${menuStyle.showcaseFlyoutHoverColor} 0%, ${menuStyle.showcaseFlyoutBackgroundColor} 100%)`,
+                }}
               >
-                <div className="relative h-32 sm:h-36 bg-slate-100 overflow-hidden">
-                  {product.images?.[0] ? (
-                    <Image src={product.images[0]} alt={product.name || 'Product'} fill className="object-cover group-hover:scale-[1.03] transition-transform duration-300" />
-                  ) : null}
+                <p className="mt-0.5 text-[34px] font-semibold leading-none" style={{ color: menuStyle.showcaseFlyoutTitleColor }}>
+                  {hoveredMenuItem.title}
+                </p>
+              </div>
 
-                  <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide bg-white/90 text-slate-700 border border-slate-200">
-                    Deal
-                  </span>
-                </div>
-
-                <div className="flex flex-1 flex-col bg-white p-2.5">
-                  <p className="min-h-[34px] text-[12px] font-medium leading-4 text-slate-800 line-clamp-2">
-                    {product.name}
-                  </p>
-
-                  <div className="mt-2 flex items-end justify-between gap-2">
-                    <p className="text-[20px] font-black leading-none text-rose-600">{market.currency} {convertPrice(Number(product.price || 0)).toFixed(2)}</p>
-                    <p className="pb-0.5 text-[9px] font-semibold uppercase tracking-wider text-slate-500">Offer</p>
-                  </div>
-
-                  <div className="mt-auto pt-2">
-                    <div className="w-full rounded-md border border-slate-300 bg-slate-50 py-1.5 text-center text-[10px] font-bold text-slate-700 group-hover:bg-slate-100">
-                    View Product
+              <div className={`grid ${hoveredDropdownImages.length ? 'grid-cols-[minmax(0,1fr)_250px]' : 'grid-cols-1'}`}>
+                <div className="min-w-0">
+                  {hoveredDropdownLinks.length ? (
+                    <div className="max-h-[320px] overflow-y-auto">
+                      {hoveredDropdownLinks.map((dropdownItem, dropdownIndex) => (
+                        <Link
+                          key={`${dropdownItem.title}-${dropdownItem.href}-${dropdownIndex}`}
+                          href={dropdownItem.href}
+                          className="group flex items-center justify-between border-b px-5 py-3 text-[18px] font-medium leading-tight transition-colors"
+                          style={{
+                            color: menuStyle.showcaseFlyoutLinkColor,
+                            borderColor: menuStyle.showcaseFlyoutBorderColor,
+                          }}
+                          onMouseEnter={(event) => {
+                            event.currentTarget.style.backgroundColor = menuStyle.showcaseFlyoutHoverColor
+                          }}
+                          onMouseLeave={(event) => {
+                            event.currentTarget.style.backgroundColor = 'transparent'
+                          }}
+                        >
+                          <span className="truncate pr-3">{dropdownItem.title}</span>
+                          <ChevronRight size={17} className="text-slate-400 transition-transform duration-200 group-hover:translate-x-0.5" />
+                        </Link>
+                      ))}
                     </div>
-                  </div>
+                  ) : (
+                    <div className="px-5 py-6 text-sm" style={{ color: menuStyle.showcaseFlyoutLinkColor }}>
+                      No submenu links added yet.
+                    </div>
+                  )}
                 </div>
-              </Link>
-            ))}
-          </div>
+
+                {hoveredDropdownImages.length ? (
+                  <div
+                    className="space-y-3 border-l p-3"
+                    style={{
+                      borderColor: menuStyle.showcaseFlyoutBorderColor,
+                      backgroundColor: menuStyle.showcaseFlyoutHoverColor,
+                    }}
+                  >
+                    {hoveredDropdownImages.slice(0, 2).map((imageItem, imageIndex) => (
+                      <Link
+                        key={`${imageItem.src}-${imageIndex}`}
+                        href={imageItem.href}
+                        className="group relative block overflow-hidden rounded-xl border"
+                        style={{ borderColor: menuStyle.showcaseFlyoutBorderColor }}
+                      >
+                        <img
+                          src={imageItem.src}
+                          alt={imageItem.alt || hoveredMenuItem?.title || 'Featured image'}
+                          className="h-[132px] w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                          loading="lazy"
+                        />
+                        {imageItem.alt ? (
+                          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/65 to-transparent p-2">
+                            <p className="truncate text-[11px] font-semibold text-white">{imageItem.alt}</p>
+                          </div>
+                        ) : null}
+                      </Link>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
         </div>
 
-        <div className="grid grid-rows-2 gap-3">
-          <Link href={config.topBannerLink || '/shop'} className="relative rounded-xl overflow-hidden min-h-[170px]">
-            {config.topBannerImage ? (
-              <Image src={config.topBannerImage} alt="Top banner" fill className="object-cover" />
-            ) : (
-              <div className="absolute inset-0 bg-gradient-to-r from-teal-500 to-emerald-600" />
-            )}
-          </Link>
+        <div className={bannerStyles.bannerGrid}>
+          {bannerBlocks.map((banner, index) => (
+            (() => {
+              const bannerImage = getOriginalImageUrl(banner.image)
+              const hasImage = Boolean(bannerImage)
 
-          <Link href={config.bottomBannerLink || '/shop'} className="relative rounded-xl overflow-hidden min-h-[170px]">
-            {config.bottomBannerImage ? (
-              <Image src={config.bottomBannerImage} alt="Bottom banner" fill className="object-cover" />
-            ) : (
-              <div className="absolute inset-0 bg-gradient-to-r from-sky-400 to-cyan-300" />
-            )}
-          </Link>
+              return (
+            <Link
+              key={`${banner.title}-${index}`}
+              href={banner.href}
+              className={`group relative overflow-hidden rounded-xl border border-slate-200 bg-slate-900 shadow-sm ${bannerStyles.bannerRow}`}
+              style={index === 0 ? { gridRow: '1 / 2' } : { gridRow: '2 / 3' }}
+            >
+              {hasImage ? (
+                <img
+                  src={bannerImage}
+                  alt={banner.title}
+                  loading={index === 0 ? 'eager' : 'lazy'}
+                  decoding="async"
+                  className={`absolute inset-0 h-full w-full ${banner.imageClass}`}
+                />
+              ) : (
+                <div className={`absolute inset-0 bg-gradient-to-r ${banner.accent}`} />
+              )}
+
+              {!hasImage ? (
+                <>
+                  <div className="absolute inset-0 bg-gradient-to-r from-black/26 via-black/6 to-transparent" />
+
+                  <div className="absolute inset-0 flex items-center px-5 py-4 sm:px-8">
+                    <div className="max-w-[360px] rounded-xl bg-black/10 px-3 py-2 backdrop-blur-[1.5px]">
+                      {banner.showTitle && String(banner.title || '').trim() ? (
+                        <p className="text-[26px] font-black leading-[1.05] tracking-tight text-white sm:text-[34px]">
+                          {banner.title}
+                        </p>
+                      ) : null}
+                      {banner.showSubtitle && String(banner.subtitle || '').trim() ? (
+                        <p className="mt-2 text-[14px] font-medium text-white/90 sm:text-[16px]">
+                          {banner.subtitle}
+                        </p>
+                      ) : null}
+                      {banner.showCta && String(banner.ctaText || '').trim() ? (
+                        <div
+                          className="mt-4 inline-flex items-center gap-2 rounded-md px-4 py-2 text-[13px] font-semibold shadow-sm transition duration-200"
+                          style={{ backgroundColor: banner.ctaBgColor, color: banner.ctaTextColor }}
+                        >
+                          {index === 0 ? <Truck size={16} /> : <Search size={16} />}
+                          <span>{banner.ctaText}</span>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </>
+              ) : null}
+            </Link>
+              )
+            })()
+          ))}
+        </div>
+
+        {/* 4-grid product/banner section below main banners */}
+        <div className={`${productGridStyles.showcaseProductGrid} lg:col-span-2`}>
+          {[0,1,2,3].map((i) => (
+            (() => {
+              const banner = data.config?.productBanners?.[i] || {}
+              const link = String(banner.link || '').trim()
+              const Card = link ? Link : 'div'
+
+              return (
+                <Card
+                  key={i}
+                  href={link || undefined}
+                  className={productGridStyles.showcaseProductCard}
+                >
+              <img
+                className={productGridStyles.showcaseProductImage}
+                src={banner.image || '/assets/placeholder.png'}
+                alt={banner.title || 'Product'}
+              />
+              <div className={productGridStyles.showcaseProductOverlay} />
+              <div className={productGridStyles.showcaseProductContent}>
+                {String(banner.title || '').trim() ? (
+                  <div className={productGridStyles.showcaseProductTitle}>
+                    {banner.title}
+                  </div>
+                ) : null}
+                {String(banner.subtitle || '').trim() ? (
+                  <div className={productGridStyles.showcaseProductSubtitle}>
+                    {banner.subtitle}
+                  </div>
+                ) : null}
+                {String(banner.buttonText || '').trim() ? (
+                  <span className={productGridStyles.showcaseProductButton}>
+                    {banner.buttonText}
+                  </span>
+                ) : null}
+              </div>
+                </Card>
+              )
+            })()
+          ))}
         </div>
       </div>
     </section>
   )
 }
+
+

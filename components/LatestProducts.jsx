@@ -403,7 +403,7 @@ const BestSelling = () => {
 
         const [{ data: featuredData }, { data: appearanceData }] = await Promise.all([
           axios.get('/api/store/featured-products', {
-            params: { t: Date.now() },
+            params: { t: Date.now(), includeProducts: true, limit: visibleCount },
             headers,
             signal: controller.signal,
             timeout: 15000
@@ -424,6 +424,13 @@ const BestSelling = () => {
         const dynamicDescription = featuredData?.sectionDescription
         if (dynamicTitle) setSectionTitle(dynamicTitle)
         if (dynamicDescription) setSectionDescription(dynamicDescription)
+
+        const resolvedProducts = Array.isArray(featuredData.products) ? featuredData.products : []
+        if (resolvedProducts.length > 0) {
+          featuredProductsLengthRef.current = resolvedProducts.length
+          setFeaturedProducts(resolvedProducts)
+          return
+        }
 
         // Fetch featured product IDs from store settings
         const productIds = featuredData.productIds || []

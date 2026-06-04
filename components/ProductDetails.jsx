@@ -1871,8 +1871,8 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   </button>
                 </div>
               ) : (
-                <div className="flex items-center gap-3">
-                  <div className="flex-1 h-12 rounded-lg border border-gray-300 bg-white px-3 flex items-center justify-between">
+                <div className="space-y-2">
+                  <div className="w-full h-12 rounded-lg border border-gray-300 bg-white px-3 flex items-center justify-between">
                     <button
                       type="button"
                       onClick={async () => {
@@ -1923,7 +1923,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   <button
                     type="button"
                     onClick={() => router.push('/checkout')}
-                    className="h-12 px-6 rounded-lg bg-orange-500 text-white font-bold text-sm hover:bg-orange-600 transition whitespace-nowrap"
+                    className="w-full h-12 px-4 rounded-lg bg-orange-500 text-white font-bold text-sm hover:bg-orange-600 transition text-center"
                   >
                     {isArabic ? 'المتابعة إلى الدفع' : 'Proceed to checkout'}
                   </button>

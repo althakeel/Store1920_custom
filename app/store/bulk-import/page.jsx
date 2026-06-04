@@ -86,7 +86,9 @@ export default function BulkImportPage() {
     link.download = 'sample-product-import.csv';
     document.body.appendChild(link);
     link.click();
-    document.body.removeChild(link);
+    if (link.parentNode) {
+      link.remove();
+    }
     toast.success('Template downloaded');
   };
 

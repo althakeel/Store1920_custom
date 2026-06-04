@@ -126,7 +126,7 @@ export default function DashboardWishlistPage() {
 
     if (user === null) {
         return (
-            <div className="max-w-4xl mx-auto px-4 py-10">
+            <div className="max-w-4xl mx-auto px-4 py-10 min-h-[50dvh]">
                 <h1 className="text-2xl font-semibold text-slate-800 mb-3">My Wishlist</h1>
                 <p className="text-slate-600 mb-6">Please sign in to view your wishlist.</p>
                 <Link href="/" className="inline-block px-4 py-2 bg-blue-600 text-white rounded-lg">Go to Home</Link>
@@ -135,7 +135,7 @@ export default function DashboardWishlistPage() {
     }
 
     return (
-        <div className="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="max-w-7xl mx-auto px-4 py-8 min-h-[50dvh] grid grid-cols-1 md:grid-cols-4 gap-6">
             <DashboardSidebar />
             <main className="md:col-span-3">
                     <h1 className="text-2xl font-semibold text-slate-800 mb-6">My Wishlist</h1>

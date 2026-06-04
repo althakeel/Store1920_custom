@@ -132,7 +132,7 @@ const BannerSlider = ({ className = '', variant = 'primary' }) => {
               alt={banner.alt || `Banner ${i + 1}`}
               fill
               sizes="100vw"
-              className="object-cover object-center transition-transform duration-700 hover:scale-105"
+              className="object-cover object-center"
               priority={i === 0}
             />
           </div>

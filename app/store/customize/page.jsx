@@ -32,6 +32,12 @@ const designPages = [
     icon: LayoutTemplate,
   },
   {
+    title: 'Showcase 4-Grid Banners',
+    description: 'Upload images and edit the four product banners shown in the showcase strip.',
+    href: '/store/customize/showcase-banners',
+    icon: Images,
+  },
+  {
     title: 'Appearance',
     description: 'Toggle storefront sections and update display behavior.',
     href: '/store/storefront/appearance',
@@ -102,9 +108,15 @@ const selectionPages = [
   },
   {
     title: 'Featured Products',
-    description: 'Select featured products for homepage merchandising.',
+    description: 'Edit the Top Picks section title and choose products manually, by category, or by tags.',
     href: '/store/featured-products',
     icon: Package,
+  },
+  {
+    title: 'Top Deals',
+    description: 'Edit the Top Deals title and configure its source rules from the home sections editor.',
+    href: '/store/customize/top-deals',
+    icon: Sparkles,
   },
   {
     title: 'Explore Interests',

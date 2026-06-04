@@ -287,10 +287,17 @@ const FeaturedProducts = () => {
       try {
         setIsLoading(true)
         
-        // Fetch featured product IDs
-        const { data: featuredData } = await axios.get('/api/store/featured-products')
-        const productIds = featuredData.productIds || []
+        const { data: featuredData } = await axios.get('/api/store/featured-products', {
+          params: { includeProducts: true, limit: 12 }
+        })
+        const products = Array.isArray(featuredData.products) ? featuredData.products : []
 
+        if (products.length > 0) {
+          setFeaturedProducts(products)
+          return
+        }
+
+        const productIds = featuredData.productIds || []
         if (productIds.length === 0) {
           setFeaturedProducts([])
           setIsLoading(false)
@@ -322,7 +329,7 @@ const FeaturedProducts = () => {
           description={t('featured.description')}
           visibleButton={false}
         />
-        <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 sm:gap-4">
+        <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 sm:gap-4">
           {Array(10).fill(0).map((_, idx) => (
             <div key={idx} className="bg-white rounded-xl shadow-sm animate-pulse">
               <div className="w-full h-32 sm:h-56 bg-gray-200 rounded-t-xl" />
@@ -357,7 +364,7 @@ const FeaturedProducts = () => {
         visibleButton={false}
       />
 
-      <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 sm:gap-4">
+      <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 sm:gap-4">
         {featuredProducts.map((product) => (
           <ProductCard key={product._id || product.id} product={product} />
         ))}

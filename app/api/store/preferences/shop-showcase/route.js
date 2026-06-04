@@ -22,6 +22,8 @@ const DEFAULT_SHOWCASE = {
   mainBannerSubtitleColor: '#e5e7eb',
   mainBannerCtaBgColor: '#ef2d2d',
   mainBannerCtaTextColor: '#ffffff',
+  mainBannerDesktopHeight: 320,
+  mainBannerMobileHeight: 100,
   sectionTitle: 'More Reasons to Shop',
   leftBlockBadgeText: '',
   leftBlockSource: 'category',
@@ -32,11 +34,30 @@ const DEFAULT_SHOWCASE = {
   productIds: [],
   topBannerImage: '',
   topBannerTitle: 'SUPER SAVES FOR SUMMER',
+  topBannerTitleEnabled: true,
+  topBannerSubtitle: '',
+  topBannerSubtitleEnabled: true,
+  topBannerCtaText: 'Order now',
+  topBannerCtaEnabled: true,
+  topBannerCtaBgColor: '#ef2d2d',
+  topBannerCtaTextColor: '#ffffff',
   topBannerLink: '/shop',
   bottomBannerImage: '',
   bottomBannerTitle: 'Shop Now. Pay Later. Ready for Summer.',
+  bottomBannerTitleEnabled: true,
+  bottomBannerSubtitle: '',
+  bottomBannerSubtitleEnabled: true,
   bottomBannerCtaText: 'Shop Now',
+  bottomBannerCtaEnabled: true,
+  bottomBannerCtaBgColor: '#ef2d2d',
+  bottomBannerCtaTextColor: '#ffffff',
   bottomBannerLink: '/shop',
+  productBanners: [
+    { image: '', title: 'Product Title', subtitle: 'Order now', buttonText: 'Order now', link: '/shop' },
+    { image: '', title: 'Product Title', subtitle: 'Order now', buttonText: 'Order now', link: '/shop' },
+    { image: '', title: 'Product Title', subtitle: 'Order now', buttonText: 'Order now', link: '/shop' },
+    { image: '', title: 'Product Title', subtitle: 'Order now', buttonText: 'Order now', link: '/shop' },
+  ],
   bannerSliderEnabled: true,
   bannerSliderDesktopInterval: 4000,
   bannerSliderMobileInterval: 3000,
@@ -51,6 +72,7 @@ const DEFAULT_SHOWCASE = {
   secondaryBannerSliderMobileInterval: 3000,
   secondaryBannerSliderDesktopHeight: 220,
   secondaryBannerSliderMobileHeight: 120,
+  secondaryBannerSliderPlacement: 'above_top_deals',
   secondaryBannerSliderItems: [
     { id: 'secondary-banner-slider-1', image: '', link: '/shop', alt: 'Lower Banner 1' },
     { id: 'secondary-banner-slider-2', image: '', link: '/shop', alt: 'Lower Banner 2' }
@@ -62,6 +84,12 @@ function normalizeBannerSliderHeight(value, fallback) {
   const numeric = Number(value)
   if (!Number.isFinite(numeric)) return fallback
   return Math.min(400, Math.max(80, Math.round(numeric)))
+}
+
+function normalizeMainBannerHeight(value, fallback) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return fallback
+  return Math.min(700, Math.max(80, Math.round(numeric)))
 }
 
 function normalizeBannerSliderItems(items) {
@@ -94,12 +122,34 @@ function normalizeSecondaryBannerSliderItems(items) {
   return normalized.length ? normalized : DEFAULT_SHOWCASE.secondaryBannerSliderItems
 }
 
+function normalizeProductBanners(items) {
+  if (!Array.isArray(items)) return DEFAULT_SHOWCASE.productBanners
+
+  const normalized = items
+    .slice(0, 4)
+    .map((item, index) => ({
+      image: (item?.image || '').toString().trim(),
+      title: (item?.title || '').toString().trim(),
+      subtitle: (item?.subtitle || '').toString().trim(),
+      buttonText: (item?.buttonText || '').toString().trim(),
+      link: (item?.link || '').toString().trim(),
+    }))
+
+  return normalized.length ? normalized : DEFAULT_SHOWCASE.productBanners
+}
+
 function normalizeString(value, fallback = '') {
   if (value === undefined || value === null) {
     return String(fallback).trim()
   }
 
   return String(value).trim()
+}
+
+function normalizeSecondaryBannerSliderPlacement(value) {
+  if (value === 'below_top_deals') return 'below_top_deals'
+  if (value === 'below_small_banners') return 'below_small_banners'
+  return 'above_top_deals'
 }
 
 async function getUserIdFromRequest(request) {
@@ -144,6 +194,8 @@ function normalizeShopShowcase(data = {}) {
     mainBannerSubtitleColor: normalizeString(data.mainBannerSubtitleColor, DEFAULT_SHOWCASE.mainBannerSubtitleColor),
     mainBannerCtaBgColor: normalizeString(data.mainBannerCtaBgColor, DEFAULT_SHOWCASE.mainBannerCtaBgColor),
     mainBannerCtaTextColor: normalizeString(data.mainBannerCtaTextColor, DEFAULT_SHOWCASE.mainBannerCtaTextColor),
+    mainBannerDesktopHeight: normalizeMainBannerHeight(data.mainBannerDesktopHeight, DEFAULT_SHOWCASE.mainBannerDesktopHeight),
+    mainBannerMobileHeight: normalizeMainBannerHeight(data.mainBannerMobileHeight, DEFAULT_SHOWCASE.mainBannerMobileHeight),
     sectionTitle: normalizeString(data.sectionTitle, DEFAULT_SHOWCASE.sectionTitle),
     leftBlockBadgeText: normalizeString(data.leftBlockBadgeText, DEFAULT_SHOWCASE.leftBlockBadgeText).slice(0, 12),
     leftBlockSource: data.leftBlockSource === 'product' ? 'product' : 'category',
@@ -154,11 +206,25 @@ function normalizeShopShowcase(data = {}) {
     productIds: Array.isArray(data.productIds) ? data.productIds.slice(0, 20).map(String) : [],
     topBannerImage: normalizeString(data.topBannerImage, ''),
     topBannerTitle: normalizeString(data.topBannerTitle, DEFAULT_SHOWCASE.topBannerTitle),
+    topBannerSubtitle: normalizeString(data.topBannerSubtitle, DEFAULT_SHOWCASE.topBannerSubtitle),
+    topBannerCtaText: normalizeString(data.topBannerCtaText, DEFAULT_SHOWCASE.topBannerCtaText),
     topBannerLink: normalizeString(data.topBannerLink, DEFAULT_SHOWCASE.topBannerLink),
+    topBannerTitleEnabled: typeof data.topBannerTitleEnabled === 'boolean' ? data.topBannerTitleEnabled : DEFAULT_SHOWCASE.topBannerTitleEnabled,
+    topBannerSubtitleEnabled: typeof data.topBannerSubtitleEnabled === 'boolean' ? data.topBannerSubtitleEnabled : DEFAULT_SHOWCASE.topBannerSubtitleEnabled,
+    topBannerCtaEnabled: typeof data.topBannerCtaEnabled === 'boolean' ? data.topBannerCtaEnabled : DEFAULT_SHOWCASE.topBannerCtaEnabled,
+    topBannerCtaBgColor: normalizeString(data.topBannerCtaBgColor, DEFAULT_SHOWCASE.topBannerCtaBgColor),
+    topBannerCtaTextColor: normalizeString(data.topBannerCtaTextColor, DEFAULT_SHOWCASE.topBannerCtaTextColor),
     bottomBannerImage: normalizeString(data.bottomBannerImage, ''),
     bottomBannerTitle: normalizeString(data.bottomBannerTitle, DEFAULT_SHOWCASE.bottomBannerTitle),
+    bottomBannerSubtitle: normalizeString(data.bottomBannerSubtitle, DEFAULT_SHOWCASE.bottomBannerSubtitle),
     bottomBannerCtaText: normalizeString(data.bottomBannerCtaText, DEFAULT_SHOWCASE.bottomBannerCtaText),
     bottomBannerLink: normalizeString(data.bottomBannerLink, DEFAULT_SHOWCASE.bottomBannerLink),
+    bottomBannerTitleEnabled: typeof data.bottomBannerTitleEnabled === 'boolean' ? data.bottomBannerTitleEnabled : DEFAULT_SHOWCASE.bottomBannerTitleEnabled,
+    bottomBannerSubtitleEnabled: typeof data.bottomBannerSubtitleEnabled === 'boolean' ? data.bottomBannerSubtitleEnabled : DEFAULT_SHOWCASE.bottomBannerSubtitleEnabled,
+    bottomBannerCtaEnabled: typeof data.bottomBannerCtaEnabled === 'boolean' ? data.bottomBannerCtaEnabled : DEFAULT_SHOWCASE.bottomBannerCtaEnabled,
+    bottomBannerCtaBgColor: normalizeString(data.bottomBannerCtaBgColor, DEFAULT_SHOWCASE.bottomBannerCtaBgColor),
+    bottomBannerCtaTextColor: normalizeString(data.bottomBannerCtaTextColor, DEFAULT_SHOWCASE.bottomBannerCtaTextColor),
+    productBanners: normalizeProductBanners(data.productBanners),
     bannerSliderEnabled: typeof data.bannerSliderEnabled === 'boolean' ? data.bannerSliderEnabled : DEFAULT_SHOWCASE.bannerSliderEnabled,
     bannerSliderDesktopInterval: Math.max(1500, Number(data.bannerSliderDesktopInterval) || DEFAULT_SHOWCASE.bannerSliderDesktopInterval),
     bannerSliderMobileInterval: Math.max(1500, Number(data.bannerSliderMobileInterval) || DEFAULT_SHOWCASE.bannerSliderMobileInterval),
@@ -170,6 +236,7 @@ function normalizeShopShowcase(data = {}) {
     secondaryBannerSliderMobileInterval: Math.max(1500, Number(data.secondaryBannerSliderMobileInterval) || DEFAULT_SHOWCASE.secondaryBannerSliderMobileInterval),
     secondaryBannerSliderDesktopHeight: normalizeBannerSliderHeight(data.secondaryBannerSliderDesktopHeight, DEFAULT_SHOWCASE.secondaryBannerSliderDesktopHeight),
     secondaryBannerSliderMobileHeight: normalizeBannerSliderHeight(data.secondaryBannerSliderMobileHeight, DEFAULT_SHOWCASE.secondaryBannerSliderMobileHeight),
+    secondaryBannerSliderPlacement: normalizeSecondaryBannerSliderPlacement(data.secondaryBannerSliderPlacement),
     secondaryBannerSliderItems: normalizeSecondaryBannerSliderItems(data.secondaryBannerSliderItems),
     referralRewardCoins
   }

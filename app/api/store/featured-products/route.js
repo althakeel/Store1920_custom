@@ -8,6 +8,9 @@ import { localizeRecord, resolveStorefrontLanguage } from '@/lib/storefrontLangu
 
 const DEFAULT_FEATURED_RESPONSE = {
     productIds: [],
+    sourceMode: 'manual',
+    categoryIds: [],
+    tags: [],
     sectionTitle: 'Craziest sale of the year!',
     sectionDescription: "Grab the best deals before they're gone!"
 }
@@ -19,6 +22,29 @@ function createFeaturedResponse(payload) {
         }
     })
 }
+
+const normalizeList = (value) => {
+    if (!Array.isArray(value)) return []
+    return Array.from(new Set(value.map((item) => String(item || '').trim()).filter(Boolean)))
+}
+
+const normalizeMode = (value) => {
+    if (value === 'category' || value === 'tag' || value === 'latest') return value
+    return 'manual'
+}
+
+const normalizeId = (value) => {
+    if (!value) return null
+    if (typeof value === 'string' || typeof value === 'number') return String(value)
+    if (typeof value === 'object') {
+        if (value.$oid) return String(value.$oid)
+        const stringValue = value.toString?.()
+        return stringValue && stringValue !== '[object Object]' ? String(stringValue) : null
+    }
+    return null
+}
+
+const buildProductProjection = '_id name nameAr slug price mrp AED images category categories tags inStock stockQuantity createdAt'
 
 async function getUserIdFromAuthHeader(request) {
     const authHeader = request.headers.get('authorization')
@@ -71,30 +97,71 @@ export async function GET(request) {
         if (!store) {
             store = await Store.findOne().sort({ updatedAt: -1 }).lean()
         }
-        const productIds = store?.featuredProductIds || []
+        const sourceMode = normalizeMode(store?.featuredProductsSource)
+        const productIds = normalizeList(store?.featuredProductIds)
+        const categoryIds = normalizeList(store?.featuredProductsCategoryIds)
+        const tags = normalizeList(store?.featuredProductsTags)
         const sectionTitle = store?.featuredSectionTitle || 'Craziest sale of the year!'
         const sectionDescription = store?.featuredSectionDescription || "Grab the best deals before they're gone!"
+
+        const resolveProducts = async () => {
+            if (sourceMode === 'manual' && productIds.length > 0) {
+                const productsRaw = await Product.find({ _id: { $in: productIds } })
+                    .select(buildProductProjection)
+                    .lean()
+                const productMap = new Map(productsRaw.map((product) => [product._id.toString(), localizeRecord(product, language, ['name'])]))
+                return productIds.map((id) => productMap.get(id)).filter(Boolean)
+            }
+
+            const query = {
+                ...(store?._id ? { storeId: String(store._id) } : {}),
+            }
+
+            if (sourceMode === 'category' && categoryIds.length > 0) {
+                query.$or = [
+                    { category: { $in: categoryIds } },
+                    { categories: { $in: categoryIds } },
+                ]
+            } else if (sourceMode === 'tag' && tags.length > 0) {
+                query.tags = { $in: tags }
+            }
+
+            const sort = sourceMode === 'latest'
+                ? { createdAt: -1 }
+                : { updatedAt: -1, createdAt: -1 }
+
+            const productsRaw = await Product.find(query)
+                .sort(sort)
+                .select(buildProductProjection)
+                .lean()
+
+            return productsRaw.map((product) => localizeRecord(product, language, ['name']))
+        }
 
         if (!includeProducts) {
             return createFeaturedResponse({
                 productIds,
+                sourceMode,
+                categoryIds,
+                tags,
                 sectionTitle,
                 sectionDescription
             })
         }
 
-        const productsRaw = await Product.find({ _id: { $in: productIds } })
-            .select('_id name nameAr slug price mrp AED images category inStock stockQuantity')
-            .lean()
-        const productMap = new Map(productsRaw.map((product) => [product._id.toString(), localizeRecord(product, language, ['name'])]))
-        let products = productIds.map((id) => productMap.get(id)).filter(Boolean)
+        let products = await resolveProducts()
 
         if (limit > 0) {
             products = products.slice(0, limit)
         }
 
+        const resolvedProductIds = products.map((product) => normalizeId(product?._id || product?.id)).filter(Boolean)
+
         return createFeaturedResponse({
-            productIds,
+            productIds: resolvedProductIds,
+            sourceMode,
+            categoryIds,
+            tags,
             sectionTitle,
             sectionDescription,
             products
@@ -120,18 +187,25 @@ export async function POST(request) {
             return NextResponse.json({ error: 'Store not found for user' }, { status: 404 })
         }
 
-        const { productIds, sectionTitle, sectionDescription } = await request.json()
+        const { productIds, sourceMode, categoryIds, tags, sectionTitle, sectionDescription } = await request.json()
 
         // Validate productIds is an array
         if (!Array.isArray(productIds)) {
             return NextResponse.json({ error: 'productIds must be an array' }, { status: 400 })
         }
 
+        const normalizedSourceMode = normalizeMode(sourceMode)
+        const normalizedCategoryIds = normalizeList(categoryIds)
+        const normalizedTags = normalizeList(tags)
+
         // Update store with featured product IDs
         const updatedStore = await Store.findByIdAndUpdate(
             storeId,
             {
                 featuredProductIds: productIds,
+                featuredProductsSource: normalizedSourceMode,
+                featuredProductsCategoryIds: normalizedCategoryIds,
+                featuredProductsTags: normalizedTags,
                 ...(typeof sectionTitle === 'string' ? { featuredSectionTitle: sectionTitle.trim() } : {}),
                 ...(typeof sectionDescription === 'string' ? { featuredSectionDescription: sectionDescription.trim() } : {})
             },
@@ -141,6 +215,9 @@ export async function POST(request) {
         return NextResponse.json({ 
             message: 'Featured products updated successfully',
             productIds: updatedStore.featuredProductIds,
+            sourceMode: updatedStore.featuredProductsSource,
+            categoryIds: updatedStore.featuredProductsCategoryIds || [],
+            tags: updatedStore.featuredProductsTags || [],
             sectionTitle: updatedStore.featuredSectionTitle,
             sectionDescription: updatedStore.featuredSectionDescription
         })

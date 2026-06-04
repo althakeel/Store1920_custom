@@ -49,6 +49,7 @@ export default function Home() {
     const [homeSections, setHomeSections] = useState([]);
     const [sectionsLoading, setSectionsLoading] = useState(true);
     const [exploreInterestsEnabled, setExploreInterestsEnabled] = useState(true);
+    const [secondaryBannerSliderPlacement, setSecondaryBannerSliderPlacement] = useState('above_top_deals');
 
     // Track customer location
     useLocationTracking();
@@ -57,10 +58,11 @@ export default function Home() {
         const fetchData = async () => {
             setSectionsLoading(true);
             try {
-                const [featuredRes, homeSectionsRes, appearanceRes] = await Promise.all([
+                const [featuredRes, homeSectionsRes, appearanceRes, shopShowcaseRes] = await Promise.all([
                     axios.get('/api/public/featured-sections').catch(() => ({ data: { sections: [] } })),
                     axios.get('/api/admin/home-sections').catch(() => ({ data: { sections: [] } })),
                     axios.get('/api/store/appearance/sections/public').catch(() => ({ data: {} })),
+                    axios.get('/api/public/shop-showcase').catch(() => ({ data: { config: {} } })),
                 ]);
                 setSection4Data(featuredRes.data.sections || []);
                 setHomeSections(homeSectionsRes.data.sections || []);
@@ -69,11 +71,18 @@ export default function Home() {
                         ? appearanceRes.data.exploreYourInterests.enabled
                         : true
                 );
+                const configuredPlacement = shopShowcaseRes?.data?.config?.secondaryBannerSliderPlacement;
+                setSecondaryBannerSliderPlacement(
+                    configuredPlacement === 'below_top_deals' || configuredPlacement === 'below_small_banners'
+                        ? configuredPlacement
+                        : 'above_top_deals'
+                );
             } catch (error) {
                 console.error('Error fetching data:', error);
                 setSection4Data([]);
                 setHomeSections([]);
                 setExploreInterestsEnabled(true);
+                setSecondaryBannerSliderPlacement('above_top_deals');
             } finally {
                 setSectionsLoading(false);
             }
@@ -95,11 +104,14 @@ export default function Home() {
         <>
                 <HeroBannerSlider/>
                    <ShopShowcaseSection />
+                     {secondaryBannerSliderPlacement === 'below_small_banners' && <BannerSlider2 />}
                 {showHeroCategories && <HomeCategories />}
                 {/* <Hero /> */}
                 <LatestProducts />
                 {/* <CarouselSlider/> */}
                 {section4Data.length === 0 && <BannerSlider />}
+
+                                {secondaryBannerSliderPlacement === 'above_top_deals' && <BannerSlider2 />}
 
                 {homeDataLoading ? (
                     <HomeSectionSkeleton />
@@ -107,8 +119,7 @@ export default function Home() {
                     <Section3 products={products} homeSections={homeSections} loading={homeDataLoading} />
                 )}
 
-
-              <BannerSlider2 />
+                                {secondaryBannerSliderPlacement === 'below_top_deals' && <BannerSlider2 />}
             {/* Featured Sections - Display all created sliders from category-slider */}
            {(sectionsLoading || section4Data.length > 0) && (
             <div className="max-w-[1400px] mx-auto w-full px-4 sm:px-6">

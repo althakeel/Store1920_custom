@@ -18,6 +18,11 @@ const DEFAULT_SETTINGS = {
     dropdownTextColor: '#334155',
     dropdownMutedTextColor: '#64748b',
     dropdownBorderColor: '#e2e8f0',
+    showcaseFlyoutBackgroundColor: '#ffffff',
+    showcaseFlyoutTitleColor: '#0f172a',
+    showcaseFlyoutLinkColor: '#1f2937',
+    showcaseFlyoutHoverColor: '#f8fafc',
+    showcaseFlyoutBorderColor: '#dbe3ee',
   },
   navMenuItems: [],
 };
@@ -56,6 +61,11 @@ const normalizeMenuStyle = (value, currentStyle = DEFAULT_SETTINGS.navMenuStyle)
     dropdownTextColor: normalizeHexColor(source.dropdownTextColor, currentStyle.dropdownTextColor),
     dropdownMutedTextColor: normalizeHexColor(source.dropdownMutedTextColor, currentStyle.dropdownMutedTextColor),
     dropdownBorderColor: normalizeHexColor(source.dropdownBorderColor, currentStyle.dropdownBorderColor),
+    showcaseFlyoutBackgroundColor: normalizeHexColor(source.showcaseFlyoutBackgroundColor, currentStyle.showcaseFlyoutBackgroundColor),
+    showcaseFlyoutTitleColor: normalizeHexColor(source.showcaseFlyoutTitleColor, currentStyle.showcaseFlyoutTitleColor),
+    showcaseFlyoutLinkColor: normalizeHexColor(source.showcaseFlyoutLinkColor, currentStyle.showcaseFlyoutLinkColor),
+    showcaseFlyoutHoverColor: normalizeHexColor(source.showcaseFlyoutHoverColor, currentStyle.showcaseFlyoutHoverColor),
+    showcaseFlyoutBorderColor: normalizeHexColor(source.showcaseFlyoutBorderColor, currentStyle.showcaseFlyoutBorderColor),
   };
 };
 

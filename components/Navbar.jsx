@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, ShoppingCart, Menu, X, HeartIcon, StarIcon, ArrowLeft, LogOut, User, MapPin, Package, ChevronDown, Check } from "lucide-react";
+import { Search, ShoppingCart, Menu, X, HeartIcon, StarIcon, ArrowLeft, LogOut, User, MapPin, Package } from "lucide-react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { useState, useEffect, useRef, useMemo } from "react";
@@ -22,12 +22,11 @@ import {
   STOREFRONT_LANGUAGE_EVENT,
   STOREFRONT_LANGUAGE_KEY,
 } from '@/lib/storefrontLanguage';
-import { GCC_MARKETS } from '@/lib/storefrontMarket';
-import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
 import { translateStaticText } from '@/lib/useStorefrontI18n';
 
 const NAVBAR_SELECTED_ADDRESS_KEY = 'navbarSelectedAddressId';
 const NAVBAR_APPEARANCE_CACHE_KEY = 'navbarAppearanceCache';
+const DEFAULT_CATEGORY_IMAGE = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1' y1='0' y2='1'%3E%3Cstop stop-color='%23f8fafc'/%3E%3Cstop offset='1' stop-color='%23e2e8f0'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='120' height='120' rx='60' fill='url(%23g)'/%3E%3Ccircle cx='60' cy='48' r='20' fill='%23cbd5e1'/%3E%3Cpath d='M28 92c8-15 23-24 32-24s24 9 32 24' fill='%23cbd5e1'/%3E%3C/svg%3E";
 
 const DEFAULT_NAVBAR_APPEARANCE = { logoUrl: '', logoWidth: 120, logoHeight: 40, backgroundColor: '#8f3404' };
 const NAVBAR_CONTAINER_CLASS = 'mx-auto w-full max-w-[1400px] px-4 sm:px-6';
@@ -80,6 +79,16 @@ const getContrastColor = (hexColor) => {
   return luminance > 0.65 ? '#111827' : '#ffffff';
 };
 
+const getCategoryImage = (category) => {
+  const candidate = String(category?.image || category?.icon || category?.iconUrl || category?.url || '').trim();
+  return candidate || DEFAULT_CATEGORY_IMAGE;
+};
+
+const getCategoryHref = (category) => {
+  const value = String(category?.slug || category?._id || '').trim();
+  return value ? `/shop?category=${encodeURIComponent(value)}` : '/shop';
+};
+
 const Navbar = () => {
   const dispatch = useDispatch();
 
@@ -93,10 +102,8 @@ const Navbar = () => {
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [categoriesDropdownOpen, setCategoriesDropdownOpen] = useState(false);
   const [hoveredCategory, setHoveredCategory] = useState(null);
-  const marketHoverTimer = useRef(null);
   const categoryTimer = useRef(null);
   const userDropdownRef = useRef(null);
-  const marketDropdownRef = useRef(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [wishlistCount, setWishlistCount] = useState(0);
@@ -127,7 +134,6 @@ const Navbar = () => {
   // Will be updated from localStorage in useEffect after mount
   const [storefrontLanguage, setStorefrontLanguage] = useState('en');
   const [languageHydrated, setLanguageHydrated] = useState(false);
-  const [marketDropdownOpen, setMarketDropdownOpen] = useState(false);
   // Initialize with default appearance to avoid hydration mismatch
   // Will be updated from localStorage in useEffect after mount
   const [navbarAppearance, setNavbarAppearance] = useState(DEFAULT_NAVBAR_APPEARANCE);
@@ -135,7 +141,6 @@ const Navbar = () => {
   // to avoid hydration mismatches. Loading state is set false initially and toggled
   // by the fetch effect when data is retrieved.
   const [navbarAppearanceLoading, setNavbarAppearanceLoading] = useState(false);
-  const { market: storefrontMarket, setMarketCode } = useStorefrontMarket();
   const t = (key, replacements = {}) => translateStaticText(key, storefrontLanguage, replacements);
 
   const getShortName = (value) => {
@@ -167,6 +172,39 @@ const Navbar = () => {
     if (!addressList.length) return null;
     return addressList.find((address) => address?._id === selectedAddressId) || addressList[0] || null;
   }, [addressList, selectedAddressId]);
+
+  const mainCategories = useMemo(() => {
+    const source = Array.isArray(categories) ? categories : [];
+    const roots = source.filter((item) => !item?.parentId && String(item?.name || '').trim());
+    if (roots.length) return roots;
+    return source.filter((item) => String(item?.name || '').trim()).slice(0, 20);
+  }, [categories]);
+
+  const activeCategory = useMemo(() => {
+    const defaultCategory = mainCategories[0] || null;
+    if (!hoveredCategory) return defaultCategory;
+    return mainCategories.find((item) => String(item?._id) === String(hoveredCategory?._id)) || defaultCategory;
+  }, [mainCategories, hoveredCategory]);
+
+  const activeSubcategories = useMemo(() => {
+    const nestedChildren = Array.isArray(activeCategory?.children) ? activeCategory.children : [];
+    const activeId = String(activeCategory?._id || activeCategory?.id || '').trim();
+    const flatChildren = activeId
+      ? (Array.isArray(categories) ? categories : []).filter((item) => String(item?.parentId || item?.parent || '').trim() === activeId)
+      : [];
+    const combinedChildren = nestedChildren.length ? nestedChildren : flatChildren;
+
+    return combinedChildren
+      .filter((item) => String(item?.name || '').trim())
+      .slice(0, 12);
+  }, [activeCategory, categories]);
+
+  const activeCategoryTiles = useMemo(() => {
+    if (activeSubcategories.length > 0) return activeSubcategories;
+    if (!activeCategory) return [];
+    return [{ ...activeCategory, __fallbackTile: true }];
+  }, [activeCategory, activeSubcategories]);
+
   const selectedDeliveryLabel = useMemo(() => {
     if (!firebaseUser) return t('navbar.signInToChoose');
     if (!selectedDeliveryAddress) return addressList.length ? t('navbar.selectAddress') : t('navbar.addAddress');
@@ -588,6 +626,34 @@ const Navbar = () => {
   }, [searchPlaceholder, isDeleting, productIndex, productNames]);
 
   useEffect(() => {
+    return () => {
+      if (categoryTimer.current) {
+        window.clearTimeout(categoryTimer.current);
+      }
+    };
+  }, []);
+
+  const openCategoriesDropdown = () => {
+    if (categoryTimer.current) {
+      window.clearTimeout(categoryTimer.current);
+      categoryTimer.current = null;
+    }
+    setCategoriesDropdownOpen(true);
+    if (!hoveredCategory && mainCategories.length > 0) {
+      setHoveredCategory(mainCategories[0]);
+    }
+  };
+
+  const closeCategoriesDropdown = () => {
+    if (categoryTimer.current) {
+      window.clearTimeout(categoryTimer.current);
+    }
+    categoryTimer.current = window.setTimeout(() => {
+      setCategoriesDropdownOpen(false);
+    }, 180);
+  };
+
+  useEffect(() => {
     const syncGuestWishlistToDatabase = async (user) => {
       try {
         if (typeof window === 'undefined' || !user) return;
@@ -873,11 +939,6 @@ const Navbar = () => {
     }
   };
 
-  const handleLanguageToggle = () => {
-    setStorefrontLanguage((currentLanguage) => currentLanguage === 'ar' ? 'en' : 'ar');
-  };
-  
-
   // Seller approval check (fetch from backend) - Only check, don't show toast
   const [isSeller, setIsSeller] = useState(false);
   const [isSellerLoading, setIsSellerLoading] = useState(false);
@@ -889,15 +950,12 @@ const Navbar = () => {
       if (userDropdownRef.current && !userDropdownRef.current.contains(e.target)) {
         setUserDropdownOpen(false);
       }
-      if (marketDropdownRef.current && !marketDropdownRef.current.contains(e.target)) {
-        setMarketDropdownOpen(false);
-      }
     };
-    if (userDropdownOpen || marketDropdownOpen) {
+    if (userDropdownOpen) {
       document.addEventListener('mousedown', handleClickOutside);
     }
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [marketDropdownOpen, userDropdownOpen]);
+  }, [userDropdownOpen]);
 
   useEffect(() => {
     const uid = firebaseUser?.uid || null;
@@ -965,43 +1023,132 @@ const Navbar = () => {
           </div>
         </div>
       </div>
-
-      <NavbarMenuBar />
     </>
   );
+
+  const desktopCategoriesDropdown = categoriesDropdownOpen && mainCategories.length > 0 ? (
+    <div
+      className="absolute left-1/2 top-full z-[120] hidden w-full -translate-x-1/2 lg:block"
+      onMouseEnter={openCategoriesDropdown}
+      onMouseLeave={closeCategoriesDropdown}
+    >
+      <div className="mx-auto mt-0.5 w-full max-w-[980px] overflow-hidden rounded-b-[28px] border border-slate-200 bg-white shadow-[0_20px_44px_rgba(15,23,42,0.16)]">
+        <div className="grid grid-cols-[250px_minmax(0,1fr)]">
+          <div className="max-h-[520px] overflow-y-auto border-r border-slate-200 bg-white py-3">
+            {mainCategories.map((category) => {
+              const isActive = String(activeCategory?._id || '') === String(category?._id || '');
+              return (
+                <button
+                  key={category?._id || category?.slug || category?.name}
+                  type="button"
+                  onMouseEnter={() => setHoveredCategory(category)}
+                  className={`flex w-full items-center justify-between gap-2 px-5 py-3 text-left text-[15px] transition ${
+                    isActive ? 'bg-slate-50 font-semibold text-slate-900' : 'text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="truncate">{category?.name}</span>
+                  <span className="text-slate-400">›</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="min-h-[420px] bg-white p-7">
+            <div className="mb-6 flex items-center justify-between gap-4 border-b border-slate-100 pb-4">
+              <p className="text-[22px] font-semibold leading-tight text-slate-900">{activeCategory?.name || 'Categories'}</p>
+              <Link
+                href={getCategoryHref(activeCategory)}
+                className="text-xs font-semibold uppercase tracking-wide text-rose-600 hover:text-rose-700"
+              >
+                View all
+              </Link>
+            </div>
+
+            {activeCategoryTiles.length > 0 ? (
+              <div className="space-y-5">
+                <div className="grid grid-cols-5 gap-x-6 gap-y-8">
+                  {activeCategoryTiles.map((subcategory) => (
+                    <Link
+                      key={subcategory?._id || subcategory?.slug || subcategory?.name}
+                      href={getCategoryHref(subcategory)}
+                      className="group flex flex-col items-center text-center transition"
+                    >
+                      <span className="relative h-[98px] w-[98px] overflow-hidden rounded-full border border-slate-200 bg-slate-100 shadow-sm transition group-hover:-translate-y-0.5 group-hover:shadow-md">
+                        <Image
+                          src={getCategoryImage(subcategory)}
+                          alt={subcategory?.name || 'Category'}
+                          fill
+                          sizes="98px"
+                          className="object-cover"
+                        />
+                      </span>
+                      <span className="mt-3 line-clamp-2 min-h-[44px] text-[13px] font-medium leading-tight text-slate-700 group-hover:text-slate-900">
+                        {subcategory?.name}
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+
+                {activeSubcategories.length === 0 ? (
+                  <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-sm text-slate-600">
+                    <span>No child categories yet. Open this category to browse products.</span>
+                    <Link
+                      href={getCategoryHref(activeCategory)}
+                      className="inline-flex h-10 items-center justify-center rounded-full bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800"
+                    >
+                      Shop now
+                    </Link>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  ) : null;
 
   return (
     <>
       {navbarAppearanceLoading ? navbarSkeleton : (
         <>
       {/* Mobile Header */}
-      <nav className="lg:hidden sticky top-0 z-50 border-b border-gray-200 shadow-sm" style={{ backgroundColor: navbarAppearance.backgroundColor, color: navbarTextColor }}>
-        <div className="flex items-center gap-2 px-2.5 py-2.5" style={{ backgroundColor: navbarAppearance.backgroundColor }}>
+      <nav
+        className="lg:hidden sticky top-0 z-50 border-b shadow-[0_8px_20px_rgba(127,8,12,0.28)]"
+        style={{
+          backgroundColor: navbarAppearance.backgroundColor,
+          borderColor: 'rgba(15, 23, 42, 0.18)',
+        }}
+      >
+        <div className="flex items-center gap-2 px-2.5 py-2.5">
           <button
             type="button"
             onClick={() => setMobileMenuOpen((prev) => !prev)}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-md text-gray-700 hover:bg-gray-100"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-md text-white/95 hover:bg-white/15"
             aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
           >
             {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
 
-          {mobileLogoSrc && (
-            <Link href="/" onClick={handleLogoNavigation} className="flex items-center flex-shrink-0 pr-1">
+          <Link href="/" onClick={handleLogoNavigation} className="flex items-center flex-shrink-0 pr-1">
+            {mobileLogoSrc ? (
               <Image
                 src={mobileLogoSrc}
                 alt="Store Logo"
                 width={navbarAppearance.logoWidth}
                 height={navbarAppearance.logoHeight}
                 className="h-7 w-auto object-contain"
-                style={{ maxHeight: '32px', maxWidth: '120px' }}
+                style={{ maxHeight: '32px', maxWidth: '110px' }}
                 priority
               />
-            </Link>
-          )}
+            ) : (
+              <span className="text-[30px] font-black tracking-tight text-white">Jomla</span>
+            )}
+          </Link>
 
           <form onSubmit={handleSearch} className="relative flex-1 min-w-0">
-            <div className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-1.5">
+            <div className="flex items-center gap-2 rounded-xl border border-white/90 bg-white px-3 py-1.5 shadow-sm">
+              <Search size={16} className="flex-shrink-0 text-slate-400" />
               <input
                 type="text"
                 placeholder={searchPlaceholder || t('navbar.searchFragrances')}
@@ -1014,7 +1161,8 @@ const Navbar = () => {
               <button
                 type="submit"
                 aria-label="Search"
-                className="flex-shrink-0 text-gray-500"
+                className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full hover:bg-[#fef2f2]"
+                style={{ color: navbarAppearance.backgroundColor }}
               >
                 <Search size={16} />
               </button>
@@ -1054,7 +1202,7 @@ const Navbar = () => {
 
           <Link
             href={firebaseUser ? '/dashboard/wishlist' : '/wishlist'}
-            className="relative inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md text-gray-700 hover:bg-gray-100"
+            className="relative inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md text-white hover:bg-white/15"
             aria-label="Wishlist"
           >
             <HeartIcon size={20} />
@@ -1068,12 +1216,16 @@ const Navbar = () => {
       </nav>
 
       {/* Original Full Navbar (Desktop only) */}
+      <div className="relative z-50 hidden lg:block">
       <nav
-        className="relative z-50 hidden lg:block border-b shadow-[0_12px_28px_rgba(15,23,42,0.06)] before:absolute before:inset-x-0 before:top-0 before:h-1"
-        style={{ backgroundColor: navbarAppearance.backgroundColor, color: navbarTextColor, borderColor: `${navbarTextColor}18` }}
+        className="border-b text-white shadow-[0_12px_28px_rgba(15,23,42,0.08)]"
+        style={{
+          backgroundColor: navbarAppearance.backgroundColor,
+          borderColor: 'rgba(15, 23, 42, 0.18)',
+        }}
       >
       <div className={NAVBAR_CONTAINER_CLASS}>
-        <div className="flex items-center py-2.5 transition-all gap-3">
+        <div className="flex items-center py-2.5 transition-all gap-4">
 
           {/* Left Side - Hamburger (Mobile) + Logo */}
           <div className="flex items-center gap-3 shrink-0 min-w-0">
@@ -1109,8 +1261,8 @@ const Navbar = () => {
             <button
               type="button"
               onClick={handleDeliveryLocationClick}
-              className="flex items-center gap-2 rounded-xl border px-3 py-1.5 text-left transition"
-              style={{ borderColor: `${navbarTextColor}18`, backgroundColor: 'rgba(255,255,255,0.1)', color: navbarTextColor }}
+              className="hidden items-center gap-2 rounded-xl border px-3 py-1.5 text-left transition"
+              style={{ borderColor: 'rgba(255,255,255,0.25)', backgroundColor: 'rgba(255,255,255,0.12)', color: '#ffffff' }}
             >
               <span className="flex h-7 w-7 items-center justify-center rounded-full shadow-sm" style={{ backgroundColor: 'rgba(255,255,255,0.92)', color: '#111827' }}>
                 <MapPin size={14} />
@@ -1120,76 +1272,91 @@ const Navbar = () => {
                 <span className="max-w-[130px] truncate text-xs font-semibold">{selectedDeliveryLabel}</span>
               </span>
             </button>
-
-            <Link
-              href="/fast-delivery"
-              className="shipxpress-pill group hidden xl:flex"
-              aria-label="ShipXpress"
-            >
-              <span className="shipxpress-badge">
-                <span className="shipxpress-badge-icon" aria-hidden="true">📍</span>
-                <span className="shipxpress-badge-dot" />
-                {storefrontLanguage === 'ar' ? 'خلال يومين' : 'Within 2 days'}
-              </span>
-              <span className="shipxpress-main">
-                <span className="shipxpress-truck-wrap" aria-hidden="true">
-                  <Image src={Truck} alt="Truck" width={16} height={16} className="shipxpress-truck" />
-                </span>
-                <span className="shipxpress-text">ShipXpress</span>
-              </span>
-            </Link>
           </div>
 
-          <form onSubmit={handleSearch} className="hidden lg:flex flex-1 max-w-[620px] mx-2">
-            <div className="flex items-center w-full rounded-full border border-[#d1d5db] overflow-hidden bg-white shadow-sm">
+          <div className="hidden lg:flex flex-1 items-center justify-center px-2">
+            <div className="relative flex w-full max-w-[760px] items-center gap-3">
+              <Link
+                href="/fast-delivery"
+                className="shipxpress-pill group shrink-0"
+                aria-label="ShipXpress"
+              >
+                <span className="shipxpress-badge">
+                  <span className="shipxpress-badge-icon" aria-hidden="true">📍</span>
+                  <span className="shipxpress-badge-dot" />
+                  {storefrontLanguage === 'ar' ? 'خلال يومين' : 'Within 2 days'}
+                </span>
+                <span className="shipxpress-main">
+                  <span className="shipxpress-truck-wrap" aria-hidden="true">
+                    <Image src={Truck} alt="Truck" width={16} height={16} className="shipxpress-truck" />
+                  </span>
+                  <span className="shipxpress-text">ShipXpress</span>
+                </span>
+              </Link>
+              <div className="relative flex-1 max-w-[590px]">
+            <form onSubmit={handleSearch} className="flex-1">
+              <div
+                className="flex h-[44px] items-center w-full overflow-hidden rounded-2xl border px-3 shadow-sm"
+                style={{
+                  borderColor: 'rgba(255,255,255,0.92)',
+                  backgroundColor: '#ffffff',
+                }}
+              >
+              <div
+                className="relative mr-3 flex h-full items-center"
+                onMouseEnter={openCategoriesDropdown}
+                onMouseLeave={closeCategoriesDropdown}
+              >
+                <button
+                  type="button"
+                  className="group inline-flex h-[34px] items-center gap-1.5 rounded-xl px-2 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50"
+                >
+                  <span>Categories</span>
+                  <span className="text-[11px] text-slate-400 transition group-hover:translate-y-[1px]">▾</span>
+                </button>
+                <span className="ml-2 h-5 w-px bg-slate-200" />
+              </div>
               <input
                 type="text"
                 placeholder={searchPlaceholder || t('navbar.searchFragrances')}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full px-5 py-2.5 text-[13px] text-slate-800 outline-none bg-transparent"
+                className="w-full bg-transparent pr-2 text-[14px] text-slate-800 outline-none placeholder:text-slate-400"
               />
               <button
                 type="submit"
-                className="mr-1.5 flex h-8 w-8 items-center justify-center rounded-full bg-white text-[#111827] transition hover:bg-[#f3f4f6]"
+                className="flex h-8 w-8 items-center justify-center rounded-full transition hover:bg-slate-100"
+                style={{ color: navbarAppearance.backgroundColor }}
                 aria-label="Search"
               >
-                <Search size={14} />
+                <Search size={15} />
               </button>
             </div>
-          </form>
+            </form>
+              </div>
+            </div>
+          </div>
 
           {/* Right Side - Support + Icons */}
-          <div className="hidden lg:flex ml-auto items-center gap-0.5 flex-shrink-0 text-[12px]" style={{ color: navbarTextColor }}>
+          <div className="hidden lg:flex ml-auto items-center gap-1.5 flex-shrink-0 text-[12px] text-white">
             {firebaseUser ? (
               <div className="flex items-center gap-2">
-              {isSeller && navActionsVisibility.store && (
-                <button
-                  onClick={() => router.push('/store')}
-                  className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[11px] font-semibold transition whitespace-nowrap"
-                  style={{ backgroundColor: 'rgba(255,255,255,0.9)', color: '#7c4a03' }}
-                >
-                  {t('navbar.dashboard')}
-                </button>
-              )}
               <div
                 className="relative"
                 ref={userDropdownRef}
               >
                 <button
-                  className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 transition hover:bg-white/8"
-                  style={{ borderColor: `${navbarTextColor}20` }}
+                  className="inline-flex items-center gap-1.5 rounded-full p-2 transition hover:bg-white/10"
                   aria-label="User menu"
                   onClick={() => setUserDropdownOpen(prev => !prev)}
                 >
                   {firebaseUser.photoURL ? (
-                    <Image src={firebaseUser.photoURL} alt="User" width={22} height={22} className="rounded-full object-cover ring-1 ring-white/50" />
+                    <Image src={firebaseUser.photoURL} alt="User" width={22} height={22} className="rounded-full object-cover" />
                   ) : (
                     <div className="w-[22px] h-[22px] rounded-full bg-amber-400 flex items-center justify-center text-[10px] font-bold text-white">
                       {(firebaseUser.displayName || firebaseUser.email || '?')[0].toUpperCase()}
                     </div>
                   )}
-                  <span>{t('navbar.hiUser', { name: getShortName(firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User') })}</span>
                 </button>
                 {userDropdownOpen && (
                   <div className="absolute right-0 top-12 min-w-[220px] bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-2">
@@ -1224,125 +1391,33 @@ const Navbar = () => {
                   setSignInMode('login');
                   setSignInOpen(true);
                 }}
-                className="inline-flex items-center gap-1 rounded-full border px-3 py-1.5 transition whitespace-nowrap hover:bg-white/8"
-                style={{ borderColor: `${navbarTextColor}20` }}
+                className="inline-flex items-center justify-center rounded-full p-2 transition hover:bg-white/10"
                 aria-label="Sign in"
               >
-                <User className="w-[15px] h-[15px]" style={{ color: navbarTextColor }} />
-                <span>{t('navbar.signInRegister')}</span>
+                <User className="w-[18px] h-[18px]" />
               </button>
             )}
 
-            <div
-              ref={marketDropdownRef}
-              className="relative"
-              onMouseEnter={() => {
-                if (marketHoverTimer.current) clearTimeout(marketHoverTimer.current);
-                setMarketDropdownOpen(true);
-              }}
-              onMouseLeave={() => {
-                if (marketHoverTimer.current) clearTimeout(marketHoverTimer.current);
-                marketHoverTimer.current = setTimeout(() => setMarketDropdownOpen(false), 200);
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => setMarketDropdownOpen((currentValue) => !currentValue)}
-                className="inline-flex items-center gap-2 rounded-full px-2.5 py-1.5 transition whitespace-nowrap hover:bg-white/8"
-              >
-                <span className="text-sm leading-none">{storefrontMarket.flag}</span>
-                <span>{storefrontLanguage === 'ar' ? 'العربية' : 'English'}</span>
-                <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold tracking-[0.08em]">
-                  {storefrontMarket.currency}
-                </span>
-                <ChevronDown size={13} />
-              </button>
-
-              {marketDropdownOpen && (
-                <div
-                  className="absolute right-0 mt-2 w-[280px] overflow-hidden rounded-2xl border border-gray-200 bg-white text-gray-900 shadow-2xl z-50"
-                  onMouseEnter={() => {
-                    if (marketHoverTimer.current) clearTimeout(marketHoverTimer.current);
-                    setMarketDropdownOpen(true);
-                  }}
-                  onMouseLeave={() => {
-                    if (marketHoverTimer.current) clearTimeout(marketHoverTimer.current);
-                    marketHoverTimer.current = setTimeout(() => setMarketDropdownOpen(false), 200);
-                  }}
-                >
-                  <div className="px-4 py-3 border-b border-gray-100">
-                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">{t('navbar.language')}</p>
-                    <div className="mt-3 space-y-2">
-                      <button
-                        type="button"
-                        onClick={() => setStorefrontLanguage('ar')}
-                        className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm transition ${storefrontLanguage === 'ar' ? 'bg-orange-50 text-orange-700' : 'hover:bg-gray-50'}`}
-                      >
-                        <span className={`h-3 w-3 rounded-full border ${storefrontLanguage === 'ar' ? 'border-orange-500 bg-orange-500' : 'border-gray-400'}`} />
-                        <span>العربية</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setStorefrontLanguage('en')}
-                        className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm transition ${storefrontLanguage === 'en' ? 'bg-orange-50 text-orange-700' : 'hover:bg-gray-50'}`}
-                      >
-                        <span className={`h-3 w-3 rounded-full border ${storefrontLanguage === 'en' ? 'border-orange-500 bg-orange-500' : 'border-gray-400'}`} />
-                        <span>English</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="px-4 py-3 border-b border-gray-100">
-                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">{t('navbar.shopIn')}</p>
-                    <div className="mt-3 grid gap-2">
-                      {GCC_MARKETS.map((marketOption) => {
-                        const isSelected = marketOption.code === storefrontMarket.code;
-                        return (
-                          <button
-                            key={marketOption.code}
-                            type="button"
-                            onClick={() => setMarketCode(marketOption.code)}
-                            className={`flex items-center justify-between rounded-xl border px-3 py-2 text-left transition ${isSelected ? 'border-orange-200 bg-orange-50 text-orange-700' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}
-                          >
-                            <span className="flex items-center gap-3 min-w-0">
-                              <span className="text-base leading-none">{marketOption.flag}</span>
-                              <span className="min-w-0">
-                                <span className="block text-sm font-semibold leading-tight">{marketOption.countryName}</span>
-                                <span className="block text-xs text-gray-500">{marketOption.currency}</span>
-                              </span>
-                            </span>
-                            {isSelected && <Check size={15} className="shrink-0" />}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div className="px-4 py-3 text-sm text-gray-600">
-                    <p className="font-semibold text-gray-800">{t('navbar.currency')}: {storefrontMarket.currency}</p>
-                    <p className="mt-1">{t('navbar.shoppingIn', { country: storefrontMarket.countryName })}</p>
-                  </div>
-                </div>
-              )}
-            </div>
-
             {navActionsVisibility.wishlist && (
-              <Link href="/dashboard/wishlist" className="inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 transition whitespace-nowrap hover:bg-white/8">
-                <HeartIcon size={14} />
-                {t('navbar.wishlist')}
+              <Link href="/dashboard/wishlist" className="relative inline-flex items-center justify-center rounded-full p-2 transition hover:bg-white/10" aria-label="Wishlist">
+                <HeartIcon size={18} />
+                {wishlistCount > 0 && (
+                  <span className="absolute -top-1 -right-1 text-[10px] font-bold text-white bg-blue-600 rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1">
+                    {wishlistCount > 99 ? '99+' : wishlistCount}
+                  </span>
+                )}
               </Link>
             )}
 
             {navActionsVisibility.cart && (
               <button
                 onClick={handleCartClick}
-                className="relative inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 transition hover:bg-white/8"
+                className="relative inline-flex items-center justify-center rounded-full p-2 transition hover:bg-white/10"
                 aria-label="Cart"
               >
-                <ShoppingCart size={18} style={{ color: navbarTextColor }} />
-                <span className="text-[13px] font-medium">{t('navbar.cart')}</span>
+                <ShoppingCart size={18} />
                 {isClient && cartCount > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 text-[10px] font-bold text-white bg-blue-600 rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1">
+                  <span className="absolute -top-1 -right-1 text-[10px] font-bold text-white bg-blue-600 rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1">
                     {cartCount}
                   </span>
                 )}
@@ -1393,6 +1468,11 @@ const Navbar = () => {
             )}
           </div>
         </div>
+      </div>
+      </nav>
+
+      {desktopCategoriesDropdown}
+      </div>
 
 
 
@@ -1702,9 +1782,6 @@ const Navbar = () => {
           }}
         />
       )}
-    </div>
-  </nav>
-  <NavbarMenuBar />
         </>
       )}
       <style jsx global>{`

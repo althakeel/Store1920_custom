@@ -41,6 +41,9 @@ const StoreSchema = new mongoose.Schema({
   isActive: { type: Boolean, default: false },
   status: { type: String, default: "pending", enum: ["pending", "approved", "rejected"] },
   featuredProductIds: { type: [String], default: [] }, // Array of featured product IDs
+  featuredProductsSource: { type: String, default: 'manual' },
+  featuredProductsCategoryIds: { type: [String], default: [] },
+  featuredProductsTags: { type: [String], default: [] },
   featuredSectionTitle: { type: String, default: 'Craziest sale of the year!' },
   featuredSectionDescription: { type: String, default: "Grab the best deals before they're gone!" },
   exploreInterestsEnabled: { type: Boolean, default: true },

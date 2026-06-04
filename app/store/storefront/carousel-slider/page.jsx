@@ -27,6 +27,8 @@ const initialForm = {
     mainBannerSubtitleColor: "#e5e7eb",
     mainBannerCtaBgColor: "#ef2d2d",
     mainBannerCtaTextColor: "#ffffff",
+    mainBannerDesktopHeight: 320,
+    mainBannerMobileHeight: 100,
     bannerSliderEnabled: true,
     bannerSliderDesktopInterval: 4000,
     bannerSliderMobileInterval: 3000,
@@ -41,6 +43,7 @@ const initialForm = {
     secondaryBannerSliderMobileInterval: 3000,
     secondaryBannerSliderDesktopHeight: 220,
     secondaryBannerSliderMobileHeight: 120,
+    secondaryBannerSliderPlacement: 'above_top_deals',
     secondaryBannerSliderItems: [
         createBannerSliderItem("secondary-banner-slider", { id: "secondary-banner-slider-1", link: "/shop", alt: "Lower Banner 1" }),
         createBannerSliderItem("secondary-banner-slider", { id: "secondary-banner-slider-2", link: "/shop", alt: "Lower Banner 2" }),
@@ -304,6 +307,30 @@ export default function CarouselSliderPage() {
                                 </div>
 
                                 <div className="grid gap-4 md:grid-cols-2">
+                                    <label className="space-y-2">
+                                        <span className="block text-sm font-medium text-slate-700">Hero desktop height (px)</span>
+                                        <input
+                                            type="number"
+                                            min="80"
+                                            max="700"
+                                            step="5"
+                                            value={form.mainBannerDesktopHeight}
+                                            onChange={(e) => updateField("mainBannerDesktopHeight", Number(e.target.value) || 320)}
+                                            className="w-full rounded-lg border border-slate-300 px-3 py-2.5 focus:border-emerald-500 focus:outline-none"
+                                        />
+                                    </label>
+                                    <label className="space-y-2">
+                                        <span className="block text-sm font-medium text-slate-700">Hero mobile height (px)</span>
+                                        <input
+                                            type="number"
+                                            min="80"
+                                            max="700"
+                                            step="5"
+                                            value={form.mainBannerMobileHeight}
+                                            onChange={(e) => updateField("mainBannerMobileHeight", Number(e.target.value) || 100)}
+                                            className="w-full rounded-lg border border-slate-300 px-3 py-2.5 focus:border-emerald-500 focus:outline-none"
+                                        />
+                                    </label>
                                     <label className="space-y-2 md:col-span-2">
                                         <span className="block text-sm font-medium text-slate-700">Headline</span>
                                         <span className="flex items-center gap-3 text-xs text-slate-500">
@@ -469,6 +496,19 @@ export default function CarouselSliderPage() {
                                             onChange={(e) => updateField("bannerSliderMobileHeight", Number(e.target.value) || 120)}
                                             className="w-full rounded-lg border border-slate-300 px-3 py-2.5 focus:border-emerald-500 focus:outline-none"
                                         />
+                                    </label>
+                                    <label className="space-y-2 md:col-span-2">
+                                        <span className="block text-sm font-medium text-slate-700">Homepage placement</span>
+                                        <select
+                                            value={form.secondaryBannerSliderPlacement || 'above_top_deals'}
+                                            onChange={(e) => updateField("secondaryBannerSliderPlacement", e.target.value)}
+                                            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 focus:border-emerald-500 focus:outline-none"
+                                        >
+                                            <option value="above_top_deals">Above Top Deals (Default)</option>
+                                            <option value="below_top_deals">Below Top Deals</option>
+                                            <option value="below_small_banners">Below Small Banners (Showcase)</option>
+                                        </select>
+                                        <p className="text-xs text-slate-500">Choose where this light banner slider appears on the homepage.</p>
                                     </label>
                                 </div>
 
@@ -702,7 +742,7 @@ export default function CarouselSliderPage() {
                                         background: `linear-gradient(90deg, ${form.mainBannerLeftColor} 0%, ${form.mainBannerRightColor} 100%)`,
                                     }}
                                 >
-                                    <div className="grid min-h-[280px] gap-4 p-6 md:grid-cols-[1.1fr_0.9fr] md:items-center">
+                                    <div className="grid gap-4 p-6 md:grid-cols-[1.1fr_0.9fr] md:items-center" style={{ minHeight: `${Number(form.mainBannerDesktopHeight) || 320}px` }}>
                                         <div className="max-w-md">
                                             {form.mainBannerTitleEnabled ? (
                                                 <p
@@ -792,6 +832,12 @@ export default function CarouselSliderPage() {
                                 </div>
 
                                 <div className="rounded-xl border border-slate-200 p-4">
+                                    <div className="mb-2 text-right text-xs text-slate-500">
+                                        <div>Hero Height: {form.mainBannerDesktopHeight}px / {form.mainBannerMobileHeight}px</div>
+                                    </div>
+                                </div>
+
+                                <div className="rounded-xl border border-slate-200 p-4">
                                     <div className="flex items-center justify-between gap-4">
                                         <div>
                                             <p className="font-medium text-slate-900">Second lower slider summary</p>
@@ -801,6 +847,15 @@ export default function CarouselSliderPage() {
                                             <div>Desktop: {form.secondaryBannerSliderDesktopInterval}ms</div>
                                             <div>Mobile: {form.secondaryBannerSliderMobileInterval}ms</div>
                                             <div>Height: {form.secondaryBannerSliderDesktopHeight}px / {form.secondaryBannerSliderMobileHeight}px</div>
+                                            <div>
+                                                Placement: {
+                                                  (form.secondaryBannerSliderPlacement || 'above_top_deals') === 'below_top_deals'
+                                                    ? 'Below Top Deals'
+                                                    : (form.secondaryBannerSliderPlacement || 'above_top_deals') === 'below_small_banners'
+                                                    ? 'Below Small Banners (Showcase)'
+                                                    : 'Above Top Deals'
+                                                }
+                                            </div>
                                         </div>
                                     </div>
 

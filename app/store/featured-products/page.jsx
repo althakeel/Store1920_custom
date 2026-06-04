@@ -7,10 +7,25 @@ import { toast } from 'react-hot-toast'
 import Image from 'next/image'
 import { ChevronDown, Save, Loader } from 'lucide-react'
 
+const flattenCategories = (items = [], depth = 0) => {
+    if (!Array.isArray(items)) return []
+
+    return items.flatMap((item) => {
+        const id = String(item?._id || item?.id || '').trim()
+        const current = { id, name: String(item?.name || '').trim(), depth }
+        const children = flattenCategories(item?.children || [], depth + 1)
+        return id ? [current, ...children] : children
+    })
+}
+
 export default function FeaturedProducts() {
     const { getToken } = useAuth()
     const [products, setProducts] = useState([])
+    const [categories, setCategories] = useState([])
     const [selectedProducts, setSelectedProducts] = useState([])
+    const [sourceMode, setSourceMode] = useState('manual')
+    const [selectedCategoryIds, setSelectedCategoryIds] = useState([])
+    const [selectedTagsText, setSelectedTagsText] = useState('')
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
@@ -21,16 +36,26 @@ export default function FeaturedProducts() {
         try {
             setLoading(true)
             const token = await getToken()
-            const { data } = await axios.get('/api/store/product', {
-                headers: { Authorization: `Bearer ${token}` }
-            })
-            setProducts(data.products || [])
+            const [productsResponse, savedResponse, categoriesResponse] = await Promise.all([
+                axios.get('/api/store/product', {
+                    headers: { Authorization: `Bearer ${token}` }
+                }),
+                axios.get('/api/store/featured-products', {
+                    headers: { Authorization: `Bearer ${token}` }
+                }),
+                axios.get('/api/store/categories')
+            ])
 
-            // Fetch saved featured products
-            const { data: savedData } = await axios.get('/api/store/featured-products', {
-                headers: { Authorization: `Bearer ${token}` }
-            })
+            const productsData = productsResponse.data || {}
+            const savedData = savedResponse.data || {}
+            const categoriesData = categoriesResponse.data || {}
+
+            setProducts(productsData.products || [])
+            setCategories(flattenCategories(categoriesData.categories || []))
             setSelectedProducts(savedData.productIds || [])
+            setSourceMode(savedData.sourceMode || 'manual')
+            setSelectedCategoryIds(savedData.categoryIds || [])
+            setSelectedTagsText(Array.isArray(savedData.tags) ? savedData.tags.join(', ') : '')
         } catch (error) {
             toast.error('Failed to load products')
             console.error(error)
@@ -52,13 +77,46 @@ export default function FeaturedProducts() {
         )
     }
 
+    const toggleCategory = (categoryId) => {
+        setSelectedCategoryIds((prev) => (
+            prev.includes(categoryId)
+                ? prev.filter((id) => id !== categoryId)
+                : [...prev, categoryId]
+        ))
+    }
+
     // Save featured products
     const saveFeaturedProducts = async () => {
         try {
+            const normalizedTags = selectedTagsText
+                .split(',')
+                .map((tag) => tag.trim())
+                .filter(Boolean)
+
+            if (sourceMode === 'manual' && selectedProducts.length === 0) {
+                toast.error('Select at least one product')
+                return
+            }
+
+            if (sourceMode === 'category' && selectedCategoryIds.length === 0) {
+                toast.error('Select at least one category')
+                return
+            }
+
+            if (sourceMode === 'tag' && normalizedTags.length === 0) {
+                toast.error('Add at least one tag')
+                return
+            }
+
             setSaving(true)
             const token = await getToken()
             await axios.post('/api/store/featured-products', 
-                { productIds: selectedProducts },
+                {
+                    productIds: selectedProducts,
+                    sourceMode,
+                    categoryIds: selectedCategoryIds,
+                    tags: normalizedTags
+                },
                 { headers: { Authorization: `Bearer ${token}` } }
             )
             toast.success('Featured products saved successfully')
@@ -81,6 +139,11 @@ export default function FeaturedProducts() {
         return 0
     })
 
+    const selectedTags = selectedTagsText
+        .split(',')
+        .map((tag) => tag.trim())
+        .filter(Boolean)
+
     if (loading) {
         return (
             <div className="flex items-center justify-center h-96">
@@ -93,7 +156,107 @@ export default function FeaturedProducts() {
         <div className="p-6 max-w-7xl mx-auto">
             <div className="mb-8">
                 <h1 className="text-3xl font-bold text-slate-800 mb-2">Featured Products</h1>
-                <p className="text-slate-600">Manually select products to display in your featured section</p>
+                <p className="text-slate-600">Choose products manually, by category, by tags, or let the section use latest products</p>
+            </div>
+
+            <div className="bg-white border rounded-lg p-4 mb-6 shadow-sm">
+                <h3 className="text-sm font-semibold text-slate-900 mb-3">Product Source</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-2">Show Products By</label>
+                        <select
+                            value={sourceMode}
+                            onChange={(e) => setSourceMode(e.target.value)}
+                            className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                            <option value="manual">Manual selection</option>
+                            <option value="category">Category</option>
+                            <option value="tag">Tag</option>
+                            <option value="latest">Latest products</option>
+                        </select>
+                    </div>
+
+                    <div className="md:col-span-2 flex items-end">
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 w-full">
+                            <p className="text-sm text-blue-700 font-medium">
+                                {sourceMode === 'manual'
+                                    ? `${selectedProducts.length} manual product(s) selected`
+                                    : sourceMode === 'category'
+                                        ? `${selectedCategoryIds.length} category(s) selected`
+                                        : sourceMode === 'tag'
+                                            ? `${selectedTags.length} tag(s) selected`
+                                            : 'Products will be pulled from the latest catalog items'}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                {sourceMode === 'category' && (
+                    <div className="mb-4">
+                        <label className="block text-sm font-medium text-slate-700 mb-2">Choose Categories</label>
+                        <div className="max-h-72 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+                            {categories.length === 0 ? (
+                                <p className="text-sm text-slate-500">No categories found</p>
+                            ) : (
+                                categories.map((category) => (
+                                    <label
+                                        key={category.id}
+                                        className="flex items-center gap-3 rounded-md bg-white px-3 py-2 border border-slate-200"
+                                        style={{ paddingLeft: `${12 + category.depth * 16}px` }}
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedCategoryIds.includes(category.id)}
+                                            onChange={() => toggleCategory(category.id)}
+                                            className="h-4 w-4"
+                                        />
+                                        <span className="text-sm text-slate-700">{category.name}</span>
+                                    </label>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {sourceMode === 'tag' && (
+                    <div className="mb-4">
+                        <label className="block text-sm font-medium text-slate-700 mb-2">Tags</label>
+                        <input
+                            type="text"
+                            value={selectedTagsText}
+                            onChange={(e) => setSelectedTagsText(e.target.value)}
+                            placeholder="summer, sale, new-arrivals"
+                            className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <p className="mt-2 text-xs text-slate-500">Separate multiple tags with commas.</p>
+                    </div>
+                )}
+
+                {sourceMode === 'latest' && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 mb-4">
+                        The section will show the newest products automatically. Manual product selection is not used in this mode.
+                    </div>
+                )}
+
+                <div className="flex justify-end">
+                    <button
+                        onClick={saveFeaturedProducts}
+                        disabled={saving}
+                        className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium text-sm flex items-center gap-2 disabled:opacity-50"
+                    >
+                        {saving ? (
+                            <>
+                                <Loader size={16} className="animate-spin" />
+                                Saving...
+                            </>
+                        ) : (
+                            <>
+                                <Save size={16} />
+                                Save Featured Products
+                            </>
+                        )}
+                    </button>
+                </div>
             </div>
 
             {/* Controls */}
@@ -148,23 +311,6 @@ export default function FeaturedProducts() {
                         className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition font-medium text-sm"
                     >
                         Clear All
-                    </button>
-                    <button
-                        onClick={saveFeaturedProducts}
-                        disabled={saving}
-                        className="ml-auto px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium text-sm flex items-center gap-2 disabled:opacity-50"
-                    >
-                        {saving ? (
-                            <>
-                                <Loader size={16} className="animate-spin" />
-                                Saving...
-                            </>
-                        ) : (
-                            <>
-                                <Save size={16} />
-                                Save Featured Products
-                            </>
-                        )}
                     </button>
                 </div>
             </div>

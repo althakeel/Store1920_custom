@@ -53,7 +53,9 @@ export default function ProductImageViewer({ product, onClose }) {
       link.download = `${product.name}-image-${index + 1}.jpg`
       document.body.appendChild(link)
       link.click()
-      document.body.removeChild(link)
+      if (link.parentNode) {
+        link.remove()
+      }
       window.URL.revokeObjectURL(url)
       
       console.log('[DOWNLOAD] Image downloaded successfully:', index + 1);
@@ -110,7 +112,9 @@ export default function ProductImageViewer({ product, onClose }) {
           link.download = `${product.name}-image-${i + 1}.jpg`
           document.body.appendChild(link)
           link.click()
-          document.body.removeChild(link)
+          if (link.parentNode) {
+            link.remove()
+          }
           window.URL.revokeObjectURL(url)
           
           successCount++

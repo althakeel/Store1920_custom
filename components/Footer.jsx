@@ -87,6 +87,8 @@ const Footer = () => {
     const InstagramIcon = () => (<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"> <path d="M14.5846 5.41699H14.593M5.83464 1.66699H14.168C16.4692 1.66699 18.3346 3.53247 18.3346 5.83366V14.167C18.3346 16.4682 16.4692 18.3337 14.168 18.3337H5.83464C3.53345 18.3337 1.66797 16.4682 1.66797 14.167V5.83366C1.66797 3.53247 3.53345 1.66699 5.83464 1.66699ZM13.3346 9.47533C13.4375 10.1689 13.319 10.8772 12.9961 11.4995C12.6732 12.1218 12.1623 12.6265 11.536 12.9417C10.9097 13.2569 10.2 13.3667 9.50779 13.2553C8.81557 13.1439 8.1761 12.8171 7.68033 12.3213C7.18457 11.8255 6.85775 11.1861 6.74636 10.4938C6.63497 9.80162 6.74469 9.0919 7.05991 8.46564C7.37512 7.83937 7.87979 7.32844 8.50212 7.00553C9.12445 6.68261 9.83276 6.56415 10.5263 6.66699C11.2337 6.7719 11.8887 7.10154 12.3944 7.60725C12.9001 8.11295 13.2297 8.76789 13.3346 9.47533Z" stroke="#90A1B9" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /> </svg>)
     const TwitterIcon = () => (<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"> <path d="M18.3346 3.33368C18.3346 3.33368 17.7513 5.08368 16.668 6.16701C18.0013 14.5003 8.83464 20.5837 1.66797 15.8337C3.5013 15.917 5.33464 15.3337 6.66797 14.167C2.5013 12.917 0.417969 8.00034 2.5013 4.16701C4.33464 6.33368 7.16797 7.58368 10.0013 7.50034C9.2513 4.00034 13.3346 2.00034 15.8346 4.33368C16.7513 4.33368 18.3346 3.33368 18.3346 3.33368Z" stroke="#90A1B9" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /> </svg>)
     const LinkedinIcon = () => (<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"> <path d="M13.3346 6.66699C14.6607 6.66699 15.9325 7.19378 16.8702 8.13146C17.8079 9.06914 18.3346 10.3409 18.3346 11.667V17.5003H15.0013V11.667C15.0013 11.225 14.8257 10.801 14.5131 10.4885C14.2006 10.1759 13.7767 10.0003 13.3346 10.0003C12.8926 10.0003 12.4687 10.1759 12.1561 10.4885C11.8436 10.801 11.668 11.225 11.668 11.667V17.5003H8.33464V11.667C8.33464 10.3409 8.86142 9.06914 9.7991 8.13146C10.7368 7.19378 12.0086 6.66699 13.3346 6.66699Z" stroke="#90A1B9" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /> <path d="M5.0013 7.50033H1.66797V17.5003H5.0013V7.50033Z" stroke="#90A1B9" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /> <path d="M3.33464 5.00033C4.25511 5.00033 5.0013 4.25413 5.0013 3.33366C5.0013 2.41318 4.25511 1.66699 3.33464 1.66699C2.41416 1.66699 1.66797 2.41318 1.66797 3.33366C1.66797 4.25413 2.41416 5.00033 3.33464 5.00033Z" stroke="#90A1B9" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /> </svg>)
+    const GooglePlayIcon = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3.25 2.8L13.88 13.43L3.28 20.05C3.1 19.76 3 19.42 3 19.05V3.79C3 3.43 3.09 3.09 3.25 2.8Z" fill="#22D3EE"/><path d="M16.22 10.95L19.8 8.74C20.29 8.44 20.29 7.72 19.8 7.42L15.5 4.75L13.88 13.43L16.22 10.95Z" fill="#F59E0B"/><path d="M15.5 4.75L3.25 2.8C3.42 2.52 3.68 2.29 4 2.11L16.22 10.95L13.88 13.43L15.5 4.75Z" fill="#34D399"/><path d="M16.22 10.95L4 21.73C3.67 21.55 3.41 21.31 3.23 21.02L13.88 13.43L16.22 10.95Z" fill="#F43F5E"/></svg>)
+    const AppleIcon = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M15.93 3.54C16.6 2.73 17.09 1.62 17 0.5C16 0.54 14.8 1.16 14.11 1.97C13.49 2.69 12.94 3.83 13.06 4.92C14.18 5.01 15.25 4.37 15.93 3.54Z" fill="#E2E8F0"/><path d="M20.4 17.15C19.98 18.08 19.79 18.49 19.25 19.32C18.5 20.49 17.45 21.95 16.15 21.97C15 21.98 14.7 21.2 13.15 21.21C11.59 21.22 11.26 21.99 10.1 21.98C8.8 21.96 7.81 20.64 7.06 19.47C4.96 16.2 4.74 12.36 6.03 10.38C6.94 8.96 8.38 8.13 9.74 8.13C11.13 8.13 12 8.93 13.12 8.93C14.22 8.93 14.9 8.13 16.49 8.13C17.7 8.13 18.98 8.79 19.89 9.94C16.91 11.58 17.39 15.83 20.4 17.15Z" fill="#E2E8F0"/></svg>)
 
     const linkSections = [
         {
@@ -136,6 +138,21 @@ const Footer = () => {
         { icon: InstagramIcon, link: "https://www.instagram.com/Store1920" },
     ];
 
+    const appDownloadLinks = [
+        {
+            icon: GooglePlayIcon,
+            title: 'Get it on',
+            platform: 'Google Play',
+            href: 'https://play.google.com/store',
+        },
+        {
+            icon: AppleIcon,
+            title: 'Download on the',
+            platform: 'App Store',
+            href: 'https://www.apple.com/app-store/',
+        },
+    ];
+
     return (
         <footer className="bg-black text-slate-200 border-t border-slate-800 pt-0 lg:pt-12">
             <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
@@ -169,6 +186,24 @@ const Footer = () => {
                                 <span className="text-slate-400">{t('footer.uae')}</span>
                             </div>
                         </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            {appDownloadLinks.map((item) => (
+                                <Link
+                                    key={item.platform}
+                                    href={item.href}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="group min-w-[156px] h-12 px-3 rounded-xl border border-slate-700 bg-slate-900/60 hover:bg-slate-800 transition flex items-center gap-2"
+                                    aria-label={item.platform}
+                                >
+                                    <item.icon />
+                                    <span className="flex flex-col leading-tight">
+                                        <span className="text-[10px] text-slate-400 group-hover:text-slate-300">{item.title}</span>
+                                        <span className="text-sm text-slate-100 font-semibold">{item.platform}</span>
+                                    </span>
+                                </Link>
+                            ))}
+                        </div>
                         {/* Social Icons removed from brand section to avoid duplication */}
                     </div>
                     {/* Link Sections - Each takes 1 column */}
@@ -193,8 +228,8 @@ const Footer = () => {
 
                 {/* Bottom Bar - Normal flow, always at bottom of footer */}
                 <div className="border-t border-slate-800 py-8 mt-4 w-full flex flex-col items-center justify-end">
-                    <div className="flex flex-col sm:flex-row justify-between items-center gap-2 w-full max-w-[1340px] px-4">
-                        <div className="flex items-center gap-3 mb-2 sm:mb-0">
+                    <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 w-full max-w-[1340px] px-4">
+                        <div className="flex items-center justify-center lg:justify-start gap-3">
                             {socialIcons.map((item, i) => (
                                 <Link 
                                     href={item.link} 
@@ -207,9 +242,9 @@ const Footer = () => {
                                 </Link>
                             ))}
                         </div>
-                    <p className="text-sm text-slate-500 text-center w-full">
-                        © {new Date().getFullYear()} Al Thakeel General Trading LLC. All rights reserved.
-                    </p>
+                        <p className="text-sm text-slate-500 text-center">
+                            © {new Date().getFullYear()} Al Thakeel General Trading LLC. All rights reserved.
+                        </p>
 
                     </div>
                 </div>

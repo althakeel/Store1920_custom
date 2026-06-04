@@ -4,18 +4,25 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 
-const HEIGHT = 320;
+const DEFAULT_DESKTOP_HEIGHT = 320;
+const DEFAULT_MOBILE_HEIGHT = 100;
 const SLIDE_INTERVAL = 5000;
-const SKELETON_TIMEOUT = 1000; // Reduced timeout for faster initial display 
+const MIN_SKELETON_MS = 700;
 
 const fallbackSlides = [];
+
+function normalizeHeroHeight(value, fallback) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.min(700, Math.max(80, Math.round(numeric)));
+}
 
 export default function HeroBannerSlider() {
   const [index, setIndex] = useState(0);
   const [loaded, setLoaded] = useState([]);
-  const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [showcaseConfig, setShowcaseConfig] = useState(null);
   const [showcaseLoaded, setShowcaseLoaded] = useState(false);
+  const [minSkeletonElapsed, setMinSkeletonElapsed] = useState(false);
   const router = useRouter();
   const intervalRef = useRef(null);
 
@@ -49,6 +56,16 @@ export default function HeroBannerSlider() {
 
     return fallbackSlides;
   }, [showcaseConfig, showcaseLoaded]);
+
+  const desktopHeight = useMemo(
+    () => normalizeHeroHeight(showcaseConfig?.mainBannerDesktopHeight, DEFAULT_DESKTOP_HEIGHT),
+    [showcaseConfig]
+  );
+
+  const mobileHeight = useMemo(
+    () => normalizeHeroHeight(showcaseConfig?.mainBannerMobileHeight, DEFAULT_MOBILE_HEIGHT),
+    [showcaseConfig]
+  );
 
   // Memoized click handler
   const handleSlideClick = useCallback((link) => {
@@ -87,11 +104,8 @@ export default function HeroBannerSlider() {
   }, [slides]);
 
   useEffect(() => {
-    const skeletonTimer = setTimeout(() => {
-      setIsInitialLoad(false);
-    }, SKELETON_TIMEOUT);
-
-    return () => clearTimeout(skeletonTimer);
+    const timer = setTimeout(() => setMinSkeletonElapsed(true), MIN_SKELETON_MS);
+    return () => clearTimeout(timer);
   }, []);
 
   useEffect(() => {
@@ -113,17 +127,14 @@ export default function HeroBannerSlider() {
     };
   }, [slides.length]);
 
-  useEffect(() => {
-    if (loaded[0]) {
-      setIsInitialLoad(false);
-    }
-  }, [loaded]);
+  const firstSlideHasImage = Boolean(slides[0]?.image);
+  const shouldShowSkeleton = !minSkeletonElapsed || !showcaseLoaded || (firstSlideHasImage && !loaded[0]);
 
   if (showcaseLoaded && slides.length === 0) {
     return null;
   }
 
-  if (isInitialLoad && !loaded[0]) {
+  if (shouldShowSkeleton) {
     return (
       <div style={{ width: '100%', background: '#f3f4f6' }}>
         <section className="max-w-[1400px] mx-auto px-4 sm:px-6">
@@ -133,7 +144,7 @@ export default function HeroBannerSlider() {
           <style jsx>{`
           .hero-banner-skeleton {
             width: 100%;
-            height: ${HEIGHT}px;
+            height: ${desktopHeight}px;
             background-color: #f3f4f6;
             position: relative;
             overflow: hidden;
@@ -158,9 +169,7 @@ export default function HeroBannerSlider() {
           
           @media (max-width: 640px) {
             .hero-banner-skeleton {
-              height: auto;
-              aspect-ratio: 1400 / 320;
-              min-height: 100px;
+              height: ${mobileHeight}px;
             }
             
             .hero-banner-skeleton__inner {
@@ -225,7 +234,7 @@ export default function HeroBannerSlider() {
                   src={slide.image}
                   alt={`Banner ${i + 1}`}
                   width={1400}
-                  height={HEIGHT}
+                  height={desktopHeight}
                   priority={true}
                   loading="eager"
                   quality={75}
@@ -307,7 +316,7 @@ export default function HeroBannerSlider() {
           <style jsx>{`
         .hero-banner {
           width: 100%;
-          height: ${HEIGHT}px;
+          height: ${desktopHeight}px;
           position: relative;
           overflow: hidden;
           display: flex;
@@ -326,8 +335,7 @@ export default function HeroBannerSlider() {
 
         @media (max-width: 640px) {
           .hero-banner {
-            height: auto;
-            aspect-ratio: 1400 / 320;
+            height: ${mobileHeight}px;
           }
           .hero-banner__viewport {
             height: 100%;

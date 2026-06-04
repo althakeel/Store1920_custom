@@ -1,0 +1,17 @@
+.leftMenuScroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+  border-top: 1px solid #e5e7eb;
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: #e5e7eb #fff; /* Firefox */
+}
+.leftMenuScroll::-webkit-scrollbar {
+  width: 1px;
+  background: #fff;
+}
+.leftMenuScroll::-webkit-scrollbar-thumb {
+  background: #e5e7eb;
+  border-radius: 4px;
+}

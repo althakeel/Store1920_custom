@@ -1,0 +1,42 @@
+.bannerGrid {
+  display: grid;
+  grid-template-rows: auto auto;
+  gap: 0.75rem; /* matches gap-3 */
+  align-content: start;
+}
+
+.bannerRow {
+  position: relative;
+  min-height: 0;
+}
+
+.bannerRow:first-child {
+  aspect-ratio: 3054 / 1080;
+}
+
+.bannerRow:nth-child(2) {
+  aspect-ratio: 3054 / 370;
+}
+
+@media (max-width: 1023px) {
+  .bannerGrid {
+    grid-template-rows: auto;
+    height: auto;
+  }
+
+  .bannerRow {
+    min-height: 0;
+  }
+
+  .bannerRow:first-child {
+    aspect-ratio: 2.8 / 1;
+  }
+
+  .bannerRow:nth-child(2) {
+    aspect-ratio: 6 / 1;
+  }
+
+  .bannerGrid .bannerRow:nth-child(2) {
+    display: none;
+  }
+}
