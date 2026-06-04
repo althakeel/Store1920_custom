@@ -145,6 +145,7 @@ export default function DatabaseImportSettingsPage() {
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [runningImport, setRunningImport] = useState(false)
+  const [runningMediaRelink, setRunningMediaRelink] = useState(false)
   const [csvFile, setCsvFile] = useState(null)
   const [importProgress, setImportProgress] = useState({
     active: false,
@@ -156,6 +157,11 @@ export default function DatabaseImportSettingsPage() {
   const [message, setMessage] = useState('')
   const [schemaText, setSchemaText] = useState('')
   const [selectedFileName, setSelectedFileName] = useState('')
+  const [mediaRelinkForm, setMediaRelinkForm] = useState({
+    oldBaseUrl: '',
+    newBaseUrl: '',
+  })
+  const [mediaRelinkSummary, setMediaRelinkSummary] = useState(null)
   const [form, setForm] = useState(initialSettings)
 
   useEffect(() => {
@@ -415,6 +421,46 @@ export default function DatabaseImportSettingsPage() {
       }))
     } finally {
       setRunningImport(false)
+    }
+  }
+
+  const handleMediaRelink = async (dryRun) => {
+    try {
+      setRunningMediaRelink(true)
+      setMessage('')
+
+      const token = await getToken()
+      if (!token) {
+        setMessage('Sign in with a store account to reconnect media URLs.')
+        return
+      }
+
+      const oldBaseUrl = String(mediaRelinkForm.oldBaseUrl || '').trim()
+      const newBaseUrl = String(mediaRelinkForm.newBaseUrl || '').trim()
+
+      if (!oldBaseUrl || !newBaseUrl) {
+        setMessage('Enter both old and new media base URLs before running reconnect.')
+        return
+      }
+
+      const response = await axios.post(
+        '/api/store/settings/database-import/replace-media-urls',
+        { oldBaseUrl, newBaseUrl, dryRun },
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+
+      const summary = response.data?.summary || null
+      setMediaRelinkSummary(summary)
+      setMessage(response.data?.message || (dryRun ? 'Dry run completed.' : 'Media URL reconnect completed.'))
+    } catch (error) {
+      const status = error?.response?.status
+      if (status === 401) {
+        setMessage('This page requires seller access to a store. Sign in with the store owner account or an approved store team account.')
+      } else {
+        setMessage(error?.response?.data?.error || 'Failed to reconnect media URLs')
+      }
+    } finally {
+      setRunningMediaRelink(false)
     }
   }
 
@@ -681,6 +727,67 @@ export default function DatabaseImportSettingsPage() {
                 >
                   {runningImport ? 'Importing...' : form.importMode === 'csv-file' ? 'Start CSV Import' : 'Start Import'}
                 </button>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-900">Reconnect Imported Media URLs</h3>
+                  <p className="mt-1 text-xs text-slate-600">
+                    After moving WordPress uploads to a new domain or CDN, replace old URL bases in imported product images and variants.
+                  </p>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="space-y-2">
+                    <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Old media base URL</span>
+                    <input
+                      type="text"
+                      value={mediaRelinkForm.oldBaseUrl}
+                      onChange={(event) => setMediaRelinkForm((prev) => ({ ...prev, oldBaseUrl: event.target.value }))}
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:border-emerald-500 focus:outline-none"
+                      placeholder="https://oldsite.com/wp-content/uploads"
+                    />
+                  </label>
+
+                  <label className="space-y-2">
+                    <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">New media base URL</span>
+                    <input
+                      type="text"
+                      value={mediaRelinkForm.newBaseUrl}
+                      onChange={(event) => setMediaRelinkForm((prev) => ({ ...prev, newBaseUrl: event.target.value }))}
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:border-emerald-500 focus:outline-none"
+                      placeholder="https://cdn.newsite.com/uploads"
+                    />
+                  </label>
+                </div>
+
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleMediaRelink(true)}
+                    disabled={runningMediaRelink}
+                    className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {runningMediaRelink ? 'Running...' : 'Dry Run'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleMediaRelink(false)}
+                    disabled={runningMediaRelink}
+                    className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {runningMediaRelink ? 'Applying...' : 'Apply URL Reconnect'}
+                  </button>
+                </div>
+
+                {mediaRelinkSummary ? (
+                  <div className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700">
+                    <p><span className="font-semibold">Mode:</span> {mediaRelinkSummary.dryRun ? 'Dry Run' : 'Applied'}</p>
+                    <p><span className="font-semibold">Products scanned:</span> {mediaRelinkSummary.scanned}</p>
+                    <p><span className="font-semibold">Products updated:</span> {mediaRelinkSummary.updated}</p>
+                    <p><span className="font-semibold">URLs replaced:</span> {mediaRelinkSummary.urlReplacements}</p>
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>
