@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import connectDB from '@/lib/mongodb'
 import Order from '@/models/Order'
-import { fetchNormalizedDelhiveryTracking } from '@/lib/delhivery'
-import { fetchNormalizedC3XTracking, trackByReference, normalizeC3XShipment } from '@/lib/c3xpress'
+import { fetchNormalizedC3XTracking, trackByReference, normalizeC3XShipment, trackPickup } from '@/lib/c3xpress'
+import { buildGuestOrderIdentityClauses, normalizeEmail } from '@/lib/orderIdentity'
 
 const asOrderShape = (normalized, awb = '') => {
   if (!normalized) return null;
@@ -10,10 +10,72 @@ const asOrderShape = (normalized, awb = '') => {
     courier: normalized.courier,
     trackingId: normalized.trackingId || awb,
     trackingUrl: normalized.trackingUrl,
-    delhivery: normalized.delhivery,
+    c3x: normalized.c3x,
+    status: normalized.c3x?.appStatus || 'SHIPPED',
     orderItems: [],
     total: 0
   };
+};
+
+const normalizeC3XPickup = (data, bookingNo = '') => {
+  if (!data) return null;
+  const bookingEntry = Array.isArray(data.BookingTrackList) && data.BookingTrackList[0]
+    ? data.BookingTrackList[0]
+    : null;
+  const pickupNo =
+    data.PickupRequestNo ||
+    data.BookingNo ||
+    data.PickupNo ||
+    bookingEntry?.PickupRequestNo ||
+    bookingEntry?.BookingNo ||
+    bookingEntry?.PickupNo ||
+    bookingNo;
+  if (!pickupNo) return null;
+
+  const rawEvents = [
+    data.PickupTrackingDetails,
+    data.PickupTrackList,
+    data.BookingTrackList,
+    data.TrackingLogDetails,
+    data.Events,
+  ].find(Array.isArray) || [];
+
+  const events = rawEvents.map((entry) => ({
+    time: [entry.ActivityDate || entry.Date || entry.CreatedDate || entry.BookingDate, entry.ActivityTime || entry.Time]
+      .filter(Boolean)
+      .join(' ')
+      .trim(),
+    status: entry.Status || entry.Activity || entry.Event || entry.BookingStatus || 'Pickup update',
+    location: entry.Location || entry.City || entry.Origin || '',
+    remarks: entry.Remarks || entry.Description || entry.Message || entry.Remark || '',
+  }));
+
+  return {
+    courier: 'C3Xpress',
+    trackingId: String(pickupNo),
+    trackingUrl: `https://c3xpress.com/tracking?awb=${encodeURIComponent(String(pickupNo))}`,
+    c3x: {
+      bookingNo: String(pickupNo),
+      appStatus: events.length ? 'PICKUP_REQUESTED' : 'ORDER_PLACED',
+      events,
+      pickup: data,
+    },
+  };
+};
+
+const lookupC3XByIdentifier = async (identifier) => {
+  const value = String(identifier || '').trim();
+  if (!value) return null;
+
+  const byAwb = await fetchNormalizedC3XTracking(value).catch(() => null);
+  if (byAwb) return byAwb;
+
+  const referenceRaw = await trackByReference(value).catch(() => null);
+  const byReference = referenceRaw ? normalizeC3XShipment(referenceRaw, value) : null;
+  if (byReference) return byReference;
+
+  const pickupRaw = await trackPickup(value).catch(() => null);
+  return pickupRaw ? normalizeC3XPickup(pickupRaw, value) : null;
 };
 
 export async function GET(req) {
@@ -22,46 +84,25 @@ export async function GET(req) {
 
     const { searchParams } = new URL(req.url)
     const phone = searchParams.get('phone')
+    const email = normalizeEmail(searchParams.get('email'))
     const awbParam = searchParams.get('awb')
     const orderIdParam = searchParams.get('orderId')
     // Support either ?awb= or ?orderId= for the same input value
     const awb = awbParam || orderIdParam
     const carrier = (searchParams.get('carrier') || '').toLowerCase()
 
-    if (!phone && !awb) {
+    if (!phone && !email && !awb) {
       return NextResponse.json(
-        { success: false, message: 'Phone Number or AWB Number is required' },
+        { success: false, message: 'Mobile number, email, AWB, reference number, or booking number is required' },
         { status: 400 }
       )
     }
 
-    // If explicitly requested, try Delhivery directly first
-    if (carrier === 'delhivery' && awb) {
-      try {
-        const normalized = await fetchNormalizedDelhiveryTracking(awb.trim())
-        const synthetic = asOrderShape(normalized, awb.trim())
-        if (synthetic) {
-          return NextResponse.json({ success: true, order: synthetic })
-        }
-      } catch (e) {
-        const msg = (e?.message || '').includes('DELHIVERY_API_TOKEN')
-          ? 'Tracking temporarily unavailable. Delhivery API token not configured.'
-          : `Delhivery tracking failed: ${e?.message || 'Unknown error'}`
-        return NextResponse.json({ success: false, message: msg }, { status: 503 })
-      }
-    }
-
-    // If explicitly requested, try C3Xpress directly
+    // If explicitly requested, try C3Xpress directly by AWB, reference, or booking number.
     if (carrier === 'c3xpress' && awb) {
       try {
-        const normalized = await fetchNormalizedC3XTracking(awb.trim())
-        if (!normalized) {
-          // fallback: try by shipper reference
-          const raw = await trackByReference(awb.trim()).catch(() => null)
-          const byRef = raw ? normalizeC3XShipment(raw, awb.trim()) : null
-          if (byRef) return NextResponse.json({ success: true, order: asOrderShape(byRef, awb.trim()) })
-          return NextResponse.json({ success: false, message: 'Shipment not found on C3Xpress' }, { status: 404 })
-        }
+        const normalized = await lookupC3XByIdentifier(awb.trim())
+        if (!normalized) return NextResponse.json({ success: false, message: 'Shipment not found on C3Xpress' }, { status: 404 })
         return NextResponse.json({ success: true, order: asOrderShape(normalized, awb.trim()) })
       } catch (e) {
         const msg = (e?.message || '').includes('not configured')
@@ -92,24 +133,27 @@ export async function GET(req) {
           .lean();
       }
     }
-    // 4. Try by phone number if provided (fallback)
-    if (!order && phone) {
-      order = await Order.findOne({ 'shippingAddress.phone': phone.trim() }).lean()
+    // 4. Try by mobile number or email if provided (fallback)
+    if (!order && (phone || email)) {
+      const contactClauses = buildGuestOrderIdentityClauses({ email, phone })
+      order = contactClauses.length
+        ? await Order.findOne({ $or: contactClauses }).lean()
         .populate('orderItems.productId')
         .sort({ createdAt: -1 })
-        .lean();
+        .lean()
+        : null;
     }
     if (!order) {
-      // Fallback: try to fetch directly from Delhivery using provided AWB
+      // Fallback: try to fetch directly from C3Xpress using AWB, reference, or booking number.
       if (awb) {
         try {
-          const normalized = await fetchNormalizedDelhiveryTracking(awb.trim());
+          const normalized = await lookupC3XByIdentifier(awb.trim());
           const synthetic = asOrderShape(normalized, awb.trim());
           if (synthetic) {
             return NextResponse.json({ success: true, order: synthetic });
           }
         } catch (e) {
-          console.error('Delhivery fallback failed:', e?.message || e);
+          console.error('C3Xpress fallback failed:', e?.message || e);
         }
       }
       return NextResponse.json(
@@ -124,7 +168,7 @@ export async function GET(req) {
       order.shortOrderNumber = parseInt(hex, 16);
     }
     
-    // If order has a Delhivery trackingId, fetch live tracking
+    // Fetch live C3Xpress tracking when the order has a C3X tracking ID
     try {
       const courier = (order.courier || '').toLowerCase()
       const trackingId = order.trackingId || order.awb || order.airwayBillNo
@@ -139,19 +183,6 @@ export async function GET(req) {
           order.trackingId = order.trackingId || normalized.trackingId
           if (normalized.c3x?.appStatus) {
             order.status = normalized.c3x.appStatus
-          }
-        }
-      } else if (trackingId && (courier.includes('delhivery') || !order.trackingUrl)) {
-        const normalized = await fetchNormalizedDelhiveryTracking(trackingId)
-        if (normalized) {
-          order.delhivery = normalized.delhivery
-          order.trackingUrl = order.trackingUrl || normalized.trackingUrl
-          order.courier = order.courier || normalized.courier
-          order.trackingId = order.trackingId || normalized.trackingId
-          
-          // IMPORTANT: Update order.status to match delhivery tracking status if available
-          if (normalized.delhivery?.current_status) {
-            order.status = normalized.delhivery.current_status
           }
         }
       }

@@ -287,7 +287,7 @@ export default function Cart() {
 
     return (
         <div className="min-h-[40dvh]">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-6">
                 {!productsLoaded ? (
                     <div className="text-center py-16 text-gray-400">Loading cart…</div>
                 ) : cartArray.length > 0 ? (
@@ -467,7 +467,7 @@ export default function Cart() {
                             <h2 className="text-2xl sm:text-3xl font-bold text-slate-800">Recently Ordered</h2>
                         </div>
                         <p className="text-slate-500 mb-6">Products from your recent orders</p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
                             {recentOrders.map((product) => (
                                 <ProductCard key={product._id} product={product} />
                             ))}

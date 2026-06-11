@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { useAuth } from '@/lib/useAuth';
 import axios from 'axios';
 import Link from 'next/link';
-import { ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import ProductCard from '@/components/ProductCard';
 
 const normalizeImages = (images) => {
@@ -47,6 +47,17 @@ export default function RecentSearchProducts() {
   const [recentProducts, setRecentProducts] = useState([]);
   const [isNewCustomer, setIsNewCustomer] = useState(true);
   const [loading, setLoading] = useState(true);
+  const sliderRef = useRef(null);
+
+  const scrollSlider = (direction) => {
+    const slider = sliderRef.current;
+    if (!slider) return;
+
+    slider.scrollBy({
+      left: direction * Math.max(slider.clientWidth * 0.85, 260),
+      behavior: 'smooth',
+    });
+  };
 
   useEffect(() => {
     const fetchRecentlyViewed = async () => {
@@ -157,9 +168,9 @@ export default function RecentSearchProducts() {
               <div className="h-4 w-64 bg-gray-200 rounded animate-pulse"></div>
             </div>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 px-4">
+          <div className="flex gap-2 overflow-hidden px-4">
             {[...Array(5)].map((_, i) => (
-              <div key={i} className="bg-white border border-gray-200 rounded-lg p-3 animate-pulse">
+              <div key={i} className="w-[calc((100%_-_0.5rem)/2)] shrink-0 bg-white border border-gray-200 rounded-[2px] p-3 animate-pulse sm:w-[calc((100%_-_1rem)/3)] md:w-[calc((100%_-_1.5rem)/4)] lg:w-[calc((100%_-_2.5rem)/6)]">
                 <div className="w-full aspect-square bg-gray-200 rounded mb-3"></div>
                 <div className="h-4 bg-gray-200 rounded mb-2"></div>
                 <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
@@ -237,11 +248,39 @@ export default function RecentSearchProducts() {
           </Link>
         </div>
 
-        {/* Product Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 px-4">
-          {safeProducts.map(product => (
-            <ProductCard key={product._id || product.id} product={product} />
-          ))}
+        {/* Product Slider */}
+        <div className="relative">
+          <button
+            type="button"
+            aria-label="Previous recently viewed products"
+            onClick={() => scrollSlider(-1)}
+            className="absolute left-1 top-1/2 z-10 hidden h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-md transition hover:border-orange-300 hover:text-orange-600 md:flex"
+          >
+            <ChevronLeft size={20} />
+          </button>
+
+          <div
+            ref={sliderRef}
+            className="flex snap-x snap-mandatory gap-2 overflow-x-auto scroll-smooth px-4 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
+            {safeProducts.map(product => (
+              <div
+                key={product._id || product.id}
+                className="w-[calc((100%_-_0.5rem)/2)] shrink-0 snap-start sm:w-[calc((100%_-_1rem)/3)] md:w-[calc((100%_-_1.5rem)/4)] lg:w-[calc((100%_-_2.5rem)/6)]"
+              >
+                <ProductCard product={product} />
+              </div>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            aria-label="Next recently viewed products"
+            onClick={() => scrollSlider(1)}
+            className="absolute right-1 top-1/2 z-10 hidden h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-md transition hover:border-orange-300 hover:text-orange-600 md:flex"
+          >
+            <ChevronRight size={20} />
+          </button>
         </div>
       </div>
     </section>

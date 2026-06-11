@@ -16,6 +16,9 @@ import { useStorefrontI18n } from '@/lib/useStorefrontI18n'
 import toast from 'react-hot-toast'
 import Title from './Title'
 
+const DEFAULT_ITEMS_PER_ROW = 6
+const DEFAULT_ROWS = 2
+
 // Helper to get product image
 const getImageSrc = (product, index = 0) => {
   if (product.images && Array.isArray(product.images) && product.images.length > index) {
@@ -188,7 +191,7 @@ const ProductCard = ({ product }) => {
   return (
     <Link
       href={`/product/${product.slug || product._id || ''}`}
-      className={`group bg-white rounded-2xl border border-slate-200/80 ${hasSecondary ? 'hover:shadow-xl' : 'hover:shadow-md'} transition-all duration-300 flex flex-col relative overflow-hidden hover:-translate-y-0.5`}
+      className={`group bg-white rounded-[2px] border border-slate-200/80 ${hasSecondary ? 'hover:shadow-xl' : 'hover:shadow-md'} transition-all duration-300 flex flex-col relative overflow-hidden hover:-translate-y-0.5`}
       onMouseEnter={hasSecondary ? () => setHovered(true) : null}
       onMouseLeave={hasSecondary ? () => setHovered(false) : null}
     >
@@ -207,7 +210,7 @@ const ProductCard = ({ product }) => {
           className={`w-full h-full object-cover z-0 ${hasSecondary ? 'transition-opacity duration-500' : ''} ${
             hasSecondary && hovered ? 'opacity-0' : 'opacity-100'
           }`}
-          sizes="(max-width: 768px) 100vw, (max-width: 1300px) 50vw, 25vw"
+          sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 16vw"
           priority
           onError={(e) => { e.currentTarget.src = 'https://ik.imagekit.io/jrstupuke/placeholder.png' }}
         />
@@ -221,7 +224,7 @@ const ProductCard = ({ product }) => {
             className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ${
               hovered ? 'opacity-100' : 'opacity-0'
             }`}
-            sizes="(max-width: 768px) 100vw, (max-width: 1300px) 50vw, 25vw"
+            sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 16vw"
             priority
             onError={(e) => { e.currentTarget.src = 'https://ik.imagekit.io/jrstupuke/placeholder.png' }}
           />
@@ -355,12 +358,12 @@ const BestSelling = () => {
   const [error, setError] = useState(null)
   const [sectionTitle, setSectionTitle] = useState('Craziest sale of the year!')
   const [sectionDescription, setSectionDescription] = useState("Grab the best deals before they're gone!")
-  const [layoutSettings, setLayoutSettings] = useState({ style: 'grid', itemsPerRow: 5, rows: 2 })
+  const [layoutSettings, setLayoutSettings] = useState({ style: 'grid', itemsPerRow: DEFAULT_ITEMS_PER_ROW, rows: DEFAULT_ROWS })
   const fetchControllerRef = useRef(null)
   const retryTimerRef = useRef(null)
   const featuredProductsLengthRef = useRef(0)
 
-  const visibleCount = Math.max(1, Math.min(40, Number(layoutSettings.itemsPerRow || 5) * Number(layoutSettings.rows || 2)))
+  const visibleCount = Math.max(1, Math.min(40, Number(layoutSettings.itemsPerRow || DEFAULT_ITEMS_PER_ROW) * Number(layoutSettings.rows || DEFAULT_ROWS)))
   const effectiveSectionTitle = sectionTitle === 'Craziest sale of the year!' ? t('featured.title') : sectionTitle
   const effectiveSectionDescription = sectionDescription === "Grab the best deals before they're gone!"
     ? t('featured.description')
@@ -416,7 +419,7 @@ const BestSelling = () => {
         const homeMenu = appearanceData?.homeMenuCategories || {}
         setLayoutSettings((prev) => ({
           style: ['grid', 'list', 'carousel', 'horizontal'].includes(homeMenu.style) ? homeMenu.style : prev.style,
-          itemsPerRow: Math.max(1, Math.min(10, Number(homeMenu.itemsPerRow || prev.itemsPerRow))),
+          itemsPerRow: DEFAULT_ITEMS_PER_ROW,
           rows: Math.max(1, Math.min(6, Number(homeMenu.rows || prev.rows)))
         }))
 
@@ -508,7 +511,7 @@ const BestSelling = () => {
       if (nextLayout && typeof nextLayout === 'object') {
         setLayoutSettings((prev) => ({
           style: ['grid', 'list', 'carousel', 'horizontal'].includes(nextLayout.style) ? nextLayout.style : prev.style,
-          itemsPerRow: Math.max(1, Math.min(10, Number(nextLayout.itemsPerRow || prev.itemsPerRow))),
+          itemsPerRow: DEFAULT_ITEMS_PER_ROW,
           rows: Math.max(1, Math.min(6, Number(nextLayout.rows || prev.rows)))
         }))
       }
@@ -555,13 +558,13 @@ const BestSelling = () => {
       />
 
       <div
-        className={layoutSettings.style === 'list' ? 'mt-6 grid grid-cols-1 gap-3' : 'featured-products-grid mt-6 gap-2 sm:gap-4'}
-        style={layoutSettings.style === 'list' ? undefined : { '--desktop-cols': String(Math.max(1, Math.min(10, Number(layoutSettings.itemsPerRow || 5)))) }}
+        className={layoutSettings.style === 'list' ? 'mt-6 grid grid-cols-1 gap-3' : 'featured-products-grid mt-6 gap-2'}
+        style={layoutSettings.style === 'list' ? undefined : { '--desktop-cols': String(Math.max(1, Math.min(10, Number(layoutSettings.itemsPerRow || DEFAULT_ITEMS_PER_ROW)))) }}
       >
         {isLoading && featuredProducts.length === 0
           ? Array(visibleCount).fill(0).map((_, idx) => (
-              <div key={idx} className="bg-white rounded-xl shadow-sm animate-pulse">
-                <div className="w-full h-36 sm:h-64 bg-gray-200 rounded-t-xl" />
+              <div key={idx} className="bg-white rounded-[2px] shadow-sm animate-pulse">
+                <div className="w-full h-36 sm:h-64 bg-gray-200 rounded-t-[2px]" />
                 <div className="p-2">
                   <div className="h-4 bg-gray-200 rounded mb-2" />
                   <div className="flex items-center gap-1 mb-3">

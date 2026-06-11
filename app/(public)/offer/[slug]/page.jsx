@@ -247,7 +247,7 @@ export default function SpecialOfferBySlugPage() {
     <div className="min-h-screen w-full">
       {showTopBanner && (
         <div className="bg-gradient-to-r from-sky-600 to-blue-700 text-white py-1 px-2 sm:py-1.5 sm:px-3 relative overflow-hidden">
-          <div className="max-w-[1250px] mx-auto pr-6 sm:pr-8 overflow-hidden">
+          <div className="max-w-[1400px] mx-auto px-4 sm:px-6 overflow-hidden">
             <div className="flex items-center justify-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-semibold whitespace-nowrap">
               <Sparkles className="animate-pulse flex-shrink-0" size={12} />
               <span className="truncate">{bannerMessage}</span>
@@ -267,7 +267,7 @@ export default function SpecialOfferBySlugPage() {
       )}
 
       <div className="w-full">
-        <div className="max-w-[1250px] mx-auto px-2 sm:px-6 pb-24 lg:pb-0">
+        <div className="max-w-[1400px] mx-auto px-4 sm:px-6 pb-24 lg:pb-0">
           <div>
           <ProductDetails
             product={productWithDiscount}

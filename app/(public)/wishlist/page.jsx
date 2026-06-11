@@ -218,7 +218,7 @@ function WishlistAuthed() {
     return (
       <>
         <PageTitle title="My Wishlist" />
-        <div className="max-w-[1250px] mx-auto px-4 sm:px-6 py-10">
+        <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-10">
           <div className="flex items-center justify-center py-16">
             <div className="h-10 w-10 rounded-full border-4 border-orange-200 border-t-orange-500 animate-spin" />
           </div>
@@ -231,7 +231,7 @@ function WishlistAuthed() {
     <>
       <PageTitle title="My Wishlist" />
 
-      <div className="max-w-[1320px] mx-auto px-4 sm:px-6 py-6 sm:py-8 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_360px] gap-6 xl:gap-8">
+      <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-6 sm:py-8 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_360px] gap-6 xl:gap-8">
 
         {/* ------------------ LEFT (80%) ------------------ */}
         <main className="min-w-0">
@@ -269,7 +269,7 @@ function WishlistAuthed() {
                 </button>
               </div>
 
-              <div className="grid gap-4 xl:gap-5 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
+              <div className="grid gap-2 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
                 {wishlist.map((item) => {
                   const product = getProduct(item);
                   if (!product) return null;
@@ -284,7 +284,7 @@ function WishlistAuthed() {
                   return (
                     <div
                       key={product._pid}
-                      className={`group bg-white rounded-2xl border-2 transition-all hover:shadow-lg relative overflow-hidden ${
+                      className={`group bg-white rounded-[2px] border-2 transition-all hover:shadow-lg relative overflow-hidden ${
                         isSelected ? 'border-orange-500 shadow-lg' : 'border-gray-200 hover:border-orange-200'
                       }`}
                     >

@@ -31,27 +31,27 @@ const HomeDealsSection = ({ sections }) => {
   // Only show the first two sections in the top row
   return (
     <section className="max-w-7xl mx-auto px-4 my-12 hidden xl:block">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 items-stretch">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 items-stretch">
         {/* LEFT TWO — Deal Sections (only first two, never duplicated below) */}
         {(sections || []).slice(0,2).map((section, index) => (
           section && section.products && section.products.length > 0 && section.title ? (
-            <div key={index} className="bg-white rounded-2xl shadow-md border border-gray-100 p-4">
+            <div key={index} className="bg-white rounded-[2px] shadow-md border border-gray-100 p-4">
               <div className="flex justify-between items-center mb-3">
                 <h2 className="font-semibold text-gray-800 text-lg">{section.title}</h2>
                 <button className="text-blue-500 text-sm hover:underline">›</button>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2">
                 {section.products.slice(0,4).map((item, idx) => (
                   <div
                     key={idx}
-                    className="bg-gray-50 p-2 rounded-xl hover:shadow transition-all flex flex-col items-center text-center"
+                    className="bg-gray-50 p-2 rounded-[2px] hover:shadow transition-all flex flex-col items-center text-center"
                   >
                     <Image
                       src={item.images && item.images[0] ? item.images[0] : ''}
                       alt={item.name}
                       width={300}
                       height={300}
-                      className="rounded-xl w-full h-32 object-contain"
+                      className="rounded-[2px] w-full h-32 object-contain"
                     />
                     <p className="text-sm font-medium mt-1 text-gray-700">{item.name && item.name.length > 25 ? item.name.slice(0, 25) + '…' : item.name}</p>
                   </div>

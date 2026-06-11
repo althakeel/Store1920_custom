@@ -378,7 +378,7 @@ const ProductCard = ({ product }) => {
 
     return (
         <Link href={`/product/${product.slug || product._id || ''}`} className="group w-full">
-            <div className="relative flex h-full flex-col overflow-hidden rounded-[20px] border border-[#d9dde5] bg-white shadow-[0_2px_14px_rgba(15,23,42,0.06)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(15,23,42,0.12)]">
+            <div className="relative flex h-full flex-col overflow-hidden rounded-[2px] border border-[#d9dde5] bg-white shadow-[0_2px_14px_rgba(15,23,42,0.06)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(15,23,42,0.12)]">
                 <div className={`relative w-full overflow-hidden bg-[#f8f8f8] transition-transform duration-300 group-hover:scale-[1.04] ${getAspectRatioClass(product.aspectRatio)}`}>
                     {primaryBadge ? (
                         <span className="absolute left-3 top-3 z-20 rounded-[8px] bg-[#0d615d] px-3 py-1 text-[11px] font-semibold text-white shadow-sm">

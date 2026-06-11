@@ -54,6 +54,61 @@ function getOriginalImageUrl(value) {
 
 const DEFAULT_FLYOUT_IMAGE = '/assets/payments/tabby_logo.png'
 
+function ShopShowcaseSkeleton() {
+  return (
+    <section className="max-w-[1400px] mx-auto px-4 sm:px-6 mt-6" aria-label="Loading shop showcase">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[280px_minmax(0,1fr)]">
+        <div className="relative hidden min-h-0 lg:block">
+          <aside className="absolute inset-0 flex min-h-0 flex-col overflow-hidden rounded-none border border-slate-200 bg-white shadow-sm">
+            <div className="flex items-center justify-between bg-[#222] px-4 py-3 text-white">
+              <div className="flex items-center gap-2">
+                <div className="h-4 w-4 rounded-[2px] bg-white/25" />
+                <div className="h-3 w-24 rounded-[2px] bg-white/35" />
+              </div>
+              <div className="h-3 w-3 rounded-[2px] bg-white/25" />
+            </div>
+            <div className={`${styles.leftMenuScroll} animate-pulse`}>
+              {Array.from({ length: 10 }).map((_, index) => (
+                <div key={index} className="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
+                  <div className="h-4 w-4 rounded-[2px] bg-slate-200" />
+                  <div className="h-3 flex-1 rounded-[2px] bg-slate-200" />
+                  <div className="h-3 w-3 rounded-[2px] bg-slate-200" />
+                </div>
+              ))}
+            </div>
+          </aside>
+        </div>
+
+        <div className={bannerStyles.bannerGrid}>
+          <div className={`${bannerStyles.bannerRow} relative overflow-hidden rounded-[2px] border border-slate-200 bg-slate-100 shadow-sm`}>
+            <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-slate-100 via-slate-200 to-slate-100" />
+            <div className="absolute inset-0 flex items-center px-8">
+              <div className="space-y-3">
+                <div className="h-8 w-48 rounded-[2px] bg-white/60" />
+                <div className="h-4 w-32 rounded-[2px] bg-white/60" />
+                <div className="h-8 w-28 rounded-[2px] bg-white/60" />
+              </div>
+            </div>
+          </div>
+
+          <div className={`${bannerStyles.bannerRow} relative overflow-hidden rounded-[2px] border border-slate-200 bg-slate-100 shadow-sm`}>
+            <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-slate-100 via-slate-200 to-slate-100" />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="h-5 w-56 rounded-[2px] bg-white/65" />
+            </div>
+          </div>
+        </div>
+
+        <div className="hidden lg:col-span-2 lg:grid grid-cols-4 gap-2">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div key={index} className="aspect-[1225/639] animate-pulse rounded-[2px] border border-slate-200 bg-slate-100" />
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function getCategoryIconByName(name) {
   const text = String(name || '').toLowerCase()
   if (text.includes('mobile') || text.includes('phone')) return Smartphone
@@ -101,16 +156,24 @@ export default function ShopShowcaseSection() {
     const load = async () => {
       try {
         const cacheBuster = Date.now()
-        const [showcaseRes, settingsRes, navbarRes] = await Promise.all([
-          axios.get('/api/public/shop-showcase', {
-            headers: { 'Cache-Control': 'no-cache' },
-            params: { t: cacheBuster }
-          }),
+        const showcaseRes = await axios.get('/api/public/shop-showcase', {
+          headers: { 'Cache-Control': 'no-cache' },
+          params: { t: cacheBuster }
+        })
+
+        const showcaseData = showcaseRes.data || { config: null, sectionProducts: [], products: [], categories: [] }
+        setData(showcaseData)
+
+        if (!showcaseData.config || showcaseData.config.enabled === false) {
+          setStoreMenuItems([])
+          return
+        }
+
+        const [settingsRes, navbarRes] = await Promise.all([
           axios.get('/api/store/settings').catch(() => ({ data: {} })),
           axios.get('/api/store/navbar-menu').catch(() => ({ data: {} })),
         ])
 
-        setData(showcaseRes.data || { config: null, sectionProducts: [], products: [], categories: [] })
         const advancedItems = Array.isArray(settingsRes.data?.navMenuItems) ? settingsRes.data.navMenuItems : []
         const resolvedMenuStyle = settingsRes.data?.navMenuStyle && typeof settingsRes.data.navMenuStyle === 'object'
           ? settingsRes.data.navMenuStyle
@@ -256,17 +319,18 @@ export default function ShopShowcaseSection() {
     }
   }, [])
 
-  if (loading || !config || config.enabled === false) return null
+  if (loading) return <ShopShowcaseSkeleton />
+  if (!config || config.enabled === false) return null
 
   return (
     <section className="max-w-[1400px] mx-auto px-4 sm:px-6 mt-6">
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-[280px_minmax(0,1fr)]">
         <div
-          className="relative hidden h-full lg:block"
+          className="relative hidden min-h-0 lg:block"
           onMouseEnter={clearFlyoutCloseTimer}
           onMouseLeave={scheduleFlyoutClose}
         >
-          <aside className="flex h-full flex-col overflow-hidden rounded-none border border-slate-200 bg-white shadow-sm">
+          <aside className="absolute inset-0 flex min-h-0 flex-col overflow-hidden rounded-none border border-slate-200 bg-white shadow-sm">
             <div
               className="flex items-center justify-between bg-[#222] px-4 py-3 text-white"
               onMouseEnter={() => {

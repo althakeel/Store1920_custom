@@ -115,7 +115,7 @@ const ProductCard = ({ product }) => {
   return (
     <Link
       href={`/product/${product.slug || product._id || ''}`}
-      className={`group bg-white rounded-xl shadow-sm ${hasSecondary ? 'hover:shadow-lg' : ''} transition-all duration-300 flex flex-col relative overflow-hidden`}
+      className={`group bg-white rounded-[2px] shadow-sm ${hasSecondary ? 'hover:shadow-lg' : ''} transition-all duration-300 flex flex-col relative overflow-hidden`}
       onMouseEnter={hasSecondary ? () => setHovered(true) : null}
       onMouseLeave={hasSecondary ? () => setHovered(false) : null}
     >
@@ -329,9 +329,9 @@ const FeaturedProducts = () => {
           description={t('featured.description')}
           visibleButton={false}
         />
-        <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 sm:gap-4">
+        <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
           {Array(10).fill(0).map((_, idx) => (
-            <div key={idx} className="bg-white rounded-xl shadow-sm animate-pulse">
+            <div key={idx} className="bg-white rounded-[2px] shadow-sm animate-pulse">
               <div className="w-full h-32 sm:h-56 bg-gray-200 rounded-t-xl" />
               <div className="p-2">
                 <div className="h-4 bg-gray-200 rounded mb-2" />
@@ -364,7 +364,7 @@ const FeaturedProducts = () => {
         visibleButton={false}
       />
 
-      <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 sm:gap-4">
+      <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
         {featuredProducts.map((product) => (
           <ProductCard key={product._id || product.id} product={product} />
         ))}

@@ -7,7 +7,7 @@ const DEFAULT_APPEARANCE = {
   carouselSlider: { enabled: true, autoPlay: true, interval: 5, showControls: true },
   dealsOfTheDay: { enabled: true, title: 'Deals of the Day', discount: 50 },
   sitemapCategories: { enabled: true, columnsPerRow: 4 },
-  homeMenuCategories: { enabled: true, style: 'grid', itemsPerRow: 5, rows: 2 },
+  homeMenuCategories: { enabled: true, style: 'grid', itemsPerRow: 6, rows: 2 },
   navbarMenu: { enabled: true, position: 'top', style: 'horizontal' },
   exploreYourInterests: { enabled: true, productIds: [] },
   productPageInfo: {

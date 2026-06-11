@@ -1623,9 +1623,9 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                       </div>
 
                       <div className="p-5 overflow-y-auto max-h-[60vh]">
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
                           {allFbtCards.map((card) => (
-                            <label key={card._id} className={`relative rounded-lg border p-3 cursor-pointer transition ${card.checked ? 'border-gray-300 bg-white' : 'border-gray-200 bg-gray-50/40 opacity-80'}`}>
+                            <label key={card._id} className={`relative rounded-[2px] border p-3 cursor-pointer transition ${card.checked ? 'border-gray-300 bg-white' : 'border-gray-200 bg-gray-50/40 opacity-80'}`}>
                               <input
                                 type="checkbox"
                                 checked={card.checked}
@@ -1813,26 +1813,23 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
               </div>
 
             {/* Quantity */}
-            {isSelectionInStock && (
+            {isSelectionInStock && !addedToCart && (
               <div
                 className="flex w-full items-center gap-3 pt-2"
                 dir="ltr"
                 style={isArabic ? { justifyContent: 'flex-end' } : undefined}
               >
-                <label className="text-sm font-semibold text-gray-900 leading-none whitespace-nowrap">Quantity:</label>
+                <label className="text-sm font-semibold text-gray-900 leading-none whitespace-nowrap">
+                  {isArabic ? 'Ø§Ù„ÙƒÙ…ÙŠØ©:' : 'Quantity:'}
+                </label>
                 <select
-                  value={addedToCart ? cartQty : quantity}
+                  value={quantity}
                   onChange={async (e) => {
                     const newQty = Number(e.target.value) || 1;
                     setQuantity(newQty);
-                    if (addedToCart) {
-                      const pid = String(product._id || '');
-                      dispatch(setCartItemQuantity({ productId: pid, quantity: newQty }));
-                      if (isSignedIn) { try { await dispatch(uploadCart()).unwrap(); } catch (_) {} }
-                    }
                   }}
                   dir="ltr"
-                  className="h-11 flex-1 w-full rounded-lg border border-gray-300 bg-white px-3 text-base text-gray-900 font-medium cursor-pointer hover:border-gray-400"
+                  className="h-11 flex-1 w-full rounded-[2px] border border-gray-300 bg-white px-3 text-base text-gray-900 font-medium cursor-pointer transition hover:border-gray-400 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-100"
                 >
                   {Array.from({ length: Math.max(1, maxOrderQty) }).map((_, i) => {
                     const val = i + 1;
@@ -1849,7 +1846,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   <button
                     onClick={handleAddToCart}
                     disabled={!isSelectionInStock}
-                    className={`w-full py-3 px-4 rounded-lg font-bold text-base transition ${
+                    className={`w-full py-3 px-4 rounded-[2px] font-bold text-base transition ${
                       !isSelectionInStock
                         ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
                         : 'bg-yellow-400 text-black hover:brightness-95'
@@ -1863,7 +1860,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   <button
                     onClick={handleOrderNow}
                     disabled={!isSelectionInStock}
-                    className={`w-full py-3 px-4 rounded-lg font-bold text-base transition ${
+                    className={`w-full py-3 px-4 rounded-[2px] font-bold text-base transition ${
                       !isSelectionInStock ? 'bg-gray-300 text-gray-600 cursor-not-allowed' : 'bg-orange-500 text-white hover:bg-orange-600'
                     }`}
                   >
@@ -1872,7 +1869,20 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <div className="w-full h-12 rounded-lg border border-gray-300 bg-white px-3 flex items-center justify-between">
+                  <div className="overflow-hidden rounded-[2px] border border-gray-300 bg-white">
+                    <div className="flex items-center justify-between border-b border-gray-200 px-3 py-2.5">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                          {isArabic ? 'ÙÙŠ Ø§Ù„Ø³Ù„Ø©' : 'In cart'}
+                        </p>
+                        <p className="mt-0.5 text-sm font-bold text-gray-900">
+                          {cartQty} {cartQty === 1 ? (isArabic ? 'Ø¹Ù†ØµØ±' : 'item') : (isArabic ? 'Ø¹Ù†Ø§ØµØ±' : 'items')} added
+                        </p>
+                      </div>
+                      <ShoppingCartIcon size={18} className="text-orange-500" />
+                    </div>
+
+                    <div className="flex h-12 items-center justify-between px-3">
                     <button
                       type="button"
                       onClick={async () => {
@@ -1885,14 +1895,14 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                           if (isSignedIn) { try { await dispatch(uploadCart()).unwrap(); } catch (_) {} }
                         }
                       }}
-                      className="w-6 h-6 rounded hover:bg-gray-100 flex items-center justify-center"
+                      className="flex h-8 w-8 items-center justify-center rounded-[2px] text-gray-900 transition hover:bg-gray-100"
                       aria-label={cartQty <= 1 ? 'Remove from cart' : 'Decrease quantity'}
                     >
                       {cartQty <= 1 ? <Trash2 size={14} className="text-red-500" /> : <MinusIcon size={14} className="text-gray-900" />}
                     </button>
 
-                    <div className="text-center leading-tight px-2">
-                      <p className="text-xs font-bold text-orange-600">{cartQty} Added</p>
+                    <div className="min-w-[64px] text-center leading-tight px-2">
+                      <p className="text-lg font-bold text-gray-950">{cartQty}</p>
                     </div>
 
                     <button
@@ -1913,17 +1923,19 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                           if (isSignedIn) { try { await dispatch(uploadCart()).unwrap(); } catch (_) {} }
                         }
                       }}
-                      className="w-6 h-6 rounded hover:bg-gray-100 text-gray-900 flex items-center justify-center"
+                      className="flex h-8 w-8 items-center justify-center rounded-[2px] text-gray-900 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
                       aria-label="Increase quantity"
+                      disabled={cartQty >= Math.max(1, maxOrderQty)}
                     >
                       <PlusIcon size={14} />
                     </button>
+                    </div>
                   </div>
 
                   <button
                     type="button"
                     onClick={() => router.push('/checkout')}
-                    className="w-full h-12 px-4 rounded-lg bg-orange-500 text-white font-bold text-sm hover:bg-orange-600 transition text-center"
+                    className="w-full h-12 px-4 rounded-[2px] bg-orange-500 text-white font-bold text-sm hover:bg-orange-600 transition text-center"
                   >
                     {isArabic ? 'المتابعة إلى الدفع' : 'Proceed to checkout'}
                   </button>
@@ -2059,7 +2071,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-6">
               {relatedProducts.map((relatedProduct) => (
                 <ProductCard key={relatedProduct._id} product={relatedProduct} />
               ))}

@@ -26,7 +26,7 @@ const Section4 = ({ sections, loading = false }) => {
                 <div className="h-7 w-48 bg-gray-100 rounded animate-pulse" />
                 <div className="h-4 w-64 bg-gray-100 rounded mt-2 animate-pulse" />
               </div>
-              <div className="flex gap-3 sm:gap-4 overflow-hidden pb-2">
+              <div className="flex gap-2 overflow-hidden pb-2">
                 <SkeletonLoader />
               </div>
             </div>
@@ -60,7 +60,7 @@ const SkeletonLoader = () => {
       {[...Array(5)].map((_, idx) => (
         <div
           key={idx}
-          className="flex-shrink-0 w-56 sm:w-64 bg-white rounded-xl overflow-hidden border border-gray-100 animate-pulse"
+          className="flex-shrink-0 w-[calc((100%_-_0.5rem)/2)] sm:w-[calc((100%_-_1rem)/3)] md:w-[calc((100%_-_1.5rem)/4)] lg:w-[calc((100%_-_2.5rem)/6)] bg-white rounded-[2px] overflow-hidden border border-gray-100 animate-pulse"
         >
           <div className="w-full h-56 sm:h-64 bg-gray-100"></div>
           <div className="p-4 space-y-2.5">
@@ -262,7 +262,7 @@ const HorizontalSlider = ({ section, router, allProducts }) => {
           onPointerUp={endDragging}
           onPointerLeave={endDragging}
           onPointerCancel={endDragging}
-          className={`flex gap-3 sm:gap-4 overflow-x-auto scrollbar-hide pb-2 ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+          className={`flex gap-2 overflow-x-auto scrollbar-hide pb-2 ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
           style={{ scrollBehavior: 'smooth', touchAction: 'pan-y' }}
         >
           {loading ? (
@@ -282,7 +282,7 @@ const HorizontalSlider = ({ section, router, allProducts }) => {
                 }}
                 onDragStart={(e) => e.preventDefault()}
                 draggable="false"
-                className="product-card-item flex-shrink-0 w-56 sm:w-64 bg-white rounded-xl overflow-hidden group cursor-pointer transition-all duration-300 select-none border border-gray-100 hover:border-gray-200 hover:shadow-lg"
+                className="product-card-item flex-shrink-0 w-[calc((100%_-_0.5rem)/2)] sm:w-[calc((100%_-_1rem)/3)] md:w-[calc((100%_-_1.5rem)/4)] lg:w-[calc((100%_-_2.5rem)/6)] bg-white rounded-[2px] overflow-hidden group cursor-pointer transition-all duration-300 select-none border border-gray-100 hover:border-gray-200 hover:shadow-lg"
               >
                 {/* Product Image */}
                 <div className="relative w-full h-56 sm:h-64 bg-gray-50 overflow-hidden">

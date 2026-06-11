@@ -27,16 +27,16 @@ export default function ProductSection({ title, products, viewAllLink }) {
             </div>
 
             {/* Products Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-5 xl:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
                 {products.slice(0, 12).map((product) => (
                     <div
                         key={product._id}
                         onClick={() => product.slug && router.push(`/product/${product.slug}`)}
-                        className={`cursor-pointer group hover:shadow-md transition-all duration-200 rounded-lg p-2 hover:bg-gray-50 ${!product.slug ? 'opacity-50 pointer-events-none' : ''}`}
+                        className={`cursor-pointer group hover:shadow-md transition-all duration-200 rounded-[2px] p-2 hover:bg-gray-50 ${!product.slug ? 'opacity-50 pointer-events-none' : ''}`}
                         title={product.slug ? '' : 'No slug set for this product'}
                     >
                         {/* Product Image */}
-                        <div className="relative aspect-square bg-white rounded-lg overflow-hidden mb-2 border border-gray-100">
+                        <div className="relative aspect-square bg-white rounded-[2px] overflow-hidden mb-2 border border-gray-100">
                             <Image
                                 src={product.images[0]}
                                 alt={product.name}

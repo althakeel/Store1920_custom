@@ -29,10 +29,10 @@ function HomeSectionSkeleton() {
     return (
         <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 mt-6 sm:mt-8">
             <div className="h-7 w-44 bg-slate-100 rounded animate-pulse mb-5" />
-            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4 md:gap-6">
+            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2">
                 {Array.from({ length: 12 }).map((_, index) => (
                     <div key={`home-skeleton-${index}`} className="animate-pulse">
-                        <div className="w-full aspect-square bg-slate-100 rounded-md" />
+                        <div className="w-full aspect-square bg-slate-100 rounded-[2px]" />
                         <div className="h-3 bg-slate-100 rounded mt-3 w-4/5 mx-auto" />
                         <div className="h-3 bg-slate-100 rounded mt-2 w-3/5 mx-auto" />
                     </div>

@@ -144,7 +144,7 @@ function SearchResultsInner() {
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="max-w-[1400px] mx-auto px-4 sm:px-6">
         {/* Header */}
         <div className="mb-8">
           <button
@@ -190,12 +190,12 @@ function SearchResultsInner() {
             <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
               <p className="text-gray-700 font-semibold">Recommended products</p>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-2">
               {recommendedProducts.map((product) => (
                 <Link
                   key={product._id}
                   href={`/product/${product.slug}`}
-                  className="group bg-white rounded-lg shadow-sm hover:shadow-lg transition overflow-hidden"
+                  className="group bg-white rounded-[2px] shadow-sm hover:shadow-lg transition overflow-hidden"
                 >
                   <div className="relative h-48 bg-gray-100 overflow-hidden">
                     {product.image ? (
@@ -247,12 +247,12 @@ function SearchResultsInner() {
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-2">
               {products.map((product) => (
                 <Link
                   key={product._id}
                   href={`/product/${product.slug}`}
-                  className="group bg-white rounded-lg shadow-sm hover:shadow-lg transition overflow-hidden"
+                  className="group bg-white rounded-[2px] shadow-sm hover:shadow-lg transition overflow-hidden"
                 >
                   {/* Product Image */}
                   <div className="relative h-48 bg-gray-100 overflow-hidden">
@@ -312,12 +312,12 @@ function SearchResultsInner() {
                     Recommended similar products
                   </p>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-2">
                   {similarProducts.map((product) => (
                     <Link
                       key={product._id}
                       href={`/product/${product.slug}`}
-                      className="group bg-white rounded-lg shadow-sm hover:shadow-lg transition overflow-hidden"
+                      className="group bg-white rounded-[2px] shadow-sm hover:shadow-lg transition overflow-hidden"
                     >
                       <div className="relative h-48 bg-gray-100 overflow-hidden">
                         {product.image ? (

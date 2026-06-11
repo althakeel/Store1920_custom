@@ -148,7 +148,7 @@ function ProductsContent() {
 
     return (
         <div className="bg-gray-50">
-            <div className="max-w-7xl mx-auto px-4 py-8">
+            <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-8">
                 {/* Header */}
                 <div className="flex items-center justify-between mb-6">
                     <div>
@@ -342,7 +342,7 @@ function ProductsContent() {
                     {/* Products Grid */}
                     <div className="flex-1">
                         {filteredProducts.length > 0 && (
-                            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
                                 {filteredProducts.map((product) => (
                                     <ProductCard key={product._id || product.id || product.slug} product={product} />
                                 ))}

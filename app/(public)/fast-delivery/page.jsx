@@ -88,7 +88,7 @@ export default function FastDeliveryPage() {
         </div>
 
         {/* Products Grid */}
-        <div className="max-w-7xl mx-auto px-4 py-12">
+        <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-12">
           {error ? (
             <div className="text-center py-16">
               <div className="text-red-500 text-lg mb-4">{error}</div>
@@ -137,7 +137,7 @@ export default function FastDeliveryPage() {
               </div>
 
               {/* Products Grid */}
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
                 {products.map((product) => (
                   <ProductCard key={product._id} product={product} />
                 ))}

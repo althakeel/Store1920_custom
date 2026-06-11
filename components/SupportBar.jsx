@@ -1,11 +1,54 @@
+'use client';
+
+import { useEffect, useState } from 'react';
 import { useStorefrontI18n } from '@/lib/useStorefrontI18n';
+
+const NAVBAR_APPEARANCE_CACHE_KEY = 'navbarAppearanceCache';
+const DEFAULT_NAVBAR_BG = '#8f3404';
+
+function readCachedNavbarBg() {
+  if (typeof window === 'undefined') return DEFAULT_NAVBAR_BG;
+
+  try {
+    const raw = window.localStorage.getItem(NAVBAR_APPEARANCE_CACHE_KEY);
+    if (!raw) return DEFAULT_NAVBAR_BG;
+
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed.backgroundColor === 'string' && parsed.backgroundColor.trim()) {
+      return parsed.backgroundColor.trim();
+    }
+  } catch {
+    // Keep the default navbar color when cached appearance is unavailable.
+  }
+
+  return DEFAULT_NAVBAR_BG;
+}
 
 export default function SupportBar() {
   const { t } = useStorefrontI18n();
+  const [navbarBg, setNavbarBg] = useState(DEFAULT_NAVBAR_BG);
+
+  useEffect(() => {
+    setNavbarBg(readCachedNavbarBg());
+
+    const handleNavbarAppearanceUpdate = (event) => {
+      const nextBg = event?.detail?.backgroundColor;
+      if (typeof nextBg === 'string' && nextBg.trim()) {
+        setNavbarBg(nextBg.trim());
+        return;
+      }
+      setNavbarBg(readCachedNavbarBg());
+    };
+
+    window.addEventListener('navbarAppearanceUpdated', handleNavbarAppearanceUpdate);
+    return () => {
+      window.removeEventListener('navbarAppearanceUpdated', handleNavbarAppearanceUpdate);
+    };
+  }, []);
 
   return (
-    <div className="w-full bg-gradient-to-r from-orange-500 via-orange-500 to-amber-500 py-3 md:py-4 px-4">
-      <div className="max-w-[1240px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-0">
+    <div className="w-full py-3 md:py-4 px-4" style={{ backgroundColor: navbarBg }}>
+      <div className="max-w-[1400px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-0 px-4 sm:px-6">
 
         {/* Left: headset icon + text */}
         <div className="flex items-center gap-3">

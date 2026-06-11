@@ -3,6 +3,7 @@ import GuestUser from '@/models/GuestUser';
 import Order from '@/models/Order';
 import { NextResponse } from "next/server";
 import { getAuth } from '@/lib/firebase-admin';
+import { buildGuestOrderIdentityClauses, normalizeEmail } from '@/lib/orderIdentity';
 
 function parseAuthHeader(request) {
     const authHeader = request.headers.get('authorization') || request.headers.get('Authorization');
@@ -37,39 +38,28 @@ export async function POST(request) {
 
     
         const user = await request.json();
-        const email = (user?.email || '').toString().trim().toLowerCase();
-        const phone = (user?.phone || '').toString().trim();
+        const email = normalizeEmail(user?.email || decodedToken.email);
+        const phone = (user?.phone || decodedToken.phone_number || '').toString().trim();
 
         if (!email && !phone) {
             return NextResponse.json({ error: "Email or phone required" }, { status: 400 });
         }
 
-        // Find guest user by email or phone
-        const guestUserFilter = [];
-        if (email) guestUserFilter.push({ email });
-        if (phone) guestUserFilter.push({ phone });
-
-        const guestUser = await GuestUser.findOne({
-            $or: guestUserFilter,
-            accountCreated: false
-        }).lean();
-
-        if (!guestUser) {
+        const orderFilter = buildGuestOrderIdentityClauses({ email, phone });
+        if (orderFilter.length === 0) {
             return NextResponse.json({ 
                 message: "No guest orders found",
                 linked: false 
             });
         }
 
-        // Find all guest orders with matching email or phone
-        const orderFilter = [];
-        if (email) orderFilter.push({ guestEmail: email });
-        if (phone) orderFilter.push({ guestPhone: phone });
-
         const guestOrders = await Order.find({
             isGuest: true,
-            $or: orderFilter
-        }).lean();
+            $and: [
+                { $or: [{ userId: { $exists: false } }, { userId: null }, { userId: '' }] },
+                { $or: orderFilter }
+            ]
+        }).select('_id').lean();
 
         if (guestOrders.length === 0) {
             return NextResponse.json({ 
@@ -78,7 +68,6 @@ export async function POST(request) {
             });
         }
 
-        // Link guest orders to the new user account
         await Order.updateMany({
             _id: {
                 $in: guestOrders.map(order => order._id)
@@ -90,12 +79,22 @@ export async function POST(request) {
             }
         });
 
-        // Mark guest user account as converted
-        await GuestUser.findByIdAndUpdate(guestUser._id, {
-            accountCreated: true,
-            convertedUserId: userId,
-            convertedAt: new Date()
-        });
+        if (email || phone) {
+            const guestUserFilter = [];
+            if (email) guestUserFilter.push({ email });
+            if (phone) guestUserFilter.push({ phone });
+
+            if (guestUserFilter.length > 0) {
+                await GuestUser.updateMany(
+                    { $or: guestUserFilter },
+                    {
+                        accountCreated: true,
+                        convertedUserId: userId,
+                        convertedAt: new Date()
+                    }
+                ).catch(() => {});
+            }
+        }
 
         return NextResponse.json({ 
             message: `Successfully linked ${guestOrders.length} guest order(s) to your account`,

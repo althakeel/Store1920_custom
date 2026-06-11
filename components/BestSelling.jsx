@@ -90,7 +90,7 @@ const ProductCard = ({ product }) => {
   return (
     <Link
       href={`/product/${product.slug || product.id || ''}`}
-      className={`group bg-white rounded-2xl border border-gray-200 shadow-sm ${hasSecondary ? 'hover:shadow-lg' : ''} transition-all duration-300 flex flex-col w-full h-full relative`}
+      className={`group bg-white rounded-[2px] border border-gray-200 shadow-sm ${hasSecondary ? 'hover:shadow-lg' : ''} transition-all duration-300 flex flex-col w-full h-full relative`}
       onMouseEnter={hasSecondary ? () => setHovered(true) : null}
       onMouseLeave={hasSecondary ? () => setHovered(false) : null}
     >
@@ -283,7 +283,7 @@ const BestSelling = () => {
   visibleButton={false}
 />
 
-  <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3 md:gap-6">
+  <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
         {shown.map((product) => (
           <ProductCard key={product._id} product={product} />
         ))}

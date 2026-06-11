@@ -79,7 +79,7 @@ export default function TopDeals() {
           <h2 className="text-base sm:text-lg md:text-[28px] font-semibold mb-4 sm:mb-5">{title}</h2>
 
           {loading ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 md:gap-6">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
               {[...Array(12)].map((_, index) => (
                 <div
                   key={`skeleton-${index}`}
@@ -87,7 +87,7 @@ export default function TopDeals() {
                 >
                   {/* Skeleton Image */}
                   <div
-                    className="w-full aspect-square rounded-md"
+                    className="w-full aspect-square rounded-[2px]"
                     style={{
                       background: 'linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%)',
                       backgroundSize: '200% 100%',
@@ -120,7 +120,7 @@ export default function TopDeals() {
           ) : products.length === 0 ? (
             <p className="text-gray-500 py-8 text-center text-sm sm:text-base">No Deals Found</p>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 md:gap-6">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
               {products?.slice(0, 12).map((item, i) => {
                 const img =
                   item.images?.[0] && item.images[0] !== ""
@@ -134,7 +134,7 @@ export default function TopDeals() {
                     href={`/product/${item.slug}`}
                     className="cursor-pointer text-center block group flex flex-col items-center"
                   >
-                    <div className="w-full aspect-square bg-gray-50 rounded-md overflow-hidden flex items-center justify-center group-hover:bg-gray-100 transition-colors">
+                    <div className="w-full aspect-square bg-gray-50 rounded-[2px] overflow-hidden flex items-center justify-center group-hover:bg-gray-100 transition-colors">
                       <img
                         src={img}
                         alt={item.name}

@@ -6,7 +6,7 @@ import { toast } from "react-hot-toast";
 import TrackingTimeline from "@/components/TrackingTimeline";
 import AnimatedProgressTracker from "@/components/AnimatedProgressTracker";
 import styles from "./tracking.module.css";
-import { RefreshCw } from "lucide-react";
+import { CheckCircle2, Clock3, PackageSearch, RefreshCw, SearchCheck } from "lucide-react";
 
 function TrackOrderPageInner() {
   const [phoneNumber, setPhoneNumber] = useState('')
@@ -15,7 +15,6 @@ function TrackOrderPageInner() {
   const [loading, setLoading] = useState(false)
   const [order, setOrder] = useState(null)
   const [notFound, setNotFound] = useState(false)
-  const [forceDelhivery, setForceDelhivery] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
 
   const handleRefresh = async () => {
@@ -24,7 +23,12 @@ function TrackOrderPageInner() {
     try {
       const params = new URLSearchParams();
       if (order.trackingId) params.append("awb", order.trackingId);
-      if (phoneNumber.trim()) params.append("phone", phoneNumber.trim());
+      const contact = phoneNumber.trim();
+      if (contact.includes("@")) {
+        params.append("email", contact);
+      } else if (contact) {
+        params.append("phone", contact);
+      }
       
       const res = await axios.get(`/api/track-order?${params.toString()}`);
       if (res.data.success && res.data.order) {
@@ -48,7 +52,7 @@ function TrackOrderPageInner() {
   const handleTrack = async (e) => {
     e.preventDefault()
     if (!phoneNumber.trim() && !awbNumber.trim()) {
-      toast.error('Please enter Phone Number or AWB Number')
+      toast.error('Please enter mobile number, email, AWB, reference number, or booking number')
       return
     }
 
@@ -58,39 +62,38 @@ function TrackOrderPageInner() {
 
     try {
       const params = new URLSearchParams()
-      if (phoneNumber.trim()) params.append('phone', phoneNumber.trim())
+      const contact = phoneNumber.trim()
+      if (contact.includes('@')) {
+        params.append('email', contact)
+      } else if (contact) {
+        params.append('phone', contact)
+      }
       if (awbNumber.trim()) params.append('awb', awbNumber.trim())
-      if (forceDelhivery) params.append('carrier', 'delhivery')
       
-      const res = await axios.get(`/api/track-order?${params.toString()}`)
+      const res = await axios.get(`/api/track-order?${params.toString()}`, {
+        validateStatus: (status) => status < 500,
+      })
       if (res.data.success && res.data.order) {
         setOrder(res.data.order)
-      } else {
-        setNotFound(true)
-        toast.error('Order not found')
-      }
-    } catch (error) {
-      console.error('Track order error:', error)
-      // Auto-retry Delhivery when order not found but AWB provided
-      const status = error?.response?.status
-      const msg = error?.response?.data?.message
-      if (!forceDelhivery && awbNumber.trim() && status === 404) {
-        try {
-          const retry = await axios.get(`/api/track-order?carrier=delhivery&awb=${encodeURIComponent(awbNumber.trim())}`)
-          if (retry.data?.success && retry.data?.order) {
-            setOrder(retry.data.order)
-            setNotFound(false)
-            toast.dismiss()
-            return
-          }
-        } catch (e2) {
-          // show a clearer message if token missing
-          const m2 = e2?.response?.data?.message
-          toast.error(m2 || msg || 'Order not found')
+      } else if (awbNumber.trim() && res.status === 404) {
+        const retry = await axios.get(`/api/track-order?carrier=c3xpress&awb=${encodeURIComponent(awbNumber.trim())}`, {
+          validateStatus: (status) => status < 500,
+        })
+        if (retry.data?.success && retry.data?.order) {
+          setOrder(retry.data.order)
+          setNotFound(false)
+          toast.dismiss()
+        } else {
+          setNotFound(true)
+          toast.error(retry.data?.message || res.data?.message || 'Order not found')
         }
       } else {
-        toast.error(msg || 'Order not found')
+        setNotFound(true)
+        toast.error(res.data?.message || 'Order not found')
       }
+    } catch (error) {
+      const msg = error?.response?.data?.message
+      toast.error(msg || 'Unable to track order. Please try again.')
       setNotFound(true)
     } finally {
       setLoading(false)
@@ -129,50 +132,42 @@ function TrackOrderPageInner() {
   }
 
   const getStatusSteps = (status) => {
-    // Expanded status steps for more granular tracking
     const steps = [
       'ORDER_PLACED',
-      'CONFIRMED',
       'PROCESSING',
-      'PICKUP_REQUESTED',
-      'WAITING_FOR_PICKUP',
       'PICKED_UP',
-      'WAREHOUSE_RECEIVED',
-      'SHIPPED',
       'OUT_FOR_DELIVERY',
-      'DELIVERED',
-      'RETURN_REQUESTED',
-      'RETURNED',
-      'CANCELLED'
+      'DELIVERED'
     ];
     const currentIndex = steps.indexOf(status?.toUpperCase());
+    const safeIndex = currentIndex >= 0 ? currentIndex : 0;
     return steps.map((step, idx) => ({
       name: step.replace(/_/g, ' '),
-      completed: idx <= currentIndex,
-      active: idx === currentIndex
+      completed: idx <= safeIndex,
+      active: idx === safeIndex
     }));
   }
 
   return (
     <>
       {/* <Navbar /> removed, now global via ClientLayout */}
-      <div className="min-h-screen bg-slate-50 py-12">
-        <div className="max-w-4xl mx-auto px-4">
+      <div className="bg-slate-50 py-12">
+        <div className="max-w-5xl mx-auto px-4">
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold text-slate-800 mb-2">Track Your Order</h1>
-            <p className="text-slate-600">Enter your phone number or AWB number to track your shipment</p>
+            <p className="text-slate-600">Enter your mobile number, email, AWB, reference number, or booking number to track your shipment</p>
           </div>
 
           {/* Search Form */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8">
             <form onSubmit={handleTrack} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Phone Number</label>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Mobile Number or Email</label>
                 <input
-                  type="tel"
+                  type="text"
                   value={phoneNumber}
                   onChange={(e) => setPhoneNumber(e.target.value)}
-                  placeholder="Enter your phone number"
+                  placeholder="Enter your mobile number or email"
                   className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
@@ -185,38 +180,46 @@ function TrackOrderPageInner() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">AWB Number / Order ID / Order No</label>
+                <label className="block text-sm font-medium text-slate-700 mb-2">AWB / Reference / Booking / Order No</label>
                 <input
                   type="text"
                   value={awbNumber}
                   onChange={(e) => setAwbNumber(e.target.value)}
-                  placeholder="Enter your AWB, Order ID, or Order No"
+                  placeholder="Enter AWB, reference number, booking number, or order no"
                   className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
-                <p className="text-xs text-slate-500 mt-1">You can use your AWB Number, full Order ID, short Order No, or your phone number to track your order. All these values will work here and in your dashboard or emails.</p>
+                <p className="text-xs text-slate-500 mt-1">You can use your C3X AWB, shipper reference number, booking number, full Order ID, short Order No, mobile number, or email.</p>
               </div>
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input type="checkbox" className="accent-blue-600" checked={forceDelhivery} onChange={(e)=>setForceDelhivery(e.target.checked)} />
-                Track via Delhivery directly (AWB)
-              </label>
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-slate-800 text-white py-3 rounded-lg hover:bg-slate-700 transition disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                className="relative w-full overflow-hidden rounded-lg bg-slate-800 py-3 font-semibold text-white shadow-sm transition hover:bg-slate-700 disabled:cursor-wait disabled:bg-slate-800"
               >
-                {loading ? 'Tracking...' : 'Track Order'}
+                {loading ? (
+                  <span className="relative flex h-6 items-center justify-center">
+                    <span className={styles["tracking-button-sheen"]} aria-hidden="true" />
+                    <span className="relative z-10 inline-flex items-center gap-2">
+                      <span className={styles["tracking-button-orbit"]} aria-hidden="true">
+                        <PackageSearch size={16} strokeWidth={2.4} />
+                      </span>
+                      <span>Checking shipment</span>
+                    </span>
+                  </span>
+                ) : (
+                  'Track Order'
+                )}
               </button>
             </form>
           </div>
 
           {/* Order Not Found */}
           {notFound && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
+            <div className="mb-8 rounded-xl border border-red-200 bg-red-50 p-6 text-center">
               <svg className="w-16 h-16 text-red-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
               <h3 className="text-lg font-semibold text-slate-800 mb-2">Order Not Found</h3>
-              <p className="text-slate-600">Please check your Phone Number or AWB Number and try again.</p>
+              <p className="text-slate-600">Please check your mobile number, email, AWB, reference number, or booking number and try again.</p>
             </div>
           )}
 
@@ -224,22 +227,25 @@ function TrackOrderPageInner() {
           {order && (
             <div className="space-y-6">
               {/* Tracking not ready notice */}
-              {!order.trackingId && !order.delhivery && (
+              {!order.trackingId && !order.c3x && (
                 <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-yellow-800 text-sm">
                   Shipment hasn\'t been created yet. You\'ll see live tracking here once the courier AWB is generated.
                 </div>
               )}
               {/* Order Status */}
-              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                <div className="flex items-center justify-between mb-6">
+              <div className="overflow-hidden rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <h2 className="text-xl font-semibold text-slate-800">
-                      Order ID: {(order._id || order.id || '')}
+                    <p className="text-xs font-bold uppercase tracking-wider text-blue-600">Current Status</p>
+                    <h2 className="mt-1 text-xl font-semibold text-slate-900">
+                      {order.trackingId ? `Tracking ID: ${order.trackingId}` : `Order ID: ${order._id || order.id || 'Pending'}`}
                     </h2>
-                    <p className="text-sm text-slate-600 mt-1">Placed on {new Date(order.createdAt).toLocaleDateString()}</p>
+                    {order.createdAt && !Number.isNaN(new Date(order.createdAt).getTime()) && (
+                      <p className="mt-1 text-sm text-slate-600">Placed on {new Date(order.createdAt).toLocaleDateString()}</p>
+                    )}
                   </div>
-                  <span className={`px-4 py-2 rounded-full text-sm font-medium ${getStatusColor(order.status)}`}>
-                    {order.status || 'ORDER_PLACED'}
+                  <span className={`w-fit rounded-full px-4 py-2 text-sm font-semibold ${getStatusColor(order.status)}`}>
+                    {(order.status || 'ORDER_PLACED').replace(/_/g, ' ')}
                   </span>
                 </div>
 
@@ -248,44 +254,38 @@ function TrackOrderPageInner() {
               </div>
 
               {/* Tracking Info */}
-              {(order.trackingId || order.trackingUrl || order.courier || order.delhivery) && (
+              {(order.trackingId || order.trackingUrl || order.courier || order.c3x) && (
                 <>
-                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-6">
+                  <div className="rounded-xl border border-blue-100 bg-blue-50 p-6">
                     <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
                       <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                       Tracking Information
                     </h3>
-                    <div className="space-y-3">
+                    <div className="grid gap-3 sm:grid-cols-2">
                       {order.courier && (
-                        <div className="flex items-center gap-3">
-                          <span className="text-slate-600 font-medium min-w-[120px]">Courier:</span>
-                          <span className="text-slate-800">{order.courier}</span>
+                        <div className="rounded-lg bg-white/75 p-3">
+                          <p className="text-xs font-medium text-slate-500">Courier</p>
+                          <p className="mt-1 font-semibold text-slate-900">{order.courier}</p>
                         </div>
                       )}
                       {order.trackingId && (
-                        <div className="flex items-center gap-3">
-                          <span className="text-slate-600 font-medium min-w-[120px]">Tracking ID:</span>
-                          <span className="font-mono text-slate-800 bg-white px-3 py-1 rounded">{order.trackingId}</span>
-                        </div>
-                      )}
-                      {order.delhivery?.expected_delivery_date && (
-                        <div className="flex items-center gap-3">
-                          <span className="text-slate-600 font-medium min-w-[120px]">Expected Delivery:</span>
-                          <span className="text-slate-800">{new Date(order.delhivery.expected_delivery_date).toLocaleString()}</span>
+                        <div className="rounded-lg bg-white/75 p-3">
+                          <p className="text-xs font-medium text-slate-500">Tracking ID</p>
+                          <p className="mt-1 font-mono font-semibold text-slate-900">{order.trackingId}</p>
                         </div>
                       )}
                       {order.trackingUrl && (
-                        <div className="flex items-center gap-3">
-                          <span className="text-slate-600 font-medium min-w-[120px]">Track Shipment:</span>
+                        <div className="rounded-lg bg-white/75 p-3 sm:col-span-2">
+                          <p className="text-xs font-medium text-slate-500">Track Shipment</p>
                           <a 
                             href={order.trackingUrl} 
                             target="_blank" 
                             rel="noopener noreferrer"
-                            className="text-blue-600 hover:underline flex items-center gap-1 font-medium"
+                            className="mt-1 inline-flex items-center gap-1 font-semibold text-blue-700 hover:underline"
                           >
-                            Click here to track on courier website
+                            Open courier tracking
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                             </svg>
@@ -294,29 +294,15 @@ function TrackOrderPageInner() {
                       )}
                     </div>
                   </div>
-              {/* Delhivery Timeline */}
-              {order.delhivery?.events?.length > 0 && (
-                <div className={`bg-white rounded-xl shadow-sm border border-slate-200 p-6 ${styles["tracking-card-enter"]}`}>
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-semibold text-slate-800">Shipment Updates (Delhivery)</h3>
-                    <button
-                      onClick={handleRefresh}
-                      disabled={refreshing}
-                      className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-sm font-medium transition disabled:opacity-50"
-                    >
-                      <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
-                      {refreshing ? "Refreshing..." : "Refresh"}
-                    </button>
-                  </div>
-                  <TrackingTimeline events={order.delhivery.events} type="delhivery" />
-                </div>
-              )}
 
               {/* C3Xpress Timeline */}
               {order.c3x?.events?.length > 0 && (
-                <div className={`bg-white rounded-xl shadow-sm border border-slate-200 p-6 ${styles["tracking-card-enter"]}`}>
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-lg font-semibold text-slate-800">Shipment Updates (C3Xpress)</h3>
+                <div className={`rounded-xl border border-slate-200 bg-white p-6 shadow-sm ${styles["tracking-card-enter"]}`}>
+                  <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-blue-600">C3Xpress</p>
+                      <h3 className="mt-1 text-lg font-semibold text-slate-900">Shipment Updates</h3>
+                    </div>
                     <button
                       onClick={handleRefresh}
                       disabled={refreshing}
@@ -327,13 +313,13 @@ function TrackOrderPageInner() {
                     </button>
                   </div>
                   {order.c3x.origin && order.c3x.destination && (
-                    <p className="text-sm text-slate-500 mb-2">
-                      <span className="font-medium">Route:</span> {order.c3x.origin} → {order.c3x.destination}
+                    <p className="mb-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                      <span className="font-medium text-slate-800">Route:</span> {order.c3x.origin} to {order.c3x.destination}
                     </p>
                   )}
-                  {order.c3x.weight && (
-                    <p className="text-sm text-slate-500 mb-2">
-                      <span className="font-medium">Weight:</span> {order.c3x.weight} kg
+                  {(order.c3x.actualWeight || order.c3x.chargeableWeight) && (
+                    <p className="mb-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                      <span className="font-medium text-slate-800">Weight:</span> {order.c3x.actualWeight || order.c3x.chargeableWeight} kg
                     </p>
                   )}
                   {order.c3x.pieces && (
@@ -367,6 +353,7 @@ function TrackOrderPageInner() {
               )}
 
               {/* Order Items */}
+              {(order.orderItems || []).length > 0 && (
               <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                 <h3 className="text-lg font-semibold text-slate-800 mb-4">Order Items</h3>
                 <div className="space-y-4">
@@ -400,6 +387,7 @@ function TrackOrderPageInner() {
                   </div>
                 </div>
               </div>
+              )}
 
               {/* Shipping Address */}
               {order.shippingAddress && (
@@ -425,6 +413,76 @@ function TrackOrderPageInner() {
               </div>
             </div>
           )}
+
+          {/* Tracking Details Help */}
+          <div className="mt-8 bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+            <div className="mb-5">
+              <p className="text-xs font-bold uppercase tracking-wider text-blue-600">Tracking Details</p>
+              <h2 className="mt-1 text-xl font-semibold text-slate-900">Everything you need to track your order</h2>
+              <p className="mt-2 text-sm text-slate-600">
+                Use any order reference you received at checkout or by email. We will show your order status, courier
+                information, shipment timeline, delivery estimate, items, and shipping address when available.
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-start gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-blue-100 text-blue-700">
+                    <SearchCheck size={18} />
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">What you can enter</h3>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">
+                      Mobile number, email, C3X AWB, reference number, booking number, full Order ID, or short Order No.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-start gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-emerald-100 text-emerald-700">
+                    <PackageSearch size={18} />
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">What you will see</h3>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">
+                      Current status, tracking ID, courier name, route updates, and order items.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-start gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-amber-100 text-amber-700">
+                    <Clock3 size={18} />
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">When tracking appears</h3>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">
+                      Live courier updates show after the shipment is created and AWB is generated.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-start gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-indigo-100 text-indigo-700">
+                    <CheckCircle2 size={18} />
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">Order status stages</h3>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">
+                      Order placed, processing, shipped, out for delivery, delivered, or return updates.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
       {/* <Footer /> removed, now global via ClientLayout */}

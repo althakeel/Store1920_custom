@@ -107,7 +107,7 @@ export default function FiveStarRated() {
 
     return (
         <div className="bg-gray-50 min-h-screen">
-            <div className="max-w-[1250px] mx-auto px-4 sm:px-6 lg:px-8 py-8 min-h-[60vh]">
+            <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-8 min-h-[60vh]">
                 {/* Header */}
                 <div className="mb-8">
                     <div className="flex items-center gap-3 mb-3">
@@ -145,7 +145,7 @@ export default function FiveStarRated() {
                         {loading ? (
                             <div className="text-center py-16 text-gray-500">Loading top-rated products…</div>
                         ) : filteredAndSorted.length > 0 ? (
-                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-4 gap-4 md:gap-6">
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
                                 {filteredAndSorted.map((product, idx) => (
                                     <ProductCard key={product._id || product.id || idx} product={product} />
                                 ))}

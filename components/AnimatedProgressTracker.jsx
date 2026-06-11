@@ -7,6 +7,7 @@ export default function AnimatedProgressTracker({ steps }) {
   const [animatedSteps, setAnimatedSteps] = useState([])
 
   useEffect(() => {
+    setAnimatedSteps([])
     // Animate each step sequentially
     steps.forEach((_, idx) => {
       setTimeout(() => {
@@ -29,20 +30,23 @@ export default function AnimatedProgressTracker({ steps }) {
     return null
   }
 
+  const activeIndex = Math.max(0, steps.findIndex((step) => step.active))
+  const progressRatio = steps.length > 1 ? activeIndex / (steps.length - 1) : 0
+
   return (
     <div className="w-full">
       {/* Desktop view - horizontal */}
       <div className="hidden sm:block">
-        <div className="relative mb-8">
+        <div className="relative">
           {/* Connection line with gradient */}
-          <div className="absolute top-5 left-0 right-0 h-1 bg-gradient-to-r from-slate-200 via-slate-300 to-slate-200" />
+          <div className="absolute left-8 right-8 top-5 h-0.5 bg-slate-200" />
 
           {/* Animated filled line */}
           {animatedSteps.length > 0 && (
             <div
-              className="absolute top-5 left-0 h-1 bg-gradient-to-r from-blue-500 to-green-500 transition-all duration-1000"
+              className="absolute left-8 top-5 h-0.5 bg-blue-500 transition-all duration-1000"
               style={{
-                width: `${(animatedSteps.length / steps.length) * 100}%`,
+                width: `calc((100% - 4rem) * ${progressRatio})`,
               }}
             />
           )}
@@ -63,21 +67,21 @@ export default function AnimatedProgressTracker({ steps }) {
                   }`}
                 >
                   <div
-                    className={`w-12 h-12 rounded-full flex items-center justify-center border-4 border-white shadow-lg transition-all duration-300 ${
-                      isCompleted || isAnimated
+                    className={`flex h-10 w-10 items-center justify-center rounded-full border-2 border-white shadow-sm transition-all duration-300 ${
+                      isCompleted
                         ? `bg-gradient-to-br ${bgGradient}`
-                        : 'bg-white border-slate-300'
+                        : 'bg-slate-100 text-slate-400'
                     } ${isActive && isAnimated ? 'ring-4 ring-blue-300 ring-offset-2' : ''}`}
                   >
-                    {isCompleted || isAnimated ? (
-                      <CheckCircle2 className="text-white" size={24} strokeWidth={2.5} />
+                    {isCompleted ? (
+                      <CheckCircle2 className="text-white" size={20} strokeWidth={2.5} />
                     ) : (
-                      <Circle className="text-slate-400" size={20} />
+                      <Circle className="text-slate-400" size={18} />
                     )}
                   </div>
                   <p
-                    className={`text-xs font-semibold mt-3 text-center max-w-[80px] transition-all duration-300 ${
-                      isCompleted || isAnimated ? 'text-slate-800' : 'text-slate-400'
+                    className={`mt-3 max-w-[96px] text-center text-xs font-semibold leading-snug transition-all duration-300 ${
+                      isCompleted ? 'text-slate-800' : 'text-slate-400'
                     }`}
                   >
                     {step.name.replace(/_/g, ' ')}

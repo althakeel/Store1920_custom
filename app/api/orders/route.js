@@ -18,6 +18,7 @@ import { sendOrderConfirmationEmail, sendGuestAccountCreationEmail } from '@/lib
 import { fetchNormalizedDelhiveryTracking } from '@/lib/delhivery';
 import { createTamaraSession } from '@/lib/tamara';
 import { createTabbySession } from '@/lib/tabby';
+import { buildGuestOrderIdentityClauses, normalizeEmail } from '@/lib/orderIdentity';
 
 const PaymentMethod = {
     COD: 'COD',
@@ -519,7 +520,7 @@ export async function POST(request) {
                 }
                 orderData.isGuest = true;
                 orderData.guestName = guestInfo.name;
-                orderData.guestEmail = guestInfo.email;
+                orderData.guestEmail = normalizeEmail(guestInfo.email);
                 orderData.guestPhone = guestInfo.phone;
                 orderData.alternatePhone = guestInfo.alternatePhone || '';
                 orderData.alternatePhoneCode = guestInfo.alternatePhoneCode || guestInfo.phoneCode || '';
@@ -528,9 +529,10 @@ export async function POST(request) {
                 const convertToken = crypto.randomBytes(32).toString('hex');
                 const tokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
                 await GuestUser.findOneAndUpdate(
-                    { email: guestInfo.email },
+                    { email: normalizeEmail(guestInfo.email) },
                     {
                         name: guestInfo.name,
+                        email: normalizeEmail(guestInfo.email),
                         phone: guestInfo.phone,
                         convertToken,
                         tokenExpiry
@@ -1016,21 +1018,16 @@ export async function GET(request) {
                 const decodedToken = await getAuth().verifyIdToken(idToken);
                 userId = decodedToken.uid;
                 // Auto-link guest orders matching this user's email or phone
-                const userEmail = decodedToken.email || null;
-                const userPhone = decodedToken.phone_number || null;
-                const orClauses = [];
-                if (userEmail) orClauses.push({ guestEmail: userEmail });
-                if (userPhone) {
-                    // Strip leading + for flexible matching
-                    const phoneDigits = userPhone.replace(/^\+/, '');
-                    orClauses.push({ guestPhone: { $in: [userPhone, phoneDigits] } });
-                }
+                const dbUser = await User.findOne({ _id: userId }).select('email phone').lean().catch(() => null);
+                const userEmail = normalizeEmail(decodedToken.email || dbUser?.email);
+                const userPhone = decodedToken.phone_number || dbUser?.phone || null;
+                const orClauses = buildGuestOrderIdentityClauses({ email: userEmail, phone: userPhone });
                 if (orClauses.length > 0) {
                     await Order.updateMany(
                         {
                             isGuest: true,
                             $and: [
-                                { $or: [{ userId: { $exists: false } }, { userId: null }] },
+                                { $or: [{ userId: { $exists: false } }, { userId: null }, { userId: '' }] },
                                 { $or: orClauses }
                             ]
                         },

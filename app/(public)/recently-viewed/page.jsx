@@ -95,7 +95,7 @@ export default function RecentlyViewedPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-[1280px] mx-auto px-4 py-8">
+      <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-8">
         {/* Header */}
         <div className="mb-8">
           <button
@@ -135,7 +135,7 @@ export default function RecentlyViewedPage() {
             <div className="mb-4 text-sm text-gray-600">
               Showing {recentProducts.length} recently viewed {recentProducts.length === 1 ? 'product' : 'products'}
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
               {recentProducts.map((product) => (
                 <ProductCard key={product._id || product.id} product={product} />
               ))}

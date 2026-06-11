@@ -7,8 +7,6 @@ import { useRouter } from 'next/navigation';
 const DEFAULT_DESKTOP_HEIGHT = 320;
 const DEFAULT_MOBILE_HEIGHT = 100;
 const SLIDE_INTERVAL = 5000;
-const MIN_SKELETON_MS = 700;
-
 const fallbackSlides = [];
 
 function normalizeHeroHeight(value, fallback) {
@@ -22,7 +20,6 @@ export default function HeroBannerSlider() {
   const [loaded, setLoaded] = useState([]);
   const [showcaseConfig, setShowcaseConfig] = useState(null);
   const [showcaseLoaded, setShowcaseLoaded] = useState(false);
-  const [minSkeletonElapsed, setMinSkeletonElapsed] = useState(false);
   const router = useRouter();
   const intervalRef = useRef(null);
 
@@ -104,11 +101,6 @@ export default function HeroBannerSlider() {
   }, [slides]);
 
   useEffect(() => {
-    const timer = setTimeout(() => setMinSkeletonElapsed(true), MIN_SKELETON_MS);
-    return () => clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
@@ -128,7 +120,7 @@ export default function HeroBannerSlider() {
   }, [slides.length]);
 
   const firstSlideHasImage = Boolean(slides[0]?.image);
-  const shouldShowSkeleton = !minSkeletonElapsed || !showcaseLoaded || (firstSlideHasImage && !loaded[0]);
+  const shouldShowSkeleton = !showcaseLoaded || (firstSlideHasImage && !loaded[0]);
 
   if (showcaseLoaded && slides.length === 0) {
     return null;
