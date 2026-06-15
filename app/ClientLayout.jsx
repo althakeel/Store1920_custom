@@ -15,7 +15,7 @@ export default function ClientLayout({ children }) {
       <TopBar />
       <Navbar />
       <div
-        className="h-3 w-full border-b border-slate-100 bg-slate-50 sm:h-4 lg:h-5"
+        className="h-3 w-full bg-white sm:h-4 lg:h-5"
         aria-hidden="true"
       />
       <Toaster />

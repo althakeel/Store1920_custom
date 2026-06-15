@@ -156,6 +156,12 @@ const Navbar = () => {
     return name.length > 6 ? `${name.slice(0, 6)}..` : name;
   };
 
+  const getUserGreetingName = (user) => {
+    const raw = String(user?.displayName || user?.email?.split('@')[0] || '').trim();
+    if (!raw) return 'there';
+    return raw.length > 16 ? `${raw.slice(0, 16)}…` : raw;
+  };
+
   const [isClient, setIsClient] = useState(false);
   useEffect(() => { setIsClient(true); }, []);
   const router = useRouter();
@@ -1361,17 +1367,20 @@ const Navbar = () => {
                 ref={userDropdownRef}
               >
                 <button
-                  className="inline-flex items-center gap-1.5 rounded-full p-2 transition hover:bg-white/10"
+                  className="inline-flex items-center gap-2 rounded-full px-2 py-1.5 transition hover:bg-white/10"
                   aria-label="User menu"
                   onClick={() => setUserDropdownOpen(prev => !prev)}
                 >
                   {firebaseUser.photoURL ? (
                     <Image src={firebaseUser.photoURL} alt="User" width={22} height={22} className="rounded-full object-cover" />
                   ) : (
-                    <div className="w-[22px] h-[22px] rounded-full bg-amber-400 flex items-center justify-center text-[10px] font-bold text-white">
+                    <div className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-indigo-700 text-[10px] font-bold text-white">
                       {(firebaseUser.displayName || firebaseUser.email || '?')[0].toUpperCase()}
                     </div>
                   )}
+                  <span className="max-w-[120px] truncate text-[12px] font-medium text-white/95">
+                    Hi, {getUserGreetingName(firebaseUser)}
+                  </span>
                 </button>
                 {userDropdownOpen && (
                   <div className="absolute right-0 top-12 min-w-[220px] bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-2">
@@ -1448,15 +1457,18 @@ const Navbar = () => {
               firebaseUser ? (
                 <button
                   onClick={() => setMobileMenuOpen(true)}
-                  className="p-2 hover:bg-gray-100 rounded-full transition"
+                  className="inline-flex items-center gap-2 rounded-full p-1.5 transition hover:bg-white/10"
                 >
                   {firebaseUser.photoURL ? (
                     <Image src={firebaseUser.photoURL} alt="User" width={28} height={28} className="rounded-full object-cover" />
                   ) : (
-                    <span className="w-7 h-7 flex items-center justify-center rounded-full bg-blue-600 text-white font-bold text-base">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-700 text-sm font-bold text-white">
                       {firebaseUser.displayName?.[0]?.toUpperCase() || firebaseUser.email?.[0]?.toUpperCase() || 'U'}
                     </span>
                   )}
+                  <span className="max-w-[88px] truncate text-xs font-medium text-white/95">
+                    Hi, {getUserGreetingName(firebaseUser)}
+                  </span>
                 </button>
               ) : (
                 <button
@@ -1546,7 +1558,7 @@ const Navbar = () => {
                     </span>
                   )}
                   <div className="flex flex-col leading-tight">
-                    <span className="font-medium">Hi, {getShortName(firebaseUser.displayName || firebaseUser.email)}</span>
+                    <span className="font-medium">Hi, {getUserGreetingName(firebaseUser)}</span>
                     <Link
                       href="/wallet"
                       className="mt-0 inline-flex items-center gap-1 px-2 py-0 bg-amber-100 border border-amber-200 rounded-full text-amber-800 text-[10px] font-semibold w-fit"
