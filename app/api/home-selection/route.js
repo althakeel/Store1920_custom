@@ -27,13 +27,19 @@ export async function GET(request) {
       const products = await Product.find({
         _id: { $in: ids },
         inStock: true
-      }).lean();
+      })
+        .select('_id name slug price mrp AED images category inStock storeId')
+        .lean();
 
-      // Get store info for each product
-      for (let product of products) {
+      const storeIds = [...new Set(products.map((product) => String(product.storeId || '')).filter(Boolean))];
+      const stores = storeIds.length
+        ? await Store.find({ _id: { $in: storeIds } }).select('_id isActive name').lean()
+        : [];
+      const storeMap = new Map(stores.map((store) => [String(store._id), store]));
+
+      for (const product of products) {
         if (product.storeId) {
-          const store = await Store.findById(product.storeId).lean();
-          product.store = store;
+          product.store = storeMap.get(String(product.storeId)) || null;
         }
       }
 

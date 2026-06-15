@@ -47,6 +47,17 @@ export default function SettingsPage() {
     const [inviteEmail, setInviteEmail] = useState("");
     const [inviteStatus, setInviteStatus] = useState("");
     const [invitePermissions, setInvitePermissions] = useState(getDefaultPermissions());
+    const [createLoginOpen, setCreateLoginOpen] = useState(false);
+    const [creatingLogin, setCreatingLogin] = useState(false);
+    const [createLoginStatus, setCreateLoginStatus] = useState("");
+    const [newTeamUser, setNewTeamUser] = useState({
+        name: "",
+        username: "",
+        email: "",
+        password: "",
+        confirmPassword: "",
+        role: "member",
+    });
     
     // Profile fields
     const [name, setName] = useState("");
@@ -141,34 +152,33 @@ export default function SettingsPage() {
         }
     }, [user, getToken]);
     
+    const fetchTeamMembers = async () => {
+        setLoadingTeam(true);
+        try {
+            const token = await getToken();
+            const res = await axios.get("/api/store/users", {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setTeamMembers(res.data.users || []);
+            const permissions = {};
+            res.data.users?.forEach(member => {
+                permissions[member.id] = {
+                    ...getDefaultPermissions(),
+                    ...(member.permissions || {}),
+                };
+            });
+            setMemberPermissions(permissions);
+        } catch (err) {
+            console.error('Failed to fetch team members:', err);
+            setMessage('Failed to load team members');
+        } finally {
+            setLoadingTeam(false);
+        }
+    };
+
     // Fetch team members when Dashboard Access tab is active
     useEffect(() => {
         if (activeTab === "dashboardAccess") {
-            const fetchTeamMembers = async () => {
-                setLoadingTeam(true);
-                try {
-                    const token = await getToken();
-                    const res = await axios.get("/api/store/users", {
-                        headers: { Authorization: `Bearer ${token}` }
-                    });
-                    console.log("Team members fetched:", res.data);
-                    setTeamMembers(res.data.users || []);
-                    // Initialize permissions for each member
-                    const permissions = {};
-                    res.data.users?.forEach(member => {
-                        permissions[member.id] = {
-                            ...getDefaultPermissions(),
-                            ...(member.permissions || {}),
-                        };
-                    });
-                    setMemberPermissions(permissions);
-                } catch (err) {
-                    console.error('Failed to fetch team members:', err);
-                    setMessage('Failed to load team members');
-                } finally {
-                    setLoadingTeam(false);
-                }
-            };
             fetchTeamMembers();
         }
     }, [activeTab, getToken]);
@@ -245,6 +255,75 @@ export default function SettingsPage() {
             setMessage(err?.response?.data?.error || err.message);
         }
         setSaving(false);
+    };
+
+    const handleCreateTeamLogin = async () => {
+        setCreateLoginStatus("");
+        setCreatingLogin(true);
+
+        if (!newTeamUser.name.trim() || !newTeamUser.username.trim() || !newTeamUser.email.trim()) {
+            setCreateLoginStatus("Name, username, and email are required.");
+            setCreatingLogin(false);
+            return;
+        }
+
+        const normalizedUsername = newTeamUser.username.trim().toLowerCase();
+        if (normalizedUsername.length < 3 || normalizedUsername.length > 30) {
+            setCreateLoginStatus("Username must be between 3 and 30 characters.");
+            setCreatingLogin(false);
+            return;
+        }
+
+        if (!/^[a-z0-9._-]+$/.test(normalizedUsername)) {
+            setCreateLoginStatus("Username can only use letters, numbers, dots, underscores, and hyphens.");
+            setCreatingLogin(false);
+            return;
+        }
+
+        if (!newTeamUser.password || newTeamUser.password.length < 6) {
+            setCreateLoginStatus("Password must be at least 6 characters.");
+            setCreatingLogin(false);
+            return;
+        }
+
+        if (newTeamUser.password !== newTeamUser.confirmPassword) {
+            setCreateLoginStatus("Passwords do not match.");
+            setCreatingLogin(false);
+            return;
+        }
+
+        try {
+            const token = await getToken();
+            const response = await axios.post(
+                "/api/store/users/create",
+                {
+                    name: newTeamUser.name,
+                    username: newTeamUser.username,
+                    email: newTeamUser.email,
+                    password: newTeamUser.password,
+                    role: newTeamUser.role,
+                    permissions: invitePermissions,
+                },
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
+
+            setCreateLoginStatus(
+                `${response.data.message} Share login at /store/login with username "${response.data.user?.username || newTeamUser.username}" or email "${newTeamUser.email}".`
+            );
+            setNewTeamUser({
+                name: "",
+                username: "",
+                email: "",
+                password: "",
+                confirmPassword: "",
+                role: "member",
+            });
+            await fetchTeamMembers();
+        } catch (err) {
+            setCreateLoginStatus(err?.response?.data?.error || err.message);
+        } finally {
+            setCreatingLogin(false);
+        }
     };
 
     return (
@@ -510,8 +589,143 @@ export default function SettingsPage() {
                         <div className="space-y-4">
                             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
                                 <p className="text-sm text-blue-900">
-                                    <span className="font-semibold">💡 Manage Permissions:</span> Control which dashboard components each team member can access.
+                                    <span className="font-semibold">Manage Permissions:</span> Control which dashboard components each team member can access.
                                 </p>
+                            </div>
+
+                            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 space-y-4">
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                    <div>
+                                        <h3 className="font-semibold text-slate-900">Create Team Login</h3>
+                                        <p className="text-sm text-slate-600 mt-1">
+                                            Create a username, email, and password for a team member. They can sign in at <span className="font-mono text-xs">/store/login</span> using either the username or email.
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setCreateLoginOpen((open) => !open);
+                                            setCreateLoginStatus("");
+                                        }}
+                                        className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-emerald-700"
+                                    >
+                                        {createLoginOpen ? "Cancel" : "Create Username & Password"}
+                                    </button>
+                                </div>
+
+                                {createLoginOpen ? (
+                                    <div className="grid gap-4 rounded-lg border border-emerald-200 bg-white p-4 md:grid-cols-2">
+                                        <label className="flex flex-col gap-1.5 md:col-span-2">
+                                            <span className="font-medium text-slate-700 text-sm">Full Name</span>
+                                            <input
+                                                type="text"
+                                                value={newTeamUser.name}
+                                                onChange={(e) => setNewTeamUser((prev) => ({ ...prev, name: e.target.value }))}
+                                                className="border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                                                placeholder="Team member name"
+                                            />
+                                        </label>
+
+                                        <label className="flex flex-col gap-1.5">
+                                            <span className="font-medium text-slate-700 text-sm">Username</span>
+                                            <input
+                                                type="text"
+                                                value={newTeamUser.username}
+                                                onChange={(e) => setNewTeamUser((prev) => ({ ...prev, username: e.target.value.toLowerCase() }))}
+                                                className="border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                                                placeholder="support"
+                                                autoComplete="off"
+                                            />
+                                        </label>
+
+                                        <label className="flex flex-col gap-1.5">
+                                            <span className="font-medium text-slate-700 text-sm">Email</span>
+                                            <input
+                                                type="email"
+                                                value={newTeamUser.email}
+                                                onChange={(e) => setNewTeamUser((prev) => ({ ...prev, email: e.target.value }))}
+                                                className="border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                                                placeholder="team@yourstore.com"
+                                            />
+                                        </label>
+
+                                        <label className="flex flex-col gap-1.5">
+                                            <span className="font-medium text-slate-700 text-sm">Role</span>
+                                            <select
+                                                value={newTeamUser.role}
+                                                onChange={(e) => setNewTeamUser((prev) => ({ ...prev, role: e.target.value }))}
+                                                className="border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                                            >
+                                                <option value="member">Member</option>
+                                                <option value="admin">Admin</option>
+                                            </select>
+                                        </label>
+
+                                        <label className="flex flex-col gap-1.5">
+                                            <span className="font-medium text-slate-700 text-sm">Password</span>
+                                            <input
+                                                type="password"
+                                                value={newTeamUser.password}
+                                                onChange={(e) => setNewTeamUser((prev) => ({ ...prev, password: e.target.value }))}
+                                                className="border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                                                placeholder="Minimum 6 characters"
+                                                minLength={6}
+                                            />
+                                        </label>
+
+                                        <label className="flex flex-col gap-1.5">
+                                            <span className="font-medium text-slate-700 text-sm">Confirm Password</span>
+                                            <input
+                                                type="password"
+                                                value={newTeamUser.confirmPassword}
+                                                onChange={(e) => setNewTeamUser((prev) => ({ ...prev, confirmPassword: e.target.value }))}
+                                                className="border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                                                placeholder="Re-enter password"
+                                                minLength={6}
+                                            />
+                                        </label>
+
+                                        <div className="md:col-span-2">
+                                            <p className="font-medium text-slate-700 text-sm mb-2">Dashboard access for this user:</p>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                                                {dashboardComponents.map((component) => (
+                                                    <label key={`create-${component.id}`} className="flex items-center gap-2 cursor-pointer">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={invitePermissions[component.id] ?? true}
+                                                            onChange={(e) => {
+                                                                setInvitePermissions((prev) => ({
+                                                                    ...prev,
+                                                                    [component.id]: e.target.checked,
+                                                                }));
+                                                            }}
+                                                            className="w-4 h-4"
+                                                        />
+                                                        <span className="text-xs leading-tight">
+                                                            <span className="block">{component.icon} {component.label}</span>
+                                                        </span>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <div className="md:col-span-2 flex flex-col gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={handleCreateTeamLogin}
+                                                disabled={creatingLogin}
+                                                className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                            >
+                                                {creatingLogin ? "Creating login..." : "Create Team Login"}
+                                            </button>
+                                            {createLoginStatus ? (
+                                                <div className={`text-sm p-2 rounded ${createLoginStatus.toLowerCase().includes('success') || createLoginStatus.toLowerCase().includes('share login') ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                                    {createLoginStatus}
+                                                </div>
+                                            ) : null}
+                                        </div>
+                                    </div>
+                                ) : null}
                             </div>
                             
                             {/* Team Members Permissions */}
@@ -531,8 +745,10 @@ export default function SettingsPage() {
                                             <div key={member.id} className="border border-slate-200 rounded-lg p-4">
                                                 <div className="flex items-center justify-between mb-3">
                                                     <div>
-                                                        <p className="font-medium text-slate-900">{member.name || member.email}</p>
-                                                        <p className="text-xs text-slate-500">{member.email}</p>
+                                                        <p className="font-medium text-slate-900">{member.name || member.username || member.email}</p>
+                                                        <p className="text-xs text-slate-500">
+                                                            {member.username ? `@${member.username}` : ''}{member.username && member.email ? ' · ' : ''}{member.email}
+                                                        </p>
                                                     </div>
                                                     <span className={`text-xs px-2 py-1 rounded-full ${member.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
                                                         {member.role || 'member'}

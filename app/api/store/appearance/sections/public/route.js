@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 import connectDB from '@/lib/mongodb'
 import StorePreference from '@/models/StorePreference'
+import { getCachedData, setCachedData } from '@/lib/cache'
+
+const APPEARANCE_CACHE_KEY = 'public:appearance-sections:v1'
 
 const DEFAULT_APPEARANCE = {
   categorySliders: { enabled: true, title: 'Featured Collections', description: 'Browse our curated collections' },
@@ -173,13 +176,30 @@ function normalizePublic(data = {}) {
 
 export async function GET() {
   try {
-    await connectDB()
-    const preference = await StorePreference.findOne({}).sort({ updatedAt: -1 }).lean()
+    const cached = getCachedData(APPEARANCE_CACHE_KEY)
+    if (cached) {
+      return NextResponse.json(cached, {
+        headers: {
+          'Cache-Control': 'public, s-maxage=120, stale-while-revalidate=300',
+          'X-Cache': 'HIT',
+        },
+      })
+    }
 
-    return NextResponse.json(normalizePublic(preference?.appearanceSections || DEFAULT_APPEARANCE), {
+    await connectDB()
+    const preference = await StorePreference.findOne({})
+      .sort({ updatedAt: -1 })
+      .select('appearanceSections updatedAt')
+      .lean()
+
+    const payload = normalizePublic(preference?.appearanceSections || DEFAULT_APPEARANCE)
+    setCachedData(APPEARANCE_CACHE_KEY, payload, 120)
+
+    return NextResponse.json(payload, {
       headers: {
-        'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0'
-      }
+        'Cache-Control': 'public, s-maxage=120, stale-while-revalidate=300',
+        'X-Cache': 'MISS',
+      },
     })
   } catch (error) {
     console.error('[appearance sections public GET] error:', error)

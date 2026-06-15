@@ -20,14 +20,14 @@ function PublicLayoutContent({ children }) {
     const isShopCategoryPage = pathname === '/shop' && Boolean(searchParams.get('category'));
 
     useEffect(() => { 
-        // Defer product fetch to allow critical content to load first
+        // Homepage sections load their own product slices; shop pages load catalog as needed.
+        if (isHomePage || isShopCategoryPage) return undefined;
+
         const timer = setTimeout(() => {
-            if (!isShopCategoryPage) {
-                dispatch(fetchProducts({ limit: 100 })); // Increased limit to fetch all products
-            }
+            dispatch(fetchProducts({ limit: 100 }));
         }, 100);
         return () => clearTimeout(timer);
-    }, [dispatch, isShopCategoryPage]);
+    }, [dispatch, isHomePage, isShopCategoryPage]);
 
     return (
         <div className={`flex flex-col ${isCartPage ? '' : 'min-h-screen'}`}>

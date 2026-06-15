@@ -34,6 +34,15 @@ const sanitizeImageUrl = (value) => {
   }
 }
 
+const createBannerSliderItem = (prefix = 'secondary-banner-slider', overrides = {}) => ({
+  id: overrides.id || `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  image: sanitizeImageUrl(overrides.image || ''),
+  link: overrides.link || '/shop',
+  alt: overrides.alt || '',
+  file: null,
+  previewUrl: sanitizeImageUrl(overrides.image || overrides.previewUrl || ''),
+})
+
 const DEFAULT_FORM = {
   mainBannerEnabled: true,
   topBannerImage: '',
@@ -60,6 +69,16 @@ const DEFAULT_FORM = {
     createBanner(),
     createBanner(),
   ],
+  secondaryBannerSliderEnabled: true,
+  secondaryBannerSliderDesktopInterval: 4000,
+  secondaryBannerSliderMobileInterval: 3000,
+  secondaryBannerSliderDesktopHeight: 220,
+  secondaryBannerSliderMobileHeight: 120,
+  secondaryBannerSliderPlacement: 'below_small_banners',
+  secondaryBannerSliderItems: [
+    createBannerSliderItem('secondary-banner-slider', { id: 'secondary-banner-slider-1', alt: 'Slider Banner 1' }),
+    createBannerSliderItem('secondary-banner-slider', { id: 'secondary-banner-slider-2', alt: 'Slider Banner 2' }),
+  ],
 }
 
 const PRODUCT_SLOT_LABELS = ['Card 1', 'Card 2', 'Card 3', 'Card 4']
@@ -69,6 +88,7 @@ export default function ShowcaseBannersPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState(DEFAULT_FORM)
+  const [loadedShowcase, setLoadedShowcase] = useState({})
 
   const loadData = async () => {
     try {
@@ -81,6 +101,11 @@ export default function ShowcaseBannersPage() {
       const savedBanners = Array.isArray(res.data?.shopShowcase?.productBanners)
         ? res.data.shopShowcase.productBanners
         : []
+      const savedSecondaryItems = Array.isArray(res.data?.shopShowcase?.secondaryBannerSliderItems)
+        ? res.data.shopShowcase.secondaryBannerSliderItems
+        : []
+
+      setLoadedShowcase(res.data?.shopShowcase || {})
 
       setForm({
         mainBannerEnabled: typeof res.data?.shopShowcase?.mainBannerEnabled === 'boolean'
@@ -135,7 +160,24 @@ export default function ShowcaseBannersPage() {
             file: null,
             previewUrl: sanitizeImageUrl(current.image || '')
           })
-        })
+        }),
+        secondaryBannerSliderEnabled: typeof res.data?.shopShowcase?.secondaryBannerSliderEnabled === 'boolean'
+          ? res.data.shopShowcase.secondaryBannerSliderEnabled
+          : true,
+        secondaryBannerSliderDesktopInterval: Number(res.data?.shopShowcase?.secondaryBannerSliderDesktopInterval || 4000),
+        secondaryBannerSliderMobileInterval: Number(res.data?.shopShowcase?.secondaryBannerSliderMobileInterval || 3000),
+        secondaryBannerSliderDesktopHeight: Number(res.data?.shopShowcase?.secondaryBannerSliderDesktopHeight || 220),
+        secondaryBannerSliderMobileHeight: Number(res.data?.shopShowcase?.secondaryBannerSliderMobileHeight || 120),
+        secondaryBannerSliderPlacement: res.data?.shopShowcase?.secondaryBannerSliderPlacement || 'below_small_banners',
+        secondaryBannerSliderItems: Array.from({ length: Math.max(1, savedSecondaryItems.length || 2) }, (_, index) => {
+          const current = savedSecondaryItems[index] || {}
+          return createBannerSliderItem('secondary-banner-slider', {
+            id: current.id || `secondary-banner-slider-${index + 1}`,
+            image: current.image || '',
+            link: current.link || '/shop',
+            alt: current.alt || `Slider Banner ${index + 1}`,
+          })
+        }).slice(0, 6),
       })
     } catch (error) {
       toast.error('Failed to load showcase banners')
@@ -176,6 +218,48 @@ export default function ShowcaseBannersPage() {
       ...prev,
       [field]: previewUrl,
       [field === 'topBannerImage' ? 'topBannerFile' : 'bottomBannerFile']: file,
+    }))
+  }
+
+  const updateSecondarySliderItem = (index, key, value) => {
+    setForm((prev) => ({
+      ...prev,
+      secondaryBannerSliderItems: prev.secondaryBannerSliderItems.map((item, itemIndex) => (
+        itemIndex === index ? { ...item, [key]: value } : item
+      )),
+    }))
+  }
+
+  const handleSecondarySliderImageChange = (index, file) => {
+    if (!file) return
+    const previewUrl = URL.createObjectURL(file)
+    setForm((prev) => ({
+      ...prev,
+      secondaryBannerSliderItems: prev.secondaryBannerSliderItems.map((item, itemIndex) => (
+        itemIndex === index ? { ...item, file, previewUrl } : item
+      )),
+    }))
+  }
+
+  const addSecondarySliderItem = () => {
+    setForm((prev) => {
+      if (prev.secondaryBannerSliderItems.length >= 6) return prev
+      return {
+        ...prev,
+        secondaryBannerSliderItems: [
+          ...prev.secondaryBannerSliderItems,
+          createBannerSliderItem('secondary-banner-slider', {
+            alt: `Slider Banner ${prev.secondaryBannerSliderItems.length + 1}`,
+          }),
+        ],
+      }
+    })
+  }
+
+  const removeSecondarySliderItem = (index) => {
+    setForm((prev) => ({
+      ...prev,
+      secondaryBannerSliderItems: prev.secondaryBannerSliderItems.filter((_, itemIndex) => itemIndex !== index),
     }))
   }
 
@@ -226,7 +310,23 @@ export default function ShowcaseBannersPage() {
         bottomBannerImage = sanitizeImageUrl(await uploadImage(form.bottomBannerFile, token))
       }
 
+      const secondaryBannerSliderItems = []
+      for (const item of form.secondaryBannerSliderItems) {
+        let image = sanitizeImageUrl(item.image)
+        if (item.file) {
+          image = sanitizeImageUrl(await uploadImage(item.file, token))
+        }
+
+        secondaryBannerSliderItems.push({
+          id: item.id,
+          image,
+          link: String(item.link || '/shop').trim(),
+          alt: String(item.alt || '').trim(),
+        })
+      }
+
       await axios.put('/api/store/preferences/shop-showcase', {
+        ...loadedShowcase,
         mainBannerEnabled: !!form.mainBannerEnabled,
         productBanners,
         topBannerImage,
@@ -246,7 +346,14 @@ export default function ShowcaseBannersPage() {
         bottomBannerCtaText: String(form.bottomBannerCtaText || '').trim(),
         bottomBannerCtaEnabled: !!form.bottomBannerCtaEnabled,
         bottomBannerCtaBgColor: String(form.bottomBannerCtaBgColor || '').trim(),
-        bottomBannerCtaTextColor: String(form.bottomBannerCtaTextColor || '').trim()
+        bottomBannerCtaTextColor: String(form.bottomBannerCtaTextColor || '').trim(),
+        secondaryBannerSliderEnabled: !!form.secondaryBannerSliderEnabled,
+        secondaryBannerSliderDesktopInterval: Number(form.secondaryBannerSliderDesktopInterval || 4000),
+        secondaryBannerSliderMobileInterval: Number(form.secondaryBannerSliderMobileInterval || 3000),
+        secondaryBannerSliderDesktopHeight: Number(form.secondaryBannerSliderDesktopHeight || 220),
+        secondaryBannerSliderMobileHeight: Number(form.secondaryBannerSliderMobileHeight || 120),
+        secondaryBannerSliderPlacement: form.secondaryBannerSliderPlacement || 'below_small_banners',
+        secondaryBannerSliderItems,
       }, {
         headers: { Authorization: `Bearer ${token}` }
       })
@@ -575,6 +682,135 @@ export default function ShowcaseBannersPage() {
               </div>
             </div>
           </div>
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">2nd Banner Slider</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Rotating banner slider shown on the homepage. Place it below the showcase banners or near Top Deals.
+              </p>
+            </div>
+            <label className="inline-flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={!!form.secondaryBannerSliderEnabled}
+                onChange={(event) => setForm((prev) => ({ ...prev, secondaryBannerSliderEnabled: event.target.checked }))}
+                className="h-4 w-4"
+              />
+              <span className="text-sm font-medium text-slate-700">Enable slider</span>
+            </label>
+          </div>
+
+          <div className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <label className="block lg:col-span-2">
+              <span className="mb-1 block text-sm font-medium text-slate-700">Homepage placement</span>
+              <select
+                className="w-full rounded-lg border border-slate-300 px-3 py-2.5"
+                value={form.secondaryBannerSliderPlacement}
+                onChange={(event) => setForm((prev) => ({ ...prev, secondaryBannerSliderPlacement: event.target.value }))}
+              >
+                <option value="below_small_banners">Below Showcase Banners (recommended)</option>
+                <option value="above_top_deals">Above Top Deals</option>
+                <option value="below_top_deals">Below Top Deals</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-slate-700">Desktop height (px)</span>
+              <input
+                type="number"
+                min="80"
+                max="400"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2.5"
+                value={form.secondaryBannerSliderDesktopHeight}
+                onChange={(event) => setForm((prev) => ({ ...prev, secondaryBannerSliderDesktopHeight: Number(event.target.value) || 220 }))}
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-slate-700">Mobile height (px)</span>
+              <input
+                type="number"
+                min="80"
+                max="400"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2.5"
+                value={form.secondaryBannerSliderMobileHeight}
+                onChange={(event) => setForm((prev) => ({ ...prev, secondaryBannerSliderMobileHeight: Number(event.target.value) || 120 }))}
+              />
+            </label>
+          </div>
+
+          <div className="mt-4 space-y-4">
+            {form.secondaryBannerSliderItems.map((item, index) => (
+              <div key={item.id || `secondary-slide-${index}`} className="rounded-xl border border-slate-200 p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-slate-900">Slide {index + 1}</h3>
+                  <button
+                    type="button"
+                    onClick={() => removeSecondarySliderItem(index)}
+                    disabled={form.secondaryBannerSliderItems.length <= 1}
+                    className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Remove
+                  </button>
+                </div>
+
+                <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+                  <div>
+                    <div className="relative overflow-hidden rounded-xl border border-dashed border-slate-300 bg-slate-50">
+                      <div className="relative aspect-[16/5] w-full">
+                        {item.previewUrl ? (
+                          <Image src={item.previewUrl} alt={item.alt || `Slide ${index + 1}`} fill unoptimized className="object-cover" />
+                        ) : (
+                          <div className="flex h-full items-center justify-center text-xs text-slate-400">No image selected</div>
+                        )}
+                      </div>
+                    </div>
+                    <label className="mt-3 inline-flex w-fit cursor-pointer items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                      <Upload size={16} />
+                      Upload slide image
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(event) => handleSecondarySliderImageChange(index, event.target.files?.[0] || null)}
+                      />
+                    </label>
+                    <p className="mt-2 text-xs text-slate-500">Recommended: wide banner, 1600 x 500 px or similar</p>
+                  </div>
+
+                  <div className="grid gap-3">
+                    <label className="block">
+                      <span className="mb-1 block text-sm font-medium text-slate-700">Alt text</span>
+                      <input
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                        value={item.alt}
+                        onChange={(event) => updateSecondarySliderItem(index, 'alt', event.target.value)}
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-sm font-medium text-slate-700">Link</span>
+                      <input
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                        value={item.link}
+                        onChange={(event) => updateSecondarySliderItem(index, 'link', event.target.value)}
+                        placeholder="/shop"
+                      />
+                    </label>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={addSecondarySliderItem}
+            disabled={form.secondaryBannerSliderItems.length >= 6}
+            className="mt-4 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Add Slide
+          </button>
         </div>
       </div>
 

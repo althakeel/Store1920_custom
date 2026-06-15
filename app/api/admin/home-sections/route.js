@@ -5,6 +5,7 @@ import dbConnect from "@/lib/mongodb";
 import HomeSection from "@/models/HomeSection";
 import { NextResponse } from "next/server";
 import { localizeRecord, resolveStorefrontLanguage } from "@/lib/storefrontLanguage";
+import { verifyHomeSectionAccess } from "@/lib/homeSectionAccess";
 
 // Simple in-memory cache
 let _cache = { sections: null, lastFetch: 0 };
@@ -42,6 +43,14 @@ export async function GET(request) {
 // POST - Create new home section
 export async function POST(request) {
     try {
+        const access = await verifyHomeSectionAccess(request);
+        if (!access.ok) {
+            return NextResponse.json(
+                { error: access.error, reason: access.reason },
+                { status: access.status }
+            );
+        }
+
         await dbConnect();
         const body = await request.json();
         const { section, sectionType, category, tag, productIds, title, titleAr, subtitle, subtitleAr, slides, bannerCtaText, bannerCtaTextAr, bannerCtaLink, layout, isActive, sortOrder } = body;
@@ -73,6 +82,8 @@ export async function POST(request) {
             isActive,
             sortOrder,
         });
+        _cache.sections = null;
+        _cache.lastFetch = 0;
         return NextResponse.json({ section: newSection }, { status: 201 });
     } catch (error) {
         console.error('Error creating home section:', error);

@@ -3,7 +3,8 @@ import Product from "@/models/Product";
 import Rating from "@/models/Rating";
 import Category from "@/models/Category";
 import { NextResponse } from "next/server";
-import { getCachedData, setCachedData, generateCacheKey } from "@/lib/cache";
+import { NextResponse } from "next/server";
+import { getCachedData, setCachedData, generateCacheKey, invalidateCachePattern } from "@/lib/cache";
 import { localizeRecord, resolveStorefrontLanguage } from "@/lib/storefrontLanguage";
 
 function isMongoConnectionError(error) {
@@ -89,6 +90,8 @@ export async function POST(request) {
             imageAspectRatio,
         });
 
+        invalidateCachePattern('products:');
+
         return NextResponse.json({ product }, { status: 201 });
     } catch (error) {
         console.error('Error creating product:', error);
@@ -104,20 +107,28 @@ export async function GET(request){
     const fetchAll = searchParams.get('all') === 'true';
     const parsedLimit = parseInt(searchParams.get('limit') || '20', 10);
     const parsedOffset = parseInt(searchParams.get('offset') || '0', 10);
-    const limit = fetchAll ? 5000 : Math.min(Number.isFinite(parsedLimit) ? parsedLimit : 20, 300); // Default 20, max 300 (or 5000 for all=true)
+    const limit = fetchAll ? 500 : Math.min(Number.isFinite(parsedLimit) ? parsedLimit : 20, 300);
     const offset = Number.isFinite(parsedOffset) ? parsedOffset : 0;
     const fastDelivery = searchParams.get('fastDelivery');
     const categoryParam = searchParams.get('category');
     const includeOutOfStock = searchParams.get('includeOutOfStock') === 'true';
-    const cacheKey = generateCacheKey('products', { limit, offset, fastDelivery: fastDelivery || 'false', fetchAll: fetchAll ? 'true' : 'false' });
+    const slim = searchParams.get('slim') === 'true' || (!fetchAll && limit <= 50);
+    const cacheKey = generateCacheKey('products', {
+        limit,
+        offset,
+        fastDelivery: fastDelivery || 'false',
+        fetchAll: fetchAll ? 'true' : 'false',
+        category: categoryParam || '',
+        includeOutOfStock: includeOutOfStock ? 'true' : 'false',
+        slim: slim ? 'true' : 'false',
+        language,
+    });
 
     try {
-        // CHECK CACHE FIRST - Skip MongoDB if cached!
-        // TEMPORARILY DISABLED TO FORCE FRESH DATA WITH CATEGORIES
-        // const cachedProducts = getCachedData(cacheKey);
-        // if (cachedProducts) {
-        //     return NextResponse.json({ products: cachedProducts, fromCache: true });
-        // }
+        const cachedProducts = getCachedData(cacheKey);
+        if (cachedProducts) {
+            return createProductsResponse(cachedProducts, { 'X-Cache': 'HIT' });
+        }
 
         try {
             await dbConnect();
@@ -184,9 +195,12 @@ export async function GET(request){
         }
 
         let products = [];
+        const listProjection = slim
+            ? 'name nameAr slug price mrp AED images category categories inStock stockQuantity fastDelivery freeShippingEligible imageAspectRatio createdAt'
+            : 'name nameAr slug description descriptionAr shortDescription shortDescriptionAr brand brandAr price mrp AED images category categories sku hasVariants variants attributes fastDelivery freeShippingEligible stockQuantity imageAspectRatio createdAt';
         try {
             products = await Product.find(matchStage)
-                .select('name nameAr slug description descriptionAr shortDescription shortDescriptionAr brand brandAr price mrp AED images category categories sku hasVariants variants attributes fastDelivery freeShippingEligible stockQuantity imageAspectRatio createdAt')
+                .select(listProjection)
                 .sort({ createdAt: -1 })
                 .skip(offset)
                 .limit(limit)
@@ -195,7 +209,7 @@ export async function GET(request){
         } catch (populateError) {
             console.error('Products query error:', populateError);
             products = await Product.find(matchStage)
-                .select('name nameAr slug description descriptionAr shortDescription shortDescriptionAr brand brandAr price mrp AED images category categories sku hasVariants variants attributes fastDelivery freeShippingEligible stockQuantity imageAspectRatio createdAt')
+                .select(listProjection)
                 .sort({ createdAt: -1 })
                 .skip(offset)
                 .limit(limit)

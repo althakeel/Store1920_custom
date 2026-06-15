@@ -15,11 +15,11 @@ function normalizeHeroHeight(value, fallback) {
   return Math.min(700, Math.max(80, Math.round(numeric)));
 }
 
-export default function HeroBannerSlider() {
+export default function HeroBannerSlider({ showcaseConfig: showcaseConfigProp = null }) {
   const [index, setIndex] = useState(0);
   const [loaded, setLoaded] = useState([]);
-  const [showcaseConfig, setShowcaseConfig] = useState(null);
-  const [showcaseLoaded, setShowcaseLoaded] = useState(false);
+  const [showcaseConfig, setShowcaseConfig] = useState(showcaseConfigProp);
+  const [showcaseLoaded, setShowcaseLoaded] = useState(Boolean(showcaseConfigProp));
   const router = useRouter();
   const intervalRef = useRef(null);
 
@@ -80,9 +80,15 @@ export default function HeroBannerSlider() {
   }, []);
 
   useEffect(() => {
+    if (showcaseConfigProp) {
+      setShowcaseConfig(showcaseConfigProp);
+      setShowcaseLoaded(true);
+      return undefined;
+    }
+
     const fetchShowcase = async () => {
       try {
-        const res = await fetch('/api/public/shop-showcase', { cache: 'no-store' });
+        const res = await fetch('/api/public/shop-showcase');
         if (!res.ok) return;
         const data = await res.json();
         setShowcaseConfig(data?.config || null);
@@ -93,7 +99,7 @@ export default function HeroBannerSlider() {
       }
     };
     fetchShowcase();
-  }, []);
+  }, [showcaseConfigProp]);
 
   useEffect(() => {
     setLoaded(slides.map((slide) => !slide?.image));

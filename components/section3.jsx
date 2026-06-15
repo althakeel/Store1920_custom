@@ -6,71 +6,96 @@ import { useStorefrontMarket } from "@/lib/useStorefrontMarket";
 
 const TOP_DEALS_SECTION_KEYS = new Set(["top_deals", "top-deals", "topdeals"]);
 
-export default function TopDeals() {
+const normalizeKey = (value) =>
+  String(value || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+const normalizeId = (value) => {
+  if (!value) return null;
+  if (typeof value === "string" || typeof value === "number") return String(value);
+  if (typeof value === "object") {
+    if (value.$oid) return String(value.$oid);
+    const stringValue = value.toString?.();
+    return stringValue && stringValue !== "[object Object]" ? String(stringValue) : null;
+  }
+  return null;
+};
+
+function findTopDealsSection(homeSections = []) {
+  return (
+    homeSections.find((item) => TOP_DEALS_SECTION_KEYS.has(normalizeKey(item.section))) ||
+    homeSections.find((item) => normalizeKey(item.title) === "top_deals") ||
+    homeSections.find((item) => item.category) ||
+    null
+  );
+}
+
+export default function TopDeals({ homeSections = [], sectionsLoading = false }) {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [title, setTitle] = useState("Top Deals");
   const { market, convertPrice } = useStorefrontMarket();
 
   useEffect(() => {
+    if (sectionsLoading) {
+      setLoading(true);
+      return;
+    }
+
+    let cancelled = false;
+
     const load = async () => {
+      setLoading(true);
+
       try {
-        const [{ data: sectionData }, { data: productData }] = await Promise.all([
-          axios.get("/api/admin/home-sections"),
-          axios.get("/api/products")
-        ]);
+        const section = findTopDealsSection(homeSections);
+        setTitle(section?.title || "Top Deals");
 
-        const adminSections = sectionData.sections || [];
-        const allProducts = productData.products || productData;
-
-        const normalizeKey = (value) =>
-          String(value || "")
-            .toLowerCase()
-            .trim()
-            .replace(/[^a-z0-9]+/g, "_")
-            .replace(/^_+|_+$/g, "");
-
-        const normalizeId = (value) => {
-          if (!value) return null;
-          if (typeof value === "string" || typeof value === "number") return String(value);
-          if (typeof value === "object") {
-            if (value.$oid) return String(value.$oid);
-            const stringValue = value.toString?.();
-            return stringValue && stringValue !== "[object Object]" ? String(stringValue) : null;
-          }
-          return null;
-        };
-
-        const section =
-          adminSections.find((item) => TOP_DEALS_SECTION_KEYS.has(normalizeKey(item.section))) ||
-          adminSections.find((item) => normalizeKey(item.title) === "top_deals") ||
-          adminSections.find((item) => item.category);
-
-        let result = allProducts;
-
-        if (section?.title) {
-          setTitle(section.title);
+        if (!section) {
+          const { data } = await axios.get("/api/products?limit=12");
+          if (!cancelled) setProducts(data.products || []);
+          return;
         }
 
-        if (section?.sectionType === "manual" && Array.isArray(section.productIds) && section.productIds.length > 0) {
-          const selectedProductIds = new Set(section.productIds.map(normalizeId).filter(Boolean));
-          result = allProducts.filter((product) =>
-            selectedProductIds.has(normalizeId(product._id || product.id || product.productId))
-          );
-        } else if (section?.category) {
-          result = allProducts.filter((product) => product.category === section.category);
+        if (section.sectionType === "manual" && Array.isArray(section.productIds) && section.productIds.length > 0) {
+          const productIds = section.productIds.slice(0, 12);
+          const { data } = await axios.post("/api/products/batch", { productIds });
+          if (!cancelled) setProducts(data.products || []);
+          return;
         }
 
-        setProducts(result);
+        if (section.category) {
+          const { data } = await axios.get("/api/products", {
+            params: {
+              category: section.category,
+              limit: 12,
+            },
+          });
+          if (!cancelled) setProducts(data.products || []);
+          return;
+        }
+
+        const { data } = await axios.get("/api/products?limit=12");
+        if (!cancelled) setProducts(data.products || []);
       } catch {
-        setProducts([]);
-        setTitle("Top Deals");
+        if (!cancelled) {
+          setProducts([]);
+          setTitle("Top Deals");
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
+
     load();
-  }, []);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [homeSections, sectionsLoading]);
 
   return (
     <div className="w-full flex justify-center mt-6 sm:mt-8">
@@ -85,7 +110,6 @@ export default function TopDeals() {
                   key={`skeleton-${index}`}
                   className="cursor-pointer text-center flex flex-col items-center"
                 >
-                  {/* Skeleton Image */}
                   <div
                     className="w-full aspect-square rounded-[2px]"
                     style={{
@@ -94,7 +118,6 @@ export default function TopDeals() {
                       animation: 'shimmer 1.5s infinite',
                     }}
                   />
-                  {/* Skeleton Title */}
                   <div
                     className="h-2 sm:h-3 mx-auto mt-2 sm:mt-3 rounded"
                     style={{
@@ -104,7 +127,6 @@ export default function TopDeals() {
                       animation: 'shimmer 1.5s infinite',
                     }}
                   />
-                  {/* Skeleton Price */}
                   <div
                     className="h-2 sm:h-3 mx-auto mt-1.5 sm:mt-2 rounded"
                     style={{
@@ -130,7 +152,7 @@ export default function TopDeals() {
 
                 return (
                   <a
-                    key={i}
+                    key={item._id || item.slug || i}
                     href={`/product/${item.slug}`}
                     className="cursor-pointer text-center block group flex flex-col items-center"
                   >
@@ -139,6 +161,7 @@ export default function TopDeals() {
                         src={img}
                         alt={item.name}
                         className="h-full w-full object-contain p-2 sm:p-3 group-hover:scale-110 transition-transform duration-200"
+                        loading="lazy"
                         onError={e => { e.currentTarget.src = "https://ik.imagekit.io/jrstupuke/placeholder.png"; }}
                       />
                     </div>

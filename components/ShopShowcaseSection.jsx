@@ -123,9 +123,9 @@ function getCategoryIconByName(name) {
   return Info
 }
 
-export default function ShopShowcaseSection() {
-  const [loading, setLoading] = useState(true)
-  const [data, setData] = useState({ config: null, sectionProducts: [], products: [], categories: [] })
+export default function ShopShowcaseSection({ initialShowcaseData = null }) {
+  const [loading, setLoading] = useState(!initialShowcaseData)
+  const [data, setData] = useState(initialShowcaseData || { config: null, sectionProducts: [], products: [], categories: [] })
   const [storeMenuItems, setStoreMenuItems] = useState([])
   const [menuStyle, setMenuStyle] = useState({
     showcaseFlyoutBackgroundColor: '#ffffff',
@@ -155,11 +155,13 @@ export default function ShopShowcaseSection() {
   useEffect(() => {
     const load = async () => {
       try {
-        const cacheBuster = Date.now()
-        const showcaseRes = await axios.get('/api/public/shop-showcase', {
-          headers: { 'Cache-Control': 'no-cache' },
-          params: { t: cacheBuster }
-        })
+        const [showcaseRes, settingsRes, navbarRes] = await Promise.all([
+          initialShowcaseData
+            ? Promise.resolve({ data: initialShowcaseData })
+            : axios.get('/api/public/shop-showcase'),
+          axios.get('/api/store/settings').catch(() => ({ data: {} })),
+          axios.get('/api/store/navbar-menu').catch(() => ({ data: {} })),
+        ])
 
         const showcaseData = showcaseRes.data || { config: null, sectionProducts: [], products: [], categories: [] }
         setData(showcaseData)
@@ -168,11 +170,6 @@ export default function ShopShowcaseSection() {
           setStoreMenuItems([])
           return
         }
-
-        const [settingsRes, navbarRes] = await Promise.all([
-          axios.get('/api/store/settings').catch(() => ({ data: {} })),
-          axios.get('/api/store/navbar-menu').catch(() => ({ data: {} })),
-        ])
 
         const advancedItems = Array.isArray(settingsRes.data?.navMenuItems) ? settingsRes.data.navMenuItems : []
         const resolvedMenuStyle = settingsRes.data?.navMenuStyle && typeof settingsRes.data.navMenuStyle === 'object'
@@ -206,7 +203,7 @@ export default function ShopShowcaseSection() {
       }
     }
     load()
-  }, [])
+  }, [initialShowcaseData])
 
   const config = data.config
   const categoryMenuItems = useMemo(() => {

@@ -38,6 +38,12 @@ const designPages = [
     icon: Images,
   },
   {
+    title: 'Banner 2 Section',
+    description: 'Upload rotating banner slides shown below Top Deals on the homepage.',
+    href: '/store/customize/banner-2-section',
+    icon: Rows3,
+  },
+  {
     title: 'Appearance',
     description: 'Toggle storefront sections and update display behavior.',
     href: '/store/storefront/appearance',

@@ -6,7 +6,14 @@ import ProductCard from '@/components/ProductCard';
 
 const MAX_CATEGORIES = 10;
 const MAX_PRODUCTS = 20;
-const INITIAL_VISIBLE_PRODUCTS = 30;
+const INITIAL_ROWS = 5;
+
+function getColumnsForWidth(width) {
+  if (width >= 1024) return 6;
+  if (width >= 768) return 4;
+  if (width >= 640) return 3;
+  return 2;
+}
 
 function normalizeCategory(value) {
   return String(value || '').trim();
@@ -89,7 +96,20 @@ export default function CategoryInterestSection() {
   const [sectionEnabled, setSectionEnabled] = useState(true);
   const [manualRecommendedIds, setManualRecommendedIds] = useState([]);
   const [manualRecommendedProducts, setManualRecommendedProducts] = useState([]);
-  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_PRODUCTS);
+  const [columnsPerRow, setColumnsPerRow] = useState(6);
+  const [visibleCount, setVisibleCount] = useState(INITIAL_ROWS * 6);
+
+  const initialVisibleCount = columnsPerRow * INITIAL_ROWS;
+
+  useEffect(() => {
+    const updateColumns = () => {
+      setColumnsPerRow(getColumnsForWidth(window.innerWidth));
+    };
+
+    updateColumns();
+    window.addEventListener('resize', updateColumns);
+    return () => window.removeEventListener('resize', updateColumns);
+  }, []);
 
   const fallbackManualProducts = useMemo(() => {
     if (!Array.isArray(manualRecommendedIds) || manualRecommendedIds.length === 0) return [];
@@ -313,21 +333,15 @@ export default function CategoryInterestSection() {
   }, [products, selectedCategoryOption, manualRecommendedProducts, fallbackManualProducts]);
 
   useEffect(() => {
-    setVisibleCount(INITIAL_VISIBLE_PRODUCTS);
-  }, [selectedCategoryKey]);
-
-  useEffect(() => {
-    setVisibleCount((prev) => {
-      if (displayedProducts.length === 0) return INITIAL_VISIBLE_PRODUCTS;
-      return Math.min(Math.max(prev, INITIAL_VISIBLE_PRODUCTS), displayedProducts.length);
-    });
-  }, [displayedProducts]);
+    setVisibleCount(initialVisibleCount);
+  }, [selectedCategoryKey, initialVisibleCount]);
 
   const paginatedProducts = useMemo(() => {
     return displayedProducts.slice(0, visibleCount);
   }, [displayedProducts, visibleCount]);
 
-  const hasMoreProducts = visibleCount < displayedProducts.length;
+  const hasMoreProducts = displayedProducts.length > initialVisibleCount
+    && visibleCount < displayedProducts.length;
 
   if (!sectionEnabled) {
     return null;
@@ -404,10 +418,10 @@ export default function CategoryInterestSection() {
               <div className="mt-5 flex justify-center">
                 <button
                   type="button"
-                  onClick={() => setVisibleCount((prev) => Math.min(prev + 6, displayedProducts.length))}
-                  className="rounded-full border border-slate-300 px-5 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+                  onClick={() => setVisibleCount(displayedProducts.length)}
+                  className="rounded-full border border-slate-300 px-6 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
                 >
-                  Load more
+                  Show more
                 </button>
               </div>
             )}

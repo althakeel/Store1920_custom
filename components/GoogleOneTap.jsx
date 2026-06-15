@@ -7,20 +7,17 @@ import { GoogleAuthProvider, onAuthStateChanged, signInWithCredential } from 'fi
 import toast from 'react-hot-toast'
 import { auth } from '@/lib/firebase'
 
-const DISABLED_PATH_PREFIXES = ['/admin', '/store']
-
 export default function GoogleOneTap() {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const [scriptLoaded, setScriptLoaded] = useState(false)
   const initializedRef = useRef(false)
+  const promptRequestedRef = useRef(false)
   const signingInRef = useRef(false)
   const redirectToRef = useRef('/')
+  const pathnameRef = useRef(pathname)
   const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
-  const fedCmMode = (process.env.NEXT_PUBLIC_GOOGLE_ONE_TAP_FEDCM || 'off').toLowerCase()
-  // Keep FedCM opt-in only. Use NEXT_PUBLIC_GOOGLE_ONE_TAP_FEDCM=force to enable.
-  const useFedCmPrompt = process.env.NODE_ENV === 'production' && fedCmMode === 'force'
 
   const safeCancelOneTap = () => {
     try {
@@ -28,9 +25,13 @@ export default function GoogleOneTap() {
         window.google.accounts.id.cancel()
       }
     } catch {
-      // Swallow noisy browser/library cleanup errors.
+      // Ignore cleanup errors from Google's prompt lifecycle.
     }
   }
+
+  useEffect(() => {
+    pathnameRef.current = pathname
+  }, [pathname])
 
   useEffect(() => {
     redirectToRef.current = searchParams.get('redirect_to') || '/'
@@ -38,25 +39,24 @@ export default function GoogleOneTap() {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user && !useFedCmPrompt) {
+      if (user) {
         safeCancelOneTap()
       }
     })
 
     return () => unsubscribe()
-  }, [useFedCmPrompt])
+  }, [])
 
   useEffect(() => {
     if (!clientId || !scriptLoaded || initializedRef.current) return
     if (typeof window === 'undefined' || !window.google?.accounts?.id) return
     if (auth.currentUser) return
-    if (DISABLED_PATH_PREFIXES.some((prefix) => pathname?.startsWith(prefix))) return
 
     window.google.accounts.id.initialize({
       client_id: clientId,
       auto_select: false,
       cancel_on_tap_outside: false,
-      use_fedcm_for_prompt: useFedCmPrompt,
+      use_fedcm_for_prompt: false,
       callback: async ({ credential }) => {
         if (!credential || signingInRef.current) return
 
@@ -66,7 +66,7 @@ export default function GoogleOneTap() {
           await signInWithCredential(auth, firebaseCredential)
 
           const redirectTo = redirectToRef.current || '/'
-          if (pathname?.includes('/sign-in')) {
+          if (pathnameRef.current?.includes('/sign-in')) {
             router.push(redirectTo)
           } else {
             router.refresh()
@@ -81,21 +81,16 @@ export default function GoogleOneTap() {
     })
 
     initializedRef.current = true
-    try {
-      window.google.accounts.id.prompt()
-    } catch {
-      // Ignore prompt errors; Google script can throw during rapid route changes.
-    }
 
-    return () => {
-      // Canceling an active FedCM prompt during route cleanup can trigger
-      // noisy AbortError logs in the browser console.
-      if (!useFedCmPrompt) {
-        safeCancelOneTap()
+    if (!promptRequestedRef.current) {
+      promptRequestedRef.current = true
+      try {
+        window.google.accounts.id.prompt()
+      } catch {
+        // Ignore prompt errors during rapid route changes.
       }
-      initializedRef.current = false
     }
-  }, [clientId, pathname, router, scriptLoaded, useFedCmPrompt])
+  }, [clientId, router, scriptLoaded])
 
   if (!clientId) return null
 

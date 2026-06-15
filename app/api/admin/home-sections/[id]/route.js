@@ -1,33 +1,21 @@
 import dbConnect from "@/lib/mongodb";
 import HomeSection from "@/models/HomeSection";
 import { NextResponse } from "next/server";
-import { getAuth } from "@/lib/firebase-admin";
-import authAdmin from "@/middlewares/authAdmin";
+import { verifyHomeSectionAccess } from "@/lib/homeSectionAccess";
 
 // GET - Fetch single home section by id
 export async function GET(request, { params }) {
     try {
-        // Firebase Auth: get Bearer token from header
-        const authHeader = request.headers.get("authorization");
-        if (!authHeader || !authHeader.startsWith("Bearer ")) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        }
-        const idToken = authHeader.split(" ")[1];
-        let decodedToken;
-        try {
-            decodedToken = await getAuth().verifyIdToken(idToken);
-        } catch (e) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        }
-        const userId = decodedToken.uid;
-        const email = decodedToken.email;
-        const isAdmin = await authAdmin(userId, email);
-        if (!isAdmin) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        const access = await verifyHomeSectionAccess(request);
+        if (!access.ok) {
+            return NextResponse.json(
+                { error: access.error, reason: access.reason },
+                { status: access.status }
+            );
         }
 
         await dbConnect();
-        const { id } = params;
+        const { id } = await params;
         const section = await HomeSection.findById(id);
         if (!section) {
             return NextResponse.json({ error: "Section not found" }, { status: 404 });
@@ -45,27 +33,16 @@ export async function GET(request, { params }) {
 // PUT - Update home section
 export async function PUT(request, { params }) {
     try {
-        // Firebase Auth: get Bearer token from header
-        const authHeader = request.headers.get("authorization");
-        if (!authHeader || !authHeader.startsWith("Bearer ")) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        }
-        const idToken = authHeader.split(" ")[1];
-        let decodedToken;
-        try {
-            decodedToken = await getAuth().verifyIdToken(idToken);
-        } catch (e) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        }
-        const userId = decodedToken.uid;
-        const email = decodedToken.email;
-        const isAdmin = await authAdmin(userId, email);
-        if (!isAdmin) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        const access = await verifyHomeSectionAccess(request);
+        if (!access.ok) {
+            return NextResponse.json(
+                { error: access.error, reason: access.reason },
+                { status: access.status }
+            );
         }
 
         await dbConnect();
-        const { id } = params;
+        const { id } = await params;
         const body = await request.json();
         const {
             section,
@@ -128,27 +105,16 @@ export async function PUT(request, { params }) {
 // DELETE - Delete home section
 export async function DELETE(request, { params }) {
     try {
-        // Firebase Auth: get Bearer token from header
-        const authHeader = request.headers.get("authorization");
-        if (!authHeader || !authHeader.startsWith("Bearer ")) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        }
-        const idToken = authHeader.split(" ")[1];
-        let decodedToken;
-        try {
-            decodedToken = await getAuth().verifyIdToken(idToken);
-        } catch (e) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        }
-        const userId = decodedToken.uid;
-        const email = decodedToken.email;
-        const isAdmin = await authAdmin(userId, email);
-        if (!isAdmin) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        const access = await verifyHomeSectionAccess(request);
+        if (!access.ok) {
+            return NextResponse.json(
+                { error: access.error, reason: access.reason },
+                { status: access.status }
+            );
         }
 
         await dbConnect();
-        const { id } = params;
+        const { id } = await params;
         const deleted = await HomeSection.findByIdAndDelete(id);
         if (!deleted) {
             return NextResponse.json({ error: "Section not found" }, { status: 404 });

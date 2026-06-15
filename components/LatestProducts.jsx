@@ -68,7 +68,7 @@ const getAEDPrice = (product) => {
   )
 }
 
-const ProductCard = ({ product }) => {
+const ProductCard = ({ product, priorityImages = false }) => {
   const [hovered, setHovered] = useState(false)
   const dispatch = useDispatch()
   const { getToken } = useAuth()
@@ -127,23 +127,33 @@ const ProductCard = ({ product }) => {
   const convertedPrice = convertPrice(priceNum)
   const convertedAED = convertPrice(AEDNum)
 
-  // Review fetching logic (axios, like product page)
+  // Review fetching logic - use embedded ratings when available to avoid N+1 API calls
   const [reviews, setReviews] = useState([]);
   const [loadingReviews, setLoadingReviews] = useState(false);
   useEffect(() => {
+    if (Number(product.averageRating) > 0 || Number(product.ratingCount) > 0) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
     const fetchReviews = async () => {
       try {
         setLoadingReviews(true);
         const { data } = await import('axios').then(ax => ax.default.get(`/api/review?productId=${product._id}`));
-        setReviews(data.reviews || []);
-      } catch (error) {
+        if (!cancelled) setReviews(data.reviews || []);
+      } catch {
         // silent fail
       } finally {
-        setLoadingReviews(false);
+        if (!cancelled) setLoadingReviews(false);
       }
     };
     fetchReviews();
-  }, [product._id]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [product._id, product.averageRating, product.ratingCount]);
 
   const ratingValue = reviews.length > 0
     ? Math.round(reviews.reduce((acc, curr) => acc + (curr.rating || 0), 0) / reviews.length)
@@ -211,7 +221,8 @@ const ProductCard = ({ product }) => {
             hasSecondary && hovered ? 'opacity-0' : 'opacity-100'
           }`}
           sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 16vw"
-          priority
+          priority={priorityImages}
+          loading={priorityImages ? undefined : 'lazy'}
           onError={(e) => { e.currentTarget.src = 'https://ik.imagekit.io/jrstupuke/placeholder.png' }}
         />
 
@@ -225,7 +236,7 @@ const ProductCard = ({ product }) => {
               hovered ? 'opacity-100' : 'opacity-0'
             }`}
             sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 16vw"
-            priority
+            loading="lazy"
             onError={(e) => { e.currentTarget.src = 'https://ik.imagekit.io/jrstupuke/placeholder.png' }}
           />
         )}
@@ -579,8 +590,8 @@ const BestSelling = () => {
                 </div>
               </div>
             ))
-          : featuredProducts.slice(0, visibleCount).map((product) => (
-              <ProductCard key={product._id || product.id} product={product} />
+          : featuredProducts.slice(0, visibleCount).map((product, index) => (
+              <ProductCard key={product._id || product.id} product={product} priorityImages={index < 4} />
             ))}
       </div>
 

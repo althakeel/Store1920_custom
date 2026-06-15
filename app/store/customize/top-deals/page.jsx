@@ -6,7 +6,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { Loader2, Save, Search, ShieldAlert } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { auth, googleProvider } from '@/lib/firebase'
+import { useAuth } from '@/lib/useAuth'
 
 const normalizeKey = (value) =>
   String(value || '')
@@ -35,7 +35,7 @@ const DEFAULT_FORM = {
 }
 
 export default function TopDealsCustomizePage() {
-  const [user, setUser] = useState(null)
+  const { user, loading: authLoading, getToken } = useAuth()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [products, setProducts] = useState([])
@@ -46,24 +46,24 @@ export default function TopDealsCustomizePage() {
   const [form, setForm] = useState(DEFAULT_FORM)
 
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((nextUser) => {
-      setUser(nextUser)
-    })
-    return () => unsubscribe()
-  }, [])
+    if (authLoading) return
 
-  useEffect(() => {
-    if (!user) return
+    if (!user) {
+      setLoading(false)
+      return
+    }
 
     const load = async () => {
       try {
         setLoading(true)
-        const token = await user.getIdToken()
+        const token = await getToken()
+        if (!token) {
+          toast.error('Please sign in again to edit Top Deals')
+          return
+        }
 
         const [{ data: sectionsData }, { data: productsData }] = await Promise.all([
-          axios.get('/api/admin/home-sections', {
-            headers: { Authorization: `Bearer ${token}` }
-          }),
+          axios.get('/api/admin/home-sections'),
           axios.get('/api/products')
         ])
 
@@ -109,15 +109,7 @@ export default function TopDealsCustomizePage() {
     }
 
     load()
-  }, [user])
-
-  const handleLogin = async () => {
-    try {
-      await auth.signInWithPopup(googleProvider)
-    } catch (error) {
-      toast.error('Login failed: ' + (error.message || error))
-    }
-  }
+  }, [authLoading, user, getToken])
 
   const pickProduct = (productId) => {
     setForm((prev) => ({
@@ -163,7 +155,12 @@ export default function TopDealsCustomizePage() {
 
     try {
       setSaving(true)
-      const token = await user.getIdToken()
+      const token = await getToken()
+      if (!token) {
+        toast.error('Please sign in again to save Top Deals')
+        return
+      }
+
       const payload = {
         section: form.section || 'top_deals',
         sectionType: form.sectionType,
@@ -196,14 +193,21 @@ export default function TopDealsCustomizePage() {
 
       toast.success('Top Deals saved successfully')
     } catch (error) {
-      toast.error(error?.response?.data?.error || 'Failed to save Top Deals')
+      const reason = error?.response?.data?.reason
+      if (reason === 'invalid-token') {
+        toast.error(error?.response?.data?.error || 'Server authentication failed. Check Firebase service account settings.')
+      } else if (reason === 'not-admin-or-seller') {
+        toast.error('Your account does not have permission to update Top Deals.')
+      } else {
+        toast.error(error?.response?.data?.error || 'Failed to save Top Deals')
+      }
       console.error(error)
     } finally {
       setSaving(false)
     }
   }
 
-  if (loading) {
+  if (loading || authLoading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-slate-500" />
@@ -219,13 +223,13 @@ export default function TopDealsCustomizePage() {
             <ShieldAlert className="mt-0.5 h-5 w-5" />
             <div>
               <h1 className="text-xl font-semibold">Sign in required</h1>
-              <p className="mt-2 text-sm text-amber-900/80">Please sign in with your admin account to edit the Top Deals section.</p>
-              <button
-                onClick={handleLogin}
-                className="mt-4 rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700"
+              <p className="mt-2 text-sm text-amber-900/80">Please sign in with your store account to edit the Top Deals section.</p>
+              <Link
+                href="/store/login"
+                className="mt-4 inline-flex rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700"
               >
-                Sign in with Google
-              </button>
+                Go to Store Login
+              </Link>
             </div>
           </div>
         </div>

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import connectDB from '@/lib/mongodb'
 import StorePreference from '@/models/StorePreference'
 import authSeller from '@/middlewares/authSeller'
+import { deleteCacheKey } from '@/lib/cache'
 
 const DEFAULT_SHOWCASE = {
   enabled: true,
@@ -83,7 +84,7 @@ const DEFAULT_SHOWCASE = {
 function normalizeBannerSliderHeight(value, fallback) {
   const numeric = Number(value)
   if (!Number.isFinite(numeric)) return fallback
-  return Math.min(400, Math.max(80, Math.round(numeric)))
+  return Math.min(600, Math.max(80, Math.round(numeric)))
 }
 
 function normalizeMainBannerHeight(value, fallback) {
@@ -285,6 +286,8 @@ export async function PUT(request) {
       { $set: { shopShowcase } },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     ).lean()
+
+    deleteCacheKey('public:shop-showcase:v2')
 
     return NextResponse.json({
       message: 'Preference saved',

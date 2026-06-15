@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import connectDB from '@/lib/mongodb'
 import StorePreference from '@/models/StorePreference'
 import authSeller from '@/middlewares/authSeller'
+import { deleteCacheKey } from '@/lib/cache'
 
 const DEFAULT_APPEARANCE = {
   categorySliders: { enabled: true, title: 'Featured Collections', description: 'Browse our curated collections' },
@@ -292,6 +293,8 @@ export async function POST(request) {
       { $set: { appearanceSections } },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     )
+
+    deleteCacheKey('public:appearance-sections:v1')
 
     return NextResponse.json({ message: 'Appearance settings saved', ...appearanceSections })
   } catch (error) {

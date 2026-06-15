@@ -38,7 +38,11 @@ export async function POST(req) {
             .map(product => localizeRecord(product, language, ['name', 'shortDescription']))
             .filter(Boolean);
 
-        return NextResponse.json({ products: orderedProducts });
+        return NextResponse.json({ products: orderedProducts }, {
+            headers: {
+                'Cache-Control': 'public, s-maxage=120, stale-while-revalidate=300',
+            },
+        });
     } catch (error) {
         console.error('Error fetching products:', error);
         return NextResponse.json({ error: 'Failed to fetch products' }, { status: 500 });

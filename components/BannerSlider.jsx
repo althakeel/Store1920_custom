@@ -22,12 +22,19 @@ const sliderFieldMap = {
   }
 };
 
-const BannerSlider = ({ className = '', variant = 'primary' }) => {
+const DEFAULT_HEIGHTS = {
+  primary: { desktop: 220, mobile: 120 },
+  secondary: { desktop: 220, mobile: 120 },
+};
+
+const BannerSlider = ({ className = '', variant = 'primary', fullWidth = false, config: configProp = null }) => {
   const [index, setIndex] = useState(0);
-  const [showcaseConfig, setShowcaseConfig] = useState(null);
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [fetchedConfig, setFetchedConfig] = useState(null);
+  const [fetchComplete, setFetchComplete] = useState(false);
   const router = useRouter();
   const fieldMap = sliderFieldMap[variant] || sliderFieldMap.primary;
+  const showcaseConfig = configProp ?? fetchedConfig;
+  const isLoaded = configProp ? true : fetchComplete;
 
   const banners = useMemo(() => {
     if (!isLoaded) {
@@ -39,36 +46,51 @@ const BannerSlider = ({ className = '', variant = 'primary' }) => {
     }
 
     return Array.isArray(showcaseConfig?.[fieldMap.items])
-      ? showcaseConfig[fieldMap.items].filter((item) => item?.image)
+      ? showcaseConfig[fieldMap.items].filter((item) => String(item?.image || '').trim())
       : [];
   }, [fieldMap.enabled, fieldMap.items, isLoaded, showcaseConfig]);
 
   useEffect(() => {
+    if (configProp) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
     const fetchShowcase = async () => {
       try {
         const response = await fetch('/api/public/shop-showcase', { cache: 'no-store' });
         if (!response.ok) {
-          setShowcaseConfig(null);
+          if (!cancelled) setFetchedConfig(null);
           return;
         }
 
         const data = await response.json();
-        setShowcaseConfig(data?.config || null);
+        if (!cancelled) {
+          setFetchedConfig(data?.config || null);
+        }
       } catch {
-        setShowcaseConfig(null);
+        if (!cancelled) {
+          setFetchedConfig(null);
+        }
       } finally {
-        setIsLoaded(true);
+        if (!cancelled) {
+          setFetchComplete(true);
+        }
       }
     };
 
     fetchShowcase();
-  }, []);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [configProp]);
 
   useEffect(() => {
     setIndex(0);
   }, [banners.length]);
 
-  // Auto-slide (responsive speed)
   useEffect(() => {
     if (banners.length <= 1) {
       return undefined;
@@ -98,55 +120,94 @@ const BannerSlider = ({ className = '', variant = 'primary' }) => {
     router.push(link);
   };
 
+  const defaultHeights = DEFAULT_HEIGHTS[variant] || DEFAULT_HEIGHTS.primary;
+  const desktopHeight = Math.min(600, Math.max(80, Number(showcaseConfig?.[fieldMap.desktopHeight]) || defaultHeights.desktop));
+  const mobileHeight = Math.min(600, Math.max(80, Number(showcaseConfig?.[fieldMap.mobileHeight]) || defaultHeights.mobile));
+  const isFullWidth = fullWidth;
+
+  const wrapperClassName = `banner-slider relative w-full bg-transparent rounded-none m-0 p-0 mt-8 mb-10 ${
+    isFullWidth ? 'max-w-none px-0' : 'max-w-[1400px] mx-auto px-4 sm:px-6'
+  } ${className}`.trim();
+
+  const viewportClassName = 'banner-slider__viewport relative w-full overflow-hidden isolate';
+  const slideWidthPercent = banners.length > 0 ? 100 / banners.length : 100;
+  const trackTransform = banners.length > 0
+    ? `translate3d(-${index * slideWidthPercent}%, 0, 0)`
+    : 'translate3d(0, 0, 0)';
+
+  const heightStyle = {
+    ['--banner-slider-mobile-height']: `${mobileHeight}px`,
+    ['--banner-slider-desktop-height']: `${desktopHeight}px`,
+  };
+
+  if (!isLoaded) {
+    return (
+      <div
+        className={wrapperClassName}
+        style={heightStyle}
+        aria-hidden="true"
+      >
+        <div className={`${viewportClassName} animate-pulse bg-slate-100`}>
+          <div className="banner-slider__slide w-full bg-slate-100" />
+        </div>
+        <style jsx>{`
+          .banner-slider__slide {
+            height: var(--banner-slider-mobile-height);
+          }
+
+          @media (min-width: 640px) {
+            .banner-slider__slide {
+              height: var(--banner-slider-desktop-height);
+            }
+          }
+        `}</style>
+      </div>
+    );
+  }
+
   if (!banners.length) {
     return null;
   }
 
-  const desktopHeight = Math.min(400, Math.max(80, Number(showcaseConfig?.[fieldMap.desktopHeight]) || 220));
-  const mobileHeight = Math.min(400, Math.max(80, Number(showcaseConfig?.[fieldMap.mobileHeight]) || 120));
-
   return (
-  <div
-      className={`banner-slider relative w-full overflow-hidden max-w-[1400px] mx-auto px-4 sm:px-6 flex justify-center bg-transparent rounded-none m-0 p-0 mt-8 mb-10 ${className}`.trim()}
-      style={{
-        ['--banner-slider-mobile-height']: `${mobileHeight}px`,
-        ['--banner-slider-desktop-height']: `${desktopHeight}px`,
-      }}
-    >
-      {/* Slider wrapper */}
-      <div
-        className="flex transition-transform duration-700 ease-out"
-        style={{
-          transform: `translateX(-${index * 100}%)`,
-          width: `${banners.length * 100}%`,
-        }}
-      >
-        {banners.map((banner, i) => (
-          <div
-            key={i}
-            onClick={() => handleClick(banner.link)}
-            className="banner-slider__slide relative cursor-pointer flex-[0_0_100%] overflow-hidden"
-          >
-            <Image
-              src={banner.image}
-              alt={banner.alt || `Banner ${i + 1}`}
-              fill
-              sizes="100vw"
-              className="object-cover object-center"
-              priority={i === 0}
-            />
-          </div>
-        ))}
+    <div className={wrapperClassName} style={heightStyle}>
+      <div className={viewportClassName}>
+        <div
+          className="flex transition-transform duration-700 ease-out will-change-transform"
+          style={{
+            width: `${banners.length * 100}%`,
+            transform: trackTransform,
+          }}
+        >
+          {banners.map((banner, i) => (
+            <div
+              key={banner.id || `banner-slide-${i}`}
+              onClick={() => handleClick(banner.link)}
+              className="banner-slider__slide relative shrink-0 grow-0 cursor-pointer overflow-hidden"
+              style={{ width: `${slideWidthPercent}%` }}
+            >
+              <Image
+                src={banner.image}
+                alt={banner.alt || `Banner ${i + 1}`}
+                fill
+                sizes="(max-width: 1400px) 100vw, 1400px"
+                className="object-cover object-center"
+                priority={i === 0}
+              />
+            </div>
+          ))}
+        </div>
       </div>
 
-      {/* Dots */}
       {banners.length > 1 ? (
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-2 z-10">
+        <div className="pointer-events-none absolute inset-x-0 bottom-3 z-10 flex justify-center gap-2">
           {banners.map((_, i) => (
-            <div
+            <button
+              type="button"
               key={i}
               onClick={() => goToSlide(i)}
-              className={`w-2.5 h-2.5 rounded-full transition-colors cursor-pointer ${
+              aria-label={`Go to banner ${i + 1}`}
+              className={`pointer-events-auto h-2.5 w-2.5 cursor-pointer rounded-full transition-colors ${
                 i === index ? 'bg-white' : 'bg-white/50'
               }`}
             />
@@ -170,6 +231,3 @@ const BannerSlider = ({ className = '', variant = 'primary' }) => {
 };
 
 export default BannerSlider;
-
-
-

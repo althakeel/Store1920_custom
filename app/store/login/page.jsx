@@ -11,7 +11,7 @@ import { useAuth } from '@/lib/useAuth'
 export default function StoreLogin() {
   const router = useRouter()
   const { user, loading: authLoading, getToken } = useAuth()
-  const [email, setEmail] = useState('')
+  const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -45,7 +45,25 @@ export default function StoreLogin() {
     setLoading(true)
     
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password)
+      let loginEmail = identifier.trim().toLowerCase()
+
+      if (!loginEmail.includes('@')) {
+        const resolveResponse = await fetch('/api/store/login/resolve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier: loginEmail }),
+        })
+        const resolveData = await resolveResponse.json()
+
+        if (!resolveResponse.ok) {
+          toast.error(resolveData?.error || 'No account found for this username.')
+          return
+        }
+
+        loginEmail = resolveData.email
+      }
+
+      const userCredential = await signInWithEmailAndPassword(auth, loginEmail, password)
       const user = userCredential.user
       
       // Check if user has seller access
@@ -72,11 +90,11 @@ export default function StoreLogin() {
       let errorMessage = 'Invalid credentials';
       
       if (error.code === 'auth/user-not-found') {
-        errorMessage = 'No account found with this email.';
+        errorMessage = 'No account found with this username or email.';
       } else if (error.code === 'auth/wrong-password') {
         errorMessage = 'Incorrect password. Please try again.';
       } else if (error.code === 'auth/invalid-email') {
-        errorMessage = 'Please enter a valid email address.';
+        errorMessage = 'Please enter a valid username or email address.';
       } else if (error.code === 'auth/user-disabled') {
         errorMessage = 'This account has been disabled.';
       } else if (error.code === 'auth/network-request-failed') {
@@ -167,18 +185,19 @@ export default function StoreLogin() {
           {/* Email Login Form */}
           <form onSubmit={handleEmailLogin} className="space-y-4">
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-2">
-                Email Address
+              <label htmlFor="identifier" className="block text-sm font-medium text-slate-700 mb-2">
+                Username or Email
               </label>
               <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="seller@example.com"
+                id="identifier"
+                type="text"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+                placeholder="support or seller@example.com"
                 className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 required
                 disabled={loading}
+                autoComplete="username"
               />
             </div>
 

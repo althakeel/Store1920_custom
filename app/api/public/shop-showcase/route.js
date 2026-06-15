@@ -4,6 +4,9 @@ import StorePreference from '@/models/StorePreference'
 import Product from '@/models/Product'
 import Category from '@/models/Category'
 import mongoose from 'mongoose'
+import { getCachedData, setCachedData } from '@/lib/cache'
+
+const SHOWCASE_CACHE_KEY = 'public:shop-showcase:v2'
 
 const DEFAULT_SHOWCASE = {
   enabled: true,
@@ -81,7 +84,7 @@ const DEFAULT_SHOWCASE = {
 function normalizeBannerSliderHeight(value, fallback) {
   const numeric = Number(value)
   if (!Number.isFinite(numeric)) return fallback
-  return Math.min(400, Math.max(80, Math.round(numeric)))
+  return Math.min(600, Math.max(80, Math.round(numeric)))
 }
 
 function normalizeMainBannerHeight(value, fallback) {
@@ -201,10 +204,22 @@ function orderByIds(items, ids) {
 
 export async function GET() {
   try {
+    const cached = getCachedData(SHOWCASE_CACHE_KEY)
+    if (cached) {
+      return NextResponse.json(cached, {
+        headers: {
+          'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
+          'X-Cache': 'HIT',
+        },
+      })
+    }
+
     await connectDB()
 
-    // Serve the latest saved showcase config so admin banner changes appear immediately.
-    const preference = await StorePreference.findOne().sort({ updatedAt: -1 }).lean()
+    const preference = await StorePreference.findOne()
+      .sort({ updatedAt: -1 })
+      .select('shopShowcase updatedAt')
+      .lean()
 
     const config = normalize(preference?.shopShowcase || DEFAULT_SHOWCASE)
 
@@ -229,7 +244,7 @@ export async function GET() {
             .select('_id name slug image')
             .lean()
         : shouldFallbackToCategories
-          ? Category.find({})
+          ? Category.find({ $or: [{ parentId: null }, { parentId: '' }] })
             .sort({ createdAt: 1, name: 1 })
             .select('_id name slug image')
             .limit(9)
@@ -237,16 +252,21 @@ export async function GET() {
           : Promise.resolve([])
     ])
 
+    const payload = {
+      config,
+      sectionProducts: orderByIds(sectionProducts, validSectionProductIds),
+      products: orderByIds(products, validProductIds),
+      categories: orderByIds(categories, validCategoryIds)
+    }
+
+    setCachedData(SHOWCASE_CACHE_KEY, payload, 60)
+
     return NextResponse.json(
-      {
-        config,
-        sectionProducts: orderByIds(sectionProducts, validSectionProductIds),
-        products: orderByIds(products, validProductIds),
-        categories: orderByIds(categories, validCategoryIds)
-      },
+      payload,
       {
         headers: {
-          'Cache-Control': 'no-store, max-age=0'
+          'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
+          'X-Cache': 'MISS',
         }
       }
     )
