@@ -5,14 +5,18 @@ import { useAuth } from '@/lib/useAuth';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { FiTrash2, FiPlus, FiEdit2, FiX, FiSearch, FiCheckCircle, FiUpload } from 'react-icons/fi';
-import { MdEdit, MdCategory, MdOutlineCheckCircleOutline } from 'react-icons/md';
+import { MdEdit, MdCategory, MdOutlineCheckCircleOutline, MdAutoAwesome } from 'react-icons/md';
 import Loading from '@/components/Loading';
+import { cleanDisplayText } from '@/lib/displayText';
 
-const MAX_CATEGORIES = 10;
 const DEFAULT_CATEGORY_IMAGE = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%23eff6ff'/%3E%3Cstop offset='100%25' stop-color='%23e2e8f0'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='160' height='160' rx='28' fill='url(%23g)'/%3E%3Ccircle cx='80' cy='64' r='24' fill='%23bfdbfe'/%3E%3Cpath d='M38 124c10-22 29-34 42-34s32 12 42 34' fill='%2394a3b8'/%3E%3C/svg%3E";
 
 function getCategoryImageSrc(src = '') {
   return String(src || '').trim() || DEFAULT_CATEGORY_IMAGE;
+}
+
+function getCategoryDisplayName(name = '') {
+  return cleanDisplayText(name);
 }
 
 function slugify(text = '') {
@@ -144,6 +148,7 @@ export default function StoreCategoryMenu() {
 
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState('');
+  const [generatingImageKey, setGeneratingImageKey] = useState(null);
 
   // Fetch categories from store
   const fetchCategories = async () => {
@@ -188,6 +193,85 @@ export default function StoreCategoryMenu() {
         setImagePreview(reader.result);
       };
       reader.readAsDataURL(file);
+    }
+  };
+
+  const handleGenerateCategoryImage = async ({
+    name,
+    key,
+    menuIndex = null,
+    systemCategory = null,
+    applyToForm = false,
+  }) => {
+    const categoryName = String(name || '').trim();
+    if (!categoryName) {
+      toast.error('Category name is required');
+      return;
+    }
+
+    try {
+      setGeneratingImageKey(key);
+      const token = await getToken();
+
+      if (!token) {
+        toast.error('Please login again and retry');
+        return;
+      }
+
+      const { data } = await axios.post('/api/store/categories/generate-image', {
+        categoryName,
+      }, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const imageUrl = data?.url;
+      if (!imageUrl) {
+        toast.error('AI did not return an image URL');
+        return;
+      }
+
+      if (applyToForm) {
+        setFormData((prev) => ({ ...prev, image: imageUrl }));
+        setImagePreview(imageUrl);
+        setImageFile(null);
+      }
+
+      if (typeof menuIndex === 'number') {
+        const updatedCategories = [...categories];
+        updatedCategories[menuIndex] = {
+          ...updatedCategories[menuIndex],
+          image: imageUrl,
+        };
+
+        await axios.post('/api/store/category-menu', { categories: updatedCategories }, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        setCategories(updatedCategories);
+      }
+
+      if (systemCategory?._id) {
+        await axios.put(`/api/store/categories/${systemCategory._id}`, {
+          name: systemCategory.name,
+          description: systemCategory.description || null,
+          image: imageUrl,
+          parentId: systemCategory.parentId || null,
+        }, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        setExistingCategories((current) => current.map((entry) => (
+          String(entry._id) === String(systemCategory._id)
+            ? { ...entry, image: imageUrl }
+            : entry
+        )));
+      }
+
+      toast.success(`Image generated with ${data?.provider || 'AI'}`);
+    } catch (error) {
+      toast.error(error?.response?.data?.error || 'Failed to generate category image');
+    } finally {
+      setGeneratingImageKey(null);
     }
   };
 
@@ -248,11 +332,6 @@ export default function StoreCategoryMenu() {
       return;
     }
 
-    if (!imageFile && !formData.image) {
-      toast.error('Image is required');
-      return;
-    }
-
     try {
       setUploading(true);
       const token = await getToken();
@@ -262,7 +341,7 @@ export default function StoreCategoryMenu() {
         return;
       }
 
-      let imageUrl = formData.image;
+      let imageUrl = formData.image || '';
       const selectedParentId = String(formData.parentId || '').trim();
       const existingCategoryById = new Map(existingCategories.map((category) => [String(category._id), category]));
       const selectedParent = selectedParentId ? existingCategoryById.get(selectedParentId) : null;
@@ -279,11 +358,6 @@ export default function StoreCategoryMenu() {
         imageUrl = uploadRes.data?.urls?.[0] || uploadRes.data?.url || '';
       }
 
-      if (!imageUrl) {
-        toast.error('Failed to upload image');
-        return;
-      }
-
       const generatedUrl = buildCategoryUrl(formData.name);
       const currentMenuCategory = editingIdx !== null ? categories[editingIdx] : null;
       const existingSystemCategoryId = String(currentMenuCategory?.systemCategoryId || currentMenuCategory?.id || '').trim();
@@ -295,7 +369,7 @@ export default function StoreCategoryMenu() {
         if (existingSystemCategoryId) {
           const updateResponse = await axios.put(`/api/store/categories/${existingSystemCategoryId}`, {
             name: formData.name.trim(),
-            image: imageUrl,
+            image: imageUrl || null,
             parentId: selectedParentId || null,
           }, {
             headers: { Authorization: `Bearer ${token}` },
@@ -306,7 +380,7 @@ export default function StoreCategoryMenu() {
         } else {
           const createResponse = await axios.post('/api/store/categories', {
             name: formData.name.trim(),
-            image: imageUrl,
+            image: imageUrl || null,
             parentId: selectedParentId || null,
           }, {
             headers: { Authorization: `Bearer ${token}` },
@@ -324,7 +398,7 @@ export default function StoreCategoryMenu() {
         parentId: selectedParentId || null,
         parentName: selectedParent?.name || syncedCategory?.parent?.name || '',
         name: formData.name.trim(),
-        image: imageUrl,
+        image: imageUrl || '',
         url: syncedCategory?.slug ? `/shop?category=${syncedCategory.slug}` : generatedUrl,
       };
 
@@ -390,7 +464,7 @@ export default function StoreCategoryMenu() {
     setImagePreview(cat.image);
     setEditingIdx(idx);
     setShowForm(true);
-  };;
+  };
 
   // Cancel form
   const handleCancel = () => {
@@ -445,30 +519,23 @@ export default function StoreCategoryMenu() {
           && !existingIdentifiers.has(slugify(category.name || ''));
       });
 
-      const categoriesWithImages = uniqueSelections.filter((category) => category.image);
-      const skippedForImage = uniqueSelections.length - categoriesWithImages.length;
-      const remainingSlots = Math.max(0, MAX_CATEGORIES - categories.length);
-
-      if (!remainingSlots) {
-        toast.error(`Maximum ${MAX_CATEGORIES} categories allowed`);
-        return;
-      }
-
-      const categoriesToAdd = categoriesWithImages.slice(0, remainingSlots).map((category) => ({
+      const categoriesToAdd = uniqueSelections.map((category) => ({
         id: String(category._id),
         systemCategoryId: String(category._id),
         parentId: category.parentId || null,
         parentName: existingCategories.find((entry) => String(entry._id) === String(category.parentId || ''))?.name || '',
         name: category.name,
-        image: category.image,
+        image: category.image || '',
         url: buildSystemCategoryMenuUrl(category),
         children: [],
       }));
 
       if (!categoriesToAdd.length) {
-        toast.error(skippedForImage ? 'Selected categories need images before they can be added' : 'Selected categories are already in your store');
+        toast.error('Selected categories are already in your store');
         return;
       }
+
+      const addedWithoutImageCount = categoriesToAdd.filter((category) => !category.image).length;
 
       const updatedCategories = [...categories, ...categoriesToAdd];
 
@@ -481,11 +548,9 @@ export default function StoreCategoryMenu() {
       setActiveTab('my-categories');
 
       const skippedDuplicates = selectedCategories.length - uniqueSelections.length;
-      const skippedForLimit = categoriesWithImages.length - categoriesToAdd.length;
       const notes = [
         skippedDuplicates ? `${skippedDuplicates} already existed` : '',
-        skippedForImage ? `${skippedForImage} had no image` : '',
-        skippedForLimit ? `${skippedForLimit} exceeded the ${MAX_CATEGORIES} category limit` : '',
+        addedWithoutImageCount ? `${addedWithoutImageCount} added without image` : '',
       ].filter(Boolean);
 
       toast.success(
@@ -684,7 +749,7 @@ export default function StoreCategoryMenu() {
                   ? 'border-blue-600 bg-blue-600 text-white'
                   : 'border-slate-300 bg-white text-transparent hover:border-blue-400'
               }`}
-              aria-label={`Select ${category.name}`}
+              aria-label={`Select ${getCategoryDisplayName(category.name)}`}
             >
               <FiCheckCircle size={14} />
             </button>
@@ -692,7 +757,7 @@ export default function StoreCategoryMenu() {
             <div className="relative h-20 w-20 flex-shrink-0 overflow-hidden rounded-xl border border-white/70 bg-white shadow-sm">
               <img
                 src={getCategoryImageSrc(category.image)}
-                alt={category.name}
+                alt={getCategoryDisplayName(category.name)}
                 className="h-full w-full object-cover"
                 onError={(event) => {
                   event.currentTarget.src = DEFAULT_CATEGORY_IMAGE;
@@ -706,7 +771,7 @@ export default function StoreCategoryMenu() {
             <div className="min-w-0 flex-1">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0 flex-1">
-                  <h3 className={`font-bold text-slate-900 ${depth === 0 ? 'text-2xl' : depth === 1 ? 'text-xl' : 'text-lg'}`}>{category.name}</h3>
+                  <h3 className={`font-bold text-slate-900 ${depth === 0 ? 'text-2xl' : depth === 1 ? 'text-xl' : 'text-lg'}`}>{getCategoryDisplayName(category.name)}</h3>
                   {category.slug && (
                     <p className="mt-2 inline-block rounded-lg bg-white px-3 py-1 text-xs font-mono text-slate-700">
                       Slug: {category.slug}
@@ -746,6 +811,21 @@ export default function StoreCategoryMenu() {
                       </span>
                     </button>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => handleGenerateCategoryImage({
+                      name: category.name,
+                      key: `system-${category._id}`,
+                      systemCategory: category,
+                    })}
+                    disabled={!category.name?.trim() || generatingImageKey === `system-${category._id}`}
+                    className="rounded-lg border border-violet-200 bg-white px-4 py-2 text-sm font-semibold text-violet-700 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <span className="flex items-center gap-2">
+                      <MdAutoAwesome />
+                      {generatingImageKey === `system-${category._id}` ? 'Generating...' : 'Generate image'}
+                    </span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -792,7 +872,7 @@ export default function StoreCategoryMenu() {
                 <div>
                   <p className="text-sm font-semibold text-slate-600 uppercase tracking-wide">Active Categories</p>
                   <p className="text-4xl font-bold text-blue-600 mt-3">{categories.length}</p>
-                  <p className="text-xs text-slate-500 mt-2">out of {MAX_CATEGORIES} maximum</p>
+                  <p className="text-xs text-slate-500 mt-2">in your store menu</p>
                 </div>
                 <div className="p-4 bg-blue-100 rounded-xl">
                   <MdCategory className="text-3xl text-blue-600" />
@@ -814,16 +894,16 @@ export default function StoreCategoryMenu() {
             </div>
 
             <div className="bg-white rounded-2xl shadow-md p-8 border border-slate-100 hover:shadow-lg transition-shadow">
-              <div className="flex flex-col justify-between h-full">
+              <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-semibold text-slate-600 uppercase tracking-wide">Completion</p>
-                  <p className="text-4xl font-bold text-purple-600 mt-3">{Math.round((categories.length / MAX_CATEGORIES) * 100)}%</p>
+                  <p className="text-sm font-semibold text-slate-600 uppercase tracking-wide">With Images</p>
+                  <p className="text-4xl font-bold text-purple-600 mt-3">
+                    {categories.filter((category) => category.image).length}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-2">ready for storefront display</p>
                 </div>
-                <div className="mt-4 w-full bg-slate-200 rounded-full h-3 overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-purple-500 via-purple-600 to-purple-700 rounded-full transition-all duration-500"
-                    style={{ width: `${(categories.length / MAX_CATEGORIES) * 100}%` }}
-                  />
+                <div className="p-4 bg-purple-100 rounded-xl">
+                  <FiCheckCircle className="text-3xl text-purple-600" />
                 </div>
               </div>
             </div>
@@ -867,7 +947,7 @@ export default function StoreCategoryMenu() {
           <>
             <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-                {!showForm && categories.length < MAX_CATEGORIES && (
+                {!showForm && (
                   <button
                     onClick={() => setShowForm(true)}
                     className="w-full md:w-auto flex items-center justify-center gap-3 px-8 py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:shadow-xl transition-all duration-200 font-semibold text-lg"
@@ -974,7 +1054,7 @@ export default function StoreCategoryMenu() {
                         <option value="">None (top-level category)</option>
                         {selectableParentOptions.map((category) => (
                           <option key={category.id} value={category.id}>
-                            {`${'-- '.repeat(category.depth)}${category.name}`}
+                            {`${'-- '.repeat(category.depth)}${getCategoryDisplayName(category.name)}`}
                           </option>
                         ))}
                       </select>
@@ -985,9 +1065,24 @@ export default function StoreCategoryMenu() {
 
                     {/* Image Upload */}
                     <div className="border-t-2 border-slate-100 pt-6">
-                      <label className="block text-sm font-bold text-slate-700 mb-4 uppercase tracking-wide">
-                        Category Image *
-                      </label>
+                      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <label className="block text-sm font-bold text-slate-700 uppercase tracking-wide">
+                          Category Image <span className="font-normal normal-case text-slate-500">(optional)</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => handleGenerateCategoryImage({
+                            name: formData.name,
+                            key: 'form-image',
+                            applyToForm: true,
+                          })}
+                          disabled={!formData.name.trim() || generatingImageKey === 'form-image'}
+                          className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <MdAutoAwesome className="text-base" />
+                          {generatingImageKey === 'form-image' ? 'Creating...' : 'Create with AI'}
+                        </button>
+                      </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="col-span-1">
                           <div className="relative border-2 border-dashed border-slate-300 rounded-xl p-6 hover:border-blue-500 transition cursor-pointer bg-slate-50">
@@ -1086,13 +1181,13 @@ export default function StoreCategoryMenu() {
                             ? 'border-blue-600 bg-blue-600 text-white'
                             : 'border-white/80 bg-white text-transparent hover:border-blue-300'
                         }`}
-                        aria-label={`Select ${cat.name}`}
+                        aria-label={`Select ${getCategoryDisplayName(cat.name)}`}
                       >
                         <FiCheckCircle size={16} />
                       </button>
                       <img
                         src={imageSrc}
-                        alt={cat.name}
+                        alt={getCategoryDisplayName(cat.name)}
                         className="w-full h-full rounded-xl object-contain transition-transform duration-300 group-hover:scale-[1.02]"
                         onError={(event) => {
                           event.currentTarget.src = DEFAULT_CATEGORY_IMAGE;
@@ -1107,9 +1202,9 @@ export default function StoreCategoryMenu() {
 
                     {/* Content */}
                     <div className="p-6">
-                      <h3 className="font-bold text-lg text-slate-900 mb-2 line-clamp-1">{cat.name}</h3>
+                      <h3 className="font-bold text-lg text-slate-900 mb-2 line-clamp-1">{getCategoryDisplayName(cat.name)}</h3>
                       <p className="text-xs text-slate-500 mb-2 line-clamp-1">
-                        {cat.parentName ? `Subcategory of ${cat.parentName}` : 'Top-level category'}
+                        {cat.parentName ? `Subcategory of ${getCategoryDisplayName(cat.parentName)}` : 'Top-level category'}
                       </p>
                       <p className="text-xs text-blue-600 mb-4 line-clamp-1 font-mono bg-blue-50 p-2 rounded-lg">{cat.url}</p>
 
@@ -1123,6 +1218,20 @@ export default function StoreCategoryMenu() {
                         }`}
                       >
                         {selectedMenuCategorySet.has(getMenuCategoryIdentifier(cat)) ? 'Selected' : 'Select'}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleGenerateCategoryImage({
+                          name: cat.name,
+                          key: `menu-${idx}`,
+                          menuIndex: idx,
+                        })}
+                        disabled={!cat.name?.trim() || generatingImageKey === `menu-${idx}`}
+                        className="mb-4 w-full inline-flex items-center justify-center gap-2 rounded-lg border border-violet-200 bg-violet-50 py-2.5 text-sm font-semibold text-violet-700 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <MdAutoAwesome className="text-base" />
+                        {generatingImageKey === `menu-${idx}` ? 'Generating...' : 'Generate image'}
                       </button>
 
                       {/* Actions */}

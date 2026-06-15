@@ -9,6 +9,7 @@ import {
   HOME_SECTION_BLOCK_HEADING_CLASS,
   HOME_SECTION_INNER_CLASS,
 } from '@/lib/storefrontCarousel';
+import { cleanDisplayText } from '@/lib/displayText';
 
 const MAX_CATEGORIES = 10;
 const MAX_PRODUCTS = 20;
@@ -22,7 +23,7 @@ function getColumnsForWidth(width) {
 }
 
 function normalizeCategory(value) {
-  return String(value || '').trim();
+  return cleanDisplayText(value);
 }
 
 function normalizeToken(value) {

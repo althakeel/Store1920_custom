@@ -4,6 +4,7 @@ import connectDB from '@/lib/mongodb';
 import Category from '@/models/Category';
 import Store from '@/models/Store';
 import { localizeRecord, resolveStorefrontLanguage } from '@/lib/storefrontLanguage';
+import { cleanDisplayText, sanitizeCategoryFields, sanitizeCategoryTree } from '@/lib/displayText';
 
 // GET - Fetch all categories with their children
 export async function GET(req) {
@@ -18,14 +19,14 @@ export async function GET(req) {
         const categoriesWithChildren = await Promise.all(
             categories.map(async (cat) => {
                 const children = await Category.find({ parentId: cat._id.toString() }).sort({ name: 1 }).lean();
-                return localizeRecord({
+                return localizeRecord(sanitizeCategoryFields({
                     ...cat,
-                    children: children.map((child) => localizeRecord(child, language, ['name', 'description'])),
-                }, language, ['name', 'description']);
+                    children: children.map((child) => localizeRecord(sanitizeCategoryFields(child), language, ['name', 'description'])),
+                }), language, ['name', 'description']);
             })
         );
 
-        return NextResponse.json({ categories: categoriesWithChildren }, { status: 200 });
+        return NextResponse.json({ categories: sanitizeCategoryTree(categoriesWithChildren) }, { status: 200 });
     } catch (error) {
         console.error("Error fetching categories:", error);
         return NextResponse.json({ error: "Failed to fetch categories", details: error.message }, { status: 500 });
@@ -74,12 +75,13 @@ export async function POST(req) {
         }
 
         const { name, nameAr, description, descriptionAr, image, parentId } = await req.json();
-        if (!name) {
+        const cleanedName = sanitizeCategoryFields({ name }).name;
+        if (!cleanedName) {
             return NextResponse.json({ error: "Category name is required" }, { status: 400 });
         }
 
         // Generate slug from name
-        const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+        const slug = cleanedName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
         // Check if slug already exists
         const existingCategory = await Category.findOne({ slug }).lean();
@@ -90,11 +92,11 @@ export async function POST(req) {
 
         // Create category
         const category = await Category.create({
-            name,
-            nameAr: nameAr || '',
+            name: cleanedName,
+            nameAr: cleanDisplayText(nameAr || ''),
             slug,
-            description: description || null,
-            descriptionAr: descriptionAr || '',
+            description: cleanDisplayText(description || '') || null,
+            descriptionAr: cleanDisplayText(descriptionAr || ''),
             image: image || null,
             parentId: parentId || null
         });

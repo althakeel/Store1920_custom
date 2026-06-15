@@ -4,7 +4,9 @@ import connectDB from '@/lib/mongodb'
 import authSeller from '@/middlewares/authSeller'
 import { getAuth } from '@/lib/firebase-admin'
 import Order from '@/models/Order'
+import Product from '@/models/Product'
 import User from '@/models/User'
+import { allocateShortOrderNumber, syncOrderCounterFloor } from '@/lib/orderNumber'
 
 export const runtime = 'nodejs'
 
@@ -44,66 +46,268 @@ function parseDate(value) {
   return Number.isNaN(parsed.getTime()) ? null : parsed
 }
 
+function normalizeRowKey(key = '') {
+  return String(key)
+    .replace(/^\ufeff/, '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+}
+
+function buildNormalizedRowMap(row = {}) {
+  const map = new Map()
+
+  for (const [key, value] of Object.entries(row || {})) {
+    const normalizedKey = normalizeRowKey(key)
+    if (!normalizedKey) continue
+    if (!map.has(normalizedKey)) {
+      map.set(normalizedKey, value)
+    }
+  }
+
+  return map
+}
+
+function pickRowValue(rowMap, ...aliases) {
+  for (const alias of aliases) {
+    const value = rowMap.get(normalizeRowKey(alias))
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      return value
+    }
+  }
+  return ''
+}
+
+function pickRowValueFuzzy(rowMap, ...aliases) {
+  const direct = pickRowValue(rowMap, ...aliases)
+  if (direct !== '') return direct
+
+  const needles = aliases.map(normalizeRowKey).filter(Boolean)
+  for (const [key, value] of rowMap.entries()) {
+    if (value === undefined || value === null || String(value).trim() === '') continue
+    if (needles.some((needle) => key.includes(needle) || needle.includes(key))) {
+      return value
+    }
+  }
+
+  return ''
+}
+
+function mergeNonEmptyObjects(...objects) {
+  const merged = {}
+
+  for (const source of objects) {
+    if (!source || typeof source !== 'object') continue
+    for (const [key, value] of Object.entries(source)) {
+      if (value !== undefined && value !== null && String(value).trim() !== '') {
+        merged[key] = value
+      }
+    }
+  }
+
+  return merged
+}
+
+function isLikelyProductName(value) {
+  const text = normalizeText(value)
+  if (!text) return false
+  if (/^\d+(\.\d+)?$/.test(text)) return false
+  return text.length >= 2
+}
+
 function parseOrderItems(value) {
   if (!value) return []
 
+  const raw = String(value).trim()
+  if (!isLikelyProductName(raw) && !raw.startsWith('[') && !raw.includes('|') && !raw.includes('::')) {
+    return []
+  }
+
   try {
-    const parsed = JSON.parse(String(value))
+    const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
 
     return parsed
       .map((item) => ({
-        name: normalizeText(item?.name || item?.productName),
+        name: normalizeText(item?.name || item?.productName || item?.title),
+        sku: normalizeText(item?.sku || item?.SKU),
         price: parseNumber(item?.price, 0),
-        quantity: parseNumber(item?.quantity, 1),
+        quantity: Math.max(1, parseNumber(item?.quantity, 1)),
       }))
-      .filter((item) => item.name)
+      .filter((item) => isLikelyProductName(item.name))
   } catch {
-    return String(value)
+    return raw
       .split('|')
       .map((entry) => entry.trim())
       .filter(Boolean)
       .map((entry) => {
-        const [name, quantity, price] = entry.split('::').map((part) => part.trim())
+        const [name, quantity, price, sku] = entry.split('::').map((part) => part.trim())
         return {
           name: normalizeText(name),
-          quantity: parseNumber(quantity, 1),
+          sku: normalizeText(sku),
+          quantity: Math.max(1, parseNumber(quantity, 1)),
           price: parseNumber(price, 0),
         }
       })
-      .filter((item) => item.name)
+      .filter((item) => isLikelyProductName(item.name))
   }
 }
 
-function buildShippingAddress(row) {
-  return {
-    name: normalizeText(row.shippingName || row.ShippingName || row.receiverName || row.ReceiverName),
-    phone: normalizeText(row.shippingPhone || row.ShippingPhone || row.receiverPhone || row.ReceiverPhone),
-    street: normalizeText(row.shippingAddress1 || row.ShippingAddress1 || row.address1 || row.Address1),
-    address2: normalizeText(row.shippingAddress2 || row.ShippingAddress2 || row.address2 || row.Address2),
-    city: normalizeText(row.shippingCity || row.ShippingCity || row.city || row.City),
-    state: normalizeText(row.shippingState || row.ShippingState || row.state || row.State),
-    country: normalizeText(row.shippingCountry || row.ShippingCountry || row.country || row.Country),
-    postcode: normalizeText(row.shippingPostcode || row.ShippingPostcode || row.postcode || row.Postcode),
-  }
+function buildFlatOrderItem(pick) {
+  const name = normalizeText(
+    pick.fuzzy('productName', 'product', 'productTitle', 'itemName', 'lineItem', 'description', 'note')
+      || pick('productName', 'product', 'description', 'note'),
+  )
+
+  if (!isLikelyProductName(name)) return null
+
+  const quantity = Math.max(1, parseNumber(pick('quantity', 'qty', 'numberofpieces'), 1))
+  const price = parseNumber(pick('price', 'unitPrice', 'itemPrice', 'salePrice'), 0)
+  const sku = normalizeText(pick('sku', 'productSku', 'itemSku'))
+
+  return { name, sku, quantity, price }
 }
 
-async function resolveUserIdFromRow(row) {
-  const email = normalizeText(row.customerEmail || row.CustomerEmail || row.email || row.Email)
+function buildFallbackOrderItems(pick, total) {
+  const flatItem = buildFlatOrderItem(pick)
+  if (flatItem) {
+    if (!flatItem.price && total > 0) {
+      flatItem.price = total / flatItem.quantity
+    }
+    return [flatItem]
+  }
+
+  const productName = normalizeText(
+    pick.fuzzy('description', 'note', 'productname', 'products', 'productdetails')
+      || pick('description', 'note', 'productName'),
+  )
+
+  if (!isLikelyProductName(productName)) return []
+
+  const quantity = Math.max(1, parseNumber(pick('numberofpieces', 'quantity', 'qty'), 1))
+  const lineTotal = parseNumber(pick('value', 'cod', 'total', 'amount'), total)
+  const price = lineTotal > 0 ? lineTotal / quantity : 0
+
+  return [{ name: productName, quantity, price }]
+}
+
+function buildShippingAddress(pick, customerName, customerEmail, customerPhone) {
+  const postcode = normalizeText(
+    pick.fuzzy('shippingPostcode', 'postcode', 'zip', 'pincode', 'destinationflatorvillanumber')
+      || pick('shippingPostcode', 'postcode', 'zip', 'pincode'),
+  )
+
+  return mergeNonEmptyObjects({
+    name: normalizeText(
+      pick.fuzzy('shippingName', 'receiverName', 'recieverName', 'customerName', 'customer')
+        || pick('shippingName', 'receiverName', 'recieverName')
+        || customerName,
+    ),
+    email: customerEmail,
+    phone: normalizeText(
+      pick.fuzzy('shippingPhone', 'receiverPhone', 'recieverPhone', 'receiverphonenumber', 'recieverphonenumber')
+        || pick('shippingPhone', 'receiverPhone', 'recieverphonenumber')
+        || customerPhone,
+    ),
+    street: normalizeText(
+      pick.fuzzy('shippingAddress1', 'address1', 'street', 'destinationaddress', 'shippingaddress')
+        || pick('shippingAddress1', 'address1', 'street', 'destinationaddress'),
+    ),
+    address2: normalizeText(pick('shippingAddress2', 'address2')),
+    city: normalizeText(
+      pick.fuzzy('shippingCity', 'city', 'destinationcity')
+        || pick('shippingCity', 'city', 'destinationcity'),
+    ),
+    state: normalizeText(pick('shippingState', 'state', 'destinationstate')),
+    country: normalizeText(
+      pick.fuzzy('shippingCountry', 'country', 'destinationcountry')
+        || pick('shippingCountry', 'country', 'destinationcountry'),
+    ),
+    postcode,
+    zip: postcode,
+    pincode: postcode,
+  })
+}
+
+function escapeRegex(value = '') {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+async function attachProductsToItems(items, storeId) {
+  const enriched = []
+
+  for (const item of items) {
+    const next = { ...item }
+    let product = null
+
+    if (next.sku) {
+      product = await Product.findOne({ storeId, sku: next.sku }).select('_id name images price').lean()
+    }
+
+    if (!product && next.name) {
+      product = await Product.findOne({
+        storeId,
+        name: new RegExp(`^${escapeRegex(next.name)}$`, 'i'),
+      }).select('_id name images price').lean()
+    }
+
+    if (product) {
+      next.productId = product._id
+      if (!next.price) next.price = product.price || 0
+      if (!next.name) next.name = product.name
+    }
+
+    enriched.push(next)
+  }
+
+  return enriched
+}
+
+async function resolveUserIdFromRow(pick) {
+  const email = normalizeText(pick('customerEmail', 'guestEmail', 'email', 'buyeremail'))
   if (!email) return null
 
   const user = await User.findOne({ email }).lean()
   return user?._id || null
 }
 
+function createRowPicker(rowMap) {
+  const pick = (...aliases) => pickRowValue(rowMap, ...aliases)
+  pick.fuzzy = (...aliases) => pickRowValueFuzzy(rowMap, ...aliases)
+  return pick
+}
+
 async function importOrderRow(row, storeId) {
-  const explicitOrderId = normalizeText(row.orderId || row.OrderId || row._id)
-  const shortOrderNumber = parseNumber(row.shortOrderNumber || row.ShortOrderNumber || row.orderNumber || row.OrderNumber, null)
-  const legacySourceId = normalizeText(row.legacySourceId || row.LegacySourceId || row.csvSourceId || row.CsvSourceId)
-  const customerName = normalizeText(row.customerName || row.CustomerName || row.guestName || row.GuestName)
-  const customerEmail = normalizeText(row.customerEmail || row.CustomerEmail || row.guestEmail || row.GuestEmail)
-  const customerPhone = normalizeText(row.customerPhone || row.CustomerPhone || row.guestPhone || row.GuestPhone)
-  const userId = await resolveUserIdFromRow(row)
+  const rowMap = buildNormalizedRowMap(row)
+  const pick = createRowPicker(rowMap)
+
+  const explicitOrderId = normalizeText(pick('orderId', '_id', 'id'))
+  const shortOrderNumber = parseNumber(pick('shortOrderNumber', 'orderNumber', 'orderno'), null)
+  const legacySourceId = normalizeText(pick('legacySourceId', 'csvSourceId', 'sourceId'))
+
+  const customerName = normalizeText(pick.fuzzy(
+    'customerName',
+    'customer',
+    'guestName',
+    'buyername',
+    'receiverName',
+    'recieverName',
+    'name',
+  ) || pick('customerName', 'customer', 'guestName'))
+
+  const customerEmail = normalizeText(pick('customerEmail', 'guestEmail', 'email', 'buyeremail'))
+  const customerPhone = normalizeText(pick.fuzzy(
+    'customerPhone',
+    'guestPhone',
+    'phone',
+    'mobile',
+    'receiverPhone',
+    'recieverPhone',
+    'receiverphonenumber',
+    'recieverphonenumber',
+  ) || pick('customerPhone', 'guestPhone', 'phone'))
+
+  const userId = await resolveUserIdFromRow(pick)
 
   let order = null
 
@@ -123,44 +327,75 @@ async function importOrderRow(row, storeId) {
     order = new Order({ storeId })
   }
 
+  const codAmount = parseNumber(pick('cod'), null)
+  const valueAmount = parseNumber(pick('value'), null)
+  const explicitTotal = parseNumber(pick('total', 'amount', 'orderTotal'), null)
+  const total = explicitTotal ?? (codAmount || valueAmount || order.total || 0)
+
+  const paymentMethod = normalizeText(pick.fuzzy(
+    'paymentMethod',
+    'paymentType',
+    'payment',
+  ) || pick('paymentMethod', 'paymentType'))
+
+  let orderItems = parseOrderItems(pick('orderItems', 'lineItems'))
+  if (!orderItems.length) {
+    orderItems = buildFallbackOrderItems(pick, total)
+  }
+  if (orderItems.length) {
+    orderItems = await attachProductsToItems(orderItems, storeId)
+  }
+
+  const shippingAddress = buildShippingAddress(pick, customerName, customerEmail, customerPhone)
+
   order.legacySourceId = legacySourceId || order.legacySourceId || null
   order.userId = userId || order.userId || undefined
-  order.total = parseNumber(row.total || row.Total, order.total || 0)
-  order.shippingFee = parseNumber(row.shippingFee || row.ShippingFee, order.shippingFee || 0)
-  order.status = normalizeText(row.status || row.Status || order.status || 'ORDER_PLACED').toUpperCase()
-  order.paymentMethod = normalizeText(row.paymentMethod || row.PaymentMethod || order.paymentMethod)
-  order.paymentStatus = normalizeText(row.paymentStatus || row.PaymentStatus || order.paymentStatus)
-  order.isPaid = parseBoolean(row.isPaid || row.IsPaid, order.isPaid)
-  order.isGuest = !userId
-  order.guestName = customerName || order.guestName
-  order.guestEmail = customerEmail || order.guestEmail
-  order.guestPhone = customerPhone || order.guestPhone
-  order.trackingId = normalizeText(row.trackingId || row.TrackingId || order.trackingId)
-  order.trackingUrl = normalizeText(row.trackingUrl || row.TrackingUrl || order.trackingUrl)
-  order.courier = normalizeText(row.courier || row.Courier || order.courier)
-  order.notes = normalizeText(row.notes || row.Notes || order.notes)
-  order.shippingAddress = {
-    ...(order.shippingAddress || {}),
-    ...buildShippingAddress(row),
+  order.total = total
+  order.shippingFee = parseNumber(pick('shippingFee', 'deliveryFee'), order.shippingFee || 0)
+  order.status = normalizeText(pick('status') || order.status || 'ORDER_PLACED').toUpperCase()
+  order.paymentMethod = paymentMethod || order.paymentMethod
+  order.paymentStatus = normalizeText(pick('paymentStatus') || order.paymentStatus || (order.isPaid ? 'PAID' : 'Pending'))
+  order.isPaid = parseBoolean(pick('isPaid', 'paid'), order.isPaid)
+  order.isGuest = pick('isGuest') !== '' ? parseBoolean(pick('isGuest'), !userId) : !userId
+
+  if (customerName) order.guestName = customerName
+  if (customerEmail) order.guestEmail = customerEmail
+  if (customerPhone) order.guestPhone = customerPhone
+
+  order.trackingId = normalizeText(pick('trackingId', 'awb', 'trackingNumber') || order.trackingId)
+  order.trackingUrl = normalizeText(pick('trackingUrl', 'trackingLink') || order.trackingUrl)
+  order.courier = normalizeText(pick('courier', 'courierName', 'couriertype') || order.courier)
+  order.notes = normalizeText(pick('notes', 'note') || order.notes)
+
+  if (Object.keys(shippingAddress).length > 0) {
+    order.shippingAddress = shippingAddress
+    order.markModified('shippingAddress')
   }
 
-  const parsedItems = parseOrderItems(row.orderItems || row.OrderItems || row.items || row.Items)
-  if (parsedItems.length) {
-    order.orderItems = parsedItems
+  if (orderItems.length) {
+    order.orderItems = orderItems
+    order.markModified('orderItems')
+
+    if (!order.total) {
+      order.total = orderItems.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.quantity || 1)), 0)
+    }
   }
 
-  const createdAt = parseDate(row.createdAt || row.CreatedAt)
-  const updatedAt = parseDate(row.updatedAt || row.UpdatedAt)
+  const createdAt = parseDate(pick('createdAt', 'orderDate', 'date'))
+  const updatedAt = parseDate(pick('updatedAt'))
 
   await order.save()
 
   if (!order.shortOrderNumber) {
     if (Number.isFinite(shortOrderNumber)) {
       order.shortOrderNumber = shortOrderNumber
+      await syncOrderCounterFloor(storeId, shortOrderNumber)
     } else {
-      const hex = order._id.toString().slice(-6)
-      order.shortOrderNumber = parseInt(hex, 16)
+      order.shortOrderNumber = await allocateShortOrderNumber(storeId)
     }
+  } else if (Number.isFinite(shortOrderNumber) && shortOrderNumber >= order.shortOrderNumber) {
+    order.shortOrderNumber = shortOrderNumber
+    await syncOrderCounterFloor(storeId, shortOrderNumber)
   }
 
   if (createdAt) {
@@ -213,8 +448,9 @@ export async function POST(request) {
       const rowNumber = index + 2
 
       try {
-        const beforeOrderId = normalizeText(row.orderId || row.OrderId || '')
-        const beforeShortOrderNumber = parseNumber(row.shortOrderNumber || row.ShortOrderNumber, null)
+        const rowMap = buildNormalizedRowMap(row)
+        const beforeOrderId = normalizeText(pickRowValue(rowMap, 'orderId', '_id'))
+        const beforeShortOrderNumber = parseNumber(pickRowValue(rowMap, 'shortOrderNumber', 'orderNumber'), null)
 
         const existing = beforeOrderId
           ? await Order.findOne({ _id: beforeOrderId, storeId })

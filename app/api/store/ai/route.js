@@ -95,7 +95,7 @@ async function main(base64Image, mimeType, additionalContext = '', includeArabic
     ];
 
     const response = await openai.chat.completions.create({
-        model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+        model: process.env.OPENAI_PRODUCT_AUTOFILL_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini',
         messages,
         temperature: 0.2,
     });

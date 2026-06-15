@@ -2,6 +2,7 @@ import dbConnect from '@/lib/mongodb';
 import StoreMenu from '@/models/StoreMenu';
 import { getAuth } from '@/lib/firebase-admin';
 import { NextResponse } from 'next/server';
+import { cleanDisplayText, sanitizeCategoryTree } from '@/lib/displayText';
 
 function slugify(text = '') {
   return text
@@ -26,9 +27,9 @@ function normalizeMenuCategory(category, fallbackIndex = 0) {
     id: category?.id || category?._id || category?.systemCategoryId || slugify(category?.name || '') || `category-${fallbackIndex + 1}`,
     systemCategoryId: category?.systemCategoryId || category?.id || category?._id || null,
     parentId: category?.parentId || null,
-    parentName: category?.parentName || '',
-    name: (category?.name || '').trim(),
-    url: category?.url || buildCategoryUrl(category?.name || ''),
+    parentName: cleanDisplayText(category?.parentName || ''),
+    name: cleanDisplayText(category?.name || ''),
+    url: category?.url || buildCategoryUrl(cleanDisplayText(category?.name || '')),
     children: normalizedChildren,
   };
 }
@@ -55,7 +56,7 @@ export async function GET(request) {
     const storeMenu = await StoreMenu.findOne({ storeId: userId });
     
     return NextResponse.json({ 
-      categories: storeMenu?.categories || []
+      categories: sanitizeCategoryTree(storeMenu?.categories || [])
     }, { status: 200 });
   } catch (error) {
     return NextResponse.json(
@@ -82,13 +83,6 @@ export async function POST(request) {
     if (!Array.isArray(categories)) {
       return NextResponse.json(
         { error: 'Categories must be an array' },
-        { status: 400 }
-      );
-    }
-
-    if (categories.length > 10) {
-      return NextResponse.json(
-        { error: 'Maximum 10 categories allowed' },
         { status: 400 }
       );
     }

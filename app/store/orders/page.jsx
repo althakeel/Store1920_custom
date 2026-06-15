@@ -1367,14 +1367,14 @@ export default function StoreOrders() {
                         <label className="text-xs text-slate-500">Import Orders CSV</label>
                         <input
                             type="file"
-                            accept=".csv"
+                            accept=".csv,.xlsx,.xls"
                             onChange={(e) => setOrderCsvFile(e.target.files?.[0] || null)}
                             className="w-full mt-1 text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:font-medium file:text-slate-700 hover:file:bg-slate-200"
                         />
                     </div>
                     <div className="flex items-end">
                         <div className="w-full flex flex-col gap-2 lg:items-end">
-                            <div className="text-xs text-slate-500">Select date and export option before downloading, or upload a CSV to import orders.</div>
+                            <div className="text-xs text-slate-500">Use Export CSV for re-import, or a courier sheet with receiver/destination columns. Excel courier export is also supported.</div>
                             <div className="flex flex-wrap items-center gap-2">
                                 <button
                                     onClick={importOrdersFromCsv}
@@ -1926,24 +1926,24 @@ export default function StoreOrders() {
                                         <p className="text-slate-500">Name</p>
                                         <p className="font-medium text-slate-900">
                                             {selectedOrder.isGuest 
-                                                ? (selectedOrder.guestName || '—') 
-                                                : (selectedOrder.shippingAddress?.name || selectedOrder.userId?.name || '—')}
+                                                ? (selectedOrder.guestName || selectedOrder.shippingAddress?.name || '—') 
+                                                : (selectedOrder.shippingAddress?.name || selectedOrder.userId?.name || selectedOrder.guestName || '—')}
                                         </p>
                                     </div>
                                     <div>
                                         <p className="text-slate-500">Email</p>
                                         <p className="font-medium text-slate-900">
                                             {selectedOrder.isGuest 
-                                                ? (selectedOrder.guestEmail || '—') 
-                                                : (selectedOrder.shippingAddress?.email || selectedOrder.userId?.email || '—')}
+                                                ? (selectedOrder.guestEmail || selectedOrder.shippingAddress?.email || '—') 
+                                                : (selectedOrder.shippingAddress?.email || selectedOrder.userId?.email || selectedOrder.guestEmail || '—')}
                                         </p>
                                     </div>
                                     <div>
                                         <p className="text-slate-500">Phone</p>
                                         <p className="font-medium text-slate-900">
                                             {selectedOrder.isGuest 
-                                                ? ([selectedOrder.shippingAddress?.phoneCode, selectedOrder.guestPhone].filter(Boolean).join(' ') || '—')
-                                                : ([selectedOrder.shippingAddress?.phoneCode, selectedOrder.shippingAddress?.phone].filter(Boolean).join(' ') || '—')}
+                                                ? ([selectedOrder.shippingAddress?.phoneCode, selectedOrder.guestPhone || selectedOrder.shippingAddress?.phone].filter(Boolean).join(' ') || '—')
+                                                : ([selectedOrder.shippingAddress?.phoneCode, selectedOrder.shippingAddress?.phone || selectedOrder.guestPhone].filter(Boolean).join(' ') || '—')}
                                         </p>
                                     </div>
                                     {(selectedOrder.shippingAddress?.alternatePhone || selectedOrder.alternatePhone) && (
@@ -1992,23 +1992,44 @@ export default function StoreOrders() {
                                     Order Items
                                 </h3>
                                 <div className="space-y-3">
-                                    {selectedOrder.orderItems.map((item, i) => (
+                                    {(selectedOrder.orderItems || []).length === 0 ? (
+                                        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+                                            No products were found on this order.
+                                        </div>
+                                    ) : selectedOrder.orderItems.map((item, i) => {
+                                        const itemName = item.productId?.name || item.product?.name || item.name || 'Imported product'
+                                        const itemImage = item.productId?.images?.[0] || item.product?.images?.[0] || null
+                                        const unitPrice = Number(item.price || 0)
+                                        const quantity = Number(item.quantity || 1)
+
+                                        return (
                                         <div key={i} className="flex items-center gap-4 border border-slate-200 rounded-xl p-3 bg-white hover:shadow-md transition-shadow">
-                                            <img
-                                                src={item.productId?.images?.[0] || item.product?.images?.[0] || '/placeholder.png'}
-                                                alt={item.productId?.name || item.product?.name || 'Product'}
-                                                className="w-20 h-20 object-cover rounded-lg border border-slate-100"
-                                            />
+                                            <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-lg border border-slate-100 bg-slate-50">
+                                                {itemImage ? (
+                                                    <img
+                                                        src={itemImage}
+                                                        alt={itemName}
+                                                        className="h-full w-full object-cover"
+                                                    />
+                                                ) : (
+                                                    <span className="px-2 text-center text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                                                        No image
+                                                    </span>
+                                                )}
+                                            </div>
                                             <div className="flex-1">
-                                                <p className="font-medium text-slate-900">{item.productId?.name || item.product?.name || 'Unknown Product'}</p>
-                                                <p className="text-sm text-slate-600">Quantity: {item.quantity}</p>
-                                                <p className="text-sm font-semibold text-slate-900">{currency}{item.price} each</p>
+                                                <p className="font-medium text-slate-900">{itemName}</p>
+                                                {!item.productId && item.name ? (
+                                                    <p className="text-xs text-orange-600">Imported item (not linked to catalog)</p>
+                                                ) : null}
+                                                <p className="text-sm text-slate-600">Quantity: {quantity}</p>
+                                                <p className="text-sm font-semibold text-slate-900">{currency}{unitPrice} each</p>
                                             </div>
                                             <div className="text-right">
-                                                <p className="text-lg font-bold text-slate-900">{currency}{item.price * item.quantity}</p>
+                                                <p className="text-lg font-bold text-slate-900">{currency}{(unitPrice * quantity).toFixed(0)}</p>
                                             </div>
                                         </div>
-                                    ))}
+                                    )})}
                                 </div>
                             </div>
 

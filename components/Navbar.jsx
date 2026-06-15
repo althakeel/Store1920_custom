@@ -23,6 +23,7 @@ import {
   STOREFRONT_LANGUAGE_KEY,
 } from '@/lib/storefrontLanguage';
 import { translateStaticText } from '@/lib/useStorefrontI18n';
+import { cleanDisplayText } from '@/lib/displayText';
 
 const NAVBAR_SELECTED_ADDRESS_KEY = 'navbarSelectedAddressId';
 const NAVBAR_APPEARANCE_CACHE_KEY = 'navbarAppearanceCache';
@@ -88,6 +89,12 @@ const getCategoryHref = (category) => {
   const value = String(category?.slug || category?._id || '').trim();
   return value ? `/shop?category=${encodeURIComponent(value)}` : '/shop';
 };
+
+const getCategoryId = (category) => String(category?._id || category?.id || '').trim();
+
+const getCategoryParentId = (category) => String(category?.parentId || category?.parent || '').trim();
+
+const getCategoryDisplayName = (category) => cleanDisplayText(category?.name || '');
 
 const Navbar = () => {
   const dispatch = useDispatch();
@@ -175,35 +182,47 @@ const Navbar = () => {
 
   const mainCategories = useMemo(() => {
     const source = Array.isArray(categories) ? categories : [];
-    const roots = source.filter((item) => !item?.parentId && String(item?.name || '').trim());
-    if (roots.length) return roots;
-    return source.filter((item) => String(item?.name || '').trim()).slice(0, 20);
+
+    return source
+      .filter((item) => {
+        const name = String(item?.name || '').trim();
+        if (!name) return false;
+        return !getCategoryParentId(item);
+      })
+      .sort((left, right) => getCategoryDisplayName(left).localeCompare(getCategoryDisplayName(right)));
   }, [categories]);
 
   const activeCategory = useMemo(() => {
     const defaultCategory = mainCategories[0] || null;
     if (!hoveredCategory) return defaultCategory;
-    return mainCategories.find((item) => String(item?._id) === String(hoveredCategory?._id)) || defaultCategory;
+
+    const hoveredId = getCategoryId(hoveredCategory);
+    return mainCategories.find((item) => getCategoryId(item) === hoveredId) || defaultCategory;
   }, [mainCategories, hoveredCategory]);
 
   const activeSubcategories = useMemo(() => {
-    const nestedChildren = Array.isArray(activeCategory?.children) ? activeCategory.children : [];
-    const activeId = String(activeCategory?._id || activeCategory?.id || '').trim();
-    const flatChildren = activeId
-      ? (Array.isArray(categories) ? categories : []).filter((item) => String(item?.parentId || item?.parent || '').trim() === activeId)
-      : [];
-    const combinedChildren = nestedChildren.length ? nestedChildren : flatChildren;
-
-    return combinedChildren
-      .filter((item) => String(item?.name || '').trim())
-      .slice(0, 12);
-  }, [activeCategory, categories]);
-
-  const activeCategoryTiles = useMemo(() => {
-    if (activeSubcategories.length > 0) return activeSubcategories;
     if (!activeCategory) return [];
-    return [{ ...activeCategory, __fallbackTile: true }];
-  }, [activeCategory, activeSubcategories]);
+
+    const activeId = getCategoryId(activeCategory);
+    if (!activeId) return [];
+
+    const nestedChildren = Array.isArray(activeCategory.children) ? activeCategory.children : [];
+    const flatChildren = (Array.isArray(categories) ? categories : []).filter(
+      (item) => getCategoryParentId(item) === activeId,
+    );
+
+    const merged = new Map();
+
+    [...nestedChildren, ...flatChildren].forEach((item) => {
+      const itemId = getCategoryId(item) || String(item?.slug || item?.name || '').trim();
+      if (!itemId || merged.has(itemId)) return;
+      merged.set(itemId, item);
+    });
+
+    return Array.from(merged.values())
+      .filter((item) => String(item?.name || '').trim())
+      .sort((left, right) => getCategoryDisplayName(left).localeCompare(getCategoryDisplayName(right)));
+  }, [activeCategory, categories]);
 
   const selectedDeliveryLabel = useMemo(() => {
     if (!firebaseUser) return t('navbar.signInToChoose');
@@ -1036,17 +1055,17 @@ const Navbar = () => {
         <div className="grid grid-cols-[250px_minmax(0,1fr)]">
           <div className="max-h-[520px] overflow-y-auto border-r border-slate-200 bg-white py-3">
             {mainCategories.map((category) => {
-              const isActive = String(activeCategory?._id || '') === String(category?._id || '');
+              const isActive = getCategoryId(activeCategory) === getCategoryId(category);
               return (
                 <button
-                  key={category?._id || category?.slug || category?.name}
+                  key={getCategoryId(category) || category?.slug || category?.name}
                   type="button"
                   onMouseEnter={() => setHoveredCategory(category)}
                   className={`flex w-full items-center justify-between gap-2 px-5 py-3 text-left text-[15px] transition ${
                     isActive ? 'bg-slate-50 font-semibold text-slate-900' : 'text-slate-700 hover:bg-slate-50'
                   }`}
                 >
-                  <span className="truncate">{category?.name}</span>
+                  <span className="truncate">{getCategoryDisplayName(category)}</span>
                   <span className="text-slate-400">›</span>
                 </button>
               );
@@ -1055,7 +1074,7 @@ const Navbar = () => {
 
           <div className="min-h-[420px] bg-white p-7">
             <div className="mb-6 flex items-center justify-between gap-4 border-b border-slate-100 pb-4">
-              <p className="text-[22px] font-semibold leading-tight text-slate-900">{activeCategory?.name || 'Categories'}</p>
+              <p className="text-[22px] font-semibold leading-tight text-slate-900">{getCategoryDisplayName(activeCategory) || 'Categories'}</p>
               <Link
                 href={getCategoryHref(activeCategory)}
                 className="text-xs font-semibold uppercase tracking-wide text-rose-600 hover:text-rose-700"
@@ -1064,44 +1083,40 @@ const Navbar = () => {
               </Link>
             </div>
 
-            {activeCategoryTiles.length > 0 ? (
-              <div className="space-y-5">
-                <div className="grid grid-cols-5 gap-x-6 gap-y-8">
-                  {activeCategoryTiles.map((subcategory) => (
-                    <Link
-                      key={subcategory?._id || subcategory?.slug || subcategory?.name}
-                      href={getCategoryHref(subcategory)}
-                      className="group flex flex-col items-center text-center transition"
-                    >
-                      <span className="relative h-[98px] w-[98px] overflow-hidden rounded-full border border-slate-200 bg-slate-100 shadow-sm transition group-hover:-translate-y-0.5 group-hover:shadow-md">
-                        <Image
-                          src={getCategoryImage(subcategory)}
-                          alt={subcategory?.name || 'Category'}
-                          fill
-                          sizes="98px"
-                          className="object-cover"
-                        />
-                      </span>
-                      <span className="mt-3 line-clamp-2 min-h-[44px] text-[13px] font-medium leading-tight text-slate-700 group-hover:text-slate-900">
-                        {subcategory?.name}
-                      </span>
-                    </Link>
-                  ))}
-                </div>
-
-                {activeSubcategories.length === 0 ? (
-                  <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-sm text-slate-600">
-                    <span>No child categories yet. Open this category to browse products.</span>
-                    <Link
-                      href={getCategoryHref(activeCategory)}
-                      className="inline-flex h-10 items-center justify-center rounded-full bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800"
-                    >
-                      Shop now
-                    </Link>
-                  </div>
-                ) : null}
+            {activeSubcategories.length > 0 ? (
+              <div className="grid grid-cols-5 gap-x-6 gap-y-8">
+                {activeSubcategories.map((subcategory) => (
+                  <Link
+                    key={getCategoryId(subcategory) || subcategory?.slug || subcategory?.name}
+                    href={getCategoryHref(subcategory)}
+                    className="group flex flex-col items-center text-center transition"
+                  >
+                    <span className="relative h-[98px] w-[98px] overflow-hidden rounded-full border border-slate-200 bg-slate-100 shadow-sm transition group-hover:-translate-y-0.5 group-hover:shadow-md">
+                      <Image
+                        src={getCategoryImage(subcategory)}
+                        alt={getCategoryDisplayName(subcategory) || 'Category'}
+                        fill
+                        sizes="98px"
+                        className="object-cover"
+                      />
+                    </span>
+                    <span className="mt-3 line-clamp-2 min-h-[44px] text-[13px] font-medium leading-tight text-slate-700 group-hover:text-slate-900">
+                      {getCategoryDisplayName(subcategory)}
+                    </span>
+                  </Link>
+                ))}
               </div>
-            ) : null}
+            ) : (
+              <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-sm text-slate-600">
+                <span>No child categories yet. Open this category to browse products.</span>
+                <Link
+                  href={getCategoryHref(activeCategory)}
+                  className="inline-flex h-10 items-center justify-center rounded-full bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800"
+                >
+                  Shop now
+                </Link>
+              </div>
+            )}
           </div>
         </div>
       </div>

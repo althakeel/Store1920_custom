@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import connectDB from '@/lib/mongodb';
 import Category from '@/models/Category';
+import { cleanDisplayText, sanitizeCategoryFields } from '@/lib/displayText';
 
 // PUT - Update a category
 export async function PUT(req, { params }) {
@@ -28,13 +29,14 @@ export async function PUT(req, { params }) {
 
         const { id } = await params;
         const { name, description, image, parentId } = await req.json();
+        const cleanedName = cleanDisplayText(name);
 
-        if (!name) {
+        if (!cleanedName) {
             return NextResponse.json({ error: "Category name is required" }, { status: 400 });
         }
 
         // Generate slug from name
-        const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+        const slug = cleanedName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
         // Check if slug already exists (excluding current category)
         const existingCategory = await Category.findOne({
@@ -50,9 +52,9 @@ export async function PUT(req, { params }) {
         const category = await Category.findByIdAndUpdate(
             id,
             {
-                name,
+                name: cleanedName,
                 slug,
-                description: description || null,
+                description: cleanDisplayText(description || '') || null,
                 image: image || null,
                 parentId: parentId || null
             },
@@ -63,7 +65,7 @@ export async function PUT(req, { params }) {
         const parent = category.parentId ? await Category.findById(category.parentId).lean() : null;
         const children = await Category.find({ parentId: category._id }).lean();
 
-        return NextResponse.json({ category: { ...category, parent, children } }, { status: 200 });
+        return NextResponse.json({ category: sanitizeCategoryFields({ ...category, parent, children }) }, { status: 200 });
     } catch (error) {
         console.error("Error updating category:", error);
         return NextResponse.json({ error: "Failed to update category" }, { status: 500 });

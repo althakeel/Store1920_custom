@@ -3,8 +3,9 @@ import connectDB from '@/lib/mongodb';
 import Category from '@/models/Category';
 import { localizeRecord, resolveStorefrontLanguage } from '@/lib/storefrontLanguage';
 import { getCachedData, setCachedData } from '@/lib/cache';
+import { sanitizeCategoryFields, sanitizeCategoryTree } from '@/lib/displayText';
 
-const CACHE_KEY = 'public:categories:tree:v1';
+const CACHE_KEY = 'public:categories:tree:v2';
 
 // GET - Fetch all categories (public endpoint)
 export async function GET(req) {
@@ -41,15 +42,15 @@ export async function GET(req) {
         const categoriesWithChildren = allCategories.map((category) => {
             const children = (childrenByParent.get(String(category._id)) || [])
                 .sort((first, second) => String(first.name || '').localeCompare(String(second.name || '')))
-                .map((child) => localizeRecord(child, language, ['name', 'description']));
+                .map((child) => localizeRecord(sanitizeCategoryFields(child), language, ['name', 'description']));
 
-            return localizeRecord({
+            return localizeRecord(sanitizeCategoryFields({
                 ...category,
                 children,
-            }, language, ['name', 'description']);
+            }), language, ['name', 'description']);
         });
 
-        const payload = { categories: categoriesWithChildren };
+        const payload = { categories: sanitizeCategoryTree(categoriesWithChildren) };
         setCachedData(CACHE_KEY, payload, 300);
 
         return NextResponse.json(payload, {

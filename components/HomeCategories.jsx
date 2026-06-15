@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { HOME_SECTION_CLASS } from '@/lib/storefrontCarousel';
+import { cleanDisplayText } from '@/lib/displayText';
 
 export default function HomeCategories() {
   const scrollRef = useRef(null);
@@ -252,7 +253,7 @@ export default function HomeCategories() {
               )}
             </div>
             <span className="mt-2 text-[10px] sm:text-xs md:text-sm text-center font-medium line-clamp-2 leading-tight w-full">
-              {cat.name}
+              {cleanDisplayText(cat.name)}
             </span>
           </Link>
         ))}

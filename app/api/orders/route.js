@@ -15,6 +15,7 @@ import PersonalizedOffer from '@/models/PersonalizedOffer';
 import StorePreference from '@/models/StorePreference';
 import FreeGiftCampaign from '@/models/FreeGiftCampaign';
 import { sendOrderConfirmationEmail, sendGuestAccountCreationEmail } from '@/lib/email';
+import { allocateShortOrderNumber } from '@/lib/orderNumber';
 import { fetchNormalizedDelhiveryTracking } from '@/lib/delhivery';
 import { createTamaraSession } from '@/lib/tamara';
 import { createTabbySession } from '@/lib/tabby';
@@ -650,10 +651,8 @@ export async function POST(request) {
                 );
             }
             
-            // Set shortOrderNumber (last 6 hex digits of ObjectId as decimal)
-            const hex = order._id.toString().slice(-6);
-            const shortOrderNumber = parseInt(hex, 16);
-            order.shortOrderNumber = shortOrderNumber;
+            // Assign sequential store order number starting at 612345
+            order.shortOrderNumber = await allocateShortOrderNumber(storeId);
             await order.save();
             // Populate order with related data
             const populatedOrder = await Order.findById(order._id)

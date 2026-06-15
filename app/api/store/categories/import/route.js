@@ -7,6 +7,7 @@ import Category from '@/models/Category';
 import Store from '@/models/Store';
 import StoreMenu from '@/models/StoreMenu';
 import authAdmin from '@/middlewares/authAdmin';
+import { cleanDisplayText } from '@/lib/displayText';
 
 const IMAGEKIT_ENDPOINT = String(process.env.IMAGEKIT_URL_ENDPOINT || '').trim();
 
@@ -19,10 +20,7 @@ const slugify = (value = '') =>
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
 
-const normalizeText = (value) => String(value || '')
-  .replace(/\r\n/g, '\n')
-  .replace(/\n/g, '\n')
-  .trim();
+const normalizeText = (value) => cleanDisplayText(String(value || '').replace(/\r\n/g, '\n'));
 
 const normalizeLookupValue = (value = '') => String(value || '').trim().toLowerCase();
 
@@ -595,15 +593,11 @@ export async function POST(request) {
         }
       }
 
-      if (mergedMenuCategories.length > 10) {
-        warnings.push('Only the first 10 menu categories were saved because the store menu supports a maximum of 10.');
-      }
-
       await StoreMenu.findOneAndUpdate(
         { storeId: authContext.userId },
         {
           storeId: authContext.userId,
-          categories: mergedMenuCategories.slice(0, 10),
+          categories: mergedMenuCategories,
           updatedAt: new Date(),
         },
         { upsert: true, new: true }
