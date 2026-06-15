@@ -46,7 +46,9 @@ const BannerSlider = ({ className = '', variant = 'primary', fullWidth = false, 
     }
 
     return Array.isArray(showcaseConfig?.[fieldMap.items])
-      ? showcaseConfig[fieldMap.items].filter((item) => String(item?.image || '').trim())
+      ? showcaseConfig[fieldMap.items].filter((item) =>
+          String(item?.image || '').trim() || String(item?.mobileImage || '').trim()
+        )
       : [];
   }, [fieldMap.enabled, fieldMap.items, isLoaded, showcaseConfig]);
 
@@ -125,9 +127,14 @@ const BannerSlider = ({ className = '', variant = 'primary', fullWidth = false, 
   const mobileHeight = Math.min(600, Math.max(80, Number(showcaseConfig?.[fieldMap.mobileHeight]) || defaultHeights.mobile));
   const isFullWidth = fullWidth;
 
-  const defaultSpacing = variant === 'secondary' ? 'my-6' : 'mt-8 mb-10';
+  const defaultSpacing = '';
+  const useMobileFullWidth = variant === 'secondary' || isFullWidth;
   const wrapperClassName = `banner-slider relative w-full bg-transparent rounded-none m-0 p-0 ${defaultSpacing} ${
-    isFullWidth ? 'max-w-none px-0' : 'max-w-[1400px] mx-auto px-4 sm:px-6'
+    isFullWidth
+      ? 'max-w-none px-0'
+      : useMobileFullWidth
+        ? 'max-w-none px-0 sm:max-w-[1400px] sm:mx-auto sm:px-6'
+        : 'max-w-[1400px] mx-auto px-4 sm:px-6'
   } ${className}`.trim();
 
   const viewportClassName = 'banner-slider__viewport relative w-full overflow-hidden isolate';
@@ -188,11 +195,19 @@ const BannerSlider = ({ className = '', variant = 'primary', fullWidth = false, 
               style={{ width: `${slideWidthPercent}%` }}
             >
               <Image
-                src={banner.image}
+                src={banner.mobileImage || banner.image}
+                alt={banner.alt || `Banner ${i + 1}`}
+                fill
+                sizes="100vw"
+                className={`object-center sm:hidden ${banner.mobileImage ? 'object-cover' : 'object-contain bg-slate-100'}`}
+                priority={i === 0}
+              />
+              <Image
+                src={banner.image || banner.mobileImage}
                 alt={banner.alt || `Banner ${i + 1}`}
                 fill
                 sizes="(max-width: 1400px) 100vw, 1400px"
-                className="object-cover object-center"
+                className={`object-cover object-center ${banner.mobileImage ? 'hidden sm:block' : ''}`}
                 priority={i === 0}
               />
             </div>

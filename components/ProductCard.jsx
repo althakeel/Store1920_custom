@@ -3,8 +3,8 @@
 import React, { useEffect, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import axios from 'axios'
-import { Heart, ShoppingCartIcon, StarIcon, Trash2, Minus, Plus } from 'lucide-react'
+import { FaStar } from 'react-icons/fa'
+import { Minus, Plus, ShoppingCart, Trash2 } from 'lucide-react'
 import { useDispatch, useSelector } from 'react-redux'
 
 import { useAuth } from '@/lib/useAuth'
@@ -14,549 +14,431 @@ import { useStorefrontI18n } from '@/lib/useStorefrontI18n'
 
 import toast from 'react-hot-toast'
 
-// Normalize images to array format
-const normalizeImages = (images) => {
-    // Handle array
-    if (Array.isArray(images)) {
-        return images.filter(img => {
-            // Accept strings with content
-            if (typeof img === 'string') return img.trim().length > 0
-            // Accept objects with url/src
-            if (typeof img === 'object' && img !== null) {
-                return img.url || img.src || img.path || img.data || false
-            }
-            return false
-        })
-    }
-    
-    // Handle null/undefined
-    if (images === null || images === undefined) return []
-    
-    // Handle object - only if it has image data properties
-    if (typeof images === 'object') {
-        if (images.url || images.src || images.path || images.data) {
-            return [images]
-        }
-        return [] // Empty object has no valid image data
-    }
-    
-    // Handle string
-    if (typeof images === 'string') {
-        return images.trim().length > 0 ? [images] : []
-    }
-    
-    return []
-}
-
-// Pick a usable image source with graceful fallbacks
-const getImageSrc = (product) => {
-    const imagesArray = normalizeImages(product.images)
-    if (imagesArray.length) {
-        const first = imagesArray[0]
-        if (typeof first === 'object' && first?.url) return first.url
-        if (typeof first === 'object' && first?.src) return first.src
-        if (typeof first === 'string' && first.trim() !== '') return first
-    }
-    return 'https://ik.imagekit.io/jrstupuke/placeholder.png'
-}
-
+const PLACEHOLDER = 'https://ik.imagekit.io/jrstupuke/placeholder.png'
 const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.ogg', '.mov', '.m4v', '.avi', '.mkv']
 
-const getPrimaryMedia = (product) => {
-    const fallback = 'https://ik.imagekit.io/jrstupuke/placeholder.png'
-    const imagesArray = normalizeImages(product?.images)
-    if (!imagesArray || imagesArray.length === 0) {
-        return { type: 'image', src: fallback }
-    }
+const normalizeImages = (images) => {
+  if (Array.isArray(images)) {
+    return images.filter((img) => {
+      if (typeof img === 'string') return img.trim().length > 0
+      if (typeof img === 'object' && img !== null) {
+        return img.url || img.src || img.path || img.data || false
+      }
+      return false
+    })
+  }
 
-    const first = imagesArray[0]
-    const raw = (typeof first === 'object' ? (first?.url || first?.src) : first) || ''
-    const src = (raw || '').toString().trim() || fallback
-    const normalized = src.toLowerCase().split('?')[0]
-    const isVideo = VIDEO_EXTENSIONS.some((ext) => normalized.endsWith(ext))
+  if (images === null || images === undefined) return []
 
-    return {
-        type: isVideo ? 'video' : 'image',
-        src,
-    }
-}
-
-// Normalize price-like values (numbers or strings with currency symbols)
-const parseAmount = (value) => {
-    const num = Number(String(value ?? '').replace(/[^0-9.]/g, ''))
-    return Number.isNaN(num) ? 0 : num
-}
-
-// Best-guess sale price from common fields
-const getSalePrice = (product) => parseAmount(
-    product.price ??
-    product.salePrice ?? product.sale_price ??
-    product.discountedPrice ?? product.discounted_price ??
-    product.sellingPrice ?? product.selling_price ??
-    product.offerPrice ?? product.offer_price ??
-    product.currentPrice ?? product.current_price
-)
-
-// Best-guess AED/compare-at price from common fields
-const getAEDPrice = (product) => parseAmount(
-    product.AED ??
-    product.compareAtPrice ?? product.compare_at_price ??
-    product.originalPrice ?? product.original_price ??
-    product.listPrice ?? product.list_price ??
-    product.basePrice ?? product.base_price ??
-    product.regularPrice ?? product.regular_price
-)
-
-const formatCompactCount = (value) => {
-    const number = Number(value || 0)
-    if (!Number.isFinite(number) || number <= 0) return '0'
-    if (number >= 1000) {
-        const compact = (number / 1000).toFixed(number >= 10000 ? 0 : 1)
-        return `${compact.replace(/\.0$/, '')}K`
-    }
-    return `${number}`
-}
-
-const getProductBadges = (product) => {
-    if (Array.isArray(product?.badges) && product.badges.length) return product.badges.filter(Boolean)
-    if (Array.isArray(product?.attributes?.badges) && product.attributes.badges.length) return product.attributes.badges.filter(Boolean)
+  if (typeof images === 'object') {
+    if (images.url || images.src || images.path || images.data) return [images]
     return []
+  }
+
+  if (typeof images === 'string') {
+    return images.trim().length > 0 ? [images] : []
+  }
+
+  return []
 }
 
-const ProductCard = ({ product }) => {
-    // Critical: Reject anything that looks remotely like a cart item
-    if (!product || typeof product !== 'object') {
-        console.error('[ProductCard] Rejected: not an object:', product);
-        return null;
-    }
-    
-    // Core product fields MUST exist
-    if (!product.name) {
-        console.error('[ProductCard] Rejected: missing name. Keys:', Object.keys(product).join(','));
-        return null;
-    }
-    
-    if (!product.slug) {
-        console.error('[ProductCard] Rejected: missing slug. Keys:', Object.keys(product).join(','));
-        return null;
-    }
-    
-    // Do not reject missing images; card media falls back to placeholder.
-    
-    // Cart item detection: has ALL three cart-specific keys
-    if (product.hasOwnProperty('quantity') && 
-        product.hasOwnProperty('price') && 
-        product.hasOwnProperty('variantOptions')) {
-        console.error('[ProductCard] CART ITEM DETECTED - Rejecting:', { quantity: product.quantity, price: product.price });
-        return null;
-    }
-    
-    // Cart item detection: quantity as a plain number
-    if (typeof product.quantity === 'number' && product.quantity > 0 && !product.categories) {
-        console.error('[ProductCard] Quantity-only signature detected:', product);
-        return null;
-    }
-    
-    if (typeof product._id !== 'string' && typeof product._id !== 'object') {
-        console.error('[ProductCard] Invalid product ID:', product._id);
-        return null;
-    }
-    
-    const dispatch = useDispatch()
-    const { user, getToken } = useAuth()
-    const { market, convertPrice } = useStorefrontMarket()
-    const { t } = useStorefrontI18n()
-    const cartItems = useSelector(state => state.cart.cartItems)
-    // Extract quantity safely - cart items might be stored as objects {quantity, price, variantOptions}
-    const cartEntry = cartItems[product._id]
-    const itemQuantity = (() => {
-        if (!cartEntry) return 0;
-        if (typeof cartEntry === 'number') return cartEntry;
-        if (typeof cartEntry === 'object' && typeof cartEntry.quantity === 'number') return cartEntry.quantity;
-        console.warn('[ProductCard] Invalid cartEntry:', cartEntry);
-        return 0;
-    })()
-    const [isInWishlist, setIsInWishlist] = useState(false)
-    const [wishlistLoading, setWishlistLoading] = useState(false)
+const getImageSrc = (product, index = 0) => {
+  const imagesArray = normalizeImages(product?.images)
+  if (imagesArray.length > index) {
+    const current = imagesArray[index]
+    if (typeof current === 'object' && current?.url) return current.url
+    if (typeof current === 'object' && current?.src) return current.src
+    if (typeof current === 'string' && current.trim() !== '') return current
+  }
 
-    const pushDataLayerAddToCart = () => {
-        if (typeof window === 'undefined') return
-        window.dataLayer = window.dataLayer || []
-        window.dataLayer.push({
-            event: 'add_to_cart',
-            ecommerce: {
-                currency: 'AED',
-                value: Number(priceNum > 0 ? priceNum : product.price || 0),
-                items: [{
-                    item_id: String(product._id || product.id || ''),
-                    item_name: product.name || product.title || 'Product',
-                    price: Number(priceNum > 0 ? priceNum : product.price || 0),
-                    quantity: 1,
-                }],
-            },
-        })
-    }
+  if (index === 0 && product?.image) return product.image
+  return PLACEHOLDER
+}
 
-    const [reviews, setReviews] = useState([])
-    const [, setLoadingReviews] = useState(false)
+const getPrimaryMedia = (product) => {
+  const imagesArray = normalizeImages(product?.images)
+  if (!imagesArray.length && !product?.image) {
+    return { type: 'image', src: PLACEHOLDER }
+  }
 
-    useEffect(() => {
-        const fetchReviews = async () => {
-            try {
-                setLoadingReviews(true)
-                const { data } = await import('axios').then(ax => ax.default.get(`/api/review?productId=${product._id}`))
-                setReviews(data.reviews || [])
-            } catch (error) {
-                // silent fail
-            } finally {
-                setLoadingReviews(false)
-            }
-        }
-        fetchReviews()
-    }, [product._id])
+  const raw = getImageSrc(product, 0)
+  const src = (raw || '').toString().trim() || PLACEHOLDER
+  const normalized = src.toLowerCase().split('?')[0]
+  const isVideo = VIDEO_EXTENSIONS.some((ext) => normalized.endsWith(ext))
 
-    useEffect(() => {
-        let active = true
+  return {
+    type: isVideo ? 'video' : 'image',
+    src,
+  }
+}
 
-        const checkWishlistStatus = async () => {
-            try {
-                if (user) {
-                    const token = await getToken()
-                    if (!token) return
-                    const { data } = await axios.get('/api/wishlist', {
-                        headers: { Authorization: `Bearer ${token}` },
-                    })
-                    if (!active) return
-                    setIsInWishlist(Boolean(data.wishlist?.some((item) => item.productId === product._id)))
-                    return
-                }
+const parseAmount = (value) => {
+  const num = Number(String(value ?? '').replace(/[^0-9.]/g, ''))
+  return Number.isNaN(num) ? 0 : num
+}
 
-                const guestWishlist = JSON.parse(localStorage.getItem('guestWishlist') || '[]')
-                if (!active) return
-                setIsInWishlist(guestWishlist.some((item) => item && item.productId === product._id))
-            } catch {
-                if (active) setIsInWishlist(false)
-            }
-        }
+const getSalePrice = (product) => parseAmount(
+  product.price ??
+  product.salePrice ?? product.sale_price ??
+  product.discountedPrice ?? product.discounted_price ??
+  product.sellingPrice ?? product.selling_price ??
+  product.offerPrice ?? product.offer_price ??
+  product.currentPrice ?? product.current_price
+)
 
-        checkWishlistStatus()
+const getAEDPrice = (product) => parseAmount(
+  product.AED ??
+  product.compareAtPrice ?? product.compare_at_price ??
+  product.originalPrice ?? product.original_price ??
+  product.listPrice ?? product.list_price ??
+  product.basePrice ?? product.base_price ??
+  product.regularPrice ?? product.regular_price
+)
 
-        const handleWishlistUpdate = () => {
-            checkWishlistStatus()
-        }
+function getAspectRatioClass(ratio) {
+  switch (ratio) {
+    case '1:1': return 'aspect-square'
+    case '4:6': return 'aspect-[2/3]'
+    case '2:3': return 'aspect-[2/3]'
+    case '3:4': return 'aspect-[3/4]'
+    case '16:9': return 'aspect-[16/9]'
+    case '9:16': return 'aspect-[9/16]'
+    case '4:5': return 'aspect-[4/5]'
+    case '5:7': return 'aspect-[5/7]'
+    case '7:10': return 'aspect-[7/10]'
+    case '5:8': return 'aspect-[5/8]'
+    case '3:2': return 'aspect-[3/2]'
+    case '8:10': return 'aspect-[8/10]'
+    case '11:14': return 'aspect-[11/14]'
+    default: return 'aspect-square'
+  }
+}
 
-        window.addEventListener('wishlistUpdated', handleWishlistUpdate)
-        return () => {
-            active = false
-            window.removeEventListener('wishlistUpdated', handleWishlistUpdate)
-        }
-    }, [getToken, product._id, user])
+const ProductCard = ({
+  product,
+  priorityImages = false,
+  className = '',
+  onCardClick,
+}) => {
+  if (!product || typeof product !== 'object') return null
+  if (!product.name) return null
+  if (!product.slug) return null
 
-    const averageRating = reviews.length > 0
-        ? Number((reviews.reduce((acc, curr) => acc + (curr.rating || 0), 0) / reviews.length).toFixed(1))
-        : Number((product.averageRating || 0).toFixed?.(1) || Number(product.averageRating || 0).toFixed(1))
+  if (
+    product.hasOwnProperty('quantity') &&
+    product.hasOwnProperty('price') &&
+    product.hasOwnProperty('variantOptions')
+  ) {
+    return null
+  }
 
-    const ratingCount = reviews.length > 0
-        ? reviews.length
-        : (typeof product.ratingCount === 'number' ? product.ratingCount : 0)
+  if (typeof product.quantity === 'number' && product.quantity > 0 && !product.categories) {
+    return null
+  }
 
-    let priceNum = getSalePrice(product)
-    let AEDNum = getAEDPrice(product)
-    const explicitDiscount = parseAmount(
-        product.discountPercent ?? product.discount_percent ??
-        product.discountPercentage ?? product.discount_percentage ??
-        product.discount
-    )
+  if (typeof product._id !== 'string' && typeof product._id !== 'object') {
+    return null
+  }
 
-    // If only one price plus a percent is present, synthesize the other
-    if (priceNum === 0 && AEDNum > 0 && explicitDiscount > 0) {
-        priceNum = +(AEDNum * (1 - explicitDiscount / 100)).toFixed(2)
-    }
-    if (AEDNum === 0 && priceNum > 0 && explicitDiscount > 0) {
-        AEDNum = +(priceNum / (1 - explicitDiscount / 100)).toFixed(2)
+  const dispatch = useDispatch()
+  const { getToken } = useAuth()
+  const { market, convertPrice } = useStorefrontMarket()
+  const { t } = useStorefrontI18n()
+  const cartItems = useSelector((state) => state.cart.cartItems)
+  const [hovered, setHovered] = useState(false)
+  const [reviews, setReviews] = useState([])
+
+  const cartEntry = cartItems[product._id]
+  const itemQuantity = (() => {
+    if (!cartEntry) return 0
+    if (typeof cartEntry === 'number') return cartEntry
+    if (typeof cartEntry === 'object' && typeof cartEntry.quantity === 'number') return cartEntry.quantity
+    return 0
+  })()
+
+  useEffect(() => {
+    if (Number(product.averageRating) > 0 || Number(product.ratingCount) > 0) {
+      return undefined
     }
 
-    const discount = AEDNum > priceNum && priceNum > 0
-        ? Math.round(((AEDNum - priceNum) / AEDNum) * 100)
-        : explicitDiscount > 0
-            ? Math.round(explicitDiscount)
-            : 0
-    const convertedPrice = convertPrice(priceNum)
-    const convertedAED = convertPrice(AEDNum)
+    let cancelled = false
 
-    const hasFastDelivery = Boolean(
-        product.fastDelivery || product.fast_delivery ||
-        product.fastDeliveryAvailable || product.fast_delivery_available ||
-        product.isFastDelivery || product.is_fast_delivery ||
-        product.fast || product.expressDelivery || product.express_delivery ||
-        product.deliverySpeed === 'fast' || product.delivery_speed === 'fast'
-    )
-    const isOutOfStock = product.inStock === false || (typeof product.stockQuantity === 'number' && product.stockQuantity <= 0)
-    const badges = getProductBadges(product)
-    const primaryBadge = badges[0] || (hasFastDelivery ? t('common.topPick') : '')
-    const supportLabel = product.freeShippingEligible
-        ? t('common.freeDelivery')
-        : hasFastDelivery
-            ? t('common.sellingFast')
-            : ''
-    const footerTag = badges[1] || (hasFastDelivery ? t('common.priority') : '')
-
-    const handleAddToCart = (e) => {
-        e.preventDefault()
-        e.stopPropagation()
-        if (isOutOfStock) {
-            toast.error(t('common.outOfStock'))
-            return
-        }
-        pushDataLayerAddToCart()
-        dispatch(addToCart({ 
-            productId: product._id,
-            price: priceNum > 0 ? priceNum : undefined
-        }))
-        dispatch(uploadCart({ getToken }))
-        toast.success(t('common.addedToCart'))
+    const fetchReviews = async () => {
+      try {
+        const { data } = await import('axios').then((ax) => ax.default.get(`/api/review?productId=${product._id}`))
+        if (!cancelled) setReviews(data.reviews || [])
+      } catch {
+        // silent fail
+      }
     }
 
-    const handleWishlist = async (e) => {
-        e.preventDefault()
-        e.stopPropagation()
-        if (wishlistLoading) return
+    fetchReviews()
 
-        try {
-            setWishlistLoading(true)
+    return () => {
+      cancelled = true
+    }
+  }, [product._id, product.averageRating, product.ratingCount])
 
-            if (user) {
-                const token = await getToken()
-                if (!token) throw new Error('No auth token')
+  let priceNum = getSalePrice(product)
+  let AEDNum = getAEDPrice(product)
+  const explicitDiscount = parseAmount(
+    product.discountPercent ?? product.discount_percent ??
+    product.discountPercentage ?? product.discount_percentage ??
+    product.discount
+  )
 
-                await axios.post('/api/wishlist', {
-                    productId: product._id,
-                    action: isInWishlist ? 'remove' : 'add',
-                }, {
-                    headers: { Authorization: `Bearer ${token}` },
-                })
-            } else {
-                const guestWishlist = JSON.parse(localStorage.getItem('guestWishlist') || '[]')
+  if (priceNum === 0 && AEDNum > 0 && explicitDiscount > 0) {
+    priceNum = +(AEDNum * (1 - explicitDiscount / 100)).toFixed(2)
+  }
+  if (AEDNum === 0 && priceNum > 0 && explicitDiscount > 0) {
+    AEDNum = +(priceNum / (1 - explicitDiscount / 100)).toFixed(2)
+  }
 
-                if (isInWishlist) {
-                    const updatedWishlist = guestWishlist.filter((item) => item && item.productId !== product._id)
-                    localStorage.setItem('guestWishlist', JSON.stringify(updatedWishlist))
-                } else {
-                    guestWishlist.push({
-                        productId: product._id,
-                        slug: product.slug,
-                        name: product.name,
-                        price: priceNum,
-                        AED: AEDNum,
-                        images: normalizeImages(product.images),
-                        inStock: product.inStock,
-                        addedAt: new Date().toISOString(),
-                    })
-                    localStorage.setItem('guestWishlist', JSON.stringify(guestWishlist))
-                }
-            }
+  const discount = AEDNum > priceNum && priceNum > 0
+    ? Math.round(((AEDNum - priceNum) / AEDNum) * 100)
+    : explicitDiscount > 0
+      ? Math.round(explicitDiscount)
+      : 0
 
-            const nextValue = !isInWishlist
-            setIsInWishlist(nextValue)
-            window.dispatchEvent(new Event('wishlistUpdated'))
-            toast.success(nextValue ? t('common.addedToWishlist') : t('common.removedFromWishlist'))
-        } catch {
-            toast.error(t('common.wishlistUpdateFailed'))
-        } finally {
-            setWishlistLoading(false)
-        }
+  const convertedPrice = convertPrice(priceNum)
+  const convertedAED = convertPrice(AEDNum)
+  const isOutOfStock = product.inStock === false || (typeof product.stockQuantity === 'number' && product.stockQuantity <= 0)
+
+  const ratingValue = reviews.length > 0
+    ? Math.round(reviews.reduce((acc, curr) => acc + (curr.rating || 0), 0) / reviews.length)
+    : Math.round(product.averageRating || 0)
+
+  const reviewCount = reviews.length > 0
+    ? reviews.length
+    : (typeof product.ratingCount === 'number' ? product.ratingCount : 0)
+
+  const fallbackName = product.name || product.title || t('common.untitledProduct')
+  const productName = fallbackName.length > 30
+    ? `${fallbackName.slice(0, 27)}...`
+    : fallbackName
+
+  const primaryImage = getImageSrc(product, 0)
+  const secondaryImage = getImageSrc(product, 1)
+  const hasSecondary = secondaryImage !== PLACEHOLDER &&
+    secondaryImage !== primaryImage &&
+    normalizeImages(product.images).length > 1
+
+  const media = getPrimaryMedia(product)
+
+  const pushDataLayerAddToCart = () => {
+    if (typeof window === 'undefined') return
+    window.dataLayer = window.dataLayer || []
+    window.dataLayer.push({
+      event: 'add_to_cart',
+      ecommerce: {
+        currency: 'AED',
+        value: Number(priceNum > 0 ? priceNum : product.price || 0),
+        items: [{
+          item_id: String(product._id || product.id || ''),
+          item_name: product.name || product.title || 'Product',
+          price: Number(priceNum > 0 ? priceNum : product.price || 0),
+          quantity: 1,
+        }],
+      },
+    })
+  }
+
+  const handleAddToCart = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (isOutOfStock) {
+      toast.error(t('common.outOfStock'))
+      return
+    }
+    pushDataLayerAddToCart()
+    dispatch(addToCart({
+      productId: product._id,
+      price: priceNum > 0 ? priceNum : undefined,
+    }))
+    dispatch(uploadCart({ getToken }))
+    toast.success(t('common.addedToCart'))
+  }
+
+  const renderCartControl = () => {
+    if (isOutOfStock) {
+      return (
+        <div className="absolute bottom-3 right-3 z-20 rounded-full bg-gray-200 px-3 py-1 text-[10px] font-semibold text-gray-600">
+          {t('common.outOfStock')}
+        </div>
+      )
     }
 
-    const fallbackName = product.name || product.title || t('common.untitledProduct')
-    const displayName = fallbackName.length > 50
-        ? `${fallbackName.slice(0, 50)}...`
-        : fallbackName
-
-    const showPrice = priceNum > 0 || AEDNum > 0
-
-    const media = getPrimaryMedia(product)
+    if (itemQuantity > 0) {
+      return (
+        <>
+          <div
+            className="absolute bottom-3 right-3 z-20 hidden md:inline-flex h-8 min-w-[32px] items-center justify-center rounded-md px-2 text-xs font-semibold text-white shadow-md transition-all duration-150 ease-out group-hover:opacity-0 group-hover:scale-95"
+            style={{ backgroundColor: '#2563eb' }}
+          >
+            <span className="inline-flex items-center gap-1">
+              <ShoppingCart size={12} />
+              <span>{itemQuantity}</span>
+            </span>
+          </div>
+          <div
+            className="absolute bottom-3 right-3 z-20 inline-flex items-center justify-center gap-2 rounded-md px-2 py-1.5 shadow-md transition-all duration-150 ease-out md:opacity-0 md:scale-95 md:group-hover:opacity-100 md:group-hover:scale-100"
+            style={{ backgroundColor: '#2563eb' }}
+          >
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                dispatch(removeFromCart({ productId: product._id }))
+                dispatch(uploadCart({ getToken }))
+              }}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-white/95 hover:bg-white/15 transition"
+              title={itemQuantity === 1 ? 'Delete' : 'Decrease'}
+            >
+              {itemQuantity === 1 ? <Trash2 size={14} /> : <Minus size={14} />}
+            </button>
+            <span className="min-w-[18px] text-center text-xs font-semibold text-white">{itemQuantity}</span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                dispatch(addToCart({
+                  productId: product._id,
+                  price: priceNum > 0 ? priceNum : undefined,
+                }))
+                dispatch(uploadCart({ getToken }))
+              }}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-white/95 hover:bg-white/15 transition"
+              title="Add more"
+            >
+              <Plus size={14} />
+            </button>
+          </div>
+        </>
+      )
+    }
 
     return (
-        <Link href={`/product/${product.slug || product._id || ''}`} className="group w-full">
-            <div className="relative flex h-full flex-col overflow-hidden rounded-[2px] border border-[#d9dde5] bg-white shadow-[0_2px_14px_rgba(15,23,42,0.06)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(15,23,42,0.12)]">
-                <div className={`relative w-full overflow-hidden bg-[#f8f8f8] transition-transform duration-300 group-hover:scale-[1.04] ${getAspectRatioClass(product.aspectRatio)}`}>
-                    {primaryBadge ? (
-                        <span className="absolute left-3 top-3 z-20 rounded-[8px] bg-[#0d615d] px-3 py-1 text-[11px] font-semibold text-white shadow-sm">
-                            {primaryBadge}
-                        </span>
-                    ) : null}
-                    <button
-                        type="button"
-                        onClick={handleWishlist}
-                        className="absolute right-3 top-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#d8dce4] bg-white/95 text-slate-500 shadow-sm transition hover:border-[#b8c0cc] hover:text-rose-500"
-                        aria-label={t('common.saveItem')}
-                    >
-                        <Heart size={18} fill={isInWishlist ? 'currentColor' : 'none'} className={isInWishlist ? 'text-rose-500' : ''} />
-                    </button>
-                    {media.type === 'video' ? (
-                        <video
-                            src={media.src}
-                            className="h-full w-full object-cover"
-                            muted
-                            loop
-                            autoPlay
-                            playsInline
-                            preload="metadata"
-                        />
-                    ) : (
-                        <Image
-                            src={media.src || getImageSrc(product)}
-                            alt={displayName}
-                            fill
-                            className="object-cover"
-                            onError={(e) => {
-                                if (e.currentTarget.src !== 'https://ik.imagekit.io/jrstupuke/placeholder.png') {
-                                    e.currentTarget.src = 'https://ik.imagekit.io/jrstupuke/placeholder.png'
-                                }
-                            }}
-                        />
-                    )}
-                    {itemQuantity === 0 ? (
-                        <button
-                            type="button"
-                            onClick={handleAddToCart}
-                            disabled={isOutOfStock}
-                            className="absolute bottom-3 right-3 z-20 inline-flex items-center justify-center shadow-md transition active:scale-95 disabled:cursor-not-allowed"
-                            style={{
-                                height: '36px',
-                                width: '36px',
-                                backgroundColor: isOutOfStock ? '#e5e7eb' : 'transparent',
-                                border: isOutOfStock ? 'none' : '2px solid #d1d5db',
-                                borderRadius: '8px'
-                            }}
-                            onMouseEnter={(e) => { if (!isOutOfStock) e.currentTarget.style.backgroundColor = '#f3f4f6' }}
-                            onMouseLeave={(e) => { if (!isOutOfStock) e.currentTarget.style.backgroundColor = 'transparent' }}
-                            aria-label={t('common.addToCart')}
-                        >
-                            <Plus size={20} className={isOutOfStock ? 'text-gray-400' : 'text-gray-600'} strokeWidth={2.5} />
-                        </button>
-                    ) : (
-                        <>
-                            <div
-                                className="absolute bottom-3 right-3 z-20 hidden md:inline-flex h-8 min-w-[32px] items-center justify-center rounded-md px-2 text-xs font-semibold text-white shadow-md transition-all duration-150 ease-out group-hover:opacity-0 group-hover:scale-95"
-                                style={{ backgroundColor: '#2563eb' }}
-                            >
-                                <span className="inline-flex items-center gap-1">
-                                    <ShoppingCartIcon size={12} />
-                                    <span>{itemQuantity}</span>
-                                </span>
-                            </div>
-                            <div
-                                className="absolute bottom-3 right-3 z-20 inline-flex items-center justify-center shadow-md rounded-md gap-2 px-2 py-1.5 transition-all duration-150 ease-out md:opacity-0 md:scale-95 md:group-hover:opacity-100 md:group-hover:scale-100"
-                                style={{ backgroundColor: '#2563eb' }}
-                            >
-                                <button
-                                    onClick={(e) => {
-                                        e.preventDefault()
-                                        e.stopPropagation()
-                                        dispatch(removeFromCart({ productId: product._id }))
-                                        dispatch(uploadCart({ getToken }))
-                                    }}
-                                    className="inline-flex h-7 w-7 items-center justify-center rounded-sm hover:bg-white/15 transition"
-                                    type="button"
-                                    title={itemQuantity === 1 ? 'Delete' : 'Decrease'}
-                                >
-                                    {itemQuantity === 1 ? <Trash2 size={14} className="text-white" /> : <Minus size={14} className="text-white" />}
-                                </button>
-                                <span className="font-semibold text-xs text-white min-w-[20px] text-center">{itemQuantity}</span>
-                                <button
-                                    onClick={(e) => {
-                                        e.preventDefault()
-                                        e.stopPropagation()
-                                        dispatch(addToCart({ 
-                                            productId: product._id,
-                                            price: priceNum > 0 ? priceNum : undefined
-                                        }))
-                                        dispatch(uploadCart({ getToken }))
-                                    }}
-                                    className="inline-flex h-7 w-7 items-center justify-center rounded-sm hover:bg-white/15 transition"
-                                    type="button"
-                                    title="Add more"
-                                >
-                                    <Plus size={14} className="text-white" />
-                                </button>
-                            </div>
-                        </>
-                    )}
-                </div>
-
-                <div className="flex flex-1 flex-col px-4 pb-4 pt-3">
-                    <h3 className="min-h-[48px] text-[15px] font-semibold leading-6 text-slate-900 line-clamp-2">
-                        {displayName}
-                    </h3>
-
-                    <div className="mt-2 flex items-center gap-1.5 text-[13px] text-slate-500">
-                        <span className="inline-flex items-center gap-1 font-semibold text-slate-800">
-                            <StarIcon size={13} className="text-[#31a24c]" fill="#31a24c" strokeWidth={1.8} />
-                            {ratingCount > 0 ? averageRating.toFixed(1) : '0.0'}
-                        </span>
-                        <span className="text-slate-400">({ratingCount > 0 ? formatCompactCount(ratingCount) : t('common.noReviews')})</span>
-                    </div>
-
-                    {showPrice && (
-                        <div className="mt-2 flex flex-wrap items-end gap-x-2 gap-y-1">
-                            {priceNum > 0 && (
-                                <p className="text-[18px] font-extrabold leading-none text-slate-900">{market.currency} {convertedPrice.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</p>
-                            )}
-                            {AEDNum > 0 && AEDNum > priceNum && priceNum > 0 && (
-                                <div className="flex items-center gap-1.5">
-                                    <p className="text-[13px] text-slate-400 line-through">{convertedAED.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</p>
-                                    {discount > 0 && (
-                                        <span className="text-[14px] font-semibold text-[#16a34a]">
-                                            {t('common.offPercent', { discount })}
-                                        </span>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    {supportLabel ? (
-                        <div className="mt-2 text-[13px] text-slate-500">
-                            <span className="inline-flex items-center gap-1.5">
-                                <ShoppingCartIcon size={12} className="text-[#5b89ff]" />
-                                <span>{supportLabel}</span>
-                            </span>
-                        </div>
-                    ) : null}
-
-                    {footerTag ? (
-                        <div className="mt-3">
-                            <span className="inline-flex rounded-[7px] bg-[#ffeb3b] px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.02em] text-[#1f2b52]">
-                                {footerTag}
-                            </span>
-                        </div>
-                    ) : null}
-                </div>
-            </div>
-        </Link>
+      <button
+        type="button"
+        onClick={handleAddToCart}
+        className="absolute bottom-3 right-3 z-20 inline-flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-[10px] border border-[#d1d5db] bg-white/95 shadow-md transition-all duration-300 active:scale-95"
+        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f3f4f6' }}
+        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.95)' }}
+        aria-label={t('common.addToCart')}
+      >
+        <Plus size={16} className="text-slate-600" strokeWidth={2.4} />
+      </button>
     )
-}
+  }
 
-// Helper function for aspect ratio CSS class
-function getAspectRatioClass(ratio) {
-    switch (ratio) {
-        case '1:1': return 'aspect-square'
-        case '4:6': return 'aspect-[2/3]'
-        case '2:3': return 'aspect-[2/3]'
-        case '3:4': return 'aspect-[3/4]'
-        case '16:9': return 'aspect-[16/9]'
-        case '9:16': return 'aspect-[9/16]'
-        case '4:5': return 'aspect-[4/5]'
-        case '5:7': return 'aspect-[5/7]'
-        case '7:10': return 'aspect-[7/10]'
-        case '5:8': return 'aspect-[5/8]'
-        case '3:2': return 'aspect-[3/2]'
-        case '8:10': return 'aspect-[8/10]'
-        case '11:14': return 'aspect-[11/14]'
-        default: return 'aspect-square'
-    }
+  const hasCarouselWidth = /flex-\[0_0|flex-shrink-0|shrink-0|w-\[calc|min-w-\[calc|basis-\[calc/.test(className)
+
+  return (
+    <Link
+      href={`/product/${product.slug || product._id || ''}`}
+      draggable={false}
+      onDragStart={(event) => event.preventDefault()}
+      onClick={onCardClick}
+      onMouseEnter={hasSecondary ? () => setHovered(true) : undefined}
+      onMouseLeave={hasSecondary ? () => setHovered(false) : undefined}
+      className={`group flex h-full flex-col overflow-hidden rounded-[2px] border border-slate-200/80 bg-white transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md ${hasCarouselWidth ? '' : 'w-full'} ${className}`.trim()}
+    >
+      <div className={`relative w-full overflow-hidden bg-gradient-to-b from-white to-gray-100 ${getAspectRatioClass(product.aspectRatio)}`}>
+        {media.type === 'video' ? (
+          <video
+            src={media.src}
+            className="h-full w-full object-contain p-2 sm:p-3"
+            muted
+            loop
+            autoPlay
+            playsInline
+            preload="metadata"
+          />
+        ) : (
+          <>
+            <Image
+              src={primaryImage}
+              alt={productName}
+              fill
+              className={`object-contain p-2 sm:p-3 ${hasSecondary ? 'transition-opacity duration-500' : ''} ${hasSecondary && hovered ? 'opacity-0' : 'opacity-100'}`}
+              sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 16vw"
+              priority={priorityImages}
+              loading={priorityImages ? undefined : 'lazy'}
+              onError={(e) => {
+                if (e.currentTarget.src !== PLACEHOLDER) {
+                  e.currentTarget.src = PLACEHOLDER
+                }
+              }}
+            />
+            {hasSecondary ? (
+              <Image
+                src={secondaryImage}
+                alt={productName}
+                fill
+                className={`absolute inset-0 object-contain p-2 sm:p-3 transition-opacity duration-500 ${hovered ? 'opacity-100' : 'opacity-0'}`}
+                sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 16vw"
+                loading="lazy"
+                onError={(e) => {
+                  if (e.currentTarget.src !== PLACEHOLDER) {
+                    e.currentTarget.src = PLACEHOLDER
+                  }
+                }}
+              />
+            ) : null}
+          </>
+        )}
+
+        {renderCartControl()}
+      </div>
+
+      <div className="flex flex-grow flex-col p-2.5 sm:p-3">
+        <h3 className="mb-1.5 truncate text-xs font-semibold leading-tight text-slate-900 sm:text-sm">
+          {productName}
+        </h3>
+
+        <div className="mt-auto">
+          {(priceNum > 0 || AEDNum > 0) ? (
+            <div className="mb-1 flex flex-wrap items-center gap-1">
+              {priceNum > 0 ? (
+                <p className="inline-flex items-center gap-1.5 text-base font-extrabold leading-none text-slate-950 sm:text-lg">
+                  <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">
+                    {market.currency}
+                  </span>
+                  <span>{convertedPrice.toFixed(0)}</span>
+                </p>
+              ) : null}
+              {AEDNum > 0 && AEDNum > priceNum ? (
+                <p className="inline-flex items-center gap-1 text-[10px] leading-none text-slate-400 line-through sm:text-xs">
+                  <span className="uppercase tracking-wide">{market.currency}</span>
+                  <span>{convertedAED.toFixed(0)}</span>
+                </p>
+              ) : null}
+              {discount > 0 ? (
+                <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-emerald-700 sm:text-xs">
+                  {t('common.offPercent', { discount })}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className="flex min-w-0 items-center">
+            {[...Array(5)].map((_, i) => (
+              <FaStar
+                key={i}
+                size={9}
+                className={i < ratingValue ? 'text-yellow-400' : 'text-gray-300'}
+              />
+            ))}
+            <span className="ml-1 truncate text-[9px] text-gray-500 sm:text-xs">
+              {reviewCount > 0 ? `(${reviewCount})` : t('common.noReviewsYet')}
+            </span>
+          </div>
+        </div>
+      </div>
+    </Link>
+  )
 }
 
 export default ProductCard
-

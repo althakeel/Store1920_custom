@@ -24,13 +24,26 @@ const sanitizeImageUrl = (value) => {
   }
 }
 
+const resolvePersistedImageUrl = (storedValue, previewValue) => {
+  const stored = sanitizeImageUrl(storedValue)
+  if (stored) return stored
+
+  const preview = sanitizeImageUrl(previewValue)
+  if (preview && !preview.startsWith('blob:')) return preview
+
+  return ''
+}
+
 const createBannerSliderItem = (overrides = {}) => ({
   id: overrides.id || `banner-2-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   image: sanitizeImageUrl(overrides.image || ''),
+  mobileImage: sanitizeImageUrl(overrides.mobileImage || ''),
   link: overrides.link || '/shop',
   alt: overrides.alt || '',
   file: null,
   previewUrl: sanitizeImageUrl(overrides.image || overrides.previewUrl || ''),
+  mobileFile: null,
+  mobilePreviewUrl: sanitizeImageUrl(overrides.mobileImage || overrides.mobilePreviewUrl || ''),
 })
 
 const DEFAULT_FORM = {
@@ -78,6 +91,7 @@ export default function Banner2SectionPage() {
           return createBannerSliderItem({
             id: current.id || `banner-2-slide-${index + 1}`,
             image: current.image,
+            mobileImage: current.mobileImage,
             link: current.link,
             alt: current.alt || `Banner 2 Slide ${index + 1}`,
           })
@@ -109,8 +123,24 @@ export default function Banner2SectionPage() {
     }))
   }
 
-  const handleImageChange = (index, file) => {
+  const uploadImage = async (file, token) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('uploadContext', 'showcase-banner')
+
+    const response = await axios.post('/api/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+        Authorization: `Bearer ${token}`,
+      },
+    })
+
+    return response.data.url
+  }
+
+  const handleImageChange = async (index, file) => {
     if (!file) return
+
     const previewUrl = URL.createObjectURL(file)
     setForm((prev) => ({
       ...prev,
@@ -118,6 +148,60 @@ export default function Banner2SectionPage() {
         itemIndex === index ? { ...item, file, previewUrl } : item
       )),
     }))
+
+    try {
+      const token = await getToken()
+      if (!token) {
+        toast.error('Please sign in again to upload the desktop banner')
+        return
+      }
+
+      const url = sanitizeImageUrl(await uploadImage(file, token))
+      setForm((prev) => ({
+        ...prev,
+        items: prev.items.map((item, itemIndex) => (
+          itemIndex === index
+            ? { ...item, image: url, previewUrl: url, file: null }
+            : item
+        )),
+      }))
+    } catch (error) {
+      toast.error('Desktop banner upload failed')
+      console.error(error)
+    }
+  }
+
+  const handleMobileImageChange = async (index, file) => {
+    if (!file) return
+
+    const mobilePreviewUrl = URL.createObjectURL(file)
+    setForm((prev) => ({
+      ...prev,
+      items: prev.items.map((item, itemIndex) => (
+        itemIndex === index ? { ...item, mobileFile: file, mobilePreviewUrl } : item
+      )),
+    }))
+
+    try {
+      const token = await getToken()
+      if (!token) {
+        toast.error('Please sign in again to upload the mobile banner')
+        return
+      }
+
+      const url = sanitizeImageUrl(await uploadImage(file, token))
+      setForm((prev) => ({
+        ...prev,
+        items: prev.items.map((item, itemIndex) => (
+          itemIndex === index
+            ? { ...item, mobileImage: url, mobilePreviewUrl: url, mobileFile: null }
+            : item
+        )),
+      }))
+    } catch (error) {
+      toast.error('Mobile banner upload failed')
+      console.error(error)
+    }
   }
 
   const addItem = () => {
@@ -140,21 +224,6 @@ export default function Banner2SectionPage() {
     }))
   }
 
-  const uploadImage = async (file, token) => {
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('uploadContext', 'showcase-banner')
-
-    const response = await axios.post('/api/upload', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-        Authorization: `Bearer ${token}`,
-      },
-    })
-
-    return response.data.url
-  }
-
   const save = async () => {
     if (!user) {
       toast.error('Please sign in first')
@@ -171,20 +240,26 @@ export default function Banner2SectionPage() {
 
       const secondaryBannerSliderItems = []
       for (const item of form.items) {
-        let image = sanitizeImageUrl(item.image)
+        let image = resolvePersistedImageUrl(item.image, item.previewUrl)
         if (item.file) {
           image = sanitizeImageUrl(await uploadImage(item.file, token))
+        }
+
+        let mobileImage = resolvePersistedImageUrl(item.mobileImage, item.mobilePreviewUrl)
+        if (item.mobileFile) {
+          mobileImage = sanitizeImageUrl(await uploadImage(item.mobileFile, token))
         }
 
         secondaryBannerSliderItems.push({
           id: item.id,
           image,
+          mobileImage,
           link: String(item.link || '/shop').trim(),
           alt: String(item.alt || '').trim(),
         })
       }
 
-      await axios.put('/api/store/preferences/shop-showcase', {
+      const response = await axios.put('/api/store/preferences/shop-showcase', {
         ...loadedShowcase,
         secondaryBannerSliderEnabled: !!form.enabled,
         secondaryBannerSliderDesktopInterval: Number(form.desktopInterval || 4000),
@@ -197,6 +272,7 @@ export default function Banner2SectionPage() {
         headers: { Authorization: `Bearer ${token}` },
       })
 
+      setLoadedShowcase(response.data?.shopShowcase || loadedShowcase)
       toast.success('Banner 2 Section saved')
       await loadData()
     } catch (error) {
@@ -397,20 +473,21 @@ export default function Banner2SectionPage() {
                 </button>
               </div>
 
-              <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+              <div className="grid gap-4 lg:grid-cols-2">
                 <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Desktop banner</p>
                   <div className="relative overflow-hidden rounded-xl border border-dashed border-slate-300 bg-slate-50">
                     <div className="relative aspect-[16/5] w-full">
                       {item.previewUrl ? (
-                        <Image src={item.previewUrl} alt={item.alt || `Slide ${index + 1}`} fill unoptimized className="object-cover" />
+                        <Image src={item.previewUrl} alt={item.alt || `Slide ${index + 1} desktop`} fill unoptimized className="object-cover" />
                       ) : (
-                        <div className="flex h-full items-center justify-center text-xs text-slate-400">No image selected</div>
+                        <div className="flex h-full items-center justify-center text-xs text-slate-400">No desktop image</div>
                       )}
                     </div>
                   </div>
                   <label className="mt-3 inline-flex w-fit cursor-pointer items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
                     <Upload size={16} />
-                    Upload banner
+                    Upload desktop banner
                     <input
                       type="file"
                       accept="image/*"
@@ -421,7 +498,34 @@ export default function Banner2SectionPage() {
                   <p className="mt-2 text-xs text-slate-500">Recommended: wide banner, 1600 x 500 px or similar</p>
                 </div>
 
-                <div className="grid gap-3">
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Mobile banner</p>
+                  <div className="relative overflow-hidden rounded-xl border border-dashed border-slate-300 bg-slate-50">
+                    <div className="relative aspect-[16/9] w-full">
+                      {item.mobilePreviewUrl ? (
+                        <Image src={item.mobilePreviewUrl} alt={item.alt || `Slide ${index + 1} mobile`} fill unoptimized className="object-cover" />
+                      ) : (
+                        <div className="flex h-full items-center justify-center px-4 text-center text-xs text-slate-400">
+                          No mobile image (desktop banner will be used on mobile)
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <label className="mt-3 inline-flex w-fit cursor-pointer items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                    <Upload size={16} />
+                    Upload mobile banner
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(event) => handleMobileImageChange(index, event.target.files?.[0] || null)}
+                    />
+                  </label>
+                  <p className="mt-2 text-xs text-slate-500">Recommended: 750 x 420 px or similar. Use a mobile-sized image to avoid cropping text.</p>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3">
                   <label className="block">
                     <span className="mb-1 block text-sm font-medium text-slate-700">Alt text</span>
                     <input
@@ -439,7 +543,6 @@ export default function Banner2SectionPage() {
                       placeholder="/shop"
                     />
                   </label>
-                </div>
               </div>
             </div>
           ))}

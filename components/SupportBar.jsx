@@ -18,10 +18,29 @@ function readCachedNavbarBg() {
       return parsed.backgroundColor.trim();
     }
   } catch {
-    // Keep the default navbar color when cached appearance is unavailable.
+    // Ignore cache read failures.
   }
 
   return DEFAULT_NAVBAR_BG;
+}
+
+function HeadsetIcon({ className = 'h-4 w-4' }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      <path d="M3 18v-6a9 9 0 0118 0v6" />
+      <path d="M21 19a2 2 0 01-2 2h-1a2 2 0 01-2-2v-3a2 2 0 012-2h3v5z" />
+      <path d="M3 19a2 2 0 002 2h1a2 2 0 002-2v-3a2 2 0 00-2-2H3v5z" />
+    </svg>
+  );
+}
+
+function MailIcon({ className = 'h-3.5 w-3.5' }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      <rect x="2" y="4" width="20" height="16" rx="2" />
+      <path d="M2 8l10 6 10-6" />
+    </svg>
+  );
 }
 
 export default function SupportBar() {
@@ -30,6 +49,16 @@ export default function SupportBar() {
 
   useEffect(() => {
     setNavbarBg(readCachedNavbarBg());
+
+    const controller = new AbortController();
+
+    fetch(`/api/store/navbar-menu?t=${Date.now()}`, { cache: 'no-store', signal: controller.signal })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        const nextBg = String(data?.backgroundColor || '').trim();
+        if (nextBg) setNavbarBg(nextBg);
+      })
+      .catch(() => {});
 
     const handleNavbarAppearanceUpdate = (event) => {
       const nextBg = event?.detail?.backgroundColor;
@@ -42,49 +71,35 @@ export default function SupportBar() {
 
     window.addEventListener('navbarAppearanceUpdated', handleNavbarAppearanceUpdate);
     return () => {
+      controller.abort();
       window.removeEventListener('navbarAppearanceUpdated', handleNavbarAppearanceUpdate);
     };
   }, []);
 
   return (
-    <div className="w-full py-3 md:py-4 px-4" style={{ backgroundColor: navbarBg }}>
-      <div className="max-w-[1400px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-0 px-4 sm:px-6">
-
-        {/* Left: headset icon + text */}
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
-            <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-              <path d="M3 18v-6a9 9 0 0118 0v6"/>
-              <path d="M21 19a2 2 0 01-2 2h-1a2 2 0 01-2-2v-3a2 2 0 012-2h3v5z"/>
-              <path d="M3 19a2 2 0 002 2h1a2 2 0 002-2v-3a2 2 0 00-2-2H3v5z"/>
-            </svg>
+    <section className="w-full text-white" style={{ backgroundColor: navbarBg }} aria-label="Customer support">
+      <div className="mx-auto flex max-w-[1400px] items-center justify-between gap-2 px-3 py-1.5 sm:gap-4 sm:px-6 sm:py-2.5">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/15 sm:h-7 sm:w-7">
+            <HeadsetIcon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+          </span>
+          <div className="min-w-0 leading-none sm:leading-tight">
+            <p className="truncate text-[11px] font-semibold sm:text-sm">{t('support.title')}</p>
+            <p className="mt-0.5 hidden truncate text-[11px] text-white/75 sm:block">{t('support.subtitle')}</p>
           </div>
-          <div className="hidden sm:block">
-            <p className="text-white font-bold text-sm leading-tight">{t('support.title')}</p>
-            <p className="text-white/75 text-xs leading-tight">{t('support.subtitle')}</p>
-          </div>
-          <p className="sm:hidden text-white font-semibold text-sm">{t('support.title')}</p>
         </div>
 
-        {/* Divider */}
-        <div className="hidden sm:block h-8 w-px bg-white/30" />
-
-        {/* Right: email */}
         <a
           href="mailto:support@Store1920.com"
-          className="flex items-center gap-2.5 bg-white/15 hover:bg-white/25 transition-colors rounded-full px-4 py-2 group"
+          title="support@Store1920.com"
+          aria-label="Email support at support@Store1920.com"
+          className="inline-flex shrink-0 items-center gap-1 rounded-full bg-white/10 px-2 py-1 text-[10px] font-medium text-white transition hover:bg-white/16 sm:gap-1.5 sm:bg-white/12 sm:px-3 sm:py-1 sm:text-[13px] sm:hover:bg-white/18"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 flex-shrink-0">
-            <rect x="2" y="4" width="20" height="16" rx="2"/>
-            <path d="M2 8l10 6 10-6"/>
-          </svg>
-          <div className="flex flex-col leading-none">
-            <span className="text-white/70 text-[10px] uppercase tracking-widest font-medium">{t('support.emailLabel')}</span>
-            <span className="text-white font-bold text-sm group-hover:underline">support@Store1920.com</span>
-          </div>
+          <MailIcon className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+          <span className="sm:hidden">Email</span>
+          <span className="hidden sm:inline">support@Store1920.com</span>
         </a>
-
       </div>
-    </div>
+    </section>
   );
 }

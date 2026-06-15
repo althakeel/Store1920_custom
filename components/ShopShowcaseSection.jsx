@@ -6,6 +6,8 @@ import axios from 'axios'
 import Link from 'next/link'
 import bannerStyles from './ShopShowcaseSectionBanners.module.css'
 import productGridStyles from './ShopShowcaseSectionProducts.module.css'
+import ShowcaseProductBanners from './ShowcaseProductBanners'
+import { HOME_SECTION_CLASS } from '@/lib/storefrontCarousel'
 import {
   Baby,
   Bike,
@@ -56,8 +58,8 @@ const DEFAULT_FLYOUT_IMAGE = '/assets/payments/tabby_logo.png'
 
 function ShopShowcaseSkeleton() {
   return (
-    <section className="max-w-[1400px] mx-auto px-4 sm:px-6 mt-6" aria-label="Loading shop showcase">
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[280px_minmax(0,1fr)]">
+    <section className={`${HOME_SECTION_CLASS} max-w-[1400px] mx-auto px-0 sm:px-6`} aria-label="Loading shop showcase">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[280px_minmax(0,1fr)] lg:items-stretch">
         <div className="relative hidden min-h-0 lg:block">
           <aside className="absolute inset-0 flex min-h-0 flex-col overflow-hidden rounded-none border border-slate-200 bg-white shadow-sm">
             <div className="flex items-center justify-between bg-[#222] px-4 py-3 text-white">
@@ -320,7 +322,7 @@ export default function ShopShowcaseSection({ initialShowcaseData = null }) {
   if (!config || config.enabled === false) return null
 
   return (
-    <section className="max-w-[1400px] mx-auto px-4 sm:px-6 mt-6">
+    <section className={`${HOME_SECTION_CLASS} max-w-[1400px] mx-auto px-4 sm:px-6`}>
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-[280px_minmax(0,1fr)]">
         <div
           className="relative hidden min-h-0 lg:block"

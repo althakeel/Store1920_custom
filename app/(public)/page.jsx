@@ -3,6 +3,7 @@ import { useMemo, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import axios from "axios";
 import { useLocationTracking } from "@/lib/useLocationTracking";
+import { HOME_SECTION_STACK_CLASS, HOME_SECTION_CLASS } from "@/lib/storefrontCarousel";
 
 import HeroBannerSlider from "@/components/HeroBannerSlider";
 import LatestProducts from "@/components/LatestProducts";
@@ -19,8 +20,8 @@ const RecommendedProducts = dynamic(() => import("@/components/RecommendedProduc
 
 function HomeSectionSkeleton() {
     return (
-        <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 mt-6 sm:mt-8">
-            <div className="h-7 w-44 bg-slate-100 rounded animate-pulse mb-5" />
+        <div className={`${HOME_SECTION_CLASS} w-full max-w-[1400px] mx-auto px-4 sm:px-6`}>
+            <div className="mb-4 h-7 w-44 animate-pulse rounded bg-slate-100 sm:mb-5" />
             <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2">
                 {Array.from({ length: 12 }).map((_, index) => (
                     <div key={`home-skeleton-${index}`} className="animate-pulse">
@@ -105,6 +106,7 @@ export default function Home() {
     return (
         <>
                 <HeroBannerSlider showcaseConfig={shopShowcaseConfig} />
+                <div className={`${HOME_SECTION_STACK_CLASS} pb-6 sm:pb-8`}>
                 <ShopShowcaseSection initialShowcaseData={shopShowcaseData} />
                 {showSecondaryBannerAt('below_small_banners') && <BannerSlider2 config={shopShowcaseConfig} />}
                 {showHeroCategories && <HomeCategories />}
@@ -120,15 +122,14 @@ export default function Home() {
 
                 {showSecondaryBannerAt('below_top_deals') && <BannerSlider2 config={shopShowcaseConfig} />}
                 {section4Data.length > 0 && (
-                    <div className="max-w-[1400px] mx-auto w-full px-4 sm:px-6">
-                        <Section4 sections={section4Data} loading={false} />
-                    </div>
+                    <Section4 sections={section4Data} loading={false} />
                 )}
 
                 <CategoryInterestSection />
                 <RecentSearchProducts />
                 <RecommendedProducts />
+                </div>
         </>
     );
 }
-
+

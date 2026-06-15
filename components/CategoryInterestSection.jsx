@@ -3,6 +3,12 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import ProductCard from '@/components/ProductCard';
+import {
+  HOME_PRODUCT_GRID_CLASS,
+  HOME_SECTION_CLASS,
+  HOME_SECTION_BLOCK_HEADING_CLASS,
+  HOME_SECTION_INNER_CLASS,
+} from '@/lib/storefrontCarousel';
 
 const MAX_CATEGORIES = 10;
 const MAX_PRODUCTS = 20;
@@ -347,42 +353,22 @@ export default function CategoryInterestSection() {
     return null;
   }
 
-  // Final safety check before rendering: ensure all products are valid
-  const safePaginatedProducts = paginatedProducts.filter(product => {
+  const safePaginatedProducts = paginatedProducts.filter((product) => {
     if (!product || typeof product !== 'object') return false;
-    
-    if (!product.name || !product.slug) {
-      console.error('[CategoryInterestSection] Rejected - missing name/slug:', { name: product.name, slug: product.slug, keys: Object.keys(product) });
-      return false;
-    }
-    
-    const imagesArray = normalizeImages(product.images);
-    if (imagesArray.length === 0) {
-      console.error('[CategoryInterestSection] Rejected - invalid images:', { images: product.images });
-      return false;
-    }
-    
-    // Reject if it has cart-specific combination
+    if (!product.name || !product.slug) return false;
+    if (normalizeImages(product.images).length === 0) return false;
     if (product.hasOwnProperty('quantity') && product.hasOwnProperty('price') && product.hasOwnProperty('variantOptions')) {
-      console.error('[CategoryInterestSection] Rejected - cart item with all three keys:', product);
       return false;
     }
-
-    if (typeof product.quantity === 'number') {
-      console.error('[CategoryInterestSection] Rejected - quantity is number:', product);
-      return false;
-    }
-
+    if (typeof product.quantity === 'number') return false;
     return true;
   });
 
-  console.log('[CategoryInterestSection] Safe products:', safePaginatedProducts.length, 'from', paginatedProducts.length);
-
   return (
-    <section className="w-full bg-white pt-0 pb-8 mb-6">
-      <div className="max-w-[1400px] mx-auto px-4 sm:px-6">
-        <div className="mb-4">
-          <h2 className="text-3xl font-bold text-gray-900">Explore your interests</h2>
+    <section className={HOME_SECTION_CLASS}>
+      <div className={HOME_SECTION_INNER_CLASS}>
+        <div className="mb-4 sm:mb-5">
+          <h2 className={HOME_SECTION_BLOCK_HEADING_CLASS}>Explore your interests</h2>
         </div>
 
         <div className="mb-5 flex items-center gap-2.5 overflow-x-auto pb-1">
@@ -408,10 +394,10 @@ export default function CategoryInterestSection() {
 
         {displayedProducts.length > 0 ? (
           <>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
-            {safePaginatedProducts.map((product) => (
-              <ProductCard key={product._id || product.id} product={product} />
-            ))}
+            <div className={HOME_PRODUCT_GRID_CLASS}>
+              {safePaginatedProducts.map((product) => (
+                <ProductCard key={product._id || product.id} product={product} />
+              ))}
             </div>
 
             {hasMoreProducts && (

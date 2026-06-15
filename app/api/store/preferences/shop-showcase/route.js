@@ -116,6 +116,7 @@ function normalizeSecondaryBannerSliderItems(items) {
     .map((item, index) => ({
       id: (item?.id || `secondary-banner-slider-${index + 1}`).toString().trim(),
       image: (item?.image || '').toString().trim(),
+      mobileImage: (item?.mobileImage || '').toString().trim(),
       link: (item?.link || '/shop').toString().trim(),
       alt: (item?.alt || `Lower Banner ${index + 1}`).toString().trim()
     }))

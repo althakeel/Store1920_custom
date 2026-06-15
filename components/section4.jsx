@@ -1,34 +1,21 @@
 'use client'
-import React, { useRef, useState, useEffect } from 'react'
-import Image from 'next/image'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { ChevronRight, ChevronLeft, Sparkles, Minus, Plus, ShoppingCart, Trash2 } from 'lucide-react'
-import { useSelector, useDispatch } from 'react-redux'
-import { addToCart, uploadCart, removeFromCart } from '@/lib/features/cart/cartSlice'
-import { useAuth } from '@/lib/useAuth'
-import { useStorefrontMarket } from '@/lib/useStorefrontMarket'
-import toast from 'react-hot-toast'
+
+import React, { useEffect, useState } from 'react'
+import ProductCarousel from '@/components/ProductCarousel'
+import { CAROUSEL_PRODUCT_CARD_CLASS, HOME_SECTION_CLASS } from '@/lib/storefrontCarousel'
 import BannerSlider from '@/components/BannerSlider'
 
 const Section4 = ({ sections, loading = false }) => {
-  const router = useRouter()
-  const products = useSelector(state => state.product.list)
   const bannerInsertAfterIndex = sections.length > 1 ? Math.floor((sections.length - 1) / 2) : -1
 
   if (loading) {
     return (
-      <div className="w-full bg-white py-8 px-4">
-        <div className="max-w-[1400px] mx-auto space-y-12">
+      <div className={`${HOME_SECTION_CLASS} px-0 sm:px-6`}>
+        <div className="mx-auto max-w-[1400px] space-y-6 sm:space-y-8">
           {Array.from({ length: 2 }).map((_, index) => (
             <div key={`section4-skeleton-${index}`} className="w-full">
-              <div className="mb-6">
-                <div className="h-7 w-48 bg-gray-100 rounded animate-pulse" />
-                <div className="h-4 w-64 bg-gray-100 rounded mt-2 animate-pulse" />
-              </div>
-              <div className="flex gap-2 overflow-hidden pb-2">
-                <SkeletonLoader />
-              </div>
+              <div className="mb-4 h-7 w-48 animate-pulse rounded bg-gray-100" />
+              <SkeletonLoader />
             </div>
           ))}
         </div>
@@ -39,11 +26,11 @@ const Section4 = ({ sections, loading = false }) => {
   if (!sections || sections.length === 0) return null
 
   return (
-    <div className="w-full bg-white pb-8 px-4">
-      <div className="max-w-[1400px] mx-auto space-y-12">
+    <div className={`${HOME_SECTION_CLASS} px-0 sm:px-6`}>
+      <div className="mx-auto max-w-[1400px] space-y-6 sm:space-y-8">
         {sections.map((section, sectionIdx) => (
           <React.Fragment key={section._id || sectionIdx}>
-            <HorizontalSlider section={section} router={router} allProducts={products} />
+            <HorizontalSlider section={section} />
             {sectionIdx === bannerInsertAfterIndex && (
               <BannerSlider className="mt-0 mb-0 px-0 sm:px-0" />
             )}
@@ -54,72 +41,29 @@ const Section4 = ({ sections, loading = false }) => {
   )
 }
 
-const SkeletonLoader = () => {
-  return (
-    <>
-      {[...Array(5)].map((_, idx) => (
-        <div
-          key={idx}
-          className="flex-shrink-0 w-[calc((100%_-_0.5rem)/2)] sm:w-[calc((100%_-_1rem)/3)] md:w-[calc((100%_-_1.5rem)/4)] lg:w-[calc((100%_-_2.5rem)/6)] bg-white rounded-[2px] overflow-hidden border border-gray-100 animate-pulse"
-        >
-          <div className="w-full h-56 sm:h-64 bg-gray-100"></div>
-          <div className="p-4 space-y-2.5">
-            <div className="h-3 bg-gray-100 rounded w-1/4"></div>
-            <div className="h-4 bg-gray-100 rounded w-5/6"></div>
-            <div className="h-5 bg-gray-100 rounded w-1/3"></div>
-          </div>
+const SkeletonLoader = () => (
+  <div className="flex gap-2 overflow-hidden pb-2">
+    {[...Array(5)].map((_, idx) => (
+      <div
+        key={idx}
+        className={`${CAROUSEL_PRODUCT_CARD_CLASS} overflow-hidden rounded-[2px] border border-gray-100 bg-white animate-pulse`}
+      >
+        <div className="aspect-square w-full bg-gray-100" />
+        <div className="space-y-2 p-3">
+          <div className="h-3 w-4/5 rounded bg-gray-100" />
+          <div className="h-4 w-1/2 rounded bg-gray-100" />
         </div>
-      ))}
-    </>
-  )
-}
+      </div>
+    ))}
+  </div>
+)
 
-const HorizontalSlider = ({ section, router, allProducts }) => {
-  const scrollRef = useRef(null)
+const HorizontalSlider = ({ section }) => {
   const [sectionProducts, setSectionProducts] = useState([])
   const [loading, setLoading] = useState(true)
-  const [isDragging, setIsDragging] = useState(false)
-  const [canScrollLeft, setCanScrollLeft] = useState(false)
-  const dragStateRef = useRef({ isDragging: false, startX: 0, scrollLeft: 0, rafId: null, hasMoved: false })
-  
-  const dispatch = useDispatch()
-  const { getToken } = useAuth() || {}
-  const { market, convertPrice } = useStorefrontMarket()
-  const cartItems = useSelector(state => state.cart?.cartItems || {})
-
-  const getCurrentPrice = (product) => product.basePrice ?? product.price ?? product.salePrice
-  const getRegularPrice = (product) => product.originalPrice ?? product.AED ?? product.regularPrice ?? product.price
-  const getDiscountPercent = (regular, current) => {
-    if (!regular || !current || regular <= current) return null
-    return Math.round(((regular - current) / regular) * 100)
-  }
-  const isFastDelivery = (product) => Boolean(product.fastDelivery || product.isFastDelivery || product.deliveryFast || product.express)
-  const isOutOfStockProduct = (product) => {
-    if (!product) return true
-    if (product.inStock === false) return true
-
-    if (Array.isArray(product.variants) && product.variants.length > 0) {
-      const hasVariantStock = product.variants.some((v) => Number(v?.stock || 0) > 0)
-      if (!hasVariantStock) return true
-    }
-
-    if (typeof product.stockQuantity === 'number' && product.stockQuantity <= 0) return true
-    return false
-  }
 
   useEffect(() => {
-    let cancelled = false;
-
-    const normalizeId = (value) => {
-      if (!value) return null
-      if (typeof value === 'string' || typeof value === 'number') return String(value)
-      if (typeof value === 'object') {
-        if (value.$oid) return String(value.$oid)
-        const str = value.toString?.()
-        return str && str !== '[object Object]' ? String(str) : null
-      }
-      return null
-    }
+    let cancelled = false
 
     const resolveProducts = async () => {
       setLoading(true)
@@ -133,22 +77,6 @@ const HorizontalSlider = ({ section, router, allProducts }) => {
       }
 
       if (section.productIds && Array.isArray(section.productIds) && section.productIds.length > 0) {
-        const productMap = new Map(
-          allProducts.map((product) => [normalizeId(product.id || product._id || product.productId), product])
-        )
-
-        const fromRedux = section.productIds
-          .map((productId) => productMap.get(normalizeId(productId)))
-          .filter(Boolean)
-
-        if (fromRedux.length > 0) {
-          if (!cancelled) {
-            setSectionProducts(fromRedux)
-            setLoading(false)
-          }
-          return
-        }
-
         try {
           const response = await fetch('/api/products/batch', {
             method: 'POST',
@@ -180,365 +108,28 @@ const HorizontalSlider = ({ section, router, allProducts }) => {
     return () => {
       cancelled = true
     }
-  }, [allProducts, section])
-
-  useEffect(() => {
-    const container = scrollRef.current
-    if (!container) return
-
-    const updateScrollState = () => {
-      setCanScrollLeft(container.scrollLeft > 0)
-    }
-
-    updateScrollState()
-    container.addEventListener('scroll', updateScrollState, { passive: true })
-
-    return () => container.removeEventListener('scroll', updateScrollState)
-  }, [sectionProducts, loading])
-
-  // Mouse drag handlers
-  const handlePointerDown = (e) => {
-    const container = scrollRef.current
-    if (!container) return
-
-    // Don't start dragging if clicking on interactive elements (buttons, links, inputs)
-    const target = e.target
-    if (target.closest('button') || target.closest('a') || target.closest('input') || target.closest('select')) {
-      return
-    }
-
-    container.setPointerCapture?.(e.pointerId)
-    container.style.scrollBehavior = 'auto'
-    dragStateRef.current.isDragging = true
-    dragStateRef.current.startX = e.clientX
-    dragStateRef.current.scrollLeft = container.scrollLeft
-    dragStateRef.current.hasMoved = false
-    setIsDragging(true)
-  }
-
-  const handlePointerMove = (e) => {
-    const container = scrollRef.current
-    if (!container || !dragStateRef.current.isDragging) return
-
-    const walk = (e.clientX - dragStateRef.current.startX) * 1.0
-    
-    // Mark as moved if movement exceeds threshold
-    if (Math.abs(walk) > 12) {
-      dragStateRef.current.hasMoved = true
-      e.preventDefault()
-    }
-
-    if (dragStateRef.current.rafId) {
-      cancelAnimationFrame(dragStateRef.current.rafId)
-    }
-
-    dragStateRef.current.rafId = requestAnimationFrame(() => {
-      container.scrollLeft = dragStateRef.current.scrollLeft - walk
-    })
-  }
-
-  const endDragging = (e) => {
-    const container = scrollRef.current
-    dragStateRef.current.isDragging = false
-    if (dragStateRef.current.rafId) {
-      cancelAnimationFrame(dragStateRef.current.rafId)
-      dragStateRef.current.rafId = null
-    }
-    if (container) {
-      container.style.scrollBehavior = 'smooth'
-      if (e?.pointerId != null) {
-        container.releasePointerCapture?.(e.pointerId)
-      }
-    }
-    setIsDragging(false)
-  }
-
-  const scrollLeftBtn = () => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollBy({ left: -300, behavior: 'smooth' })
-    }
-  }
-
-  const scrollRightBtn = () => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollBy({ left: 300, behavior: 'smooth' })
-    }
-  }
+  }, [section])
 
   if (sectionProducts.length === 0 && !loading) return null
 
   return (
-    <div className="w-full">
-      {/* Section Header */}
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-900">
-            {section.title || section.category}
-          </h2>
-          {section.subtitle && (
-            <p className="text-xs sm:text-sm text-gray-500 mt-0.5">{section.subtitle}</p>
-          )}
-        </div>
-        {/* <button className="hidden sm:flex items-center gap-1.5 text-xs sm:text-sm font-medium text-blue-600 hover:text-blue-700 transition">
-          View All
-          <ChevronRight size={16} />
-        </button> */}
+    <div className="w-full min-w-0">
+      <div className="mb-4 px-3 sm:mb-5 sm:px-0">
+        <h2 className="text-xl font-bold text-gray-900 sm:text-2xl">
+          {section.title || section.category}
+        </h2>
+        {section.subtitle ? (
+          <p className="mt-0.5 text-xs text-gray-500 sm:text-sm">{section.subtitle}</p>
+        ) : null}
       </div>
 
-      {/* Horizontal Scrollable Container */}
-      <div className="relative">
-        {/* Left Arrow */}
-        {canScrollLeft && (
-          <button
-            onClick={scrollLeftBtn}
-            className="hidden lg:flex absolute -left-3 top-1/2 -translate-y-1/2 z-10 bg-white shadow-xl rounded-full p-2 hover:bg-gray-50 transition-all border border-gray-100"
-            aria-label="Scroll left"
-          >
-            <ChevronLeft size={18} className="text-gray-800" />
-          </button>
-        )}
-
-        {/* Products Scroll Container */}
-        <div
-          ref={scrollRef}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={endDragging}
-          onPointerLeave={endDragging}
-          onPointerCancel={endDragging}
-          className={`flex gap-2 overflow-x-auto scrollbar-hide pb-2 ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
-          style={{ scrollBehavior: 'smooth', touchAction: 'pan-y' }}
-        >
-          {loading ? (
-            <SkeletonLoader />
-          ) : (
-            sectionProducts.map((product) => (
-              <Link
-                key={product._id || product.id}
-                href={`/product/${encodeURIComponent(String(product.slug || product._id || product.id || ''))}`}
-                onClick={(e) => {
-                  // Only navigate if there was no significant dragging
-                  if (dragStateRef.current.hasMoved) {
-                    e.preventDefault()
-                  }
-                  // Reset hasMoved flag immediately after click
-                  dragStateRef.current.hasMoved = false
-                }}
-                onDragStart={(e) => e.preventDefault()}
-                draggable="false"
-                className="product-card-item flex-shrink-0 w-[calc((100%_-_0.5rem)/2)] sm:w-[calc((100%_-_1rem)/3)] md:w-[calc((100%_-_1.5rem)/4)] lg:w-[calc((100%_-_2.5rem)/6)] bg-white rounded-[2px] overflow-hidden group cursor-pointer transition-all duration-300 select-none border border-gray-100 hover:border-gray-200 hover:shadow-lg"
-              >
-                {/* Product Image */}
-                <div className="relative w-full h-56 sm:h-64 bg-gray-50 overflow-hidden">
-                  {product.image || product.images?.[0] ? (
-                    <>
-                      <Image
-                        src={product.image || product.images?.[0]}
-                        alt={product.name}
-                        fill
-                        draggable="false"
-                        className="object-cover group-hover:scale-110 transition-transform duration-500 pointer-events-none select-none"
-                        sizes="(max-width: 640px) 224px, 256px"
-                      />
-                      
-                      {/* Fast Delivery Badge */}
-                      {isFastDelivery(product) && (
-                        <div className="absolute top-2 left-2 z-20 text-white px-2.5 py-1 rounded-full text-xs font-bold" style={{ backgroundColor: '#006644' }}>
-                          Fast Delivery
-                        </div>
-                      )}
-
-                      {(() => {
-                        const productId = product._id || product.id
-                        const rawCartEntry = cartItems[productId] || cartItems[String(productId)] || 0
-                        const count = typeof rawCartEntry === 'number'
-                          ? rawCartEntry
-                          : (rawCartEntry?.quantity || 0)
-                        const isOutOfStock = isOutOfStockProduct(product)
-
-                        if (isOutOfStock) {
-                          return (
-                            <div className="absolute bottom-3 right-3 z-20 flex-shrink-0 px-3 py-1.5 rounded-full bg-gray-200 text-gray-600 text-xs font-semibold">
-                              Out of Stock
-                            </div>
-                          )
-                        }
-
-                        if (count > 0) {
-                          return (
-                            <>
-                              <div
-                                className="absolute bottom-3 right-3 z-20 hidden md:inline-flex h-8 min-w-[32px] items-center justify-center rounded-md px-2 text-xs font-semibold text-white shadow-md transition-all duration-150 ease-out group-hover:opacity-0 group-hover:scale-95"
-                                style={{ backgroundColor: '#2563eb' }}
-                              >
-                                <span className="inline-flex items-center gap-1">
-                                  <ShoppingCart size={12} />
-                                  <span>{count}</span>
-                                </span>
-                              </div>
-                              <div
-                                className="absolute bottom-3 right-3 z-20 inline-flex items-center justify-center gap-2 rounded-md px-2 py-1.5 shadow-md transition-all duration-150 ease-out md:opacity-0 md:scale-95 md:group-hover:opacity-100 md:group-hover:scale-100"
-                                style={{ backgroundColor: '#2563eb' }}
-                              >
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.preventDefault()
-                                    e.stopPropagation()
-                                    dispatch(removeFromCart({ productId: String(productId) }))
-                                    if (getToken && typeof getToken === 'function') {
-                                      dispatch(uploadCart({ getToken })).catch(() => {
-                                        // Cart sync failed silently
-                                      })
-                                    }
-                                  }}
-                                  className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-white/95 hover:bg-white/15 transition"
-                                  title={count === 1 ? 'Delete' : 'Decrease'}
-                                >
-                                  {count === 1 ? <Trash2 size={14} /> : <Minus size={14} />}
-                                </button>
-                                <span className="min-w-[18px] text-center text-xs font-semibold text-white">{count}</span>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.preventDefault()
-                                    e.stopPropagation()
-                                    dispatch(addToCart({ productId: String(productId) }))
-                                    if (getToken && typeof getToken === 'function') {
-                                      dispatch(uploadCart({ getToken })).catch(() => {
-                                        // Cart sync failed silently
-                                      })
-                                    }
-                                  }}
-                                  className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-white/95 hover:bg-white/15 transition"
-                                  title="Add more"
-                                >
-                                  <Plus size={14} />
-                                </button>
-                              </div>
-                            </>
-                          )
-                        }
-
-                        return (
-                          <button
-                            onClick={(e) => {
-                              e.preventDefault()
-                              e.stopPropagation()
-
-                              if (!productId) {
-                                toast.error('Cannot add product - no ID')
-                                return
-                              }
-
-                              dispatch(addToCart({ productId: String(productId) }))
-                              toast.success('Added to cart')
-
-                              if (getToken && typeof getToken === 'function') {
-                                dispatch(uploadCart({ getToken })).catch(() => {
-                                  // Cart sync failed silently
-                                })
-                              }
-                            }}
-                            className="absolute bottom-3 right-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-[10px] border border-[#d1d5db] bg-white/95 shadow-md transition-all active:scale-95"
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.backgroundColor = '#f3f4f6'
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.95)'
-                            }}
-                            aria-label="Add to cart"
-                          >
-                            <Plus size={16} className="text-slate-600" strokeWidth={2.4} />
-                          </button>
-                        )
-                      })()}
-
-                    </>
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-gray-400">
-                      <span className="text-sm">No image</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Product Info */}
-                <div className="p-4 space-y-2">
-                  {/* Name */}
-                  <h4 className="font-medium text-sm line-clamp-2 text-gray-900 leading-tight min-h-[2.25rem]">
-                    {product.name}
-                  </h4>
-
-                  {/* Rating and Reviews - Always Show */}
-                  <div className="flex items-center gap-1">
-                    <div className="flex items-center min-w-0 gap-1">
-                      {[...Array(5)].map((_, i) => (
-                        <span 
-                          key={i} 
-                          className={`${i < Math.floor(product.rating || product.averageRating || 0) ? 'text-yellow-400' : 'text-gray-300'} text-xs`}
-                        >
-                          ★
-                        </span>
-                      ))}
-                      <span className="text-xs text-gray-600 ml-0.5 truncate">
-                        ({product.reviews || product.reviewCount || product.ratingCount || 0})
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Price Row with Cart Button */}
-                  <div className="flex items-center justify-between gap-2 pt-0.5">
-                    <div className="flex items-baseline gap-2">
-                      {(() => {
-                        const currentPrice = Number(getCurrentPrice(product) || 0)
-                        const regularPrice = getRegularPrice(product)
-                        const convertedCurrentPrice = convertPrice(currentPrice)
-                        return (
-                          <>
-                            <span className="text-base sm:text-lg font-bold text-gray-900">
-                              <span className="inline-flex items-center gap-1.5">
-                                <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">
-                                  {market.currency}
-                                </span>
-                                <span>{convertedCurrentPrice?.toLocaleString?.() || convertedCurrentPrice}</span>
-                              </span>
-                            </span>
-                            {regularPrice && regularPrice > currentPrice ? (
-                              <>
-                                <span className="inline-flex items-center gap-1 text-xs text-slate-300 line-through">
-                                  <span className="uppercase tracking-wide">{market.currency}</span>
-                                  <span>{convertPrice(Number(regularPrice) || 0)?.toLocaleString?.() || convertPrice(Number(regularPrice) || 0)}</span>
-                                </span>
-                                {(() => {
-                                  const discountPercent = getDiscountPercent(regularPrice, currentPrice)
-                                  return discountPercent ? (
-                                    <span className="text-[10px] sm:text-xs font-semibold text-green-600">
-                                      {discountPercent}% off
-                                    </span>
-                                  ) : null
-                                })()}
-                              </>
-                            ) : null}
-                          </>
-                        )
-                      })()}
-                    </div>
-                  </div>
-                </div>
-              </Link>
-            ))
-          )}
+      {loading ? (
+        <div className="px-0">
+          <SkeletonLoader />
         </div>
-
-        {/* Right Arrow */}
-        <button
-          onClick={scrollRightBtn}
-          className="hidden lg:flex absolute -right-3 top-1/2 -translate-y-1/2 z-10 bg-white shadow-xl rounded-full p-2 hover:bg-gray-50 transition-all border border-gray-100"
-          aria-label="Scroll right"
-        >
-          <ChevronRight size={18} className="text-gray-800" />
-        </button>
-      </div>
+      ) : (
+        <ProductCarousel products={sectionProducts} priorityCount={4} />
+      )}
     </div>
   )
 }

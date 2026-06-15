@@ -1,364 +1,15 @@
 'use client'
 
-import { useDispatch, useSelector } from 'react-redux'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import axios from 'axios'
-import Image from 'next/image'
-import Link from 'next/link'
-import { FaStar } from 'react-icons/fa'
-import { Minus, Plus, ShoppingCart, Trash2 } from 'lucide-react'
-
-import { addToCart, uploadCart, removeFromCart } from '@/lib/features/cart/cartSlice'
+import ProductCard from '@/components/ProductCard'
+import { HOME_SECTION_CLASS } from '@/lib/storefrontCarousel'
 import { useAuth } from '@/lib/useAuth'
-import { useStorefrontMarket } from '@/lib/useStorefrontMarket'
 import { useStorefrontI18n } from '@/lib/useStorefrontI18n'
-
-import toast from 'react-hot-toast'
 import Title from './Title'
 
 const DEFAULT_ITEMS_PER_ROW = 6
 const DEFAULT_ROWS = 2
-
-// Helper to get product image
-const getImageSrc = (product, index = 0) => {
-  if (product.images && Array.isArray(product.images) && product.images.length > index) {
-    if (product.images[index]?.url) return product.images[index].url
-    if (product.images[index]?.src) return product.images[index].src
-    if (typeof product.images[index] === 'string') return product.images[index]
-  }
-  return 'https://ik.imagekit.io/jrstupuke/placeholder.png'
-}
-
-// Helper to normalize price-like values (handles numbers and strings with currency symbols)
-const parseAmount = (value) => {
-  const num = Number(String(value ?? '').replace(/[^0-9.]/g, ''))
-  return Number.isNaN(num) ? 0 : num
-}
-
-// Extract the best-guess selling price from common fields
-const getSalePrice = (product) => {
-  return parseAmount(
-    product.price ??
-    product.salePrice ??
-    product.sale_price ??
-    product.discountedPrice ??
-    product.discounted_price ??
-    product.sellingPrice ??
-    product.selling_price ??
-    product.offerPrice ??
-    product.offer_price ??
-    product.currentPrice ??
-    product.current_price
-  )
-}
-
-const getAEDPrice = (product) => {
-  return parseAmount(
-    product.AED ??
-    product.compareAtPrice ??
-    product.compare_at_price ??
-    product.originalPrice ??
-    product.original_price ??
-    product.listPrice ??
-    product.list_price ??
-    product.basePrice ??
-    product.base_price ??
-    product.regularPrice ??
-    product.regular_price
-  )
-}
-
-const ProductCard = ({ product, priorityImages = false }) => {
-  const [hovered, setHovered] = useState(false)
-  const dispatch = useDispatch()
-  const { getToken } = useAuth()
-  const { market, convertPrice } = useStorefrontMarket()
-  const { t } = useStorefrontI18n()
-  const cartItems = useSelector(state => state.cart.cartItems)
-  const cartEntry = cartItems[product._id]
-  const itemQuantity = typeof cartEntry === 'number' ? cartEntry : (cartEntry?.quantity || 0)
-
-  const primaryImage = getImageSrc(product, 0)
-  const secondaryImage = getImageSrc(product, 1)
-
-  let priceNum = getSalePrice(product)
-  let AEDNum = getAEDPrice(product)
-  const hasFastDelivery = Boolean(
-    product.fastDelivery ||
-    product.fast_delivery ||
-    product.fastDeliveryAvailable ||
-    product.fast_delivery_available ||
-    product.isFastDelivery ||
-    product.is_fast_delivery ||
-    product.fast ||
-    product.expressDelivery ||
-    product.express_delivery ||
-    product.deliverySpeed === 'fast' ||
-    product.delivery_speed === 'fast'
-  )
-  const isOutOfStock = product.inStock === false || (typeof product.stockQuantity === 'number' && product.stockQuantity <= 0)
-
-  const hasSecondary = secondaryImage !== 'https://ik.imagekit.io/jrstupuke/placeholder.png' && 
-                       secondaryImage !== primaryImage &&
-                       product.images?.length > 1
-
-  const explicitDiscount = parseAmount(
-    product.discountPercent ??
-    product.discount_percent ??
-    product.discountPercentage ??
-    product.discount_percentage ??
-    product.discount
-  )
-
-  // If we have only one price plus a percent, synthesize the other price
-  if (priceNum === 0 && AEDNum > 0 && explicitDiscount > 0) {
-    priceNum = +(AEDNum * (1 - explicitDiscount / 100)).toFixed(2)
-  }
-  if (AEDNum === 0 && priceNum > 0 && explicitDiscount > 0) {
-    AEDNum = +(priceNum / (1 - explicitDiscount / 100)).toFixed(2)
-  }
-
-  const discount =
-    AEDNum > priceNum && priceNum > 0
-      ? Math.round(((AEDNum - priceNum) / AEDNum) * 100)
-      : explicitDiscount > 0
-        ? Math.round(explicitDiscount)
-        : 0
-  const convertedPrice = convertPrice(priceNum)
-  const convertedAED = convertPrice(AEDNum)
-
-  // Review fetching logic - use embedded ratings when available to avoid N+1 API calls
-  const [reviews, setReviews] = useState([]);
-  const [loadingReviews, setLoadingReviews] = useState(false);
-  useEffect(() => {
-    if (Number(product.averageRating) > 0 || Number(product.ratingCount) > 0) {
-      return undefined;
-    }
-
-    let cancelled = false;
-
-    const fetchReviews = async () => {
-      try {
-        setLoadingReviews(true);
-        const { data } = await import('axios').then(ax => ax.default.get(`/api/review?productId=${product._id}`));
-        if (!cancelled) setReviews(data.reviews || []);
-      } catch {
-        // silent fail
-      } finally {
-        if (!cancelled) setLoadingReviews(false);
-      }
-    };
-    fetchReviews();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [product._id, product.averageRating, product.ratingCount]);
-
-  const ratingValue = reviews.length > 0
-    ? Math.round(reviews.reduce((acc, curr) => acc + (curr.rating || 0), 0) / reviews.length)
-    : Math.round(product.averageRating || 0);
-  const reviewCount = reviews.length > 0
-    ? reviews.length
-    : (product.ratingCount || 0);
-
-  const fallbackName = product.name || product.title || t('common.untitledProduct')
-  const productName = fallbackName.length > 30
-    ? fallbackName.slice(0, 23) + '...'
-    : fallbackName
-
-  const pushDataLayerAddToCart = () => {
-    if (typeof window === 'undefined') return
-    window.dataLayer = window.dataLayer || []
-    window.dataLayer.push({
-      event: 'add_to_cart',
-      ecommerce: {
-        currency: 'AED',
-        value: Number(priceNum || product.price || 0),
-        items: [{
-          item_id: String(product._id || product.id || ''),
-          item_name: product.name || product.title || 'Product',
-          price: Number(priceNum || product.price || 0),
-          quantity: 1,
-        }],
-      },
-    })
-  }
-
-  const handleAddToCart = (e) => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (isOutOfStock) {
-      toast.error(t('common.outOfStock'))
-      return
-    }
-    pushDataLayerAddToCart()
-    dispatch(addToCart({ productId: product._id }))
-    dispatch(uploadCart({ getToken }))
-    toast.success(t('common.addedToCart'))
-  }
-
-  return (
-    <Link
-      href={`/product/${product.slug || product._id || ''}`}
-      className={`group bg-white rounded-[2px] border border-slate-200/80 ${hasSecondary ? 'hover:shadow-xl' : 'hover:shadow-md'} transition-all duration-300 flex flex-col relative overflow-hidden hover:-translate-y-0.5`}
-      onMouseEnter={hasSecondary ? () => setHovered(true) : null}
-      onMouseLeave={hasSecondary ? () => setHovered(false) : null}
-    >
-      {/* Image Container */}
-      <div className="relative w-full h-36 sm:h-64 overflow-hidden bg-gray-50 aspect-square sm:aspect-auto">
-        {hasFastDelivery && (
-          <span className="absolute top-2 right-2 z-20 pointer-events-none inline-flex items-center gap-1 text-white text-[10px] sm:text-[8px] lg:text-[12px] font-bold px-2 py-1 sm:px-1.5 sm:py-0.5 lg:px-2.5 lg:py-1.5 rounded-full shadow-md" style={{ backgroundColor: '#006644' }}>
-            {t('common.fastDelivery')}
-          </span>
-        )}
-        <Image
-          src={primaryImage}
-          alt={productName}
-          fill
-          style={{ objectFit: 'cover' }}
-          className={`w-full h-full object-cover z-0 ${hasSecondary ? 'transition-opacity duration-500' : ''} ${
-            hasSecondary && hovered ? 'opacity-0' : 'opacity-100'
-          }`}
-          sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 16vw"
-          priority={priorityImages}
-          loading={priorityImages ? undefined : 'lazy'}
-          onError={(e) => { e.currentTarget.src = 'https://ik.imagekit.io/jrstupuke/placeholder.png' }}
-        />
-
-        {hasSecondary && (
-          <Image
-            src={secondaryImage}
-            alt={productName}
-            fill
-            style={{ objectFit: 'cover' }}
-            className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ${
-              hovered ? 'opacity-100' : 'opacity-0'
-            }`}
-            sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 16vw"
-            loading="lazy"
-            onError={(e) => { e.currentTarget.src = 'https://ik.imagekit.io/jrstupuke/placeholder.png' }}
-          />
-        )}
-
-        {itemQuantity > 0 ? (
-          <>
-            <div
-              className="absolute bottom-3 right-3 z-20 hidden md:inline-flex h-8 min-w-[32px] items-center justify-center rounded-md px-2 text-xs font-semibold text-white shadow-md transition-all duration-150 ease-out group-hover:opacity-0 group-hover:scale-95 group-hover:-translate-y-0.5"
-              style={{ backgroundColor: '#2563eb' }}
-            >
-              <span className="inline-flex items-center gap-1">
-                <ShoppingCart size={12} />
-                <span>{itemQuantity}</span>
-              </span>
-            </div>
-            <div
-              className="absolute bottom-3 right-3 z-20 inline-flex items-center justify-center gap-2 rounded-md px-2 py-1.5 shadow-md transition-all duration-150 ease-out md:opacity-0 md:scale-95 md:translate-y-1 md:group-hover:translate-y-0 md:group-hover:opacity-100 md:group-hover:scale-100 md:group-hover:shadow-lg"
-              style={{ backgroundColor: '#2563eb' }}
-            >
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  dispatch(removeFromCart({ productId: product._id }))
-                  dispatch(uploadCart({ getToken }))
-                }}
-                className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-white/95 hover:bg-white/15 transition"
-                title={itemQuantity === 1 ? 'Delete' : 'Decrease'}
-              >
-                {itemQuantity === 1 ? <Trash2 size={14} /> : <Minus size={14} />}
-              </button>
-              <span className="min-w-[18px] text-center text-xs font-semibold text-white">{itemQuantity}</span>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  dispatch(addToCart({ productId: product._id }))
-                  dispatch(uploadCart({ getToken }))
-                }}
-                className="inline-flex h-7 w-7 items-center justify-center rounded-sm text-white/95 hover:bg-white/15 transition"
-                title="Add more"
-              >
-                <Plus size={14} />
-              </button>
-            </div>
-          </>
-        ) : (
-          <button
-            onClick={handleAddToCart}
-            disabled={isOutOfStock}
-            className='absolute bottom-3 right-3 z-20 inline-flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-[10px] border shadow-md transition-all duration-300 disabled:cursor-not-allowed'
-            style={{
-              backgroundColor: isOutOfStock ? '#e5e7eb' : 'rgba(255,255,255,0.95)',
-              borderColor: '#d1d5db'
-            }}
-            onMouseEnter={(e) => {
-              if (isOutOfStock) return
-              e.currentTarget.style.backgroundColor = '#f3f4f6'
-            }}
-            onMouseLeave={(e) => {
-              if (isOutOfStock) return
-              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.95)'
-            }}
-            aria-label={t('common.addToCart')}
-          >
-            <Plus size={16} className={isOutOfStock ? 'text-gray-400' : 'text-slate-600'} strokeWidth={2.4} />
-          </button>
-        )}
-
-        <div className="absolute inset-x-0 bottom-0 z-10 h-16 sm:h-20 bg-gradient-to-t from-black/45 via-black/15 to-transparent pointer-events-none" />
-      </div>
-
-      {/* Product Info */}
-      <div className="p-2.5 sm:p-3 flex flex-col flex-grow">
-        <h3 className="text-xs sm:text-sm font-semibold text-slate-900 line-clamp-2 mb-1.5 leading-tight">
-          {productName}
-        </h3>
-
-        <div className="mt-auto">
-          <div className="flex items-start justify-between gap-2 mb-1">
-            <div className="flex items-center gap-1 flex-wrap">
-              {priceNum > 0 && (
-                <p className="inline-flex items-center gap-1.5 text-base sm:text-lg font-extrabold text-slate-950 leading-none">
-                  <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">
-                    {market.currency}
-                  </span>
-                  <span>{convertedPrice.toFixed(0)}</span>
-                </p>
-              )}
-              {AEDNum > 0 && AEDNum > priceNum && (
-                <p className="inline-flex items-center gap-1 text-[10px] sm:text-xs text-slate-300 line-through leading-none mt-0.5">
-                  <span className="uppercase tracking-wide">{market.currency}</span>
-                  <span>{convertedAED.toFixed(0)}</span>
-                </p>
-              )}
-              {discount > 0 && (
-                <span className="ml-1 rounded bg-emerald-50 text-emerald-700 text-[10px] sm:text-xs font-semibold px-1.5 py-0.5 leading-none">
-                  {t('common.offPercent', { discount })}
-                </span>
-              )}
-            </div>
-          </div>
-
-          <div className="flex items-center min-w-0">
-            {[...Array(5)].map((_, i) => (
-              <FaStar
-                key={i}
-                size={9}
-                className={i < ratingValue ? 'text-yellow-400' : 'text-gray-300'}
-              />
-            ))}
-            <span className="text-gray-500 text-[9px] sm:text-xs ml-1 truncate">
-              {reviewCount > 0 ? `(${reviewCount})` : t('common.noReviewsYet')}
-            </span>
-          </div>
-        </div>
-      </div>
-    </Link>
-  )
-}
 
 // Featured selection component (only show admin-selected featured products)
 const BestSelling = () => {
@@ -561,7 +212,7 @@ const BestSelling = () => {
   }, [fetchFeaturedAndSectionText])
 
   return (
-    <div className="px-4 sm:px-6 py-6 max-w-[1400px] w-full mx-auto bg-white relative z-10">
+    <div className={`${HOME_SECTION_CLASS} relative z-10 mx-auto w-full max-w-[1400px] px-4 sm:px-6`}>
       <Title
         title={effectiveSectionTitle}
         description={effectiveSectionDescription}
@@ -574,18 +225,18 @@ const BestSelling = () => {
       >
         {isLoading && featuredProducts.length === 0
           ? Array(visibleCount).fill(0).map((_, idx) => (
-              <div key={idx} className="bg-white rounded-[2px] shadow-sm animate-pulse">
-                <div className="w-full h-36 sm:h-64 bg-gray-200 rounded-t-[2px]" />
+              <div key={idx} className="animate-pulse rounded-[2px] bg-white shadow-sm">
+                <div className="h-36 w-full rounded-t-[2px] bg-gray-200 sm:h-64" />
                 <div className="p-2">
-                  <div className="h-4 bg-gray-200 rounded mb-2" />
-                  <div className="flex items-center gap-1 mb-3">
+                  <div className="mb-2 h-4 rounded bg-gray-200" />
+                  <div className="mb-3 flex items-center gap-1">
                     {Array(5).fill(0).map((_, i) => (
-                      <div key={i} className="h-3 w-3 bg-gray-200 rounded" />
+                      <div key={i} className="h-3 w-3 rounded bg-gray-200" />
                     ))}
                   </div>
                   <div className="flex items-center justify-between">
-                    <div className="h-4 w-16 bg-gray-200 rounded" />
-                    <div className="h-8 w-8 sm:h-10 sm:w-10 bg-gray-200 rounded-full" />
+                    <div className="h-4 w-16 rounded bg-gray-200" />
+                    <div className="h-8 w-8 rounded-full bg-gray-200 sm:h-10 sm:w-10" />
                   </div>
                 </div>
               </div>

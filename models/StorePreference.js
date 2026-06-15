@@ -16,6 +16,7 @@ const BannerSliderItemSchema = new mongoose.Schema(
   {
     id: { type: String, trim: true, default: '' },
     image: { type: String, trim: true, default: '' },
+    mobileImage: { type: String, trim: true, default: '' },
     link: { type: String, trim: true, default: '/shop' },
     alt: { type: String, trim: true, default: '' }
   },

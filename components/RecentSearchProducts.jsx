@@ -1,12 +1,21 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { useAuth } from '@/lib/useAuth';
 import axios from 'axios';
 import Link from 'next/link';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import ProductCard from '@/components/ProductCard';
+import {
+  HOME_PRODUCT_GRID_CLASS,
+  HOME_SECTION_CLASS,
+  HOME_SECTION_HEADER_CLASS,
+  HOME_SECTION_EYEBROW_CLASS,
+  HOME_SECTION_HEADING_CLASS,
+  HOME_SECTION_SUBTITLE_CLASS,
+  HOME_SECTION_INNER_CLASS,
+} from '@/lib/storefrontCarousel';
 
 const normalizeImages = (images) => {
   // Handle array
@@ -47,17 +56,6 @@ export default function RecentSearchProducts() {
   const [recentProducts, setRecentProducts] = useState([]);
   const [isNewCustomer, setIsNewCustomer] = useState(true);
   const [loading, setLoading] = useState(true);
-  const sliderRef = useRef(null);
-
-  const scrollSlider = (direction) => {
-    const slider = sliderRef.current;
-    if (!slider) return;
-
-    slider.scrollBy({
-      left: direction * Math.max(slider.clientWidth * 0.85, 260),
-      behavior: 'smooth',
-    });
-  };
 
   useEffect(() => {
     const fetchRecentlyViewed = async () => {
@@ -159,16 +157,16 @@ export default function RecentSearchProducts() {
   // Show skeleton while loading
   if (loading) {
     return (
-      <section className="w-full bg-white py-8 mb-6">
-        <div className="max-w-[1400px] mx-auto">
-          <div className="flex items-center justify-between mb-6 px-4">
+      <section className={HOME_SECTION_CLASS}>
+        <div className={HOME_SECTION_INNER_CLASS}>
+          <div className={HOME_SECTION_HEADER_CLASS}>
             <div>
               <div className="h-4 w-24 bg-gray-200 rounded animate-pulse mb-2"></div>
               <div className="h-6 w-48 bg-gray-200 rounded animate-pulse mb-2"></div>
               <div className="h-4 w-64 bg-gray-200 rounded animate-pulse"></div>
             </div>
           </div>
-          <div className="flex gap-2 overflow-hidden px-4">
+          <div className={`${HOME_PRODUCT_GRID_CLASS} overflow-hidden`}>
             {[...Array(5)].map((_, i) => (
               <div key={i} className="w-[calc((100%_-_0.5rem)/2)] shrink-0 bg-white border border-gray-200 rounded-[2px] p-3 animate-pulse sm:w-[calc((100%_-_1rem)/3)] md:w-[calc((100%_-_1.5rem)/4)] lg:w-[calc((100%_-_2.5rem)/6)]">
                 <div className="w-full aspect-square bg-gray-200 rounded mb-3"></div>
@@ -230,57 +228,27 @@ export default function RecentSearchProducts() {
   }
 
   return (
-    <section className="w-full bg-white py-8 mb-6">
-      <div className="max-w-[1400px] mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6 px-4">
+    <section className={HOME_SECTION_CLASS}>
+      <div className={HOME_SECTION_INNER_CLASS}>
+        <div className={HOME_SECTION_HEADER_CLASS}>
           <div>
-            <span className="text-xs font-bold text-orange-600 uppercase tracking-wider">Your History</span>
-            <h2 className="text-2xl font-bold text-gray-900 mt-1">Recently Viewed Products</h2>
-            <p className="text-sm text-gray-500 mt-1">Products you've recently checked out</p>
+            <span className={`${HOME_SECTION_EYEBROW_CLASS} text-orange-600`}>Your History</span>
+            <h2 className={HOME_SECTION_HEADING_CLASS}>Recently Viewed Products</h2>
+            <p className={HOME_SECTION_SUBTITLE_CLASS}>Products you&apos;ve recently checked out</p>
           </div>
           <Link
             href="/recently-viewed"
-            className="flex items-center gap-2 text-sm font-semibold text-gray-700 hover:text-orange-600 transition"
+            className="flex shrink-0 items-center gap-2 text-sm font-semibold text-gray-700 transition hover:text-orange-600"
           >
             View All
             <ChevronRight size={18} />
           </Link>
         </div>
 
-        {/* Product Slider */}
-        <div className="relative">
-          <button
-            type="button"
-            aria-label="Previous recently viewed products"
-            onClick={() => scrollSlider(-1)}
-            className="absolute left-1 top-1/2 z-10 hidden h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-md transition hover:border-orange-300 hover:text-orange-600 md:flex"
-          >
-            <ChevronLeft size={20} />
-          </button>
-
-          <div
-            ref={sliderRef}
-            className="flex snap-x snap-mandatory gap-2 overflow-x-auto scroll-smooth px-4 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          >
-            {safeProducts.map(product => (
-              <div
-                key={product._id || product.id}
-                className="w-[calc((100%_-_0.5rem)/2)] shrink-0 snap-start sm:w-[calc((100%_-_1rem)/3)] md:w-[calc((100%_-_1.5rem)/4)] lg:w-[calc((100%_-_2.5rem)/6)]"
-              >
-                <ProductCard product={product} />
-              </div>
-            ))}
-          </div>
-
-          <button
-            type="button"
-            aria-label="Next recently viewed products"
-            onClick={() => scrollSlider(1)}
-            className="absolute right-1 top-1/2 z-10 hidden h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-md transition hover:border-orange-300 hover:text-orange-600 md:flex"
-          >
-            <ChevronRight size={20} />
-          </button>
+        <div className={HOME_PRODUCT_GRID_CLASS}>
+          {safeProducts.map((product) => (
+            <ProductCard key={product._id || product.id} product={product} />
+          ))}
         </div>
       </div>
     </section>

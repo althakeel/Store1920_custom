@@ -6,7 +6,15 @@ import { useAuth } from '@/lib/useAuth';
 import axios from 'axios';
 import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
-import ProductCard from '@/components/ProductCard';
+import ProductCarousel from '@/components/ProductCarousel';
+import {
+  HOME_SECTION_CAROUSEL_INNER_CLASS,
+  HOME_SECTION_CLASS,
+  HOME_SECTION_EYEBROW_CLASS,
+  HOME_SECTION_HEADING_CLASS,
+  HOME_SECTION_HEADER_CLASS,
+  HOME_SECTION_SUBTITLE_CLASS,
+} from '@/lib/storefrontCarousel';
 import { useMemo } from 'react';
 
 export default function RecommendedProducts() {
@@ -214,30 +222,24 @@ export default function RecommendedProducts() {
   }
 
   return (
-    <section className="w-full bg-white py-8 mb-6">
-      <div className="max-w-[1400px] mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6 px-4">
+    <section className={HOME_SECTION_CLASS}>
+      <div className={HOME_SECTION_CAROUSEL_INNER_CLASS}>
+        <div className={HOME_SECTION_HEADER_CLASS}>
           <div>
-            <span className="text-xs font-bold text-blue-600 uppercase tracking-wider">Personalized</span>
-            <h2 className="text-2xl font-bold text-gray-900 mt-1">Recommended for You</h2>
-            <p className="text-sm text-gray-500 mt-1">Curated manually from store settings</p>
+            <span className={`${HOME_SECTION_EYEBROW_CLASS} text-blue-600`}>Personalized</span>
+            <h2 className={HOME_SECTION_HEADING_CLASS}>Recommended for You</h2>
+            <p className={HOME_SECTION_SUBTITLE_CLASS}>Curated manually from store settings</p>
           </div>
           <Link
             href="/recommended"
-            className="flex items-center gap-2 text-sm font-semibold text-gray-700 hover:text-blue-600 transition"
+            className="flex shrink-0 items-center gap-2 text-sm font-semibold text-gray-700 transition hover:text-blue-600"
           >
             View All
             <ChevronRight size={18} />
           </Link>
         </div>
 
-        {/* Product Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 px-4">
-          {productsToRender.map(product => (
-            <ProductCard key={product._id || product.id} product={product} />
-          ))}
-        </div>
+        <ProductCarousel products={productsToRender} priorityCount={4} />
       </div>
     </section>
   );

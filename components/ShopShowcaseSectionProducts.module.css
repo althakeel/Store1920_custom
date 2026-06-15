@@ -1,25 +1,67 @@
 .showcaseProductGrid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.5rem;
   margin-top: 0.5rem;
+  width: 100%;
 }
 
 @media (max-width: 1024px) {
   .showcaseProductGrid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
-@media (max-width: 640px) {
-  .showcaseProductGrid {
-    display: flex;
-    grid-template-columns: none;
-    overflow-x: auto;
-    padding-bottom: 0.25rem;
-    scroll-snap-type: x mandatory;
-    -webkit-overflow-scrolling: touch;
-    gap: 0.5rem;
-  }
+
+.showcaseProductMobileCarousel {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  margin-top: 0.5rem;
+}
+
+.showcaseProductMobileTrack {
+  display: flex;
+  width: 100%;
+  transition: transform 700ms ease-in-out;
+  will-change: transform;
+}
+
+.showcaseProductMobileSlide {
+  flex: 0 0 100%;
+  width: 100%;
+  min-width: 100%;
+}
+
+.showcaseProductMobileCard {
+  width: 100%;
+}
+
+.showcaseProductMobileDots {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0.65rem;
+  z-index: 2;
+  display: flex;
+  justify-content: center;
+  gap: 0.4rem;
+  pointer-events: none;
+}
+
+.showcaseProductMobileDot {
+  pointer-events: auto;
+  height: 0.45rem;
+  width: 0.45rem;
+  border: 0;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.45);
+  cursor: pointer;
+  padding: 0;
+  transition: background-color 200ms ease, transform 200ms ease;
+}
+
+.showcaseProductMobileDotActive {
+  background: #fff;
+  transform: scale(1.15);
 }
 
 .showcaseProductCard {
@@ -27,7 +69,7 @@
   background: #fff;
   border-radius: 2px;
   overflow: hidden;
-  box-shadow: 0 2px 8px 0 rgba(0,0,0,0.04);
+  box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.04);
   border: 1px solid #eee;
   display: block;
   padding: 0;
@@ -37,27 +79,13 @@
   color: inherit;
 }
 
-@media (max-width: 640px) {
-  .showcaseProductCard {
-    flex: 0 0 84%;
-    min-width: 84%;
-    scroll-snap-align: start;
-    min-height: 160px;
-  }
-}
-
 .showcaseProductImage {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-}
-
-@media (max-width: 640px) {
-  .showcaseProductImage {
-    object-position: center;
-  }
+  object-position: center;
 }
 
 .showcaseProductOverlay {
@@ -78,41 +106,21 @@
   text-align: left;
 }
 
-@media (max-width: 640px) {
-  .showcaseProductContent {
-    padding: 1rem 1rem 1rem 48%;
-  }
-}
-
 .showcaseProductTitle {
   font-size: 1.15rem;
   font-weight: 700;
   margin-bottom: 0.5rem;
   line-height: 1.05;
   color: #fff;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.25);
-}
-
-@media (max-width: 640px) {
-  .showcaseProductTitle {
-    font-size: 1rem;
-    line-height: 1.15;
-  }
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
 }
 
 .showcaseProductSubtitle {
   font-size: 0.95rem;
   font-weight: 400;
   margin-bottom: 1rem;
-  color: rgba(255,255,255,0.96);
-  text-shadow: 0 1px 2px rgba(0,0,0,0.2);
-}
-
-@media (max-width: 640px) {
-  .showcaseProductSubtitle {
-    font-size: 0.875rem;
-    margin-bottom: 0.75rem;
-  }
+  color: rgba(255, 255, 255, 0.96);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .showcaseProductButton {
@@ -136,6 +144,27 @@
 }
 
 @media (max-width: 640px) {
+  .showcaseProductCard {
+    aspect-ratio: 1225 / 639;
+    min-height: 0;
+    border-radius: 0;
+    border-inline: 0;
+  }
+
+  .showcaseProductContent {
+    padding: 1rem 1rem 1rem 48%;
+  }
+
+  .showcaseProductTitle {
+    font-size: 1rem;
+    line-height: 1.15;
+  }
+
+  .showcaseProductSubtitle {
+    font-size: 0.875rem;
+    margin-bottom: 0.75rem;
+  }
+
   .showcaseProductButton {
     padding: 0.45rem 1rem;
     font-size: 0.875rem;

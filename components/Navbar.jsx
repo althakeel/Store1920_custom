@@ -1485,15 +1485,16 @@ const Navbar = () => {
               style={{ animation: 'slideInLeft 0.3s ease-out' }}
             >
               {/* Header with Logo and Close Button */}
-              <div className="flex justify-between items-center border-b border-gray-200 pb-4">
-                <button type="button" onClick={handleLogoNavigation} className="flex items-center">
+              <div className="flex items-center justify-between border-b border-gray-200 pb-4">
+                <button type="button" onClick={handleLogoNavigation} className="flex min-w-0 max-w-[130px] items-center overflow-hidden">
                   {mobileLogoSrc || navbarLogoSrc ? (
                     <Image
                       src={mobileLogoSrc || navbarLogoSrc}
                       alt="Store Logo"
-                      width={120}
-                      height={35}
-                      className="object-contain"
+                      width={navbarAppearance.logoWidth || 120}
+                      height={navbarAppearance.logoHeight || 40}
+                      className="h-8 w-auto max-w-[120px] object-contain"
+                      style={{ maxHeight: '32px', maxWidth: '120px' }}
                     />
                   ) : (
                     <span className="text-lg font-semibold text-gray-900">Store</span>

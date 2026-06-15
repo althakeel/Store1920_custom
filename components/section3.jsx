@@ -1,183 +1,128 @@
-"use client";
+'use client'
 
-import React, { useEffect, useState } from "react";
-import axios from "axios";
-import { useStorefrontMarket } from "@/lib/useStorefrontMarket";
+import { useEffect, useState } from 'react'
+import axios from 'axios'
+import ProductCard from '@/components/ProductCard'
+import { HOME_PRODUCT_GRID_CLASS, HOME_SECTION_CLASS, HOME_SECTION_INNER_CLASS, HOME_SECTION_TITLE_CLASS } from '@/lib/storefrontCarousel'
 
-const TOP_DEALS_SECTION_KEYS = new Set(["top_deals", "top-deals", "topdeals"]);
+const TOP_DEALS_SECTION_KEYS = new Set(['top_deals', 'top-deals', 'topdeals'])
 
 const normalizeKey = (value) =>
-  String(value || "")
+  String(value || '')
     .toLowerCase()
     .trim()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-
-const normalizeId = (value) => {
-  if (!value) return null;
-  if (typeof value === "string" || typeof value === "number") return String(value);
-  if (typeof value === "object") {
-    if (value.$oid) return String(value.$oid);
-    const stringValue = value.toString?.();
-    return stringValue && stringValue !== "[object Object]" ? String(stringValue) : null;
-  }
-  return null;
-};
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
 
 function findTopDealsSection(homeSections = []) {
   return (
     homeSections.find((item) => TOP_DEALS_SECTION_KEYS.has(normalizeKey(item.section))) ||
-    homeSections.find((item) => normalizeKey(item.title) === "top_deals") ||
+    homeSections.find((item) => normalizeKey(item.title) === 'top_deals') ||
     homeSections.find((item) => item.category) ||
     null
-  );
+  )
+}
+
+function TopDealsSkeleton() {
+  return (
+    <div className={`${HOME_PRODUCT_GRID_CLASS} px-3 sm:px-0`}>
+      {[...Array(6)].map((_, index) => (
+        <div
+          key={`top-deals-skeleton-${index}`}
+          className="animate-pulse overflow-hidden rounded-[2px] border border-gray-100 bg-white"
+        >
+          <div className="aspect-square w-full bg-gray-100" />
+          <div className="space-y-2 p-3">
+            <div className="h-3 w-5/6 rounded bg-gray-100" />
+            <div className="h-4 w-1/2 rounded bg-gray-100" />
+            <div className="h-3 w-2/3 rounded bg-gray-100" />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 export default function TopDeals({ homeSections = [], sectionsLoading = false }) {
-  const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [title, setTitle] = useState("Top Deals");
-  const { market, convertPrice } = useStorefrontMarket();
+  const [products, setProducts] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [title, setTitle] = useState('Top Deals')
 
   useEffect(() => {
     if (sectionsLoading) {
-      setLoading(true);
-      return;
+      setLoading(true)
+      return
     }
 
-    let cancelled = false;
+    let cancelled = false
 
     const load = async () => {
-      setLoading(true);
+      setLoading(true)
 
       try {
-        const section = findTopDealsSection(homeSections);
-        setTitle(section?.title || "Top Deals");
+        const section = findTopDealsSection(homeSections)
+        setTitle(section?.title || 'Top Deals')
 
         if (!section) {
-          const { data } = await axios.get("/api/products?limit=12");
-          if (!cancelled) setProducts(data.products || []);
-          return;
+          const { data } = await axios.get('/api/products?limit=12')
+          if (!cancelled) setProducts(data.products || [])
+          return
         }
 
-        if (section.sectionType === "manual" && Array.isArray(section.productIds) && section.productIds.length > 0) {
-          const productIds = section.productIds.slice(0, 12);
-          const { data } = await axios.post("/api/products/batch", { productIds });
-          if (!cancelled) setProducts(data.products || []);
-          return;
+        if (section.sectionType === 'manual' && Array.isArray(section.productIds) && section.productIds.length > 0) {
+          const { data } = await axios.post('/api/products/batch', {
+            productIds: section.productIds.slice(0, 12),
+          })
+          if (!cancelled) setProducts(data.products || [])
+          return
         }
 
         if (section.category) {
-          const { data } = await axios.get("/api/products", {
-            params: {
-              category: section.category,
-              limit: 12,
-            },
-          });
-          if (!cancelled) setProducts(data.products || []);
-          return;
+          const { data } = await axios.get('/api/products', {
+            params: { category: section.category, limit: 12 },
+          })
+          if (!cancelled) setProducts(data.products || [])
+          return
         }
 
-        const { data } = await axios.get("/api/products?limit=12");
-        if (!cancelled) setProducts(data.products || []);
+        const { data } = await axios.get('/api/products?limit=12')
+        if (!cancelled) setProducts(data.products || [])
       } catch {
         if (!cancelled) {
-          setProducts([]);
-          setTitle("Top Deals");
+          setProducts([])
+          setTitle('Top Deals')
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setLoading(false)
       }
-    };
+    }
 
-    load();
+    load()
 
     return () => {
-      cancelled = true;
-    };
-  }, [homeSections, sectionsLoading]);
+      cancelled = true
+    }
+  }, [homeSections, sectionsLoading])
+
+  if (!loading && products.length === 0) {
+    return null
+  }
 
   return (
-    <div className="w-full flex justify-center mt-6 sm:mt-8">
-      <div className="w-full max-w-[1400px] px-4 sm:px-6">
-        <div className="w-full">
-          <h2 className="text-base sm:text-lg md:text-[28px] font-semibold mb-4 sm:mb-5">{title}</h2>
+    <section className={HOME_SECTION_CLASS}>
+      <div className={HOME_SECTION_INNER_CLASS}>
+        <h2 className={HOME_SECTION_TITLE_CLASS}>{title}</h2>
 
-          {loading ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
-              {[...Array(12)].map((_, index) => (
-                <div
-                  key={`skeleton-${index}`}
-                  className="cursor-pointer text-center flex flex-col items-center"
-                >
-                  <div
-                    className="w-full aspect-square rounded-[2px]"
-                    style={{
-                      background: 'linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%)',
-                      backgroundSize: '200% 100%',
-                      animation: 'shimmer 1.5s infinite',
-                    }}
-                  />
-                  <div
-                    className="h-2 sm:h-3 mx-auto mt-2 sm:mt-3 rounded"
-                    style={{
-                      width: '80%',
-                      background: 'linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%)',
-                      backgroundSize: '200% 100%',
-                      animation: 'shimmer 1.5s infinite',
-                    }}
-                  />
-                  <div
-                    className="h-2 sm:h-3 mx-auto mt-1.5 sm:mt-2 rounded"
-                    style={{
-                      width: '60%',
-                      background: 'linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%)',
-                      backgroundSize: '200% 100%',
-                      animation: 'shimmer 1.5s infinite',
-                    }}
-                  />
-                </div>
-              ))}
-            </div>
-          ) : products.length === 0 ? (
-            <p className="text-gray-500 py-8 text-center text-sm sm:text-base">No Deals Found</p>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
-              {products?.slice(0, 12).map((item, i) => {
-                const img =
-                  item.images?.[0] && item.images[0] !== ""
-                    ? item.images[0]
-                    : "https://ik.imagekit.io/jrstupuke/placeholder.png";
-                const convertedPrice = convertPrice(Number(item.price) || 0);
-
-                return (
-                  <a
-                    key={item._id || item.slug || i}
-                    href={`/product/${item.slug}`}
-                    className="cursor-pointer text-center block group flex flex-col items-center"
-                  >
-                    <div className="w-full aspect-square bg-gray-50 rounded-[2px] overflow-hidden flex items-center justify-center group-hover:bg-gray-100 transition-colors">
-                      <img
-                        src={img}
-                        alt={item.name}
-                        className="h-full w-full object-contain p-2 sm:p-3 group-hover:scale-110 transition-transform duration-200"
-                        loading="lazy"
-                        onError={e => { e.currentTarget.src = "https://ik.imagekit.io/jrstupuke/placeholder.png"; }}
-                      />
-                    </div>
-                    <p className="w-full truncate px-1 text-[11px] font-medium mt-2 sm:mt-2.5 sm:text-[13px] md:text-[15px] sm:whitespace-normal sm:line-clamp-2">
-                      {item.name}
-                    </p>
-                    <p className="font-bold text-[10px] sm:text-[12px] md:text-[16px] mt-1 sm:mt-1.5 text-[#E6003E]">
-                      From {market.currency} {Math.round(convertedPrice)}
-                    </p>
-                  </a>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        {loading ? (
+          <TopDealsSkeleton />
+        ) : (
+          <div className={`${HOME_PRODUCT_GRID_CLASS} px-3 sm:px-0`}>
+            {products.slice(0, 12).map((product, index) => (
+              <ProductCard key={product._id || product.id || index} product={product} priorityImages={index < 6} />
+            ))}
+          </div>
+        )}
       </div>
-    </div>
-  );
+    </section>
+  )
 }
