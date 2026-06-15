@@ -1,11 +1,20 @@
 import dbConnect from '@/lib/mongodb';
 import CategorySlider from '@/models/CategorySlider';
+import Product from '@/models/Product';
 import { NextResponse } from 'next/server';
 import { getCachedData, setCachedData } from '@/lib/cache';
+import mongoose from 'mongoose';
 
-const CACHE_KEY = 'public:featured-sections:v1';
+const CACHE_KEY = 'public:featured-sections:v2';
 
-export async function GET(req) {
+function orderProductsByIds(products, ids) {
+  const productMap = new Map(products.map((product) => [String(product._id), product]));
+  return ids
+    .map((id) => productMap.get(String(id)))
+    .filter(Boolean);
+}
+
+export async function GET() {
   try {
     const cached = getCachedData(CACHE_KEY);
     if (cached) {
@@ -21,11 +30,35 @@ export async function GET(req) {
     await dbConnect();
 
     const sections = await CategorySlider.find({})
-      .select('title titleAr subtitle subtitleAr productIds storeId sortOrder isActive layout sectionType category tag')
-      .sort({ sortOrder: 1, createdAt: -1 })
+      .select('title subtitle productIds storeId createdAt updatedAt')
+      .sort({ createdAt: -1 })
       .lean();
 
-    const payload = { sections: sections || [] };
+    const allProductIds = [
+      ...new Set(
+        sections
+          .flatMap((section) => (Array.isArray(section.productIds) ? section.productIds : []))
+          .map((id) => String(id || '').trim())
+          .filter((id) => mongoose.Types.ObjectId.isValid(id))
+      ),
+    ];
+
+    const products = allProductIds.length
+      ? await Product.find({ _id: { $in: allProductIds } })
+          .select('name nameAr slug price mrp AED images category inStock stockQuantity fastDelivery freeShippingEligible imageAspectRatio averageRating ratingCount')
+          .lean()
+      : [];
+
+    const payload = {
+      sections: sections.map((section) => {
+        const productIds = Array.isArray(section.productIds) ? section.productIds : [];
+        return {
+          ...section,
+          products: orderProductsByIds(products, productIds),
+        };
+      }),
+    };
+
     setCachedData(CACHE_KEY, payload, 120);
 
     return NextResponse.json(payload, {

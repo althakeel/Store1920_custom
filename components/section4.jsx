@@ -39,7 +39,7 @@ const Section4 = ({ sections, loading = false }) => {
   if (!sections || sections.length === 0) return null
 
   return (
-    <div className="w-full bg-white py-8 px-4">
+    <div className="w-full bg-white pb-8 px-4">
       <div className="max-w-[1400px] mx-auto space-y-12">
         {sections.map((section, sectionIdx) => (
           <React.Fragment key={section._id || sectionIdx}>
@@ -108,8 +108,7 @@ const HorizontalSlider = ({ section, router, allProducts }) => {
   }
 
   useEffect(() => {
-    setLoading(true)
-    let featured = []
+    let cancelled = false;
 
     const normalizeId = (value) => {
       if (!value) return null
@@ -122,20 +121,65 @@ const HorizontalSlider = ({ section, router, allProducts }) => {
       return null
     }
 
-    if (section.products && Array.isArray(section.products) && section.products.length > 0) {
-      featured = section.products
-    } else if (section.productIds && Array.isArray(section.productIds)) {
-      const productMap = new Map(
-        allProducts.map((product) => [normalizeId(product.id || product._id || product.productId), product])
-      )
+    const resolveProducts = async () => {
+      setLoading(true)
 
-      featured = section.productIds
-        .map((productId) => productMap.get(normalizeId(productId)))
-        .filter(Boolean)
+      if (section.products && Array.isArray(section.products) && section.products.length > 0) {
+        if (!cancelled) {
+          setSectionProducts(section.products)
+          setLoading(false)
+        }
+        return
+      }
+
+      if (section.productIds && Array.isArray(section.productIds) && section.productIds.length > 0) {
+        const productMap = new Map(
+          allProducts.map((product) => [normalizeId(product.id || product._id || product.productId), product])
+        )
+
+        const fromRedux = section.productIds
+          .map((productId) => productMap.get(normalizeId(productId)))
+          .filter(Boolean)
+
+        if (fromRedux.length > 0) {
+          if (!cancelled) {
+            setSectionProducts(fromRedux)
+            setLoading(false)
+          }
+          return
+        }
+
+        try {
+          const response = await fetch('/api/products/batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ productIds: section.productIds }),
+          })
+
+          if (response.ok) {
+            const data = await response.json()
+            if (!cancelled) {
+              setSectionProducts(Array.isArray(data?.products) ? data.products : [])
+              setLoading(false)
+            }
+            return
+          }
+        } catch {
+          // Fall through to empty state.
+        }
+      }
+
+      if (!cancelled) {
+        setSectionProducts([])
+        setLoading(false)
+      }
     }
 
-    setSectionProducts(featured)
-    setLoading(false)
+    resolveProducts()
+
+    return () => {
+      cancelled = true
+    }
   }, [allProducts, section])
 
   useEffect(() => {

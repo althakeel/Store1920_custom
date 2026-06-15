@@ -2,6 +2,9 @@ import dbConnect from '@/lib/mongodb';
 import CategorySlider from '@/models/CategorySlider';
 import { NextResponse } from 'next/server';
 import { getAuth } from '@/lib/firebase-admin';
+import { deleteCacheKey } from '@/lib/cache';
+
+const FEATURED_SECTIONS_CACHE_KEY = 'public:featured-sections:v2';
 
 function parseAuthHeader(req) {
   const auth = req.headers.get('authorization') || req.headers.get('Authorization');
@@ -94,6 +97,8 @@ export async function POST(req) {
     const slider = new CategorySlider(sliderData);
     await slider.save();
     
+    deleteCacheKey(FEATURED_SECTIONS_CACHE_KEY);
+
     const savedData = slider.toObject();
     console.log('💾 Saved to DB, subtitle now:', JSON.stringify(savedData.subtitle));
     console.log('=== 💾 POST SLIDER END ===');
@@ -142,6 +147,8 @@ export async function DELETE(req) {
         { status: 404 }
       );
     }
+
+    deleteCacheKey(FEATURED_SECTIONS_CACHE_KEY);
 
     return NextResponse.json(
       { message: 'Slider deleted' },

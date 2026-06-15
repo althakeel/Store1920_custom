@@ -3,7 +3,6 @@ import Product from "@/models/Product";
 import Rating from "@/models/Rating";
 import Category from "@/models/Category";
 import { NextResponse } from "next/server";
-import { NextResponse } from "next/server";
 import { getCachedData, setCachedData, generateCacheKey, invalidateCachePattern } from "@/lib/cache";
 import { localizeRecord, resolveStorefrontLanguage } from "@/lib/storefrontLanguage";
 

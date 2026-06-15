@@ -125,7 +125,8 @@ const BannerSlider = ({ className = '', variant = 'primary', fullWidth = false, 
   const mobileHeight = Math.min(600, Math.max(80, Number(showcaseConfig?.[fieldMap.mobileHeight]) || defaultHeights.mobile));
   const isFullWidth = fullWidth;
 
-  const wrapperClassName = `banner-slider relative w-full bg-transparent rounded-none m-0 p-0 mt-8 mb-10 ${
+  const defaultSpacing = variant === 'secondary' ? 'my-6' : 'mt-8 mb-10';
+  const wrapperClassName = `banner-slider relative w-full bg-transparent rounded-none m-0 p-0 ${defaultSpacing} ${
     isFullWidth ? 'max-w-none px-0' : 'max-w-[1400px] mx-auto px-4 sm:px-6'
   } ${className}`.trim();
 

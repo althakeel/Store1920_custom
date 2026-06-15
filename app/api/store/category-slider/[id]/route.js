@@ -2,6 +2,9 @@ import dbConnect from '@/lib/mongodb';
 import CategorySlider from '@/models/CategorySlider';
 import { NextResponse } from 'next/server';
 import { getAuth } from '@/lib/firebase-admin';
+import { deleteCacheKey } from '@/lib/cache';
+
+const FEATURED_SECTIONS_CACHE_KEY = 'public:featured-sections:v2';
 
 function parseAuthHeader(req) {
   const auth = req.headers.get('authorization') || req.headers.get('Authorization');
@@ -69,6 +72,8 @@ export async function PUT(req, { params }) {
     const sliderData = slider.toObject ? slider.toObject() : slider;
     console.log('💾 Returning slider data:', sliderData);
 
+    deleteCacheKey(FEATURED_SECTIONS_CACHE_KEY);
+
     return NextResponse.json(
       { message: 'Slider updated', slider: sliderData },
       { status: 200 }
@@ -103,6 +108,8 @@ export async function DELETE(req, { params }) {
         { status: 404 }
       );
     }
+
+    deleteCacheKey(FEATURED_SECTIONS_CACHE_KEY);
 
     return NextResponse.json(
       { message: 'Slider deleted' },

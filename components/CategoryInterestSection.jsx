@@ -379,7 +379,7 @@ export default function CategoryInterestSection() {
   console.log('[CategoryInterestSection] Safe products:', safePaginatedProducts.length, 'from', paginatedProducts.length);
 
   return (
-    <section className="w-full bg-white py-8 mb-6">
+    <section className="w-full bg-white pt-0 pb-8 mb-6">
       <div className="max-w-[1400px] mx-auto px-4 sm:px-6">
         <div className="mb-4">
           <h2 className="text-3xl font-bold text-gray-900">Explore your interests</h2>

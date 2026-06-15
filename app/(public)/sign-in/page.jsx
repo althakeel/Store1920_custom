@@ -1,5 +1,6 @@
 import { Suspense } from 'react'
 import SignInClient from './SignInClient'
+import GoogleOneTap from '@/components/GoogleOneTap'
 
 export default function SignInPage() {
   return (
@@ -8,6 +9,7 @@ export default function SignInPage() {
         <div>Loading...</div>
       </div>
     }>
+      <GoogleOneTap />
       <SignInClient />
     </Suspense>
   )
