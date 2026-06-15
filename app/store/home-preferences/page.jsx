@@ -510,7 +510,7 @@ export default function HomePreferences() {
                         ) : (
                             filteredProducts.map(product => {
                                 const isSelected = selectedProducts.includes(product._id)
-                                const primaryImage = product.images?.[0] || 'https://ik.imagekit.io/jrstupuke/placeholder.png'
+                                const primaryImage = product.images?.[0] || 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'
 
                                 return (
                                     <div
@@ -543,7 +543,7 @@ export default function HomePreferences() {
                                                         width={200}
                                                         height={200}
                                                         className="w-full h-full object-cover"
-                                                        onError={(e) => { e.currentTarget.src = 'https://ik.imagekit.io/jrstupuke/placeholder.png' }}
+                                                        onError={(e) => { e.currentTarget.src = 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png' }}
                                                     />
                                                 </div>
 

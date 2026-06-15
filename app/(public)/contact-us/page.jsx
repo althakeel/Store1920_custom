@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 
 const NAVBAR_APPEARANCE_CACHE_KEY = 'navbarAppearanceCache';
 const DEFAULT_BG = '#8f3404';
@@ -12,9 +13,21 @@ function hexToRgb(hex) {
 }
 
 export default function ContactUs() {
+  const searchParams = useSearchParams();
   const [form, setForm] = useState({ name: '', email: '', message: '' });
   const [submitted, setSubmitted] = useState(false);
   const [navBg, setNavBg] = useState(DEFAULT_BG);
+
+  useEffect(() => {
+    const subject = searchParams.get('subject');
+    const message = searchParams.get('message');
+    if (!subject && !message) return;
+
+    setForm((prev) => ({
+      ...prev,
+      message: message || prev.message,
+    }));
+  }, [searchParams]);
 
   useEffect(() => {
     try {

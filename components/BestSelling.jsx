@@ -20,7 +20,7 @@ const getImageSrc = (product, index = 0) => {
     if (product.images[index]?.src) return product.images[index].src
     if (typeof product.images[index] === 'string') return product.images[index]
   }
-  return 'https://ik.imagekit.io/jrstupuke/placeholder.png'
+  return 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'
 }
 
 // Product Card Component
@@ -54,7 +54,7 @@ const ProductCard = ({ product }) => {
   const secondaryImage = getImageSrc(product, 1)
   
   // Only has secondary if it exists, is not placeholder, and is different from primary
-  const hasSecondary = secondaryImage !== 'https://ik.imagekit.io/jrstupuke/placeholder.png' && 
+  const hasSecondary = secondaryImage !== 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png' && 
                        secondaryImage !== primaryImage &&
                        product.images?.length > 1
   
@@ -111,7 +111,7 @@ const ProductCard = ({ product }) => {
           }`}
           sizes="(max-width: 768px) 100vw, (max-width: 1300px) 50vw, 25vw"
           priority
-          onError={(e) => { e.currentTarget.src = 'https://ik.imagekit.io/jrstupuke/placeholder.png' }}
+          onError={(e) => { e.currentTarget.src = 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png' }}
         />
 
         {hasSecondary && (
@@ -125,7 +125,7 @@ const ProductCard = ({ product }) => {
             }`}
             sizes="(max-width: 768px) 100vw, (max-width: 1300px) 50vw, 25vw"
             priority
-            onError={(e) => { e.currentTarget.src = 'https://ik.imagekit.io/jrstupuke/placeholder.png' }}
+            onError={(e) => { e.currentTarget.src = 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png' }}
           />
         )}
       </div>

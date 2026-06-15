@@ -442,7 +442,12 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
 
     const normalizeErrorMessage = (value, fallback = 'Request failed') => {
         if (!value) return fallback;
-        if (typeof value === 'string') return value;
+        if (typeof value === 'string') {
+            if (/429|rate limit|too many requests/i.test(value)) {
+                return fallback;
+            }
+            return value;
+        }
         if (typeof value === 'number' || typeof value === 'boolean') return String(value);
         if (typeof value === 'object') {
             const msg = value.error || value.message || value.detail || value.code;
@@ -674,13 +679,13 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
             
             // Check if product has categories array
             if (product.categories && Array.isArray(product.categories) && product.categories.length > 0) {
-                categoriesToSet = product.categories
+                categoriesToSet = dedupeCategoryIds(product.categories)
             } 
             // Fallback to single category
             else if (product.category) {
                 const catId = typeof product.category === 'object' ? product.category._id : product.category
                 if (catId) {
-                    categoriesToSet = [catId]
+                    categoriesToSet = dedupeCategoryIds([catId])
                 }
             }
             
@@ -722,10 +727,11 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
     }, [product, isFormInitialized])
 
     useEffect(() => {
-        if (product || dbCategories.length === 0) return
-        setSelectedCategories(prev => (prev.length > 0 ? prev : dbCategories.map(cat => cat._id)))
-    }, [dbCategories, product])
-
+        if (!product) {
+            setSelectedCategories([])
+        }
+    }, [product])
+    
     useEffect(() => {
         setProductInfo(prev => ({
             ...prev,
@@ -761,13 +767,18 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
     }
 
     const toggleCategorySelection = (categoryId, checked) => {
+        const normalizedId = String(categoryId)
         setSelectedCategories(prev => {
             if (checked) {
-                return prev.includes(categoryId) ? prev : [...prev, categoryId]
+                return prev.includes(normalizedId) ? prev : [...prev, normalizedId]
             }
-            return prev.filter(id => id !== categoryId)
+            return prev.filter(id => id !== normalizedId)
         })
     }
+
+    const dedupeCategoryIds = (ids = []) => (
+        Array.from(new Set(ids.map((id) => String(id)).filter(Boolean)))
+    )
 
     const handleImageUpload = async (key, file) => {
         const mimeType = String(file?.type || '').toLowerCase()
@@ -833,42 +844,97 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
         })
     }
 
-    const getFirstImageFileFromSlots = () => {
+    const compressImageForAi = async (file) => {
+        const mimeType = String(file?.type || '').toLowerCase()
+        if (!mimeType.startsWith('image/') || file.size <= 1.5 * 1024 * 1024) {
+            return file
+        }
+
+        return new Promise((resolve) => {
+            const objectUrl = URL.createObjectURL(file)
+            const img = new window.Image()
+
+            img.onload = () => {
+                const maxWidth = 1280
+                const scale = Math.min(1, maxWidth / Math.max(img.width, img.height, 1))
+                const canvas = document.createElement('canvas')
+                canvas.width = Math.max(1, Math.round(img.width * scale))
+                canvas.height = Math.max(1, Math.round(img.height * scale))
+                const ctx = canvas.getContext('2d')
+                if (!ctx) {
+                    URL.revokeObjectURL(objectUrl)
+                    resolve(file)
+                    return
+                }
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+                canvas.toBlob((blob) => {
+                    URL.revokeObjectURL(objectUrl)
+                    if (!blob) {
+                        resolve(file)
+                        return
+                    }
+                    resolve(new File([blob], file.name || 'product.jpg', { type: 'image/jpeg' }))
+                }, 'image/jpeg', 0.82)
+            }
+
+            img.onerror = () => {
+                URL.revokeObjectURL(objectUrl)
+                resolve(file)
+            }
+
+            img.src = objectUrl
+        })
+    }
+
+    const getFirstImageSourceForAi = async () => {
         const mediaValues = Object.values(images)
         for (const media of mediaValues) {
-            if (!media || typeof media === 'string') continue
-            const file = media.file
-            if (!file) continue
-            const mime = String(file.type || '').toLowerCase()
-            if (mime.startsWith('image/')) return file
+            if (!media) continue
+
+            if (typeof media === 'object' && media.file) {
+                const mimeType = String(media.file.type || '').toLowerCase()
+                if (mimeType.startsWith('image/')) {
+                    const compressed = await compressImageForAi(media.file)
+                    return {
+                        base64Image: await fileToBase64(compressed),
+                        mimeType: String(compressed.type || mimeType || 'image/jpeg').toLowerCase(),
+                    }
+                }
+                continue
+            }
+
+            if (typeof media === 'string' && !isVideoSource(media)) {
+                return { imageUrl: media }
+            }
         }
         return null
     }
 
     const handleAiAutofill = async () => {
         try {
-            const sourceImage = getFirstImageFileFromSlots()
+            const sourceImage = await getFirstImageSourceForAi()
             if (!sourceImage) {
                 toast.error('Upload at least one image in Product Media before AI autofill')
                 return
             }
 
-            const mimeType = String(sourceImage.type || '').toLowerCase()
-            if (!mimeType.startsWith('image/')) {
-                toast.error('AI autofill currently supports image files only')
-                return
-            }
-
             setAiLoading(true)
             const token = await getAuthTokenOrThrow()
-            const base64Image = await fileToBase64(sourceImage)
 
-            const { data } = await axios.post('/api/store/ai', {
-                base64Image,
-                mimeType,
-                additionalContext: aiAdditionalDetails || '',
-                includeArabic: showArabic,
-            }, {
+            const payload = sourceImage.imageUrl
+                ? {
+                    imageUrl: sourceImage.imageUrl,
+                    additionalContext: aiAdditionalDetails || '',
+                    includeArabic: showArabic,
+                }
+                : {
+                    base64Image: sourceImage.base64Image,
+                    mimeType: sourceImage.mimeType,
+                    additionalContext: aiAdditionalDetails || '',
+                    includeArabic: showArabic,
+                }
+
+            const { data } = await axios.post('/api/store/ai', payload, {
                 headers: {
                     Authorization: `Bearer ${token}`,
                 },
@@ -880,13 +946,15 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                     ? data.specTableColumns.slice(0, 2)
                     : prev.specTableColumns
 
-                const nextRows = mergeSpecTableRows(
-                    prev.specTableRows,
-                    data?.specTableRows,
-                    nextColumns.length || 2
-                )
+                const nextRows = Array.isArray(data?.specTableRows) && data.specTableRows.length > 0
+                    ? data.specTableRows
+                    : mergeSpecTableRows(
+                        prev.specTableRows,
+                        data?.specTableRows,
+                        nextColumns.length || 2
+                    )
 
-                const next = {
+                return {
                     ...prev,
                     name: nextName,
                     slug: isSlugManuallyEdited ? prev.slug : slugifyValue(nextName),
@@ -898,7 +966,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                     brandAr: showArabic ? (data?.brandAr || prev.brandAr) : prev.brandAr,
                     shortDescriptionAr: showArabic ? (data?.shortDescriptionAr || prev.shortDescriptionAr) : prev.shortDescriptionAr,
                     descriptionAr: showArabic ? (data?.descriptionAr || prev.descriptionAr) : prev.descriptionAr,
-                    specTableEnabled: nextRows.length > 0 ? true : prev.specTableEnabled,
+                    specTableEnabled: Boolean(data?.specTableEnabled ?? (nextRows.length > 0)),
                     specTableTitle: data?.specTableTitle || prev.specTableTitle,
                     specTableColumns: nextColumns,
                     specTableRows: nextRows,
@@ -911,17 +979,23 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                     soldBy: data?.soldBy || prev.soldBy,
                     paymentInfo: data?.paymentInfo || prev.paymentInfo,
                 }
-
-                return next
             })
+
+            if (Array.isArray(data?.suggestedCategoryIds) && data.suggestedCategoryIds.length > 0) {
+                setSelectedCategories(dedupeCategoryIds(data.suggestedCategoryIds))
+            }
 
             toast.success(showArabic ? 'Product details auto-filled (English + Arabic)' : 'Product details auto-filled from image')
         } catch (error) {
             const status = Number(error?.response?.status)
+            const apiError = error?.response?.data?.error
             const fallback = status === 429
-                ? 'AI rate limit reached. Please wait a moment and try again.'
-                : 'AI autofill failed'
-            toast.error(normalizeErrorMessage(error?.response?.data?.error || error?.response?.data || error?.message, fallback))
+                ? 'OpenAI rate limit reached. Wait 30-60 seconds, then try again.'
+                : status === 400
+                    ? 'Upload a product image first, then run AI autofill.'
+                    : 'AI autofill failed'
+            const message = normalizeErrorMessage(apiError || error?.response?.data || error?.message, fallback)
+            toast.error(message)
         } finally {
             setAiLoading(false)
         }
@@ -978,7 +1052,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
             })
 
             // Add selected categories - this is the ONLY source of category data
-            formData.append('categories', JSON.stringify(selectedCategories))
+            formData.append('categories', JSON.stringify(dedupeCategoryIds(selectedCategories)))
             
             console.log('========== FORM SUBMISSION DEBUG ==========')
             console.log('Is editing product?', !!product)
@@ -1156,7 +1230,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                             ) : (
                                 dbCategories.map(cat => (
                                     <label key={cat._id} className="flex items-center gap-2 cursor-pointer hover:bg-white p-1 rounded transition">
-                                        <input type="checkbox" checked={selectedCategories.includes(cat._id)} onChange={(e) => toggleCategorySelection(cat._id, e.target.checked)} className="w-3 h-3 rounded cursor-pointer accent-indigo-500" />
+                                        <input type="checkbox" checked={selectedCategories.includes(String(cat._id))} onChange={(e) => toggleCategorySelection(cat._id, e.target.checked)} className="w-3 h-3 rounded cursor-pointer accent-indigo-500" />
                                         <span className="text-xs text-gray-700">{cat.name}</span>
                                     </label>
                                 ))
@@ -1164,7 +1238,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                         </div>
                         {selectedCategories.length > 0 && (
                             <div className="mt-2 flex flex-wrap gap-1">
-                                {selectedCategories.map(catId => { const cat = dbCategories.find(c => c._id === catId); return cat ? (<span key={catId} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">{cat.name}<button type="button" onClick={() => setSelectedCategories(prev => prev.filter(id => id !== catId))} className="ml-1 hover:text-indigo-900 font-bold">×</button></span>) : null })}
+                                {dedupeCategoryIds(selectedCategories).map(catId => { const cat = dbCategories.find(c => String(c._id) === String(catId)); return cat ? (<span key={catId} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">{cat.name}<button type="button" onClick={() => setSelectedCategories(prev => prev.filter(id => String(id) !== String(catId)))} className="ml-1 hover:text-indigo-900 font-bold">×</button></span>) : null })}
                             </div>
                         )}
                     </div>
@@ -1465,8 +1539,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                     </div>
                     <div className="p-4 space-y-3">
                         <p className="text-xs text-gray-600">
-                            Upload at least one image in Product Media, then click auto fill. AI will populate name, descriptions,
-                            tags, SEO, badges, and specification rows.
+                            Upload at least one image in Product Media, then click auto fill. AI will populate name, detailed description (with a specs table when useful), categories, tags, SEO, badges, and product information rows.
                         </p>
                         <div>
                             <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">
@@ -1535,11 +1608,10 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                                                         playsInline
                                                     />
                                                 ) : (
-                                                    <Image 
-                                                        src={mediaSrc} 
+                                                    <img
+                                                        src={mediaSrc}
                                                         alt={`Product ${key}`}
-                                                        fill
-                                                        className="object-cover"
+                                                        className="absolute inset-0 h-full w-full object-cover"
                                                     />
                                                 )}
                                                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
@@ -1733,7 +1805,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                                             {v.options?.imageSlot && (
                                                 <div className="w-24 h-24 border rounded overflow-hidden bg-white">
                                                     <Image
-                                                        src={variantImageOptions.find(opt => opt.slot === v.options?.imageSlot)?.preview || 'https://ik.imagekit.io/jrstupuke/placeholder.png'}
+                                                        src={variantImageOptions.find(opt => opt.slot === v.options?.imageSlot)?.preview || 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'}
                                                         alt={`Variant ${idx + 1} preview`}
                                                         width={96}
                                                         height={96}

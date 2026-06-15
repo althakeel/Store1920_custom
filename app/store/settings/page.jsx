@@ -2,43 +2,13 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/useAuth";
 import axios from "axios";
-
-const SIDEBAR_ACCESS_COMPONENTS = [
-    { id: 'dashboard', label: 'Dashboard', icon: '🏠', href: '/store' },
-    { id: 'categories', label: 'Categories', icon: '📂', href: '/store/categories' },
-    { id: 'addProduct', label: 'Add Product', icon: '➕', href: '/store/add-product' },
-    { id: 'manageProduct', label: 'Manage Product', icon: '🧾', href: '/store/manage-product' },
-    { id: 'databaseImport', label: 'Database Import', icon: '🗄️', href: '/store/settings/database-import' },
-    { id: 'customize', label: 'Customize', icon: '🎨', href: '/store/customize' },
-    { id: 'promotionalOffers', label: 'Promotional Offers', icon: '🎁', href: '/store/personalized-offers' },
-    { id: 'media', label: 'Media', icon: '🖼️', href: '/store/media' },
-    { id: 'abandonedCheckout', label: 'Abandoned Checkout', icon: '🛒', href: '/store/abandoned-checkout' },
-    { id: 'coupons', label: 'Coupons', icon: '🏷️', href: '/store/coupons' },
-    { id: 'giveaways', label: 'Giveaways', icon: '🎁', href: '/store/giveaways' },
-    { id: 'spinWheel', label: 'Spin Wheel', icon: '🎡', href: '/store/spin-wheel' },
-    { id: 'shipping', label: 'Shipping', icon: '🚚', href: '/store/shipping' },
-    { id: 'customers', label: 'Customers', icon: '👥', href: '/store/customers' },
-    { id: 'manageUsers', label: 'Manage Users', icon: '👤', href: '/store/settings/users' },
-    { id: 'orders', label: 'Orders', icon: '📦', href: '/store/orders' },
-    { id: 'balance', label: 'Balance', icon: '💰', href: '/store/balance' },
-    { id: 'salesReport', label: 'Sales Report', icon: '📊', href: '/store/sales-report' },
-    { id: 'marketingExpenses', label: 'Marketing Expenses', icon: '📉', href: '/store/marketing-expenses' },
-    { id: 'returnRequests', label: 'Return Requests', icon: '↩️', href: '/store/return-requests' },
-    { id: 'reviews', label: 'Reviews', icon: '⭐', href: '/store/reviews' },
-    { id: 'supportTickets', label: 'Support Tickets', icon: '🎫', href: '/store/tickets' },
-    { id: 'contactMessages', label: 'Contact Messages', icon: '✉️', href: '/store#contact-messages' },
-    { id: 'productNotifications', label: 'Product Notifications', icon: '🔔', href: '/store/product-notifications' },
-    { id: 'promotionalEmails', label: 'Promotional Emails', icon: '📧', href: '/store/promotional-emails' },
-    { id: 'adsTracking', label: 'Ad Tracking', icon: '📈', href: '/store/ads-tracking' },
-]
-
-const getDefaultPermissions = () => {
-    const defaults = {}
-    SIDEBAR_ACCESS_COMPONENTS.forEach((component) => {
-        defaults[component.id] = true
-    })
-    return defaults
-}
+import toast from "react-hot-toast";
+import PermissionPicker from "@/components/store/PermissionPicker";
+import {
+    SIDEBAR_ACCESS_COMPONENTS,
+    countEnabledPermissions,
+    getDefaultPermissions,
+} from "@/lib/storeDashboardPermissions";
 
 export default function SettingsPage() {
     const { user, getToken } = useAuth();
@@ -46,6 +16,9 @@ export default function SettingsPage() {
     const [inviteOpen, setInviteOpen] = useState(false);
     const [inviteEmail, setInviteEmail] = useState("");
     const [inviteStatus, setInviteStatus] = useState("");
+    const [inviteSuccess, setInviteSuccess] = useState(false);
+    const [inviteSending, setInviteSending] = useState(false);
+    const [inviteLink, setInviteLink] = useState("");
     const [invitePermissions, setInvitePermissions] = useState(getDefaultPermissions());
     const [createLoginOpen, setCreateLoginOpen] = useState(false);
     const [creatingLogin, setCreatingLogin] = useState(false);
@@ -83,7 +56,7 @@ export default function SettingsPage() {
     const [teamMembers, setTeamMembers] = useState([]);
     const [memberPermissions, setMemberPermissions] = useState({});
     
-    const dashboardComponents = SIDEBAR_ACCESS_COMPONENTS;
+    const [editingMemberId, setEditingMemberId] = useState(null);
     const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
     const [currencyPreference, setCurrencyPreference] = useState("INR");
     const [transactionalSmtp, setTransactionalSmtp] = useState({ host: '', port: 465, user: '', pass: '', secure: true, fromEmail: '', fromName: '' });
@@ -586,253 +559,298 @@ export default function SettingsPage() {
                     
                     {/* Dashboard Access Tab */}
                     {activeTab === "dashboardAccess" && (
-                        <div className="space-y-4">
-                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                                <p className="text-sm text-blue-900">
-                                    <span className="font-semibold">Manage Permissions:</span> Control which dashboard components each team member can access.
+                        <div className="space-y-5">
+                            <p className="text-sm text-slate-600">
+                                Choose what new team members can see, then invite people or create a login for them.
+                            </p>
+
+                            <div className="rounded-lg border border-slate-200 bg-white p-4">
+                                <h3 className="font-semibold text-slate-900">Default access for new members</h3>
+                                <p className="mt-1 text-xs text-slate-500">
+                                    Used for email invites and new username/password logins.
                                 </p>
+                                <div className="mt-4">
+                                    <PermissionPicker
+                                        value={invitePermissions}
+                                        onChange={setInvitePermissions}
+                                        compact
+                                    />
+                                </div>
                             </div>
 
-                            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 space-y-4">
-                                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                                    <div>
-                                        <h3 className="font-semibold text-slate-900">Create Team Login</h3>
-                                        <p className="text-sm text-slate-600 mt-1">
-                                            Create a username, email, and password for a team member. They can sign in at <span className="font-mono text-xs">/store/login</span> using either the username or email.
-                                        </p>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setCreateLoginOpen((open) => !open);
-                                            setCreateLoginStatus("");
+                            <div className="grid gap-4 lg:grid-cols-2">
+                                <div className="rounded-lg border border-orange-200 bg-orange-50/40 p-4">
+                                    <h3 className="font-semibold text-slate-900">Invite by email</h3>
+                                    <p className="mt-1 text-xs text-slate-500">Send a link so they can join with their Google account or email.</p>
+                                    <form
+                                        onSubmit={async (e) => {
+                                            e.preventDefault();
+                                            setInviteStatus("");
+                                            setInviteSuccess(false);
+                                            setInviteLink("");
+                                            setInviteSending(true);
+                                            try {
+                                                const token = await getToken();
+                                                const { data } = await axios.post("/api/store/users/invite", {
+                                                    email: inviteEmail,
+                                                    permissions: invitePermissions,
+                                                }, {
+                                                    headers: { Authorization: `Bearer ${token}` },
+                                                });
+
+                                                if (data?.emailSent === false) {
+                                                    const warningMessage = data?.warning || "Email could not be delivered.";
+                                                    setInviteSuccess(false);
+                                                    setInviteLink(data?.inviteUrl || "");
+                                                    setInviteStatus(`${data?.message || "Invitation saved"}. ${warningMessage}`);
+                                                    toast.error(warningMessage);
+                                                    return;
+                                                }
+
+                                                const successMessage = data?.message || "Invitation sent successfully!";
+                                                setInviteSuccess(true);
+                                                setInviteLink("");
+                                                setInviteStatus(successMessage);
+                                                toast.success(successMessage);
+                                                setInviteEmail("");
+                                            } catch (err) {
+                                                const errorMessage = err?.response?.data?.error || err.message || "Failed to send invitation";
+                                                setInviteSuccess(false);
+                                                setInviteStatus(errorMessage);
+                                                toast.error(errorMessage);
+                                            } finally {
+                                                setInviteSending(false);
+                                            }
                                         }}
-                                        className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-emerald-700"
+                                        className="mt-4 space-y-3"
                                     >
-                                        {createLoginOpen ? "Cancel" : "Create Username & Password"}
-                                    </button>
+                                        <input
+                                            type="email"
+                                            value={inviteEmail}
+                                            onChange={(e) => setInviteEmail(e.target.value)}
+                                            placeholder="team@yourstore.com"
+                                            className="w-full rounded-lg border border-slate-300 p-2.5 text-sm focus:border-transparent focus:ring-2 focus:ring-orange-500"
+                                            required
+                                        />
+                                        <button
+                                            type="submit"
+                                            disabled={inviteSending}
+                                            className="w-full rounded-lg bg-orange-500 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-70"
+                                        >
+                                            {inviteSending ? "Sending..." : "Send invite"}
+                                        </button>
+                                        {inviteStatus ? (
+                                            <div className={`rounded-lg border p-3 text-sm ${
+                                                inviteSuccess
+                                                    ? 'border-green-200 bg-green-50 text-green-800'
+                                                    : 'border-amber-200 bg-amber-50 text-amber-900'
+                                            }`}>
+                                                {inviteSuccess ? `✓ ${inviteStatus}` : inviteStatus}
+                                                {inviteLink ? (
+                                                    <div className="mt-3 space-y-2">
+                                                        <p className="text-xs">Share this link manually:</p>
+                                                        <div className="flex flex-col gap-2 sm:flex-row">
+                                                            <input
+                                                                type="text"
+                                                                readOnly
+                                                                value={inviteLink}
+                                                                className="w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-xs text-slate-700"
+                                                            />
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    navigator.clipboard.writeText(inviteLink);
+                                                                    toast.success("Invite link copied");
+                                                                }}
+                                                                className="rounded-md bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-700"
+                                                            >
+                                                                Copy link
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ) : null}
+                                            </div>
+                                        ) : null}
+                                    </form>
                                 </div>
 
-                                {createLoginOpen ? (
-                                    <div className="grid gap-4 rounded-lg border border-emerald-200 bg-white p-4 md:grid-cols-2">
-                                        <label className="flex flex-col gap-1.5 md:col-span-2">
-                                            <span className="font-medium text-slate-700 text-sm">Full Name</span>
+                                <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-4">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div>
+                                            <h3 className="font-semibold text-slate-900">Create username login</h3>
+                                            <p className="mt-1 text-xs text-slate-500">
+                                                For staff who sign in at <span className="font-mono">/store/login</span>.
+                                            </p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setCreateLoginOpen((open) => !open);
+                                                setCreateLoginStatus("");
+                                            }}
+                                            className="shrink-0 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-medium text-white hover:bg-emerald-700"
+                                        >
+                                            {createLoginOpen ? "Close" : "Open form"}
+                                        </button>
+                                    </div>
+
+                                    {createLoginOpen ? (
+                                        <div className="mt-4 grid gap-3 rounded-lg border border-emerald-200 bg-white p-3 md:grid-cols-2">
                                             <input
                                                 type="text"
                                                 value={newTeamUser.name}
                                                 onChange={(e) => setNewTeamUser((prev) => ({ ...prev, name: e.target.value }))}
-                                                className="border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                                                placeholder="Team member name"
+                                                className="rounded-lg border border-slate-300 p-2.5 text-sm md:col-span-2"
+                                                placeholder="Full name"
                                             />
-                                        </label>
-
-                                        <label className="flex flex-col gap-1.5">
-                                            <span className="font-medium text-slate-700 text-sm">Username</span>
                                             <input
                                                 type="text"
                                                 value={newTeamUser.username}
                                                 onChange={(e) => setNewTeamUser((prev) => ({ ...prev, username: e.target.value.toLowerCase() }))}
-                                                className="border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                                                placeholder="support"
+                                                className="rounded-lg border border-slate-300 p-2.5 text-sm"
+                                                placeholder="Username"
                                                 autoComplete="off"
                                             />
-                                        </label>
-
-                                        <label className="flex flex-col gap-1.5">
-                                            <span className="font-medium text-slate-700 text-sm">Email</span>
                                             <input
                                                 type="email"
                                                 value={newTeamUser.email}
                                                 onChange={(e) => setNewTeamUser((prev) => ({ ...prev, email: e.target.value }))}
-                                                className="border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                                                placeholder="team@yourstore.com"
+                                                className="rounded-lg border border-slate-300 p-2.5 text-sm"
+                                                placeholder="Email"
                                             />
-                                        </label>
-
-                                        <label className="flex flex-col gap-1.5">
-                                            <span className="font-medium text-slate-700 text-sm">Role</span>
                                             <select
                                                 value={newTeamUser.role}
                                                 onChange={(e) => setNewTeamUser((prev) => ({ ...prev, role: e.target.value }))}
-                                                className="border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                                                className="rounded-lg border border-slate-300 p-2.5 text-sm"
                                             >
                                                 <option value="member">Member</option>
                                                 <option value="admin">Admin</option>
                                             </select>
-                                        </label>
-
-                                        <label className="flex flex-col gap-1.5">
-                                            <span className="font-medium text-slate-700 text-sm">Password</span>
                                             <input
                                                 type="password"
                                                 value={newTeamUser.password}
                                                 onChange={(e) => setNewTeamUser((prev) => ({ ...prev, password: e.target.value }))}
-                                                className="border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                                                placeholder="Minimum 6 characters"
+                                                className="rounded-lg border border-slate-300 p-2.5 text-sm"
+                                                placeholder="Password (min 6 chars)"
                                                 minLength={6}
                                             />
-                                        </label>
-
-                                        <label className="flex flex-col gap-1.5">
-                                            <span className="font-medium text-slate-700 text-sm">Confirm Password</span>
                                             <input
                                                 type="password"
                                                 value={newTeamUser.confirmPassword}
                                                 onChange={(e) => setNewTeamUser((prev) => ({ ...prev, confirmPassword: e.target.value }))}
-                                                className="border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                                                placeholder="Re-enter password"
+                                                className="rounded-lg border border-slate-300 p-2.5 text-sm"
+                                                placeholder="Confirm password"
                                                 minLength={6}
                                             />
-                                        </label>
-
-                                        <div className="md:col-span-2">
-                                            <p className="font-medium text-slate-700 text-sm mb-2">Dashboard access for this user:</p>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 bg-slate-50 p-3 rounded-lg border border-slate-200">
-                                                {dashboardComponents.map((component) => (
-                                                    <label key={`create-${component.id}`} className="flex items-center gap-2 cursor-pointer">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={invitePermissions[component.id] ?? true}
-                                                            onChange={(e) => {
-                                                                setInvitePermissions((prev) => ({
-                                                                    ...prev,
-                                                                    [component.id]: e.target.checked,
-                                                                }));
-                                                            }}
-                                                            className="w-4 h-4"
-                                                        />
-                                                        <span className="text-xs leading-tight">
-                                                            <span className="block">{component.icon} {component.label}</span>
-                                                        </span>
-                                                    </label>
-                                                ))}
+                                            <div className="md:col-span-2 space-y-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={handleCreateTeamLogin}
+                                                    disabled={creatingLogin}
+                                                    className="w-full rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                                >
+                                                    {creatingLogin ? "Creating..." : "Create login"}
+                                                </button>
+                                                {createLoginStatus ? (
+                                                    <div className={`rounded-lg p-2 text-sm ${
+                                                        createLoginStatus.toLowerCase().includes('success') || createLoginStatus.toLowerCase().includes('share login')
+                                                            ? 'bg-green-100 text-green-800'
+                                                            : 'bg-red-100 text-red-800'
+                                                    }`}>
+                                                        {createLoginStatus}
+                                                    </div>
+                                                ) : null}
                                             </div>
                                         </div>
-
-                                        <div className="md:col-span-2 flex flex-col gap-2">
-                                            <button
-                                                type="button"
-                                                onClick={handleCreateTeamLogin}
-                                                disabled={creatingLogin}
-                                                className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-                                            >
-                                                {creatingLogin ? "Creating login..." : "Create Team Login"}
-                                            </button>
-                                            {createLoginStatus ? (
-                                                <div className={`text-sm p-2 rounded ${createLoginStatus.toLowerCase().includes('success') || createLoginStatus.toLowerCase().includes('share login') ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                                    {createLoginStatus}
-                                                </div>
-                                            ) : null}
-                                        </div>
-                                    </div>
-                                ) : null}
+                                    ) : null}
+                                </div>
                             </div>
-                            
-                            {/* Team Members Permissions */}
+
                             <div>
-                                <h3 className="font-semibold text-slate-900 mb-3">Team Member Access</h3>
+                                <h3 className="font-semibold text-slate-900">Team members</h3>
                                 {loadingTeam ? (
-                                    <div className="bg-slate-100 rounded-lg p-6 text-center text-slate-600">
-                                        <p className="text-sm">Loading team members...</p>
+                                    <div className="mt-3 rounded-lg bg-slate-100 p-4 text-center text-sm text-slate-600">
+                                        Loading team members...
                                     </div>
                                 ) : teamMembers.length === 0 ? (
-                                    <div className="bg-slate-100 rounded-lg p-6 text-center text-slate-600">
-                                        <p className="text-sm">No team members yet. Invite users to manage their access.</p>
+                                    <div className="mt-3 rounded-lg bg-slate-100 p-4 text-center text-sm text-slate-600">
+                                        No team members yet. Invite someone above.
                                     </div>
                                 ) : (
-                                    <div className="space-y-4">
-                                        {teamMembers.map(member => (
-                                            <div key={member.id} className="border border-slate-200 rounded-lg p-4">
-                                                <div className="flex items-center justify-between mb-3">
-                                                    <div>
-                                                        <p className="font-medium text-slate-900">{member.name || member.username || member.email}</p>
-                                                        <p className="text-xs text-slate-500">
-                                                            {member.username ? `@${member.username}` : ''}{member.username && member.email ? ' · ' : ''}{member.email}
-                                                        </p>
+                                    <div className="mt-3 space-y-3">
+                                        {teamMembers.map((member) => {
+                                            const memberPerms = memberPermissions[member.id] || {};
+                                            const enabledCount = countEnabledPermissions(memberPerms);
+                                            const isEditing = editingMemberId === member.id;
+
+                                            return (
+                                                <div key={member.id} className="rounded-lg border border-slate-200 p-4">
+                                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                                        <div>
+                                                            <p className="font-medium text-slate-900">{member.name || member.username || member.email}</p>
+                                                            <p className="text-xs text-slate-500">
+                                                                {member.username ? `@${member.username}` : ''}{member.username && member.email ? ' · ' : ''}{member.email}
+                                                            </p>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600">
+                                                                {enabledCount}/{SIDEBAR_ACCESS_COMPONENTS.length} areas
+                                                            </span>
+                                                            <span className={`rounded-full px-2 py-1 text-xs ${member.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                                                                {member.role || 'member'}
+                                                            </span>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setEditingMemberId(isEditing ? null : member.id)}
+                                                                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                                                            >
+                                                                {isEditing ? 'Hide' : 'Edit access'}
+                                                            </button>
+                                                        </div>
                                                     </div>
-                                                    <span className={`text-xs px-2 py-1 rounded-full ${member.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-                                                        {member.role || 'member'}
-                                                    </span>
-                                                </div>
-                                                
-                                                {/* Component Permissions */}
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                                    {dashboardComponents.map(component => (
-                                                        <label key={component.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-50 cursor-pointer">
-                                                            <input 
-                                                                type="checkbox" 
-                                                                checked={memberPermissions[member.id]?.[component.id] ?? true}
-                                                                onChange={(e) => {
-                                                                    setMemberPermissions(prev => ({
+
+                                                    {isEditing ? (
+                                                        <div className="mt-4 space-y-3 border-t border-slate-100 pt-4">
+                                                            <PermissionPicker
+                                                                value={memberPerms}
+                                                                onChange={(next) => {
+                                                                    setMemberPermissions((prev) => ({
                                                                         ...prev,
-                                                                        [member.id]: {
-                                                                            ...prev[member.id],
-                                                                            [component.id]: e.target.checked
-                                                                        }
+                                                                        [member.id]: next,
                                                                     }));
                                                                 }}
-                                                                className="w-4 h-4"
+                                                                compact
                                                             />
-                                                            <span className="text-sm leading-tight">
-                                                                <span className="block">{component.icon} {component.label}</span>
-                                                                <span className="block text-[11px] text-slate-500">{component.href}</span>
-                                                            </span>
-                                                        </label>
-                                                    ))}
+                                                            <button
+                                                                type="button"
+                                                                onClick={async () => {
+                                                                    try {
+                                                                        const token = await getToken();
+                                                                        await axios.post('/api/store/users/update-permissions', {
+                                                                            userId: member.id,
+                                                                            permissions: memberPermissions[member.id],
+                                                                        }, {
+                                                                            headers: { Authorization: `Bearer ${token}` },
+                                                                        });
+                                                                        setMessage('Permissions updated successfully!');
+                                                                        toast.success('Permissions saved');
+                                                                        setEditingMemberId(null);
+                                                                    } catch (err) {
+                                                                        setMessage(err?.response?.data?.error || 'Failed to update permissions');
+                                                                        toast.error(err?.response?.data?.error || 'Failed to update permissions');
+                                                                    }
+                                                                }}
+                                                                className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                                                            >
+                                                                Save access
+                                                            </button>
+                                                        </div>
+                                                    ) : null}
                                                 </div>
-                                                
-                                                <button 
-                                                    type="button"
-                                                    onClick={async () => {
-                                                        try {
-                                                            const token = await getToken();
-                                                            await axios.post('/api/store/users/update-permissions', {
-                                                                userId: member.id,
-                                                                permissions: memberPermissions[member.id]
-                                                            }, {
-                                                                headers: { Authorization: `Bearer ${token}` }
-                                                            });
-                                                            setMessage('Permissions updated successfully!');
-                                                        } catch (err) {
-                                                            setMessage(err?.response?.data?.error || 'Failed to update permissions');
-                                                        }
-                                                    }}
-                                                    className="mt-3 w-full bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded transition"
-                                                >
-                                                    Save Permissions
-                                                </button>
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 )}
-                            </div>
-                            
-                            {/* Default Permissions for New Users */}
-                            <div className="border-t border-slate-200 pt-4 mt-4">
-                                <h3 className="font-semibold text-slate-900 mb-3">Default Permissions for New Team Members</h3>
-                                <p className="text-xs text-slate-600 mb-3">Select which components new invited users will have access to by default:</p>
-                                
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-slate-50 p-4 rounded-lg">
-                                    {dashboardComponents.map(component => (
-                                        <label key={component.id} className="flex items-center gap-2 cursor-pointer">
-                                            <input 
-                                                type="checkbox" 
-                                                checked={invitePermissions[component.id] ?? true}
-                                                onChange={(e) => {
-                                                    setInvitePermissions(prev => ({
-                                                        ...prev,
-                                                        [component.id]: e.target.checked
-                                                    }));
-                                                }}
-                                                className="w-4 h-4"
-                                            />
-                                            <span className="text-sm leading-tight">
-                                                <span className="block">{component.icon} {component.label}</span>
-                                                <span className="block text-[11px] text-slate-500">{component.href}</span>
-                                            </span>
-                                        </label>
-                                    ))}
-                                </div>
                             </div>
                         </div>
                     )}
@@ -867,13 +885,15 @@ export default function SettingsPage() {
                                 {saving ? "Saving..." : "Save Changes"}
                             </button>
                         )}
-                        <button 
-                            type="button" 
-                            className="w-full bg-orange-500 hover:bg-orange-600 text-white px-4 py-2.5 rounded-lg font-medium transition"
-                            onClick={() => setInviteOpen(!inviteOpen)}
-                        >
-                            {inviteOpen ? "Cancel Invite" : "Invite User"}
-                        </button>
+                        {activeTab !== "dashboardAccess" && (
+                            <button 
+                                type="button" 
+                                className="w-full bg-orange-500 hover:bg-orange-600 text-white px-4 py-2.5 rounded-lg font-medium transition"
+                                onClick={() => setInviteOpen(!inviteOpen)}
+                            >
+                                {inviteOpen ? "Cancel Invite" : "Invite User"}
+                            </button>
+                        )}
                         {message && <div className={`text-center text-sm p-2 rounded ${message.includes('success') ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{message}</div>}
                     </div>
                 </form>
@@ -886,19 +906,41 @@ export default function SettingsPage() {
                             onSubmit={async e => {
                                 e.preventDefault();
                                 setInviteStatus("");
+                                setInviteSuccess(false);
+                                setInviteLink("");
+                                setInviteSending(true);
                                 try {
                                     const token = await getToken();
-                                    await axios.post("/api/store/users/invite", { 
+                                    const { data } = await axios.post("/api/store/users/invite", { 
                                         email: inviteEmail,
                                         permissions: invitePermissions
                                     }, {
                                         headers: { Authorization: `Bearer ${token}` }
                                     });
-                                    setInviteStatus("Invitation sent!");
+
+                                    if (data?.emailSent === false) {
+                                        const warningMessage = data?.warning || "Email could not be delivered.";
+                                        setInviteSuccess(false);
+                                        setInviteLink(data?.inviteUrl || "");
+                                        setInviteStatus(`${data?.message || "Invitation saved"}. ${warningMessage}`);
+                                        toast.error(warningMessage);
+                                        return;
+                                    }
+
+                                    const successMessage = data?.message || "Invitation sent successfully!";
+                                    setInviteSuccess(true);
+                                    setInviteLink("");
+                                    setInviteStatus(successMessage);
+                                    toast.success(successMessage);
                                     setInviteEmail("");
-                                    setTimeout(() => setInviteOpen(false), 1500);
+                                    setInvitePermissions(getDefaultPermissions());
                                 } catch (err) {
-                                    setInviteStatus(err?.response?.data?.error || err.message);
+                                    const errorMessage = err?.response?.data?.error || err.message || "Failed to send invitation";
+                                    setInviteSuccess(false);
+                                    setInviteStatus(errorMessage);
+                                    toast.error(errorMessage);
+                                } finally {
+                                    setInviteSending(false);
                                 }
                             }}
                             className="flex flex-col gap-4"
@@ -916,34 +958,53 @@ export default function SettingsPage() {
                             </label>
                             
                             <div>
-                                <p className="font-medium text-slate-700 text-sm mb-2">Dashboard Access Permissions:</p>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 bg-white p-3 rounded-lg border border-slate-200">
-                                    {dashboardComponents.map(component => (
-                                        <label key={component.id} className="flex items-center gap-2 cursor-pointer">
-                                            <input 
-                                                type="checkbox" 
-                                                checked={invitePermissions[component.id] ?? true}
-                                                onChange={(e) => {
-                                                    setInvitePermissions(prev => ({
-                                                        ...prev,
-                                                        [component.id]: e.target.checked
-                                                    }));
-                                                }}
-                                                className="w-4 h-4"
-                                            />
-                                            <span className="text-xs leading-tight">
-                                                <span className="block">{component.icon} {component.label}</span>
-                                                <span className="block text-[10px] text-slate-500">{component.href}</span>
-                                            </span>
-                                        </label>
-                                    ))}
-                                </div>
+                                <p className="font-medium text-slate-700 text-sm mb-2">Dashboard access</p>
+                                <PermissionPicker
+                                    value={invitePermissions}
+                                    onChange={setInvitePermissions}
+                                    compact
+                                />
                             </div>
                             
-                            <button type="submit" className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2.5 rounded-lg font-medium transition">
-                                Send Invitation
+                            <button
+                                type="submit"
+                                disabled={inviteSending}
+                                className="bg-orange-500 hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-70 text-white px-4 py-2.5 rounded-lg font-medium transition"
+                            >
+                                {inviteSending ? "Sending..." : "Send Invitation"}
                             </button>
-                            {inviteStatus && <div className={`text-center text-sm p-2 rounded ${inviteStatus.includes('sent') ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{inviteStatus}</div>}
+                            {inviteStatus && (
+                                <div className={`text-left text-sm p-3 rounded-lg border ${
+                                    inviteSuccess
+                                        ? 'bg-green-50 text-green-800 border-green-200'
+                                        : 'bg-amber-50 text-amber-900 border-amber-200'
+                                }`}>
+                                    {inviteSuccess ? `✓ ${inviteStatus}` : inviteStatus}
+                                    {inviteLink ? (
+                                        <div className="mt-3 space-y-2">
+                                            <p className="text-xs text-amber-800">Share this invite link manually:</p>
+                                            <div className="flex flex-col gap-2 sm:flex-row">
+                                                <input
+                                                    type="text"
+                                                    readOnly
+                                                    value={inviteLink}
+                                                    className="w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-xs text-slate-700"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        navigator.clipboard.writeText(inviteLink);
+                                                        toast.success("Invite link copied");
+                                                    }}
+                                                    className="rounded-md bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-700"
+                                                >
+                                                    Copy link
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : null}
+                                </div>
+                            )}
                         </form>
                     </div>
                 )}

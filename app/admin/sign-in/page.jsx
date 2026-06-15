@@ -1,7 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
-import { auth, googleProvider } from "@/lib/firebase";
-import { signInWithPopup } from "firebase/auth";
+import { useState } from "react";
+import { getAuthErrorMessage, signInWithGooglePopup } from "@/lib/firebaseAuthActions";
 import { useRouter } from "next/navigation";
 
 export default function AdminSignIn() {
@@ -13,10 +12,10 @@ export default function AdminSignIn() {
         setLoading(true);
         setError("");
         try {
-            await signInWithPopup(auth, googleProvider);
+            await signInWithGooglePopup();
             router.push("/admin");
         } catch (err) {
-            setError(err.message || "Sign in failed");
+            setError(getAuthErrorMessage(err, "Sign in failed"));
         }
         setLoading(false);
     };

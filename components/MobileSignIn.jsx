@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { getRecaptchaVerifier, auth } from '@/lib/firebase';
 import OtpInput from '@/components/OtpInput';
 
 export default function MobileSignIn({ onSuccess }) {
@@ -24,7 +23,7 @@ export default function MobileSignIn({ onSuccess }) {
             const RecaptchaVerifier = window.firebase && window.firebase.auth && window.firebase.auth.RecaptchaVerifier;
             if (!RecaptchaVerifier) return setTimeout(check, 100);
             if (!window.recaptchaVerifier) {
-              window.recaptchaVerifier = new RecaptchaVerifier('recaptcha-container', { size: 'invisible' }, auth);
+              window.recaptchaVerifier = new RecaptchaVerifier('recaptcha-container', { size: 'invisible' }, window.firebase.auth());
             }
             resolve(window.recaptchaVerifier);
           };

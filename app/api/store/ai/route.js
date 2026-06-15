@@ -1,7 +1,17 @@
 import { openai, isOpenAIConfigured } from "@/configs/openai";
 import authSeller from "@/middlewares/authSeller";
+import connectDB from '@/lib/mongodb';
+import Category from '@/models/Category';
+import {
+    buildRichDescriptionHtml,
+    buildSpecTableHtml,
+    matchCategoryIds,
+    normalizeSpecRows,
+} from '@/lib/productAiAutofill';
 
 import { NextResponse } from "next/server";
+
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
 const parseJsonReply = (raw) => {
     const text = String(raw || '').trim();
@@ -15,24 +25,94 @@ const normalizeList = (value) => {
     return Array.from(new Set(value.map((item) => String(item || '').trim()).filter(Boolean)));
 };
 
-const normalizeSpecRows = (rows, columnCount) => {
-    if (!Array.isArray(rows)) return [];
-    return rows
-        .map((row) => {
-            if (!Array.isArray(row)) return null;
-            const next = Array.from({ length: columnCount }, (_, idx) => String(row[idx] || '').trim());
-            return next;
-        })
-        .filter((row) => row && row.some((cell) => cell.length > 0));
-};
+async function loadImageFromUrl(imageUrl) {
+    const url = String(imageUrl || '').trim();
+    if (!/^https?:\/\//i.test(url)) {
+        throw new Error('Invalid image URL');
+    }
 
-async function main(base64Image, mimeType, additionalContext = '', includeArabic = false) {
+    const response = await fetch(url, { signal: AbortSignal.timeout(20000) });
+    if (!response.ok) {
+        throw new Error(`Could not load product image (${response.status})`);
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.length > MAX_IMAGE_BYTES) {
+        throw new Error('Image is too large for AI autofill. Use an image under 8MB.');
+    }
+
+    const mimeType = String(response.headers.get('content-type') || 'image/jpeg')
+        .split(';')[0]
+        .trim()
+        .toLowerCase();
+
+    if (!mimeType.startsWith('image/')) {
+        throw new Error('The selected media URL is not an image.');
+    }
+
+    return {
+        base64Image: buffer.toString('base64'),
+        mimeType,
+    };
+}
+
+function normalizeBase64Input(base64Image, mimeType) {
+    const normalizedMime = String(mimeType || 'image/jpeg').split(';')[0].trim().toLowerCase();
+    const normalizedBase64 = String(base64Image || '').trim();
+
+    if (!normalizedBase64 || !normalizedMime.startsWith('image/')) {
+        throw new Error('A valid product image is required for AI autofill.');
+    }
+
+    const estimatedBytes = Math.ceil((normalizedBase64.length * 3) / 4);
+    if (estimatedBytes > MAX_IMAGE_BYTES) {
+        throw new Error('Image is too large for AI autofill. Upload a smaller image and try again.');
+    }
+
+    return {
+        base64Image: normalizedBase64,
+        mimeType: normalizedMime,
+    };
+}
+
+async function callOpenAIWithRetry(fn, maxRetries = 2) {
+    let lastError = null;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+        try {
+            return await fn();
+        } catch (error) {
+            lastError = error;
+            const status = Number(error?.status || error?.response?.status || 0);
+            if (status === 429 && attempt < maxRetries) {
+                await new Promise((resolve) => setTimeout(resolve, (attempt + 1) * 2000));
+                continue;
+            }
+            throw error;
+        }
+    }
+
+    throw lastError || new Error('AI request failed');
+}
+
+async function main(base64Image, mimeType, additionalContext = '', includeArabic = false, storeCategories = []) {
+    const categoryNames = storeCategories
+        .map((category) => String(category?.name || '').trim())
+        .filter(Boolean)
+        .slice(0, 120);
+
+    const categoryHint = categoryNames.length > 0
+        ? `Pick 1-3 best matching categories ONLY from this store list: ${categoryNames.join(', ')}`
+        : 'Suggest 1-3 practical ecommerce category names for this product.';
+
     const arabicSchema = includeArabic
         ? `,
                         "nameAr": string,
                         "brandAr": string,
                         "shortDescriptionAr": string,
-                        "descriptionAr": string`
+                        "descriptionAr": string,
+                        "descriptionOverviewAr": string,
+                        "descriptionDetailsAr": string`
         : '';
 
     const arabicRules = includeArabic
@@ -45,21 +125,37 @@ async function main(base64Image, mimeType, additionalContext = '', includeArabic
         {
             role: "system",
             content: `
-                        You are a product listing assistant for an e-commerce store.
-                        Your job is to analyze an image of a product and generate rich structured listing data.
+                        You are a senior ecommerce copywriter and product data specialist.
+                        Analyze the product image carefully and produce accurate, detailed listing content.
 
-                        If additional seller context is provided, use it heavily.
-                        Never invent impossible claims (for example: exact ingredients, warranty periods, certifications) unless clearly visible or explicitly provided by seller context.
+                        Accuracy rules (critical):
+                        - Only state facts you can clearly see in the image or that the seller explicitly provided.
+                        - Do NOT invent model numbers, certifications, warranty periods, exact dimensions, battery capacity, or compatibility unless visible on packaging/labels or provided in seller context.
+                        - If a spec is uncertain, omit it instead of guessing.
+                        - Prefer practical shopper language over marketing fluff.
+
+                        Content rules:
+                        - Write a detailed English listing with rich product information.
+                        - descriptionOverview: 2-3 sentences introducing the product.
+                        - descriptionDetails: 1-2 paragraphs covering use cases, benefits, build/material cues, and what is visible in the image.
+                        - features: 4-8 concise bullet points of real visible benefits.
+                        - shortDescription: one compelling line for listing cards.
+                        - shortDescription2: one extra highlight line.
+                        - specTableRows: include 5-12 accurate rows when possible (type, material, color, connector/type, compatibility, length/size if visible, power/data support if visible, package contents if visible).
+                        - suggestedCategories: choose only from the provided store category list when available.
 
                         Respond ONLY with raw JSON (no code block, no markdown, no explanation).
-                        The JSON must strictly follow this schema:
+                        Schema:
 
                         {
                         "name": string,
                         "brand": string,
                         "shortDescription": string,
                         "shortDescription2": string,
-                        "description": string,
+                        "descriptionOverview": string,
+                        "descriptionDetails": string,
+                        "features": string[],
+                        "suggestedCategories": string[],
                         "tags": string[],
                         "seoTitle": string,
                         "seoDescription": string,
@@ -73,11 +169,10 @@ async function main(base64Image, mimeType, additionalContext = '', includeArabic
                         "specTableRows": string[][]${arabicSchema}
                         }
 
-                        Rules:
+                        Additional rules:
                         - Keep name concise and ecommerce-ready.
-                        - Prefer 2 columns for spec table (Property, Value).
-                        - specTableRows should only include rows with meaningful data.
-                        - Keep tags and seoKeywords short and practical (max 10 each).
+                        - Use exactly 2 spec columns: Property and Value.
+                        - tags and seoKeywords: max 10 each, practical search terms only.
                         - If unsure about any field, return empty string or [] instead of guessing.
                             ${arabicRules}
                    `
@@ -87,18 +182,18 @@ async function main(base64Image, mimeType, additionalContext = '', includeArabic
             content: [
                 {
                     type: "text",
-                    text: `Analyze this image and generate complete product listing fields. Seller context: ${additionalContext || 'none'}`,
+                    text: `Analyze this product image and generate complete listing fields. ${categoryHint}. Seller context: ${additionalContext || 'none'}`,
                 },
                 { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Image}` } },
             ],
         },
     ];
 
-    const response = await openai.chat.completions.create({
+    const response = await callOpenAIWithRetry(() => openai.chat.completions.create({
         model: process.env.OPENAI_PRODUCT_AUTOFILL_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini',
         messages,
         temperature: 0.2,
-    });
+    }));
 
     const raw = response.choices[0].message.content;
     const parsed = parseJsonReply(raw);
@@ -107,17 +202,45 @@ async function main(base64Image, mimeType, additionalContext = '', includeArabic
     const normalizedColumns = specTableColumns.length >= 2
         ? specTableColumns.slice(0, 2)
         : ['Property', 'Value'];
+    const specTableRows = normalizeSpecRows(parsed.specTableRows, normalizedColumns.length);
+    const specTableTitle = String(parsed.specTableTitle || 'Product information').trim() || 'Product information';
+    const specTableHtml = buildSpecTableHtml(normalizedColumns, specTableRows, specTableTitle);
+    const descriptionHtml = buildRichDescriptionHtml({
+        overview: parsed.descriptionOverview || parsed.shortDescription,
+        details: parsed.descriptionDetails,
+        features: normalizeList(parsed.features),
+        specTableHtml,
+    });
+    const descriptionArHtml = includeArabic
+        ? buildRichDescriptionHtml({
+            overview: parsed.descriptionOverviewAr || parsed.shortDescriptionAr,
+            details: parsed.descriptionDetailsAr || parsed.descriptionAr,
+            features: [],
+            specTableHtml: '',
+        })
+        : '';
+
+    const suggestedCategoryIds = matchCategoryIds(
+        normalizeList(parsed.suggestedCategories),
+        storeCategories,
+        3
+    );
 
     return {
         name: String(parsed.name || '').trim(),
         brand: String(parsed.brand || '').trim(),
         shortDescription: String(parsed.shortDescription || '').trim(),
         shortDescription2: String(parsed.shortDescription2 || '').trim(),
-        description: String(parsed.description || '').trim(),
+        description: descriptionHtml,
+        descriptionOverview: String(parsed.descriptionOverview || '').trim(),
+        descriptionDetails: String(parsed.descriptionDetails || '').trim(),
+        features: normalizeList(parsed.features).slice(0, 8),
+        suggestedCategories: normalizeList(parsed.suggestedCategories).slice(0, 3),
+        suggestedCategoryIds,
         nameAr: String(parsed.nameAr || '').trim(),
         brandAr: String(parsed.brandAr || '').trim(),
         shortDescriptionAr: String(parsed.shortDescriptionAr || '').trim(),
-        descriptionAr: String(parsed.descriptionAr || '').trim(),
+        descriptionAr: descriptionArHtml || String(parsed.descriptionAr || '').trim(),
         tags: normalizeList(parsed.tags).slice(0, 10),
         seoTitle: String(parsed.seoTitle || '').trim(),
         seoDescription: String(parsed.seoDescription || '').trim(),
@@ -126,9 +249,10 @@ async function main(base64Image, mimeType, additionalContext = '', includeArabic
         deliveredBy: String(parsed.deliveredBy || '').trim(),
         soldBy: String(parsed.soldBy || '').trim(),
         paymentInfo: String(parsed.paymentInfo || '').trim(),
-        specTableTitle: String(parsed.specTableTitle || 'Product information').trim() || 'Product information',
+        specTableTitle,
         specTableColumns: normalizedColumns,
-        specTableRows: normalizeSpecRows(parsed.specTableRows, normalizedColumns.length),
+        specTableRows,
+        specTableEnabled: specTableRows.length > 0,
     };
 
 }
@@ -160,29 +284,61 @@ export async function POST(request) {
             return NextResponse.json({ error: 'not authorized' }, { status: 401 })
         }
 
-        const { base64Image, mimeType, additionalContext, includeArabic } = await request.json();
-        if (!base64Image || !mimeType) {
-            return NextResponse.json({ error: 'base64Image and mimeType are required' }, { status: 400 });
+        await connectDB();
+        const storeCategories = await Category.find({}).select('_id name').sort({ name: 1 }).lean();
+
+        const body = await request.json();
+        const {
+            base64Image,
+            mimeType,
+            imageUrl,
+            additionalContext,
+            includeArabic,
+        } = body || {};
+
+        let resolvedImage;
+        if (imageUrl) {
+            resolvedImage = await loadImageFromUrl(imageUrl);
+        } else if (base64Image && mimeType) {
+            resolvedImage = normalizeBase64Input(base64Image, mimeType);
+        } else {
+            return NextResponse.json(
+                { error: 'Upload a product image first, then run AI autofill.' },
+                { status: 400 }
+            );
         }
 
-        const result = await main(base64Image, mimeType, additionalContext || '', Boolean(includeArabic));
+        const result = await main(
+            resolvedImage.base64Image,
+            resolvedImage.mimeType,
+            additionalContext || '',
+            Boolean(includeArabic),
+            storeCategories
+        );
         return NextResponse.json({ ...result });
     } catch (error) {
-        console.error(error);
+        console.error('[API /store/ai]', error);
         const status = Number(error?.status || error?.response?.status || 500);
-        const safeStatus = Number.isFinite(status) && status >= 400 ? status : 500;
-        const fallback429Message = 'AI rate limit reached. Please wait a moment and try again.';
+        const safeStatus = Number.isFinite(status) && status >= 400 && status < 600 ? status : 500;
+        const fallback429Message = 'OpenAI rate limit reached. Wait 30-60 seconds, then try again.';
         const message = String(
             error?.error?.message ||
+            error?.response?.data?.error?.message ||
             error?.response?.data?.error ||
             error?.response?.data?.message ||
             error?.message ||
-            (safeStatus === 429 ? fallback429Message : 'AI request failed')
+            (safeStatus === 429 ? fallback429Message : 'AI autofill failed')
         ).trim();
 
         return NextResponse.json(
-            { error: message || (safeStatus === 429 ? fallback429Message : 'AI request failed') },
-            { status: safeStatus }
+            {
+                error: message || (safeStatus === 429 ? fallback429Message : 'AI autofill failed'),
+                retryable: safeStatus === 429,
+            },
+            {
+                status: safeStatus,
+                headers: safeStatus === 429 ? { 'Retry-After': '30' } : undefined,
+            }
         );
     }
 }

@@ -10,6 +10,20 @@ import { useAuth } from "@/lib/useAuth";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 
+const SELLER_LOGO_MAX_WIDTH = 180;
+const SELLER_LOGO_MAX_HEIGHT = 48;
+
+function clampSellerLogoDimensions(width, height) {
+    const parsedWidth = Number(width);
+    const parsedHeight = Number(height);
+    const safeWidth = Number.isFinite(parsedWidth) && parsedWidth > 0 ? parsedWidth : 120;
+    const safeHeight = Number.isFinite(parsedHeight) && parsedHeight > 0 ? parsedHeight : 40;
+
+    return {
+        width: Math.min(safeWidth, SELLER_LOGO_MAX_WIDTH),
+        height: Math.min(safeHeight, SELLER_LOGO_MAX_HEIGHT),
+    };
+}
 
 const StoreNavbar = ({ storeInfo }) => {
     const { user, getToken } = useAuth();
@@ -30,10 +44,14 @@ const StoreNavbar = ({ storeInfo }) => {
                 });
                 if (!res.ok) return;
                 const data = await res.json();
+                const dims = clampSellerLogoDimensions(
+                    data.logoWidth || 120,
+                    data.logoHeight || 40
+                );
                 setNavbarLogo((prev) => ({
                     url: data.logoUrl || prev.url,
-                    width: data.logoWidth || prev.width || 120,
-                    height: data.logoHeight || prev.height || 40,
+                    width: dims.width,
+                    height: dims.height,
                     backgroundColor: data.backgroundColor || prev.backgroundColor || '#ffffff',
                 }));
             } catch (e) {
@@ -48,13 +66,19 @@ const StoreNavbar = ({ storeInfo }) => {
 
         const handleNavbarAppearanceUpdate = (event) => {
             const detail = event?.detail || {};
-            setNavbarLogo((prev) => ({
-                ...prev,
-                url: typeof detail.logoUrl === 'string' ? detail.logoUrl : prev.url,
-                width: Number.isFinite(Number(detail.logoWidth)) ? Number(detail.logoWidth) : prev.width,
-                height: Number.isFinite(Number(detail.logoHeight)) ? Number(detail.logoHeight) : prev.height,
-                backgroundColor: typeof detail.backgroundColor === 'string' ? detail.backgroundColor : prev.backgroundColor,
-            }));
+            setNavbarLogo((prev) => {
+                const dims = clampSellerLogoDimensions(
+                    Number.isFinite(Number(detail.logoWidth)) ? Number(detail.logoWidth) : prev.width,
+                    Number.isFinite(Number(detail.logoHeight)) ? Number(detail.logoHeight) : prev.height
+                );
+                return {
+                    ...prev,
+                    url: typeof detail.logoUrl === 'string' ? detail.logoUrl : prev.url,
+                    width: dims.width,
+                    height: dims.height,
+                    backgroundColor: typeof detail.backgroundColor === 'string' ? detail.backgroundColor : prev.backgroundColor,
+                };
+            });
         };
 
         window.addEventListener('navbarAppearanceUpdated', handleNavbarAppearanceUpdate);
@@ -74,12 +98,15 @@ const StoreNavbar = ({ storeInfo }) => {
 
     return (
         <div className="flex items-center justify-between px-12 py-3 border-b border-slate-200 bg-white text-slate-900 shadow-sm transition-all">
-            <Link href="/store" className="relative text-4xl font-semibold text-slate-900">
+            <Link href="/store" className="relative flex items-center">
                 {navbarLogo.url ? (
                   <img
                     src={navbarLogo.url}
                     alt={storeInfo?.name || 'Store Logo'}
-                    style={{ width: navbarLogo.width, height: navbarLogo.height, objectFit: 'contain' }}
+                    width={navbarLogo.width}
+                    height={navbarLogo.height}
+                    className="h-auto w-auto max-h-12 max-w-[180px] object-contain"
+                    style={{ width: navbarLogo.width, height: navbarLogo.height }}
                   />
                 ) : (
                   <Image
@@ -87,7 +114,7 @@ const StoreNavbar = ({ storeInfo }) => {
                     alt="Store1920 Logo"
                     width={180}
                     height={48}
-                    className="object-contain"
+                    className="max-h-12 max-w-[180px] object-contain"
                     priority
                   />
                 )}

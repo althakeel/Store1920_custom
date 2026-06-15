@@ -1,123 +1,154 @@
 import { NextResponse } from "next/server";
 import connectDB from '@/lib/mongodb';
 import Category from '@/models/Category';
+import authSeller from '@/middlewares/authSeller';
+import { getAuth } from '@/lib/firebase-admin';
+import { deleteCacheKey } from '@/lib/cache';
 import { cleanDisplayText, sanitizeCategoryFields } from '@/lib/displayText';
+
+const CATEGORY_TREE_CACHE_KEY = 'public:categories:tree:v2';
+
+async function verifyStoreSeller(request) {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
+  }
+
+  const idToken = authHeader.split('Bearer ')[1];
+  let decodedToken;
+  try {
+    decodedToken = await getAuth().verifyIdToken(idToken);
+  } catch {
+    return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
+  }
+
+  const storeId = await authSeller(decodedToken.uid);
+  if (!storeId) {
+    return { error: NextResponse.json({ error: 'Not authorized' }, { status: 401 }) };
+  }
+
+  return { userId: decodedToken.uid };
+}
+
+async function resolveCategoryRecord(idOrSlug) {
+  const key = String(idOrSlug || '').trim();
+  if (!key) return null;
+
+  let category = await Category.findById(key).lean();
+  if (category) return category;
+
+  category = await Category.findOne({ slug: key.toLowerCase() }).lean();
+  if (category) return category;
+
+  return Category.findOne({ slug: key }).lean();
+}
+
+function buildSlug(name = '') {
+  return String(name || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+}
 
 // PUT - Update a category
 export async function PUT(req, { params }) {
-    try {
-        await connectDB();
-        
-        // Firebase Auth: get Bearer token from header
-        const authHeader = req.headers.get("authorization");
-        if (!authHeader || !authHeader.startsWith("Bearer ")) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        }
-        const idToken = authHeader.split(" ")[1];
-        const { getAuth } = await import('firebase-admin/auth');
-        const { initializeApp, applicationDefault, getApps } = await import('firebase-admin/app');
-        if (getApps().length === 0) {
-            initializeApp({ credential: applicationDefault() });
-        }
-        let decodedToken;
-        try {
-            decodedToken = await getAuth().verifyIdToken(idToken);
-        } catch (e) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        }
-        const userId = decodedToken.uid;
+  try {
+    await connectDB();
 
-        const { id } = await params;
-        const { name, description, image, parentId } = await req.json();
-        const cleanedName = cleanDisplayText(name);
+    const auth = await verifyStoreSeller(req);
+    if (auth.error) return auth.error;
 
-        if (!cleanedName) {
-            return NextResponse.json({ error: "Category name is required" }, { status: 400 });
-        }
+    const { id } = await params;
+    const body = await req.json();
+    const existingCategory = await resolveCategoryRecord(id);
 
-        // Generate slug from name
-        const slug = cleanedName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-
-        // Check if slug already exists (excluding current category)
-        const existingCategory = await Category.findOne({
-            slug,
-            _id: { $ne: id }
-        }).lean();
-
-        if (existingCategory) {
-            return NextResponse.json({ error: "Category with this name already exists" }, { status: 400 });
-        }
-
-        // Update category
-        const category = await Category.findByIdAndUpdate(
-            id,
-            {
-                name: cleanedName,
-                slug,
-                description: cleanDisplayText(description || '') || null,
-                image: image || null,
-                parentId: parentId || null
-            },
-            { new: true }
-        ).lean();
-
-        // Populate parent and children
-        const parent = category.parentId ? await Category.findById(category.parentId).lean() : null;
-        const children = await Category.find({ parentId: category._id }).lean();
-
-        return NextResponse.json({ category: sanitizeCategoryFields({ ...category, parent, children }) }, { status: 200 });
-    } catch (error) {
-        console.error("Error updating category:", error);
-        return NextResponse.json({ error: "Failed to update category" }, { status: 500 });
+    if (!existingCategory) {
+      return NextResponse.json({ error: 'Category not found' }, { status: 404 });
     }
+
+    const cleanedName = cleanDisplayText(body?.name ?? existingCategory.name);
+    if (!cleanedName) {
+      return NextResponse.json({ error: 'Category name is required' }, { status: 400 });
+    }
+
+    const slug = buildSlug(cleanedName);
+    if (slug !== existingCategory.slug) {
+      const duplicateCategory = await Category.findOne({
+        slug,
+        _id: { $ne: existingCategory._id },
+      }).lean();
+
+      if (duplicateCategory) {
+        return NextResponse.json({ error: 'Category with this name already exists' }, { status: 400 });
+      }
+    }
+
+    const nextParentId = body?.parentId !== undefined
+      ? (body.parentId ? String(body.parentId) : null)
+      : (existingCategory.parentId || null);
+
+    const category = await Category.findByIdAndUpdate(
+      existingCategory._id,
+      {
+        name: cleanedName,
+        slug,
+        description: body?.description !== undefined
+          ? (cleanDisplayText(body.description || '') || null)
+          : (existingCategory.description || null),
+        image: body?.image !== undefined ? (body.image || null) : (existingCategory.image || null),
+        parentId: nextParentId,
+      },
+      { new: true }
+    ).lean();
+
+    if (!category) {
+      return NextResponse.json({ error: 'Failed to update category' }, { status: 500 });
+    }
+
+    deleteCacheKey(CATEGORY_TREE_CACHE_KEY);
+
+    const parent = category.parentId ? await Category.findById(category.parentId).lean() : null;
+    const children = await Category.find({ parentId: category._id }).lean();
+
+    return NextResponse.json({
+      category: sanitizeCategoryFields({ ...category, parent, children }),
+    }, { status: 200 });
+  } catch (error) {
+    console.error('Error updating category:', error);
+    return NextResponse.json({
+      error: error?.message || 'Failed to update category',
+    }, { status: 500 });
+  }
 }
 
 // DELETE - Delete a category
 export async function DELETE(req, { params }) {
-    try {
-        await connectDB();
-        
-        // Firebase Auth: get Bearer token from header
-        const authHeader = req.headers.get("authorization");
-        if (!authHeader || !authHeader.startsWith("Bearer ")) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        }
-        const idToken = authHeader.split(" ")[1];
-        const { getAuth } = await import('firebase-admin/auth');
-        const { initializeApp, applicationDefault, getApps } = await import('firebase-admin/app');
-        if (getApps().length === 0) {
-            initializeApp({ credential: applicationDefault() });
-        }
-        let decodedToken;
-        try {
-            decodedToken = await getAuth().verifyIdToken(idToken);
-        } catch (e) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        }
-        const userId = decodedToken.uid;
+  try {
+    await connectDB();
 
-        const { id } = await params;
+    const auth = await verifyStoreSeller(req);
+    if (auth.error) return auth.error;
 
-        // Check if category has children
-        const category = await Category.findById(id).lean();
+    const { id } = await params;
+    const category = await resolveCategoryRecord(id);
 
-        if (!category) {
-            return NextResponse.json({ error: "Category not found" }, { status: 404 });
-        }
-
-        const children = await Category.find({ parentId: id }).lean();
-        if (children.length > 0) {
-            return NextResponse.json({ 
-                error: "Cannot delete category with subcategories. Please delete subcategories first." 
-            }, { status: 400 });
-        }
-
-        // Delete category
-        await Category.findByIdAndDelete(id);
-
-        return NextResponse.json({ message: "Category deleted successfully" }, { status: 200 });
-    } catch (error) {
-        console.error("Error deleting category:", error);
-        return NextResponse.json({ error: "Failed to delete category" }, { status: 500 });
+    if (!category) {
+      return NextResponse.json({ error: 'Category not found' }, { status: 404 });
     }
+
+    const children = await Category.find({ parentId: category._id }).lean();
+    if (children.length > 0) {
+      return NextResponse.json({
+        error: 'Cannot delete category with subcategories. Please delete subcategories first.',
+      }, { status: 400 });
+    }
+
+    await Category.findByIdAndDelete(category._id);
+    deleteCacheKey(CATEGORY_TREE_CACHE_KEY);
+
+    return NextResponse.json({ message: 'Category deleted successfully' }, { status: 200 });
+  } catch (error) {
+    console.error('Error deleting category:', error);
+    return NextResponse.json({ error: 'Failed to delete category' }, { status: 500 });
+  }
 }

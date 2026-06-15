@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { HOME_SECTION_CLASS } from '@/lib/storefrontCarousel';
 import { cleanDisplayText } from '@/lib/displayText';
+import { normalizeMediaUrl } from '@/lib/mediaUrls';
 
 export default function HomeCategories() {
   const scrollRef = useRef(null);
@@ -137,24 +138,7 @@ export default function HomeCategories() {
     return '/shop';
   };
 
-  // Fix ImageKit URLs by adding format transformation and default extension
-  const fixImageKitUrl = (url) => {
-    if (!url) return null;
-    
-    if (url.includes('ik.imagekit.io')) {
-      if (!url.match(/\.(jpg|jpeg|png|webp|gif)$/i)) {
-        if (url.includes('?')) {
-          return url.replace('?', '.jpg?');
-        } else {
-          return `${url}.jpg?tr=f-auto,q-80`;
-        }
-      }
-      if (!url.includes('?')) {
-        return `${url}?tr=f-auto,q-80`;
-      }
-    }
-    return url;
-  };
+  const resolveCategoryImage = (url) => normalizeMediaUrl(url);
 
   const getCategoryGradient = (name) => {
     const colors = [
@@ -229,7 +213,7 @@ export default function HomeCategories() {
               {cat.image ? (
                 <>
                   <Image 
-                    src={fixImageKitUrl(cat.image)} 
+                    src={resolveCategoryImage(cat.image)} 
                     alt={cat.name}
                     fill
                     className="object-cover"

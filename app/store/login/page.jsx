@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { auth } from '@/lib/firebase'
-import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from 'firebase/auth'
+import { getAuthErrorMessage, signInWithEmail, signInWithGooglePopup } from '@/lib/firebaseAuthActions'
 import toast from 'react-hot-toast'
 import Image from 'next/image'
 import Logo from '@/assets/logo/logo.png'
@@ -63,7 +63,7 @@ export default function StoreLogin() {
         loginEmail = resolveData.email
       }
 
-      const userCredential = await signInWithEmailAndPassword(auth, loginEmail, password)
+      const userCredential = await signInWithEmail(loginEmail, password)
       const user = userCredential.user
       
       // Check if user has seller access
@@ -87,23 +87,7 @@ export default function StoreLogin() {
       }
     } catch (error) {
       console.error('Login error:', error)
-      let errorMessage = 'Invalid credentials';
-      
-      if (error.code === 'auth/user-not-found') {
-        errorMessage = 'No account found with this username or email.';
-      } else if (error.code === 'auth/wrong-password') {
-        errorMessage = 'Incorrect password. Please try again.';
-      } else if (error.code === 'auth/invalid-email') {
-        errorMessage = 'Please enter a valid username or email address.';
-      } else if (error.code === 'auth/user-disabled') {
-        errorMessage = 'This account has been disabled.';
-      } else if (error.code === 'auth/network-request-failed') {
-        errorMessage = 'Network error. Please check your connection.';
-      } else if (error.message) {
-        errorMessage = error.message.replace('Firebase: Error', '').replace(/\(.*?\)/g, '').trim() || 'Invalid credentials';
-      }
-      
-      toast.error(errorMessage);
+      toast.error(getAuthErrorMessage(error, 'Invalid credentials'));
     } finally {
       setLoading(false)
     }
@@ -112,8 +96,7 @@ export default function StoreLogin() {
   const handleGoogleLogin = async () => {
     setLoading(true)
     try {
-      const provider = new GoogleAuthProvider()
-      const userCredential = await signInWithPopup(auth, provider)
+      const userCredential = await signInWithGooglePopup()
       const user = userCredential.user
       
       // Check if user has seller access
@@ -137,21 +120,7 @@ export default function StoreLogin() {
       }
     } catch (error) {
       console.error('Google login error:', error)
-      let errorMessage = 'Login failed';
-      
-      if (error.code === 'auth/popup-closed-by-user') {
-        errorMessage = 'Sign-in cancelled. Please try again.';
-      } else if (error.code === 'auth/popup-blocked') {
-        errorMessage = 'Pop-up blocked. Please allow pop-ups and try again.';
-      } else if (error.code === 'auth/cancelled-popup-request') {
-        errorMessage = 'Sign-in cancelled. Please try again.';
-      } else if (error.code === 'auth/network-request-failed') {
-        errorMessage = 'Network error. Please check your connection.';
-      } else if (error.message) {
-        errorMessage = error.message.replace('Firebase: Error', '').replace(/\(.*?\)/g, '').trim() || 'Login failed';
-      }
-      
-      toast.error(errorMessage);
+      toast.error(getAuthErrorMessage(error, 'Login failed'));
     } finally {
       setLoading(false)
     }

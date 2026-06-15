@@ -26,7 +26,7 @@ const authSeller = async (userId) => {
         let teamMembership = await StoreUser.findOne({
             userId: userId,
             status: { $in: ['approved', 'pending'] }
-        }).lean();
+        }).sort({ updatedAt: -1 }).lean();
 
         // Fallback: match by email if userId wasn't linked yet
         if (!teamMembership) {
@@ -36,7 +36,7 @@ const authSeller = async (userId) => {
                 teamMembership = await StoreUser.findOne({
                     email: userEmail,
                     status: { $in: ['invited', 'pending', 'approved'] }
-                }).lean();
+                }).sort({ updatedAt: -1 }).lean();
 
                 if (teamMembership && !teamMembership.userId) {
                     await StoreUser.findByIdAndUpdate(teamMembership._id, {

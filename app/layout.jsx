@@ -39,10 +39,16 @@ export default async function RootLayout({ children }) {
   const browserPrefersArabic = /(^|,|;)\s*ar(?:-|;|,|$)/i.test(acceptLanguage);
   const storefrontLanguage = cookieLanguage === 'ar' ? 'ar' : (cookieLanguage === 'en' ? 'en' : (browserPrefersArabic ? 'ar' : 'en'));
   const isArabic = storefrontLanguage === 'ar';
-  const ik = process.env.IMAGEKIT_URL_ENDPOINT;
-  let ikOrigin = null;
+  const s3PublicUrl = process.env.AWS_S3_PUBLIC_URL || process.env.NEXT_PUBLIC_AWS_S3_PUBLIC_URL;
+  let s3Origin = null;
   try {
-    if (ik) ikOrigin = new URL(ik).origin;
+    if (s3PublicUrl) s3Origin = new URL(s3PublicUrl).origin;
+  } catch {}
+
+  const imageKitEndpoint = process.env.IMAGEKIT_URL_ENDPOINT || process.env.NEXT_PUBLIC_IMAGEKIT_URL_ENDPOINT;
+  let imageKitOrigin = null;
+  try {
+    if (imageKitEndpoint) imageKitOrigin = new URL(imageKitEndpoint).origin;
   } catch {}
 
   return (
@@ -55,11 +61,17 @@ export default async function RootLayout({ children }) {
             __html: `(function(){try{var match=document.cookie.match(/(?:^|; )${STOREFRONT_LANGUAGE_COOKIE}=([^;]+)/);var saved=localStorage.getItem('${STOREFRONT_LANGUAGE_KEY}');var language='en';if(match&&match[1]==='ar'){language='ar';}else if(match&&match[1]==='en'){language='en';}else if(saved==='ar'||saved==='en'){language=saved;}else{var langs=(navigator.languages&&navigator.languages.length?navigator.languages:[navigator.language||'']);var prefersArabic=langs.some(function(l){return /^ar(?:-|$)/i.test(String(l||''));});language=prefersArabic?'ar':'en';}var root=document.documentElement;var isArabic=language==='ar';root.setAttribute('lang',isArabic?'ar':'en');root.setAttribute('dir',isArabic?'rtl':'ltr');localStorage.setItem('${STOREFRONT_LANGUAGE_KEY}',language);document.cookie='${STOREFRONT_LANGUAGE_COOKIE}='+language+'; path=/; max-age=31536000; SameSite=Lax';}catch(e){}})();`,
           }}
         />
-        {/* ImageKit Optimization */}
-        {ikOrigin && (
+        {/* S3 media preconnect */}
+        {s3Origin && (
           <>
-            <link rel="dns-prefetch" href={ikOrigin} />
-            <link rel="preconnect" href={ikOrigin} crossOrigin="anonymous" />
+            <link rel="dns-prefetch" href={s3Origin} />
+            <link rel="preconnect" href={s3Origin} crossOrigin="anonymous" />
+          </>
+        )}
+        {imageKitOrigin && (
+          <>
+            <link rel="dns-prefetch" href={imageKitOrigin} />
+            <link rel="preconnect" href={imageKitOrigin} crossOrigin="anonymous" />
           </>
         )}
         {/* Google Tag Manager - HEAD */}

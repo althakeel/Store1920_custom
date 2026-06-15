@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import imagekit from "@/configs/imageKit";
+import { uploadToS3 } from '@/lib/storage';
 import connectDB from '@/lib/mongodb';
 import User from '@/models/User';
 import Store from '@/models/Store';
@@ -175,22 +175,16 @@ export async function POST(request) {
     const usernameTaken = await Store.findOne({ username }).lean();
     if (usernameTaken) return json({ error: "Username already taken" }, 400);
 
-    // Upload image to ImageKit
+    // Upload store logo to S3
     const buffer = Buffer.from(await image.arrayBuffer());
-    const response = await imagekit.upload({
-      file: buffer,
+    const response = await uploadToS3({
+      buffer,
       fileName: image.name || `${username}-logo`,
-      folder: "logos",
+      folder: "brands",
+      contentType: image.type || undefined,
     });
 
-    const optimizedImage = imagekit.url({
-      path: response.filePath,
-      transformation: [
-        { quality: "auto" },
-        { format: "webp" },
-        { width: "512" },
-      ],
-    });
+    const optimizedImage = response.url;
 
     // Create the store
     const newStore = await Store.create({

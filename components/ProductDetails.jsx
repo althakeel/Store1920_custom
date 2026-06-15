@@ -12,6 +12,7 @@ import { addToCart, removeFromCart, deleteItemFromCart, setCartItemQuantity, upl
 import MobileProductActions from "./MobileProductActions";
 import ProductCard from "./ProductCard";
 import ProductDescription from "./ProductDescription";
+import ProductReviewsSection from "./ProductReviewsSection";
 import { useAuth } from '@/lib/useAuth';
 import { trackMetaEvent } from "@/lib/metaPixelClient";
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
@@ -1175,12 +1176,12 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                     }`}
                   >
                     <Image
-                      src={getImageSrc(image) || 'https://ik.imagekit.io/jrstupuke/placeholder.png'}
+                      src={getImageSrc(image) || 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'}
                       alt={`${safeProductName} ${index + 1}`}
                       width={60}
                       height={60}
                       className="object-cover w-full h-full"
-                      onError={(e) => { e.currentTarget.src = 'https://ik.imagekit.io/jrstupuke/placeholder.png'; }}
+                      onError={(e) => { e.currentTarget.src = 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'; }}
                     />
                   </button>
                 ))}
@@ -1288,13 +1289,13 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   onMouseMove={handleImageMouseMove}
                 >
                   <Image
-                    src={mainImage || 'https://ik.imagekit.io/jrstupuke/placeholder.png'}
+                    src={mainImage || 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'}
                     alt={safeProductName}
                     fill
                     sizes="(max-width: 1024px) 100vw, 520px"
                     className="object-contain bg-white"
                     priority
-                    onError={(e) => { e.currentTarget.src = 'https://ik.imagekit.io/jrstupuke/placeholder.png'; }}
+                    onError={(e) => { e.currentTarget.src = 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'; }}
                   />
                 </div>
 
@@ -1360,12 +1361,12 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 </div>
 
                 <Image
-                  src={mainImage || 'https://ik.imagekit.io/jrstupuke/placeholder.png'}
+                  src={mainImage || 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'}
                   alt={safeProductName}
                   fill
                   className="object-cover"
                   priority
-                  onError={(e) => { e.currentTarget.src = 'https://ik.imagekit.io/jrstupuke/placeholder.png'; }}
+                  onError={(e) => { e.currentTarget.src = 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'; }}
                 />
               </div>
             </div>
@@ -1383,12 +1384,12 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   }`}
                 >
                   <Image
-                    src={getImageSrc(image) || 'https://ik.imagekit.io/jrstupuke/placeholder.png'}
+                    src={getImageSrc(image) || 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'}
                     alt={`${safeProductName} ${index + 1}`}
                     width={56}
                     height={56}
                     className="object-cover w-full h-full"
-                    onError={(e) => { e.currentTarget.src = 'https://ik.imagekit.io/jrstupuke/placeholder.png'; }}
+                    onError={(e) => { e.currentTarget.src = 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'; }}
                   />
                 </button>
               ))}
@@ -1469,7 +1470,11 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                       })}
                     </div>
 
-                    <button className="w-full text-center text-sm text-[#007185] hover:text-blue-600 font-medium py-2 border-t border-gray-100">
+                    <button
+                      type="button"
+                      onClick={() => document.getElementById('product-reviews')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                      className="w-full text-center text-sm text-[#007185] hover:text-blue-600 font-medium py-2 border-t border-gray-100"
+                    >
                       See customer reviews ›
                     </button>
                   </div>
@@ -1582,7 +1587,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                             />
                             <div className="h-[82px] rounded bg-gray-50 overflow-hidden flex items-center justify-center mb-2 mt-1">
                               <div className="relative w-[66px] h-[66px]">
-                                <Image src={card.image || 'https://ik.imagekit.io/jrstupuke/placeholder.png'} alt={card.name} fill className="object-contain" />
+                                <Image src={card.image || 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'} alt={card.name} fill className="object-contain" />
                               </div>
                             </div>
                             <p className="text-[11px] text-gray-600 line-clamp-2 leading-snug mb-0.5 min-h-[30px]">{card.name}</p>
@@ -1635,7 +1640,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                               />
                               <div className="h-[110px] rounded bg-gray-50 overflow-hidden flex items-center justify-center mb-3 mt-2">
                                 <div className="relative w-[78px] h-[78px]">
-                                  <Image src={card.image || 'https://ik.imagekit.io/jrstupuke/placeholder.png'} alt={card.name} fill className="object-contain" />
+                                  <Image src={card.image || 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'} alt={card.name} fill className="object-contain" />
                                 </div>
                               </div>
                               <p className="text-[12px] text-gray-600 line-clamp-2 min-h-[36px]">{card.name}</p>
@@ -2058,6 +2063,14 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
           showSuggestedProducts={false}
           showMainDescription={true}
           showOverviewSections={false}
+        />
+      </div>
+
+      <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 pb-8">
+        <ProductReviewsSection
+          product={product}
+          reviews={reviewsToUse}
+          loading={loadingReviewsLocal || loadingReviews}
         />
       </div>
 

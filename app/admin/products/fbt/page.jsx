@@ -195,7 +195,7 @@ export default function FBTManagement() {
                   >
                     <div className="w-12 h-12 relative flex-shrink-0">
                       <Image
-                        src={product.images?.[0] || 'https://ik.imagekit.io/jrstupuke/placeholder.png'}
+                        src={product.images?.[0] || 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'}
                         alt={product.name}
                         fill
                         className="object-cover rounded"
@@ -218,7 +218,7 @@ export default function FBTManagement() {
                 <div className="flex items-center gap-4 mb-6 pb-6 border-b border-gray-200">
                   <div className="w-20 h-20 relative flex-shrink-0">
                     <Image
-                      src={selectedProduct.images?.[0] || 'https://ik.imagekit.io/jrstupuke/placeholder.png'}
+                      src={selectedProduct.images?.[0] || 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'}
                       alt={selectedProduct.name}
                       fill
                       className="object-cover rounded"
@@ -270,7 +270,7 @@ export default function FBTManagement() {
                             >
                               <div className="w-10 h-10 relative flex-shrink-0">
                                 <Image
-                                  src={product.images?.[0] || 'https://ik.imagekit.io/jrstupuke/placeholder.png'}
+                                  src={product.images?.[0] || 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'}
                                   alt={product.name}
                                   fill
                                   className="object-cover rounded"
@@ -294,7 +294,7 @@ export default function FBTManagement() {
                           >
                             <div className="w-12 h-12 relative flex-shrink-0">
                               <Image
-                                src={product.images?.[0] || 'https://ik.imagekit.io/jrstupuke/placeholder.png'}
+                                src={product.images?.[0] || 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'}
                                 alt={product.name}
                                 fill
                                 className="object-cover rounded"

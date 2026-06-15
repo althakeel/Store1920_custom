@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { X, Eye, EyeOff } from 'lucide-react';
 import { auth, googleProvider } from '../lib/firebase';
-import { signInWithPopup, createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { signInWithGooglePopup } from '@/lib/firebaseAuthActions';
 import Image from 'next/image';
 import Link from 'next/link';
 import GoogleIcon from '../assets/google.png';
@@ -137,7 +138,7 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '' }
     setError('');
     setLoading(true);
     try {
-      const result = await signInWithPopup(auth, googleProvider);
+      const result = await signInWithGooglePopup();
       const isNewUser = result.user.metadata.creationTime === result.user.metadata.lastSignInTime;
       
       // Check if welcome bonus was claimed from top bar

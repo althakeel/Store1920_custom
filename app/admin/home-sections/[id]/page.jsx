@@ -5,7 +5,8 @@ import axios from 'axios'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 import { useParams } from 'next/navigation'
-import { auth, googleProvider } from '@/lib/firebase'
+import { getAuthErrorMessage, signInWithGooglePopup } from '@/lib/firebaseAuthActions'
+import { auth } from '@/lib/firebase'
 
 export const dynamic = 'force-dynamic';
 
@@ -64,7 +65,7 @@ export default function EditHomeSection(){
 
   const handleLogin = async () => {
     try {
-      await auth.signInWithPopup(googleProvider);
+      await signInWithGooglePopup();
     } catch (error) {
       toast.error('Login failed: ' + (error.message || error));
     }

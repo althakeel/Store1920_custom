@@ -1,15 +1,16 @@
 import { NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import axios from 'axios';
-import imagekit from '@/configs/imageKit';
 import connectDB from '@/lib/mongodb';
 import Category from '@/models/Category';
-import Store from '@/models/Store';
 import StoreMenu from '@/models/StoreMenu';
 import authAdmin from '@/middlewares/authAdmin';
+import { resolveStoreAccess } from '@/lib/storeAccess';
 import { cleanDisplayText } from '@/lib/displayText';
 
-const IMAGEKIT_ENDPOINT = String(process.env.IMAGEKIT_URL_ENDPOINT || '').trim();
+import { getS3PublicBaseUrl, isHostedMediaUrl, uploadToS3 } from '@/lib/storage';
+
+const S3_PUBLIC_URL = getS3PublicBaseUrl();
 
 const slugify = (value = '') =>
   String(value || '')
@@ -150,8 +151,8 @@ const isRemoteHttpUrl = (value = '') => /^https?:\/\//i.test(String(value || '')
 
 const shouldMirrorImageUrl = (imageUrl = '') => {
   if (!isRemoteHttpUrl(imageUrl)) return false;
-  if (!IMAGEKIT_ENDPOINT) return true;
-  return !String(imageUrl).startsWith(IMAGEKIT_ENDPOINT);
+  if (!S3_PUBLIC_URL) return true;
+  return !isHostedMediaUrl(imageUrl);
 };
 
 const getFileExtension = (imageUrl = '', contentType = '') => {
@@ -190,7 +191,7 @@ const sanitizeFilePart = (value = '') => {
   return sanitized || 'category';
 };
 
-const mirrorRemoteImageToImageKit = async (imageUrl, { storeId, slug }) => {
+const mirrorRemoteImageToS3 = async (imageUrl, { storeId, slug }) => {
   const response = await axios.get(imageUrl, {
     responseType: 'arraybuffer',
     timeout: 30000,
@@ -203,20 +204,14 @@ const mirrorRemoteImageToImageKit = async (imageUrl, { storeId, slug }) => {
 
   const extension = getFileExtension(imageUrl, response.headers['content-type']);
   const fileName = `${sanitizeFilePart(slug)}.${extension}`;
-  const upload = await imagekit.upload({
-    file: Buffer.from(response.data),
+  const upload = await uploadToS3({
+    buffer: Buffer.from(response.data),
     fileName,
     folder: `categories/imported/${sanitizeFilePart(storeId || 'store')}`,
+    contentType: response.headers['content-type'] || undefined,
   });
 
-  return imagekit.url({
-    path: upload.filePath,
-    transformation: [
-      { quality: 'auto' },
-      { format: 'webp' },
-      { width: '600' },
-    ],
-  });
+  return upload.url;
 };
 
 const verifyStoreUser = async (request) => {
@@ -249,10 +244,14 @@ const verifyStoreUser = async (request) => {
 
   if (!userId) return null;
 
-  const store = await Store.findOne({ userId }).lean();
-  if (!store) return null;
+  const access = await resolveStoreAccess(userId);
+  if (!access) return null;
 
-  return { userId, email };
+  return {
+    userId: access.ownerUserId,
+    storeId: access.storeId,
+    email,
+  };
 };
 
 export async function POST(request) {
@@ -441,7 +440,7 @@ export async function POST(request) {
 
         if (shouldMirrorImageUrl(finalImage)) {
           try {
-            finalImage = await mirrorRemoteImageToImageKit(finalImage, {
+            finalImage = await mirrorRemoteImageToS3(finalImage, {
               storeId: authContext.userId,
               slug: finalSlug,
             });
@@ -507,7 +506,7 @@ export async function POST(request) {
 
           if (shouldMirrorImageUrl(finalImage)) {
             try {
-              finalImage = await mirrorRemoteImageToImageKit(finalImage, {
+              finalImage = await mirrorRemoteImageToS3(finalImage, {
                 storeId: authContext.userId,
                 slug: finalSlug,
               });

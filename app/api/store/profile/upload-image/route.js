@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import formidable from 'formidable';
 import fs from 'fs';
-import path from 'path';
-import imagekit from '../../../../../configs/imageKit';
+import { uploadToS3 } from '@/lib/storage';
 
 export const config = {
   api: {
@@ -12,7 +11,6 @@ export const config = {
 
 export async function POST(req) {
   try {
-    // Parse the form with formidable
     const form = new formidable.IncomingForm();
     const data = await new Promise((resolve, reject) => {
       form.parse(req, (err, fields, files) => {
@@ -24,14 +22,15 @@ export async function POST(req) {
     if (!file) {
       return NextResponse.json({ error: 'No image uploaded' }, { status: 400 });
     }
-    // Read file buffer
+
     const buffer = fs.readFileSync(file.filepath);
-    // Upload to ImageKit
-    const uploadResponse = await imagekit.upload({
-      file: buffer,
+    const uploadResponse = await uploadToS3({
+      buffer,
       fileName: file.originalFilename,
-      folder: '/profile-images/',
+      folder: 'uploads',
+      contentType: file.mimetype || undefined,
     });
+
     return NextResponse.json({ url: uploadResponse.url });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

@@ -1,5 +1,5 @@
 
-import imagekit from "@/configs/imageKit";
+import { uploadToS3 } from '@/lib/storage';
 import connectDB from '@/lib/mongodb';
 import Product from '@/models/Product';
 import authSeller from "@/middlewares/authSeller";
@@ -70,29 +70,19 @@ const isVideoFile = (file) => {
     return VIDEO_EXTENSIONS.some((ext) => fileName.endsWith(ext))
 }
 
-// Helper: Upload media (images/videos) to ImageKit
+// Helper: Upload media (images/videos) to S3
 const uploadMedia = async (files) => {
     return Promise.all(
         files.map(async (file) => {
             const buffer = Buffer.from(await file.arrayBuffer());
-            const response = await imagekit.upload({
-                file: buffer,
+            const response = await uploadToS3({
+                buffer,
                 fileName: file.name,
-                folder: "products"
+                folder: "products",
+                contentType: file.type || undefined,
             });
 
-            if (isVideoFile(file)) {
-                return response.url
-            }
-
-            return imagekit.url({
-                path: response.filePath,
-                transformation: [
-                    { quality: "auto" },
-                    { format: "webp" },
-                    { width: "1024" }
-                ]
-            });
+            return response.url;
         })
     );
 };

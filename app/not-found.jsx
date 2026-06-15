@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 
-const FALLBACK_IMAGE = 'https://ik.imagekit.io/jrstupuke/placeholder.png'
+const FALLBACK_IMAGE = 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'
 
 const getProductImage = (product) => {
   const firstImage = Array.isArray(product?.images) ? product.images[0] : product?.images

@@ -1013,7 +1013,7 @@ export default function StoreManageProducts() {
                                                             disabled={!enableFBT}
                                                         />
                                                         <Image
-                                                            src={item.images?.[0] || 'https://ik.imagekit.io/jrstupuke/placeholder.png'}
+                                                            src={item.images?.[0] || 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'}
                                                             alt={item.name}
                                                             width={34}
                                                             height={34}

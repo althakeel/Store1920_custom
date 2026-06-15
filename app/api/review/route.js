@@ -1,4 +1,4 @@
-import imagekit from "@/configs/imageKit";
+import { uploadToS3 } from '@/lib/storage';
 import connectDB from '@/lib/mongodb';
 import Rating from '@/models/Rating';
 import Order from '@/models/Order';
@@ -56,25 +56,19 @@ export async function POST(request) {
             }, { status: 403 });
         }
 
-        // Upload images to ImageKit
+        // Upload images to S3
         let imageUrls = [];
         if (images.length > 0) {
             imageUrls = await Promise.all(
                 images.map(async (image) => {
                     const buffer = Buffer.from(await image.arrayBuffer());
-                    const response = await imagekit.upload({
-                        file: buffer,
+                    const response = await uploadToS3({
+                        buffer,
                         fileName: `review_${Date.now()}_${image.name}`,
-                        folder: "reviews"
+                        folder: "uploads",
+                        contentType: image.type || undefined,
                     });
-                    return imagekit.url({
-                        path: response.filePath,
-                        transformation: [
-                            { quality: "auto" },
-                            { format: "webp" },
-                            { width: "600" }
-                        ]
-                    });
+                    return response.url;
                 })
             );
         }

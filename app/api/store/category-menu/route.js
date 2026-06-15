@@ -3,6 +3,7 @@ import StoreMenu from '@/models/StoreMenu';
 import { getAuth } from '@/lib/firebase-admin';
 import { NextResponse } from 'next/server';
 import { cleanDisplayText, sanitizeCategoryTree } from '@/lib/displayText';
+import { resolveStoreAccess } from '@/lib/storeAccess';
 
 function slugify(text = '') {
   return text
@@ -50,10 +51,13 @@ export async function GET(request) {
 
     const firebaseAuth = getAuth();
     const decoded = await firebaseAuth.verifyIdToken(token);
-    const userId = decoded.uid;
+    const access = await resolveStoreAccess(decoded.uid);
+    if (!access) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
     await dbConnect();
-    const storeMenu = await StoreMenu.findOne({ storeId: userId });
+    const storeMenu = await StoreMenu.findOne({ storeId: access.ownerUserId });
     
     return NextResponse.json({ 
       categories: sanitizeCategoryTree(storeMenu?.categories || [])
@@ -75,7 +79,10 @@ export async function POST(request) {
 
     const firebaseAuth = getAuth();
     const decoded = await firebaseAuth.verifyIdToken(token);
-    const userId = decoded.uid;
+    const access = await resolveStoreAccess(decoded.uid);
+    if (!access) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
     await dbConnect();
     const { categories } = await request.json();
@@ -90,9 +97,9 @@ export async function POST(request) {
     const normalizedCategories = categories.map((category, index) => normalizeMenuCategory(category, index));
 
     const storeMenu = await StoreMenu.findOneAndUpdate(
-      { storeId: userId },
-      { 
-        storeId: userId,
+      { storeId: access.ownerUserId },
+      {
+        storeId: access.ownerUserId,
         categories: normalizedCategories
       },
       { upsert: true, new: true }

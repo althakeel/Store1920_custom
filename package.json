@@ -7,15 +7,19 @@
     "dev:turbo": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "migrate:product-images-s3": "node scripts/migrateProductImagesToS3.js",
+    "migrate:product-images-s3:dry-run": "node scripts/migrateProductImagesToS3.js --dry-run"
   },
   "engines": {
     "node": "22.x"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1068.0",
     "@emailjs/nodejs": "^5.0.2",
     "@google/generative-ai": "^0.24.1",
-
+    "@imagekit/next": "^2.1.5",
+    "@imagekit/nodejs": "^7.4.0",
     "@react-google-maps/api": "^2.20.8",
     "@reduxjs/toolkit": "^2.8.2",
     "@tiptap/extension-color": "^3.9.0",
@@ -36,8 +40,6 @@
     "firebase": "^12.6.0",
     "firebase-admin": "^13.6.0",
     "formidable": "^3.5.4",
-    "@imagekit/next": "^2.1.5",
-    "@imagekit/nodejs": "^7.4.0",
     "inngest": "^3.54.0",
     "jspdf": "^3.0.3",
     "jspdf-autotable": "^5.0.2",

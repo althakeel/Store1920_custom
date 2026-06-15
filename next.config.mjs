@@ -1,18 +1,25 @@
 /** @type {import('next').NextConfig} */
-// Always allow ImageKit host used by project images
-const domains = ['ik.imagekit.io'];
+const domains = ['store1920-images.s3.ap-south-1.amazonaws.com', 'ik.imagekit.io'];
 // Allow placehold.co for demo/placeholder images
 if (!domains.includes('placehold.co')) domains.push('placehold.co');
 // Allow Flixcart CDN for category images
 if (!domains.includes('rukminim2.flixcart.com')) domains.push('rukminim2.flixcart.com');
 try {
-    if (process.env.IMAGEKIT_URL_ENDPOINT) {
-        const u = new URL(process.env.IMAGEKIT_URL_ENDPOINT);
+    if (process.env.AWS_S3_PUBLIC_URL) {
+        const u = new URL(process.env.AWS_S3_PUBLIC_URL);
         if (!domains.includes(u.hostname)) domains.push(u.hostname);
     }
-    if (process.env.NEXT_PUBLIC_IMAGEKIT_URL_ENDPOINT) {
-        const u2 = new URL(process.env.NEXT_PUBLIC_IMAGEKIT_URL_ENDPOINT);
+    if (process.env.NEXT_PUBLIC_AWS_S3_PUBLIC_URL) {
+        const u2 = new URL(process.env.NEXT_PUBLIC_AWS_S3_PUBLIC_URL);
         if (!domains.includes(u2.hostname)) domains.push(u2.hostname);
+    }
+    if (process.env.IMAGEKIT_URL_ENDPOINT) {
+        const ik = new URL(process.env.IMAGEKIT_URL_ENDPOINT);
+        if (!domains.includes(ik.hostname)) domains.push(ik.hostname);
+    }
+    if (process.env.NEXT_PUBLIC_IMAGEKIT_URL_ENDPOINT) {
+        const ik2 = new URL(process.env.NEXT_PUBLIC_IMAGEKIT_URL_ENDPOINT);
+        if (!domains.includes(ik2.hostname)) domains.push(ik2.hostname);
     }
 } catch {}
 

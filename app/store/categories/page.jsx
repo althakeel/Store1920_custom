@@ -185,15 +185,39 @@ export default function StoreCategoryMenu() {
 
   // Handle image selection
   const handleImageChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setImageFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreview(reader.result);
-      };
-      reader.readAsDataURL(file);
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image must be 5MB or smaller');
+      e.target.value = '';
+      return;
     }
+
+    setImageFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setImagePreview(reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const uploadCategoryImageFile = async (file, token) => {
+    const base64Image = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error('Failed to read image file'));
+      reader.readAsDataURL(file);
+    });
+
+    const { data } = await axios.post('/api/store/upload-category-image', {
+      base64Image,
+      fileName: slugify(formData.name || file.name || 'category'),
+    }, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    return data?.url || '';
   };
 
   const handleGenerateCategoryImage = async ({
@@ -268,8 +292,9 @@ export default function StoreCategoryMenu() {
       }
 
       toast.success(`Image generated with ${data?.provider || 'AI'}`);
+      await fetchCategories();
     } catch (error) {
-      toast.error(error?.response?.data?.error || 'Failed to generate category image');
+      toast.error(error?.response?.data?.error || error?.message || 'Failed to generate category image');
     } finally {
       setGeneratingImageKey(null);
     }
@@ -348,41 +373,41 @@ export default function StoreCategoryMenu() {
 
       // Upload image if new file selected
       if (imageFile) {
-        const uploadFormData = new FormData();
-        uploadFormData.append('files', imageFile);
-        const uploadRes = await axios.post('/api/upload', uploadFormData, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        imageUrl = uploadRes.data?.urls?.[0] || uploadRes.data?.url || '';
+        imageUrl = await uploadCategoryImageFile(imageFile, token);
+        if (!imageUrl) {
+          toast.error('Image upload failed. Please try again.');
+          return;
+        }
       }
 
       const generatedUrl = buildCategoryUrl(formData.name);
       const currentMenuCategory = editingIdx !== null ? categories[editingIdx] : null;
       const existingSystemCategoryId = String(currentMenuCategory?.systemCategoryId || currentMenuCategory?.id || '').trim();
-      const matchingSystemCategory = existingCategories.find((category) => category.slug === slugify(formData.name));
+      const matchingSystemCategory = existingCategories.find((category) => (
+        category.slug === slugify(formData.name)
+        || String(category._id) === existingSystemCategoryId
+      ));
 
       let syncedCategory = null;
+      const categoryPayload = {
+        name: formData.name.trim(),
+        image: imageUrl || null,
+        parentId: selectedParentId || null,
+      };
 
       try {
         if (existingSystemCategoryId) {
-          const updateResponse = await axios.put(`/api/store/categories/${existingSystemCategoryId}`, {
-            name: formData.name.trim(),
-            image: imageUrl || null,
-            parentId: selectedParentId || null,
-          }, {
+          const updateResponse = await axios.put(`/api/store/categories/${existingSystemCategoryId}`, categoryPayload, {
             headers: { Authorization: `Bearer ${token}` },
           });
           syncedCategory = updateResponse.data?.category || null;
-        } else if (matchingSystemCategory) {
-          syncedCategory = matchingSystemCategory;
+        } else if (matchingSystemCategory?._id) {
+          const updateResponse = await axios.put(`/api/store/categories/${matchingSystemCategory._id}`, categoryPayload, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          syncedCategory = updateResponse.data?.category || matchingSystemCategory;
         } else {
-          const createResponse = await axios.post('/api/store/categories', {
-            name: formData.name.trim(),
-            image: imageUrl || null,
-            parentId: selectedParentId || null,
-          }, {
+          const createResponse = await axios.post('/api/store/categories', categoryPayload, {
             headers: { Authorization: `Bearer ${token}` },
           });
           syncedCategory = createResponse.data?.category || null;

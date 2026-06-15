@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import authAdmin from "@/middlewares/authAdmin";
+import authSeller from "@/middlewares/authSeller";
 import connectDB from '@/lib/mongodb';
 import Category from '@/models/Category';
-import Store from '@/models/Store';
 import { localizeRecord, resolveStorefrontLanguage } from '@/lib/storefrontLanguage';
 import { cleanDisplayText, sanitizeCategoryFields, sanitizeCategoryTree } from '@/lib/displayText';
+import { deleteCacheKey } from '@/lib/cache';
+
+const CATEGORY_TREE_CACHE_KEY = 'public:categories:tree:v2';
 
 // GET - Fetch all categories with their children
 export async function GET(req) {
@@ -64,9 +67,8 @@ export async function POST(req) {
         if (userId && email && await authAdmin(userId, email)) {
             isAuthorized = true;
         } else if (userId) {
-            // Check if user has a store
-            const store = await Store.findOne({ userId }).lean();
-            if (store) {
+            const storeId = await authSeller(userId);
+            if (storeId) {
                 isAuthorized = true;
             }
         }
@@ -100,6 +102,8 @@ export async function POST(req) {
             image: image || null,
             parentId: parentId || null
         });
+
+        deleteCacheKey(CATEGORY_TREE_CACHE_KEY);
 
         // Populate parent and children
         const parent = category.parentId ? await Category.findById(category.parentId).lean() : null;

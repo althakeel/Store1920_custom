@@ -1,5 +1,5 @@
 import authSeller from "@/middlewares/authSeller";
-import imagekit from "@/configs/imageKit";
+import { uploadToS3 } from '@/lib/storage';
 import connectDB from '@/lib/mongodb';
 import Product from '@/models/Product';
 import Rating from '@/models/Rating';
@@ -146,39 +146,34 @@ export async function POST(request) {
             return Response.json({ error: "Product not found or not authorized" }, { status: 403 });
         }
 
-        // Upload images to ImageKit
+        // Upload images to S3
         let imageUrls = [];
         if (images.length > 0) {
             imageUrls = await Promise.all(
                 images.map(async (image) => {
                     const buffer = Buffer.from(await image.arrayBuffer());
-                    const response = await imagekit.upload({
-                        file: buffer,
+                    const response = await uploadToS3({
+                        buffer,
                         fileName: `review_${Date.now()}_${image.name}`,
-                        folder: "reviews"
+                        folder: "uploads",
+                        contentType: image.type || undefined,
                     });
-                    return imagekit.url({
-                        path: response.filePath,
-                        transformation: [
-                            { quality: "auto" },
-                            { format: "webp" },
-                            { width: "600" }
-                        ]
-                    });
+                    return response.url;
                 })
             );
         }
 
-        // Upload videos to ImageKit
+        // Upload videos to S3
         let videoUrls = [];
         if (videos.length > 0) {
             videoUrls = await Promise.all(
                 videos.map(async (video) => {
                     const buffer = Buffer.from(await video.arrayBuffer());
-                    const response = await imagekit.upload({
-                        file: buffer,
+                    const response = await uploadToS3({
+                        buffer,
                         fileName: `review_video_${Date.now()}_${video.name}`,
-                        folder: "reviews/videos"
+                        folder: "uploads",
+                        contentType: video.type || undefined,
                     });
                     return response.url;
                 })

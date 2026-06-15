@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import axios from 'axios';
 import connectDB from '@/lib/mongodb';
-import imagekit from '@/configs/imageKit';
 import Product from '@/models/Product';
 import Category from '@/models/Category';
 import StorePreference from '@/models/StorePreference';
@@ -18,7 +17,9 @@ const KNOWN_BADGES = [
   'Free Shipping',
 ];
 
-const IMAGEKIT_ENDPOINT = String(process.env.IMAGEKIT_URL_ENDPOINT || '').trim();
+import { getS3PublicBaseUrl, isHostedMediaUrl, uploadToS3 } from '@/lib/storage';
+
+const S3_PUBLIC_URL = getS3PublicBaseUrl();
 
 const slugify = (value = '') =>
   value
@@ -188,9 +189,9 @@ const isRemoteHttpUrl = (value = '') => /^https?:\/\//i.test(String(value || '')
 
 const shouldMirrorImageUrl = (imageUrl = '') => {
   if (!isRemoteHttpUrl(imageUrl)) return false;
-  if (!IMAGEKIT_ENDPOINT) return true;
+  if (!S3_PUBLIC_URL) return true;
 
-  return !String(imageUrl).startsWith(IMAGEKIT_ENDPOINT);
+  return !isHostedMediaUrl(imageUrl);
 };
 
 const getFileExtension = (imageUrl = '', contentType = '') => {
@@ -229,7 +230,7 @@ const sanitizeFilePart = (value = '') => {
   return sanitized || 'image';
 };
 
-const mirrorRemoteImageToImageKit = async (imageUrl, { storeId, slug, imageIndex }) => {
+const mirrorRemoteImageToS3 = async (imageUrl, { storeId, slug, imageIndex }) => {
   const response = await axios.get(imageUrl, {
     responseType: 'arraybuffer',
     timeout: 30000,
@@ -242,20 +243,14 @@ const mirrorRemoteImageToImageKit = async (imageUrl, { storeId, slug, imageIndex
 
   const extension = getFileExtension(imageUrl, response.headers['content-type']);
   const fileName = `${sanitizeFilePart(slug)}-${imageIndex + 1}.${extension}`;
-  const upload = await imagekit.upload({
-    file: Buffer.from(response.data),
+  const upload = await uploadToS3({
+    buffer: Buffer.from(response.data),
     fileName,
     folder: `products/imported/${sanitizeFilePart(storeId || 'store')}`,
+    contentType: response.headers['content-type'] || undefined,
   });
 
-  return imagekit.url({
-    path: upload.filePath,
-    transformation: [
-      { quality: 'auto' },
-      { format: 'webp' },
-      { width: '1024' },
-    ],
-  });
+  return upload.url;
 };
 
 const resolveImportedImages = async (imageUrls = [], { storeId, slug }) => {
@@ -266,7 +261,7 @@ const resolveImportedImages = async (imageUrls = [], { storeId, slug }) => {
         return { originalUrl: imageUrl, finalUrl: imageUrl, mirrored: false };
       }
 
-      const finalUrl = await mirrorRemoteImageToImageKit(imageUrl, { storeId, slug, imageIndex });
+      const finalUrl = await mirrorRemoteImageToS3(imageUrl, { storeId, slug, imageIndex });
       return { originalUrl: imageUrl, finalUrl, mirrored: true };
     })
   );

@@ -3,10 +3,13 @@ import { ArrowRight, ChevronDown, ChevronUp, StarIcon } from "lucide-react"
 import Image from "next/image"
 import Link from "next/link"
 import { useState, useEffect, useMemo } from "react"
+import { useRouter } from "next/navigation"
 import axios from "axios"
+import toast from "react-hot-toast"
 import ProductCard from "./ProductCard"
 import { useSelector } from "react-redux"
 import normalizeImportedRichText from "@/lib/normalizeImportedRichText"
+import { useProductWishlist } from "@/lib/useProductWishlist"
 
 const formatReviewDate = (dateString) => {
     if (!dateString) return ''
@@ -28,8 +31,59 @@ const toTitleCase = (value) => value
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ')
 
+function stripEmbeddedSpecTable(html = '') {
+    return String(html || '')
+        .replace(/<h2[^>]*>[^<]*(?:product\s+information|product\s+specifications|specifications)[^<]*<\/h2>\s*/gi, '')
+        .replace(/<h3[^>]*>[^<]*(?:product\s+information|product\s+specifications|specifications)[^<]*<\/h3>\s*/gi, '')
+        .replace(/<table[\s\S]*?<\/table>/gi, '')
+        .trim()
+}
+
 // Updated design - Noon.com style v2
 const ProductDescription = ({ product, reviews = [], loadingReviews = false, onReviewAdded, showSuggestedProducts = true, showMainDescription = true, showOverviewSections = true }) => {
+
+    const router = useRouter()
+    const { isInWishlist, loading: wishlistLoading, toggleWishlist } = useProductWishlist(product)
+    const [showReportModal, setShowReportModal] = useState(false)
+    const [reportReason, setReportReason] = useState('incorrect-information')
+    const [reportDetails, setReportDetails] = useState('')
+
+    const handleSave = async () => {
+        const result = await toggleWishlist()
+        if (result === 'added') {
+            toast.success('Saved to your wishlist')
+        } else if (result === 'removed') {
+            toast.success('Removed from your wishlist')
+        } else if (result === 'error') {
+            toast.error('Could not update wishlist. Please try again.')
+        }
+    }
+
+    const handleSubmitReport = (event) => {
+        event.preventDefault()
+        const productLabel = product?.name || 'Unknown product'
+        const productRef = product?.slug || product?._id || ''
+        const reasonLabels = {
+            'incorrect-information': 'Incorrect product information',
+            'counterfeit': 'Suspected counterfeit item',
+            'offensive': 'Offensive or inappropriate content',
+            'other': 'Other issue',
+        }
+        const reasonLabel = reasonLabels[reportReason] || reportReason
+        const message = [
+            `Report type: ${reasonLabel}`,
+            `Product: ${productLabel}`,
+            productRef ? `Product link: ${typeof window !== 'undefined' ? window.location.origin : ''}/product/${productRef}` : '',
+            reportDetails.trim() ? `Details: ${reportDetails.trim()}` : '',
+        ].filter(Boolean).join('\n')
+
+        const params = new URLSearchParams({
+            subject: 'Product report',
+            message,
+        })
+        setShowReportModal(false)
+        router.push(`/contact-us?${params.toString()}`)
+    }
 
     // Use reviews and loadingReviews from props only
     const [suggestedProducts, setSuggestedProducts] = useState([])
@@ -170,8 +224,7 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
         )
     }
 
-    const descriptionPlainText = normalizedDescription.replace(/<[^>]*>/g, '').trim()
-    const shouldCollapseDescription = descriptionPlainText.length > 280
+    const descriptionHasTable = /<table[\s>]/i.test(normalizedDescription)
     const specTableColumns = Array.isArray(product?.specTableColumns) && product.specTableColumns.length > 0
         ? product.specTableColumns
         : (Array.isArray(product?.attributes?.specTableColumns) && product.attributes.specTableColumns.length > 0
@@ -186,7 +239,16 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
                 .filter((row) => Array.isArray(row) && row.some((cell) => String(cell || '').trim().length > 0))
                 .map((row) => Array.from({ length: specTableColumns.length }, (_, idx) => String(row[idx] || '').trim()))
             : [])
-    const showSpecTable = Boolean((product?.specTableEnabled ?? product?.attributes?.specTableEnabled) && specTableRows.length > 0)
+    const hasStructuredSpecData = Boolean(
+        (product?.specTableEnabled ?? product?.attributes?.specTableEnabled) && specTableRows.length > 0
+    )
+    const showSpecTable = hasStructuredSpecData
+    const descriptionForDisplay = useMemo(() => {
+        if (!descriptionHasTable || !hasStructuredSpecData) return normalizedDescription
+        return stripEmbeddedSpecTable(normalizedDescription)
+    }, [normalizedDescription, descriptionHasTable, hasStructuredSpecData])
+    const descriptionPlainTextForCollapse = descriptionForDisplay.replace(/<[^>]*>/g, '').trim()
+    const shouldCollapseDescription = descriptionPlainTextForCollapse.length > 280
     const normalizedShortDescription2 = useMemo(
         () => normalizeImportedRichText(product?.shortDescription2 || product?.attributes?.shortDescription2 || ''),
         [product?.shortDescription2, product?.attributes?.shortDescription2]
@@ -299,15 +361,28 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
                     <div className="flex items-center justify-between mb-2">
                         <h2 className="text-[18px] leading-none font-semibold text-gray-900">Product details</h2>
                         <div className="hidden sm:flex items-center gap-2 text-[13px] text-gray-800">
-                            <button className="hover:underline">Save</button>
+                            <button
+                                type="button"
+                                onClick={handleSave}
+                                disabled={wishlistLoading}
+                                className={`hover:underline disabled:opacity-60 ${isInWishlist ? 'text-red-600 font-medium' : ''}`}
+                            >
+                                {isInWishlist ? 'Saved' : 'Save'}
+                            </button>
                             <span>|</span>
-                            <button className="hover:underline">Report this item</button>
+                            <button
+                                type="button"
+                                onClick={() => setShowReportModal(true)}
+                                className="hover:underline"
+                            >
+                                Report this item
+                            </button>
                         </div>
                     </div>
 
                     <div className="relative">
                         <div
-                            className={`max-w-none text-[14px] leading-[1.5] text-gray-900
+                            className={`product-rich-content max-w-none text-[14px] leading-[1.5] text-gray-900
                             [&_h1]:text-[16px] [&_h1]:font-semibold [&_h1]:mb-2
                             [&_h2]:text-[15px] [&_h2]:font-semibold [&_h2]:mb-2
                             [&_h3]:text-[14px] [&_h3]:font-semibold [&_h3]:mb-1.5
@@ -318,7 +393,7 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
                             [&_img]:max-w-full [&_img]:h-auto [&_img]:my-4
                             [&_video]:max-w-full [&_video]:w-full [&_video]:h-auto [&_video]:my-4
                             ${shouldCollapseDescription && !isDescriptionExpanded ? 'overflow-hidden [display:-webkit-box] [-webkit-line-clamp:6] [-webkit-box-orient:vertical]' : ''}`}
-                            dangerouslySetInnerHTML={{ __html: normalizedDescription }}
+                            dangerouslySetInnerHTML={{ __html: descriptionForDisplay }}
                         />
 
                         {shouldCollapseDescription && !isDescriptionExpanded && (
@@ -450,6 +525,73 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
                         <div className="overflow-y-auto max-h-[calc(85vh-70px)] px-5 py-4 space-y-7">
                             {reviews.map((item, idx) => renderReviewItem(item, idx, true))}
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {showReportModal && (
+                <div className="fixed inset-0 z-[70] bg-black/45 flex items-center justify-center p-4" onClick={() => setShowReportModal(false)}>
+                    <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-semibold text-gray-900">Report this item</h3>
+                            <button
+                                type="button"
+                                onClick={() => setShowReportModal(false)}
+                                className="h-8 w-8 rounded-full text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                                aria-label="Close report dialog"
+                            >
+                                ×
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleSubmitReport} className="space-y-4">
+                            <div>
+                                <label htmlFor="report-reason" className="block text-sm font-medium text-gray-700 mb-1.5">
+                                    Reason
+                                </label>
+                                <select
+                                    id="report-reason"
+                                    value={reportReason}
+                                    onChange={(event) => setReportReason(event.target.value)}
+                                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
+                                >
+                                    <option value="incorrect-information">Incorrect product information</option>
+                                    <option value="counterfeit">Suspected counterfeit item</option>
+                                    <option value="offensive">Offensive or inappropriate content</option>
+                                    <option value="other">Other issue</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label htmlFor="report-details" className="block text-sm font-medium text-gray-700 mb-1.5">
+                                    Additional details (optional)
+                                </label>
+                                <textarea
+                                    id="report-details"
+                                    value={reportDetails}
+                                    onChange={(event) => setReportDetails(event.target.value)}
+                                    rows={4}
+                                    placeholder="Tell us what is wrong with this listing..."
+                                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900"
+                                />
+                            </div>
+
+                            <div className="flex items-center justify-end gap-3 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowReportModal(false)}
+                                    className="px-4 py-2 text-sm text-gray-700 hover:text-gray-900"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="px-4 py-2 rounded-lg bg-orange-500 text-sm font-semibold text-white hover:bg-orange-600"
+                                >
+                                    Continue to contact form
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}

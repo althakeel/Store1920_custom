@@ -385,7 +385,7 @@ export default function TopDealsCustomizePage() {
             <div className="grid max-h-[28rem] grid-cols-2 gap-3 overflow-auto rounded-xl border border-slate-200 p-3 md:grid-cols-4">
               {filteredProducts.map((product) => {
                 const selected = form.productIds.includes(product._id)
-                const image = product.images?.[0] || 'https://ik.imagekit.io/jrstupuke/placeholder.png'
+                const image = product.images?.[0] || 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'
 
                 return (
                   <button

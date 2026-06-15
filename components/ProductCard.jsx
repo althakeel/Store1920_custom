@@ -13,8 +13,7 @@ import { useStorefrontMarket } from '@/lib/useStorefrontMarket'
 import { useStorefrontI18n } from '@/lib/useStorefrontI18n'
 
 import toast from 'react-hot-toast'
-
-const PLACEHOLDER = 'https://ik.imagekit.io/jrstupuke/placeholder.png'
+import { PLACEHOLDER_IMAGE as PLACEHOLDER } from '@/lib/mediaUrls'
 const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.ogg', '.mov', '.m4v', '.avi', '.mkv']
 
 const normalizeImages = (images) => {

@@ -1,4 +1,4 @@
-import imagekit from "@/configs/imageKit";
+import { uploadToS3 } from '@/lib/storage';
 import { NextResponse } from "next/server";
 import connectDB from '@/lib/mongodb';
 import ReturnRequest from '@/models/ReturnRequest';
@@ -101,19 +101,13 @@ export async function POST(request) {
                     imageFiles.map(async (file) => {
                         if (typeof file === 'string') return file; // in case URL passed
                         const buffer = Buffer.from(await file.arrayBuffer());
-                        const resp = await imagekit.upload({
-                            file: buffer,
+                        const resp = await uploadToS3({
+                            buffer,
                             fileName: `return_${Date.now()}_${file.name}`,
-                            folder: "returns/images",
+                            folder: "uploads",
+                            contentType: file.type || undefined,
                         });
-                        return imagekit.url({
-                            path: resp.filePath,
-                            transformation: [
-                                { quality: "auto" },
-                                { format: "webp" },
-                                { width: "800" }
-                            ]
-                        });
+                        return resp.url;
                     })
                 );
                 images = uploaded;
@@ -126,19 +120,13 @@ export async function POST(request) {
                     videoFiles.map(async (file) => {
                         if (typeof file === 'string') return file;
                         const buffer = Buffer.from(await file.arrayBuffer());
-                        const resp = await imagekit.upload({
-                            file: buffer,
+                        const resp = await uploadToS3({
+                            buffer,
                             fileName: `return_${Date.now()}_${file.name}`,
-                            folder: "returns/videos",
+                            folder: "uploads",
+                            contentType: file.type || undefined,
                         });
-                        return imagekit.url({
-                            path: resp.filePath,
-                            transformation: [
-                                { quality: "auto" },
-                                { format: "mp4" },
-                                { width: "1280" }
-                            ]
-                        });
+                        return resp.url;
                     })
                 );
                 videos = uploadedVids;

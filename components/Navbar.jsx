@@ -1057,9 +1057,9 @@ const Navbar = () => {
       onMouseEnter={openCategoriesDropdown}
       onMouseLeave={closeCategoriesDropdown}
     >
-      <div className="mx-auto mt-0.5 w-full max-w-[980px] overflow-hidden rounded-b-[28px] border border-slate-200 bg-white shadow-[0_20px_44px_rgba(15,23,42,0.16)]">
-        <div className="grid grid-cols-[250px_minmax(0,1fr)]">
-          <div className="max-h-[520px] overflow-y-auto border-r border-slate-200 bg-white py-3">
+      <div className="mx-auto mt-0.5 w-full max-w-[1040px] overflow-hidden rounded-b-[28px] border border-slate-200 bg-white shadow-[0_20px_44px_rgba(15,23,42,0.16)]">
+        <div className="grid max-h-[420px] grid-cols-[minmax(0,220px)_minmax(0,1fr)]">
+          <div className="category-dropdown-scroll max-h-[420px] w-full max-w-[220px] shrink-0 overflow-y-auto overflow-x-hidden border-r border-slate-200 bg-white py-2">
             {mainCategories.map((category) => {
               const isActive = getCategoryId(activeCategory) === getCategoryId(category);
               return (
@@ -1067,62 +1067,66 @@ const Navbar = () => {
                   key={getCategoryId(category) || category?.slug || category?.name}
                   type="button"
                   onMouseEnter={() => setHoveredCategory(category)}
-                  className={`flex w-full items-center justify-between gap-2 px-5 py-3 text-left text-[15px] transition ${
+                  className={`flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left text-[14px] transition ${
                     isActive ? 'bg-slate-50 font-semibold text-slate-900' : 'text-slate-700 hover:bg-slate-50'
                   }`}
                 >
-                  <span className="truncate">{getCategoryDisplayName(category)}</span>
-                  <span className="text-slate-400">›</span>
+                  <span className="min-w-0 flex-1 truncate">{getCategoryDisplayName(category)}</span>
+                  <span className="shrink-0 text-slate-400">›</span>
                 </button>
               );
             })}
           </div>
 
-          <div className="min-h-[420px] bg-white p-7">
-            <div className="mb-6 flex items-center justify-between gap-4 border-b border-slate-100 pb-4">
-              <p className="text-[22px] font-semibold leading-tight text-slate-900">{getCategoryDisplayName(activeCategory) || 'Categories'}</p>
-              <Link
-                href={getCategoryHref(activeCategory)}
-                className="text-xs font-semibold uppercase tracking-wide text-rose-600 hover:text-rose-700"
-              >
-                View all
-              </Link>
-            </div>
-
-            {activeSubcategories.length > 0 ? (
-              <div className="grid grid-cols-5 gap-x-6 gap-y-8">
-                {activeSubcategories.map((subcategory) => (
-                  <Link
-                    key={getCategoryId(subcategory) || subcategory?.slug || subcategory?.name}
-                    href={getCategoryHref(subcategory)}
-                    className="group flex flex-col items-center text-center transition"
-                  >
-                    <span className="relative h-[98px] w-[98px] overflow-hidden rounded-full border border-slate-200 bg-slate-100 shadow-sm transition group-hover:-translate-y-0.5 group-hover:shadow-md">
-                      <Image
-                        src={getCategoryImage(subcategory)}
-                        alt={getCategoryDisplayName(subcategory) || 'Category'}
-                        fill
-                        sizes="98px"
-                        className="object-cover"
-                      />
-                    </span>
-                    <span className="mt-3 line-clamp-2 min-h-[44px] text-[13px] font-medium leading-tight text-slate-700 group-hover:text-slate-900">
-                      {getCategoryDisplayName(subcategory)}
-                    </span>
-                  </Link>
-                ))}
-              </div>
-            ) : (
-              <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-sm text-slate-600">
-                <span>No child categories yet. Open this category to browse products.</span>
+          <div className="flex max-h-[420px] min-h-0 min-w-0 flex-col bg-white">
+            <div className="shrink-0 border-b border-slate-100 px-6 pb-4 pt-6">
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-[22px] font-semibold leading-tight text-slate-900">{getCategoryDisplayName(activeCategory) || 'Categories'}</p>
                 <Link
                   href={getCategoryHref(activeCategory)}
-                  className="inline-flex h-10 items-center justify-center rounded-full bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800"
+                  className="text-xs font-semibold uppercase tracking-wide text-rose-600 hover:text-rose-700"
                 >
-                  Shop now
+                  View all
                 </Link>
               </div>
-            )}
+            </div>
+
+            <div className="category-dropdown-scroll min-h-0 flex-1 overflow-y-auto px-6 py-5">
+              {activeSubcategories.length > 0 ? (
+                <div className="grid grid-cols-5 gap-x-6 gap-y-8">
+                  {activeSubcategories.map((subcategory) => (
+                    <Link
+                      key={getCategoryId(subcategory) || subcategory?.slug || subcategory?.name}
+                      href={getCategoryHref(subcategory)}
+                      className="group flex flex-col items-center text-center transition"
+                    >
+                      <span className="relative h-[98px] w-[98px] overflow-hidden rounded-full border border-slate-200 bg-slate-100 shadow-sm transition group-hover:-translate-y-0.5 group-hover:shadow-md">
+                        <Image
+                          src={getCategoryImage(subcategory)}
+                          alt={getCategoryDisplayName(subcategory) || 'Category'}
+                          fill
+                          sizes="98px"
+                          className="object-cover"
+                        />
+                      </span>
+                      <span className="mt-3 line-clamp-2 min-h-[44px] text-[13px] font-medium leading-tight text-slate-700 group-hover:text-slate-900">
+                        {getCategoryDisplayName(subcategory)}
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-sm text-slate-600">
+                  <span>No child categories yet. Open this category to browse products.</span>
+                  <Link
+                    href={getCategoryHref(activeCategory)}
+                    className="inline-flex h-10 shrink-0 items-center justify-center rounded-full bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800"
+                  >
+                    Shop now
+                  </Link>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
