@@ -4,6 +4,7 @@ import { getAuth } from '@/lib/firebase-admin';
 import { NextResponse } from 'next/server';
 import { cleanDisplayText, sanitizeCategoryTree } from '@/lib/displayText';
 import { resolveStoreAccess } from '@/lib/storeAccess';
+import { sanitizeCategoryMenuTree } from '@/lib/categoryMenuImages';
 
 function slugify(text = '') {
   return text
@@ -30,6 +31,7 @@ function normalizeMenuCategory(category, fallbackIndex = 0) {
     parentId: category?.parentId || null,
     parentName: cleanDisplayText(category?.parentName || ''),
     name: cleanDisplayText(category?.name || ''),
+    image: String(category?.image || ''),
     url: category?.url || buildCategoryUrl(cleanDisplayText(category?.name || '')),
     children: normalizedChildren,
   };
@@ -57,10 +59,26 @@ export async function GET(request) {
     }
 
     await dbConnect();
-    const storeMenu = await StoreMenu.findOne({ storeId: access.ownerUserId });
-    
-    return NextResponse.json({ 
-      categories: sanitizeCategoryTree(storeMenu?.categories || [])
+    const storeMenu = await StoreMenu.findOne({ storeId: access.ownerUserId }).lean();
+    const rawCategories = storeMenu?.categories || [];
+    const { categories: migratedCategories, changed } = await sanitizeCategoryMenuTree(rawCategories, {
+      storeId: access.ownerUserId,
+    });
+
+    if (changed) {
+      await StoreMenu.findOneAndUpdate(
+        { storeId: access.ownerUserId },
+        {
+          storeId: access.ownerUserId,
+          categories: migratedCategories,
+          updatedAt: new Date(),
+        },
+        { upsert: true, new: true }
+      );
+    }
+
+    return NextResponse.json({
+      categories: sanitizeCategoryTree(migratedCategories),
     }, { status: 200 });
   } catch (error) {
     return NextResponse.json(
@@ -95,20 +113,33 @@ export async function POST(request) {
     }
 
     const normalizedCategories = categories.map((category, index) => normalizeMenuCategory(category, index));
+    const existingMenu = await StoreMenu.findOne({ storeId: access.ownerUserId }).lean();
+    const existingById = new Map(
+      (existingMenu?.categories || []).map((category) => [String(category?.id || ''), category])
+    );
+
+    const { categories: sanitizedCategories } = await sanitizeCategoryMenuTree(normalizedCategories, {
+      storeId: access.ownerUserId,
+      existingById,
+    });
 
     const storeMenu = await StoreMenu.findOneAndUpdate(
       { storeId: access.ownerUserId },
       {
         storeId: access.ownerUserId,
-        categories: normalizedCategories
+        categories: sanitizedCategories,
+        updatedAt: new Date(),
       },
-      { upsert: true, new: true }
+      { upsert: true, new: true, runValidators: true }
     );
 
-    return NextResponse.json({ storeMenu }, { status: 200 });
+    return NextResponse.json({
+      categories: sanitizeCategoryTree(storeMenu?.categories || sanitizedCategories),
+    }, { status: 200 });
   } catch (error) {
+    console.error('[category-menu POST]', error);
     return NextResponse.json(
-      { error: error.message },
+      { error: error.message || 'Failed to save category menu' },
       { status: 500 }
     );
   }

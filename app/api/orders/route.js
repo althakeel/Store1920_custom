@@ -20,6 +20,7 @@ import { fetchNormalizedDelhiveryTracking } from '@/lib/delhivery';
 import { createTamaraSession } from '@/lib/tamara';
 import { createTabbySession } from '@/lib/tabby';
 import { buildGuestOrderIdentityClauses, normalizeEmail } from '@/lib/orderIdentity';
+import { recordPurchaseFromOrder, shouldRecordPurchaseOnCreate } from '@/lib/serverCustomerTracking';
 
 const PaymentMethod = {
     COD: 'COD',
@@ -65,7 +66,9 @@ export async function POST(request) {
             paymentStatus,
             razorpayPaymentId,
             razorpayOrderId,
-            razorpaySignature
+            razorpaySignature,
+            trackingContext,
+            attribution,
         } = body;
         let userId = null;
         let isPlusMember = false;
@@ -478,6 +481,25 @@ export async function POST(request) {
             if (razorpayOrderId) orderData.razorpayOrderId = razorpayOrderId;
             if (razorpaySignature) orderData.razorpaySignature = razorpaySignature;
 
+            if (trackingContext && (trackingContext.anonymousId || trackingContext.sessionId)) {
+                orderData.trackingContext = {
+                    anonymousId: trackingContext.anonymousId ? String(trackingContext.anonymousId) : null,
+                    sessionId: trackingContext.sessionId ? String(trackingContext.sessionId) : null,
+                };
+            }
+
+            if (attribution && typeof attribution === 'object') {
+                orderData.attribution = {
+                    utmSource: attribution.utmSource || null,
+                    utmMedium: attribution.utmMedium || null,
+                    utmCampaign: attribution.utmCampaign || null,
+                    utmContent: attribution.utmContent || null,
+                    utmTerm: attribution.utmTerm || null,
+                    utmId: attribution.utmId || null,
+                    utmReferrer: attribution.utmReferrer || null,
+                };
+            }
+
             if (isGuest) {
                 // Robust upsert for guest user
                 await User.findOneAndUpdate(
@@ -654,6 +676,22 @@ export async function POST(request) {
             // Assign sequential store order number starting at 612345
             order.shortOrderNumber = await allocateShortOrderNumber(storeId);
             await order.save();
+
+            if (shouldRecordPurchaseOnCreate(order, paymentMethod)) {
+                try {
+                    await recordPurchaseFromOrder({
+                        order,
+                        trackingContext: order.trackingContext || trackingContext || {},
+                        attribution: order.attribution || attribution || {},
+                        userId,
+                        isGuest: Boolean(isGuest),
+                        source: 'order_create',
+                    });
+                } catch (trackingError) {
+                    console.error('Purchase tracking failed for order', order._id, trackingError);
+                }
+            }
+
             // Populate order with related data
             const populatedOrder = await Order.findById(order._id)
                 .populate('userId')

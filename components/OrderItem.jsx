@@ -345,7 +345,7 @@ const OrderItem = ({ order: initialOrder }) => {
                                     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
                                         <p className="text-xs font-semibold text-slate-500 mb-2">Expected Delivery</p>
                                         <p className="text-xl font-bold text-purple-600">
-                                            {new Date(order.delhivery.expected_delivery_date).toLocaleString('en-IN', {
+                                            {new Date(order.delhivery.expected_delivery_date).toLocaleString('en-AE', {
                                                 day: '2-digit',
                                                 month: '2-digit',
                                                 year: 'numeric',
@@ -418,7 +418,7 @@ const OrderItem = ({ order: initialOrder }) => {
                                                                     📍 {event.status || 'Update'}
                                                                 </p>
                                                                 <span className="text-xs text-slate-500 whitespace-nowrap">
-                                                                    {new Date(event.time).toLocaleString('en-IN', {
+                                                                    {new Date(event.time).toLocaleString('en-AE', {
                                                                         day: '2-digit',
                                                                         month: '2-digit',
                                                                         year: 'numeric',

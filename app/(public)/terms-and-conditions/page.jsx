@@ -1,5 +1,6 @@
 "use client";
 
+import PolicyPageLayout from '@/components/PolicyPageLayout';
 import { useStorefrontI18n } from "@/lib/useStorefrontI18n";
 
 export default function TermsAndConditions() {
@@ -7,9 +8,8 @@ export default function TermsAndConditions() {
 
   if (isArabic) {
     return (
-      <div className="bg-gray-50 max-w-[1450px] mx-auto" dir="rtl">
-        <div className="max-w-4xl mx-auto py-12 px-4 text-gray-800 min-h-[60vh]">
-          <h1 className="text-3xl font-bold mb-3">الشروط والأحكام</h1>
+      <PolicyPageLayout dir="rtl">
+        <h1 className="text-3xl font-bold mb-3">الشروط والأحكام</h1>
           <p className="mb-3">
             يتم تشغيل هذا الموقع بواسطة <strong>Store1920.com</strong>. باستخدامك للموقع أو إتمام أي طلب شراء، فإنك توافق على الشروط
             والأحكام الواردة في هذه الصفحة.
@@ -18,7 +18,7 @@ export default function TermsAndConditions() {
             يرجى قراءة هذه البنود بعناية قبل استخدام خدماتنا. إذا كنت لا توافق على أي جزء منها، يرجى عدم استخدام الموقع أو إتمام الطلب.
           </p>
 
-          <div className="space-y-6 bg-white border border-gray-200 rounded-xl p-6">
+          <div className="space-y-6 border border-gray-200 rounded-xl p-6">
             <section>
               <h2 className="text-xl font-semibold mb-2">1. قبول الشروط</h2>
               <p>
@@ -103,14 +103,13 @@ export default function TermsAndConditions() {
               </p>
             </section>
           </div>
-        </div>
-      </div>
+      </PolicyPageLayout>
     );
   }
 
   return (
-    <div className="bg-gray-50 max-w-[1450px] mx-auto">
-      <div className="max-w-4xl mx-auto py-12 px-4 text-gray-800 min-h-[60vh]">
+    <PolicyPageLayout>
+      <div className="text-gray-800">
         <h1 className="text-3xl font-bold mb-3">Terms & Conditions</h1>
         <p className="mb-3">
           This website is operated by <strong>Store1920.com</strong>. Throughout the site, the terms “we”, “us” and “our” refer to
@@ -145,7 +144,7 @@ export default function TermsAndConditions() {
           Our store is hosted on WooCommerce Inc., which provides the e-commerce platform that allows us to sell products and services.
         </p>
 
-        <div className="space-y-6 bg-white border border-gray-200 rounded-xl p-6">
+        <div className="space-y-6 border border-gray-200 rounded-xl p-6">
           <section>
             <h2 className="text-xl font-semibold mb-2">SECTION 1 – ONLINE STORE TERMS</h2>
             <ul className="list-disc ml-6 space-y-1">
@@ -368,6 +367,6 @@ export default function TermsAndConditions() {
           </section>
         </div>
       </div>
-    </div>
+    </PolicyPageLayout>
   );
 }

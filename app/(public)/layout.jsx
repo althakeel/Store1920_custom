@@ -4,6 +4,7 @@ import MobileBottomNav from "@/components/MobileBottomNav";
 import GuestOrderLinker from "@/components/GuestOrderLinker";
 import UtmTracker from "@/components/UtmTracker";
 import AdsAttribution from "@/components/AdsAttribution";
+import CustomerSessionTracker from "@/components/CustomerSessionTracker";
 import { useDispatch, useSelector } from "react-redux";
 import { useEffect, Suspense } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -34,6 +35,7 @@ function PublicLayoutContent({ children }) {
             <GuestOrderLinker />
             <UtmTracker />
             <AdsAttribution />
+            <CustomerSessionTracker />
             {/* <Banner />/ */}
             <main className={`flex-1 ${isHomePage ? 'pb-8' : 'pb-20'} lg:pb-0`}>{children}</main>
             {!isHomePage && !isCheckout && <MobileBottomNav />}

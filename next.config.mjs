@@ -49,9 +49,19 @@ const nextConfig = {
     experimental: {
         serverActions: {
             bodySizeLimit: '50mb'
-        }
+        },
+        // Avoid truncated JSON when saving large category menus through middleware
+        middlewareClientMaxBodySize: '50mb',
     },
-    serverExternalPackages: ['mongoose'],
+    serverExternalPackages: ['mongoose', 'firebase-admin'],
+
+    webpack: (config, { dev }) => {
+        if (dev) {
+            // Avoid EPERM cache rename failures on Windows when multiple tools touch .next/cache
+            config.cache = { type: 'memory' };
+        }
+        return config;
+    },
 
     // Skip static generation for authenticated routes
     async headers() {

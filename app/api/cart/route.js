@@ -5,6 +5,7 @@ import Product from "@/models/Product";
 import { getAuth } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 import { getCartEntryProductId, getCartEntryQuantity, isFreeGiftEntry } from "@/lib/freeGiftUtils";
+import { isPlaceholderName } from "@/lib/abandonedCartUtils";
 
 
 // Update user cart 
@@ -67,21 +68,35 @@ export async function POST(request){
                 const now = new Date();
 
                 for (const [storeId, storeItems] of grouped.entries()) {
+                    const existingCart = await AbandonedCart.findOne({
+                        storeId,
+                        userId,
+                        status: { $ne: 'converted' },
+                    })
+                        .select('name email phone address')
+                        .lean();
+
+                    const userName = String(user.name || '').trim();
+                    const safeUserName = !isPlaceholderName(userName) ? userName : null;
+                    const userEmail = user.email?.toLowerCase()?.trim() || null;
+                    const userPhone = user.phone?.trim() || null;
+
                     await AbandonedCart.updateOne(
-                        { storeId, userId },
+                        { storeId, userId, status: { $ne: 'converted' } },
                         {
                             $set: {
                                 storeId,
                                 userId,
-                                name: user.name || null,
-                                email: user.email?.toLowerCase() || null,
-                                phone: user.phone || null,
-                                address: customerInfo?.address || null,
+                                name: safeUserName || existingCart?.name || null,
+                                email: userEmail || existingCart?.email || null,
+                                phone: userPhone || existingCart?.phone || null,
+                                address: customerInfo?.address || existingCart?.address || null,
                                 items: storeItems,
                                 cartTotal: null,
                                 currency: null,
                                 lastSeenAt: now,
                                 source: 'cart',
+                                status: 'active',
                             },
                         },
                         { upsert: true }

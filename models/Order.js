@@ -90,6 +90,20 @@ const OrderSchema = new mongoose.Schema({
   }],
   averageDeliveryRating: { type: Number, default: 0 },
 
+  trackingContext: {
+    anonymousId: { type: String, default: null },
+    sessionId: { type: String, default: null },
+  },
+  attribution: {
+    utmSource: { type: String, default: null },
+    utmMedium: { type: String, default: null },
+    utmCampaign: { type: String, default: null },
+    utmContent: { type: String, default: null },
+    utmTerm: { type: String, default: null },
+    utmId: { type: String, default: null },
+    utmReferrer: { type: String, default: null },
+  },
+
   // Add more fields as needed
 }, { timestamps: true });
 

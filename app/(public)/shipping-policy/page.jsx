@@ -1,5 +1,6 @@
 'use client';
 
+import PolicyPageLayout from '@/components/PolicyPageLayout';
 import { useStorefrontI18n } from '@/lib/useStorefrontI18n';
 
 const PAGE_COPY = {
@@ -156,12 +157,11 @@ export default function ShippingPolicyPage() {
   const copy = isArabic ? PAGE_COPY.ar : PAGE_COPY.en;
 
   return (
-    <div className="bg-gray-50 max-w-[1450px] mx-auto">
-      <div className="max-w-3xl mx-auto px-4 py-10 min-h-[60vh]">
+    <PolicyPageLayout dir={isArabic ? 'rtl' : undefined}>
         <h1 className="text-3xl font-bold text-gray-900 mb-2">{copy.title}</h1>
         <p className="text-gray-600 mb-8">{copy.intro}</p>
 
-        <div className="space-y-6 bg-white border border-gray-200 rounded-xl p-6">
+        <div className="space-y-6 border border-gray-200 rounded-xl p-6">
           {copy.sections.map((section) => (
             <section key={section.title}>
               <h2 className="font-semibold text-gray-900 mb-2">{section.title}</h2>
@@ -180,7 +180,6 @@ export default function ShippingPolicyPage() {
             </section>
           ))}
         </div>
-      </div>
-    </div>
+    </PolicyPageLayout>
   );
 }

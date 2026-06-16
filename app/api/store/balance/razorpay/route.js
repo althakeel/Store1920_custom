@@ -23,14 +23,14 @@ const formatBalance = (balancePayload) => {
 
     const available = Array.isArray(balancePayload.available) ? balancePayload.available : []
     const pending = Array.isArray(balancePayload.pending) ? balancePayload.pending : []
-    const currencyBalance = available.find((item) => item.currency === 'INR') || available[0]
-    const pendingBalance = pending.find((item) => item.currency === 'INR') || pending[0]
+    const currencyBalance = available.find((item) => item.currency === 'AED') || available.find((item) => item.currency === 'INR') || available[0]
+    const pendingBalance = pending.find((item) => item.currency === 'AED') || pending.find((item) => item.currency === 'INR') || pending[0]
     const availableAmount = currencyBalance?.balance ? currencyBalance.balance / 100 : 0
     const pendingAmount = pendingBalance?.balance ? pendingBalance.balance / 100 : 0
 
     return {
         amount: availableAmount,
-        currency: currencyBalance?.currency || 'INR',
+        currency: currencyBalance?.currency || 'AED',
         label: pendingBalance?.balance
             ? `Available balance (pending ${pendingAmount.toFixed(2)})`
             : 'Available balance'
@@ -56,7 +56,7 @@ export async function GET(request) {
             return NextResponse.json({
                 success: true,
                 provider: 'razorpay',
-                balance: { amount: 0, currency: 'INR', label: 'Balance unavailable' },
+                balance: { amount: 0, currency: 'AED', label: 'Balance unavailable' },
                 transactions: [],
                 note: 'Razorpay keys are not configured for this environment.'
             })
@@ -107,7 +107,7 @@ export async function GET(request) {
             return NextResponse.json({
                 success: true,
                 provider: 'razorpay',
-                balance: balance || { amount: 0, currency: 'INR', label: 'Balance unavailable' },
+                balance: balance || { amount: 0, currency: 'AED', label: 'Balance unavailable' },
                 transactions,
                 note: note || 'Razorpay balance API data is limited by account permissions.'
             })

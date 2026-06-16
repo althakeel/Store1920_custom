@@ -4,6 +4,7 @@ import dbConnect from "@/lib/mongodb";
 import Order from "@/models/Order";
 import Product from "@/models/Product";
 import { verifyAuth } from "@/lib/verifyAuth";
+import { recordPurchaseFromOrder } from "@/lib/serverCustomerTracking";
 
 export async function POST(request) {
   const startTime = Date.now();
@@ -58,7 +59,20 @@ export async function POST(request) {
           existingOrder.coupon = { code: 'PREPAID5', discountType: 'percentage', discount: 5 };
           await existingOrder.save();
 
-          return NextResponse.json({ 
+          try {
+            await recordPurchaseFromOrder({
+              order: existingOrder,
+              trackingContext: paymentPayload?.trackingContext || existingOrder.trackingContext || {},
+              attribution: paymentPayload?.attribution || existingOrder.attribution || {},
+              userId: existingOrder.userId || null,
+              isGuest: Boolean(existingOrder.isGuest),
+              source: 'razorpay_prepaid_upsell',
+            });
+          } catch (trackingError) {
+            console.error('[Verify] Purchase tracking failed for upsell order', existingOrder._id, trackingError);
+          }
+
+          return NextResponse.json({
             success: true,
             orderId: existingOrder._id.toString(),
             message: 'Existing order updated to prepaid with discount' 
@@ -83,6 +97,14 @@ export async function POST(request) {
 
       if (paymentPayload.coinsToRedeem) {
         orderPayload.coinsToRedeem = paymentPayload.coinsToRedeem;
+      }
+
+      if (paymentPayload.trackingContext) {
+        orderPayload.trackingContext = paymentPayload.trackingContext;
+      }
+
+      if (paymentPayload.attribution) {
+        orderPayload.attribution = paymentPayload.attribution;
       }
 
       // Add user/guest info

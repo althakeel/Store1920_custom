@@ -8,6 +8,7 @@ import {
   shouldDropForMissingIdentity,
   validateTrackingPayload,
 } from '@/lib/customerBehaviorTracking';
+import { hasPurchaseEventForOrder } from '@/lib/serverCustomerTracking';
 
 export async function POST(request) {
   try {
@@ -30,6 +31,17 @@ export async function POST(request) {
       return NextResponse.json({
         error: 'No customer identifier could be resolved',
       }, { status: 400 });
+    }
+
+    if (payload.eventType === 'purchase') {
+      const orderId = payload?.metadata?.orderId;
+      if (orderId && await hasPurchaseEventForOrder(payload.storeId, orderId)) {
+        return NextResponse.json({
+          success: true,
+          skipped: true,
+          reason: 'duplicate_purchase',
+        });
+      }
     }
 
     const document = buildCustomerBehaviorEvent(payload, identifier);

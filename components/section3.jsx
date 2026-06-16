@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import axios from 'axios'
 import ProductCard from '@/components/ProductCard'
-import { HOME_PRODUCT_GRID_CLASS, HOME_SECTION_CLASS, HOME_SECTION_INNER_CLASS, HOME_SECTION_TITLE_CLASS } from '@/lib/storefrontCarousel'
+import { HOME_PRODUCT_GRID_CLASS, HOME_SECTION_CLASS, HOME_SECTION_GRID_INNER_CLASS, HOME_SECTION_TITLE_CLASS } from '@/lib/storefrontCarousel'
 
 const TOP_DEALS_SECTION_KEYS = new Set(['top_deals', 'top-deals', 'topdeals'])
 
@@ -25,7 +25,7 @@ function findTopDealsSection(homeSections = []) {
 
 function TopDealsSkeleton() {
   return (
-    <div className={`${HOME_PRODUCT_GRID_CLASS} px-3 sm:px-0`}>
+    <div className={HOME_PRODUCT_GRID_CLASS}>
       {[...Array(6)].map((_, index) => (
         <div
           key={`top-deals-skeleton-${index}`}
@@ -110,13 +110,13 @@ export default function TopDeals({ homeSections = [], sectionsLoading = false })
 
   return (
     <section className={HOME_SECTION_CLASS}>
-      <div className={HOME_SECTION_INNER_CLASS}>
+      <div className={HOME_SECTION_GRID_INNER_CLASS}>
         <h2 className={HOME_SECTION_TITLE_CLASS}>{title}</h2>
 
         {loading ? (
           <TopDealsSkeleton />
         ) : (
-          <div className={`${HOME_PRODUCT_GRID_CLASS} px-3 sm:px-0`}>
+          <div className={HOME_PRODUCT_GRID_CLASS}>
             {products.slice(0, 12).map((product, index) => (
               <ProductCard key={product._id || product.id || index} product={product} priorityImages={index < 6} />
             ))}

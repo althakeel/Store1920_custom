@@ -14,7 +14,7 @@ const MarketingExpenseSchema = new mongoose.Schema({
     default: 'FACEBOOK'
   },
   amount: { type: Number, required: true },
-  currency: { type: String, default: 'INR' },
+  currency: { type: String, default: 'AED' },
   clicks: { type: Number, default: 0 },
   impressions: { type: Number, default: 0 },
   reach: { type: Number, default: 0 },

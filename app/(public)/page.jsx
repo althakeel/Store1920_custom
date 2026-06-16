@@ -20,7 +20,7 @@ const RecommendedProducts = dynamic(() => import("@/components/RecommendedProduc
 
 function HomeSectionSkeleton() {
     return (
-        <div className={`${HOME_SECTION_CLASS} w-full max-w-[1400px] mx-auto px-4 sm:px-6`}>
+        <div className={`${HOME_SECTION_CLASS} w-full max-w-[1400px] mx-auto px-0 sm:px-6`}>
             <div className="mb-4 h-7 w-44 animate-pulse rounded bg-slate-100 sm:mb-5" />
             <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2">
                 {Array.from({ length: 12 }).map((_, index) => (

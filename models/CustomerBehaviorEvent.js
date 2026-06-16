@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 const IdentifierSchema = new mongoose.Schema({
   firebaseUid: { type: String, default: null },
   userId: { type: String, default: null },
+  anonymousId: { type: String, default: null },
   emailHash: { type: String, default: null },
   phoneHash: { type: String, default: null },
   source: { type: String, default: 'unknown' },
@@ -34,6 +35,8 @@ CustomerBehaviorEventSchema.index({ 'identifier.firebaseUid': 1, createdAt: -1 }
 CustomerBehaviorEventSchema.index({ 'identifier.userId': 1, createdAt: -1 });
 CustomerBehaviorEventSchema.index({ 'identifier.emailHash': 1, createdAt: -1 });
 CustomerBehaviorEventSchema.index({ 'identifier.phoneHash': 1, createdAt: -1 });
+CustomerBehaviorEventSchema.index({ 'identifier.anonymousId': 1, createdAt: -1 });
+CustomerBehaviorEventSchema.index({ 'context.sessionId': 1, createdAt: -1 });
 // TTL: auto-delete events older than 90 days to control collection size
 CustomerBehaviorEventSchema.index({ createdAt: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 });
 

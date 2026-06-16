@@ -120,7 +120,7 @@ export default function PersonalizedOffersAdmin() {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
       console.log('Fetched abandoned carts:', data.carts?.length || 0);
-      setAbandonedCarts(data.carts || []);
+      setAbandonedCarts((data.carts || []).filter((cart) => cart.status !== 'converted'));
     } catch (error) {
       console.error("Error fetching abandoned carts:", error);
     } finally {

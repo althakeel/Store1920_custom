@@ -24,7 +24,7 @@ export async function POST(request) {
       });
     }
 
-    const { amount, currency = "INR", receipt } = await request.json();
+    const { amount, currency = "AED", receipt } = await request.json();
 
     // Validate inputs
     if (!amount || amount <= 0) {

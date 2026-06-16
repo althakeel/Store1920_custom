@@ -1,6 +1,6 @@
 'use client'
 
-import { StarIcon, Share2Icon, HeartIcon, MinusIcon, PlusIcon, ShoppingCartIcon, Trash2 } from "lucide-react";
+import { StarIcon, Share2Icon, HeartIcon, MinusIcon, PlusIcon, ShoppingCartIcon, Trash2, Check } from "lucide-react";
 import Image from "next/image";
 import { useState, useEffect, useRef, useMemo } from "react";
 
@@ -17,6 +17,7 @@ import { useAuth } from '@/lib/useAuth';
 import { trackMetaEvent } from "@/lib/metaPixelClient";
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
 import { useStorefrontI18n } from '@/lib/useStorefrontI18n';
+import { trackCustomerEvent } from '@/lib/trackingClient';
 
 const sanitizeDisplayText = (value) => String(value ?? '')
   .replace(/\u00C2\u00A0/g, ' ')
@@ -121,6 +122,9 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const [timeNow, setTimeNow] = useState(() => new Date());
   const imagesArray = normalizeImages(product.images).map(getImageSrc).filter(Boolean);
   const [mainImage, setMainImage] = useState(imagesArray?.[0]);
+  const mobileCarouselRef = useRef(null);
+  const mobileThumbnailsRef = useRef(null);
+  const mobileCarouselScrollRaf = useRef(null);
   const [quantity, setQuantity] = useState(1);
   const [isInWishlist, setIsInWishlist] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
@@ -277,31 +281,18 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     if (typeof window === 'undefined') return;
     if (!product?.storeId) return;
 
-    const sessionId = sessionStorage.getItem('session_id') || null;
-    const anonymousId = localStorage.getItem('anonymous_id') || null;
-
-    try {
-      await fetch('/api/analytics/customer-behavior', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          storeId: String(product.storeId),
-          eventType,
-          productId: String(product._id || ''),
-          pageType: 'product_detail',
-          pagePath: window.location.pathname,
-          value: Number(bundleTotal || effPrice || 0),
-          currency: 'AED',
-          firebaseUid: userId || null,
-          userId: userId || null,
-          sessionId,
-          anonymousId,
-          metadata,
-        }),
-      });
-    } catch (error) {
-      console.error('Customer tracking failed:', error);
-    }
+    await trackCustomerEvent({
+      storeId: String(product.storeId),
+      eventType,
+      firebaseUid: userId || null,
+      userId: userId || null,
+      productId: String(product._id || ''),
+      pageType: 'product_detail',
+      pagePath: window.location.pathname,
+      value: Number(bundleTotal || effPrice || 0),
+      currency: 'AED',
+      metadata,
+    });
   };
 
   // FBT (Frequently Bought Together) state
@@ -344,7 +335,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       content_ids: [String(product._id)],
       content_name: product.name || product.title || 'Product',
       value: Number(product.price || 0),
-      currency: 'INR',
+      currency: 'AED',
     });
 
     pushDataLayerEvent('view_item', {
@@ -602,10 +593,14 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const isSelectionInStock = isVariantInStock(selectedColor, selectedSize);
 
   useEffect(() => {
-    if (selectedVariantImage) {
-      setMainImage(selectedVariantImage);
+    if (!selectedVariantImage) return;
+    const idx = imagesArray.indexOf(selectedVariantImage);
+    if (idx >= 0) {
+      goToMobileImage(idx, false);
+      return;
     }
-  }, [selectedVariantImage]);
+    setMainImage(selectedVariantImage);
+  }, [selectedVariantImage, imagesArray]);
 
   // Helper to check if color has any size in stock
   const isColorAvailable = (color) => {
@@ -685,6 +680,67 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
         return 'aspect-square';
     }
   })();
+
+  const activeImageIndex = useMemo(() => {
+    if (!mainImage || !imagesArray.length) return 0;
+    const idx = imagesArray.indexOf(mainImage);
+    return idx >= 0 ? idx : 0;
+  }, [imagesArray, mainImage]);
+
+  const goToMobileImage = (index, smooth = true) => {
+    if (!imagesArray.length) return;
+    const safeIndex = Math.max(0, Math.min(index, imagesArray.length - 1));
+    const nextImage = imagesArray[safeIndex];
+    if (nextImage && nextImage !== mainImage) {
+      setMainImage(nextImage);
+    }
+    const carousel = mobileCarouselRef.current;
+    if (carousel) {
+      carousel.scrollTo({
+        left: safeIndex * carousel.clientWidth,
+        behavior: smooth ? 'smooth' : 'auto',
+      });
+    }
+  };
+
+  const handleMobileCarouselScroll = () => {
+    if (mobileCarouselScrollRaf.current) {
+      cancelAnimationFrame(mobileCarouselScrollRaf.current);
+    }
+    mobileCarouselScrollRaf.current = requestAnimationFrame(() => {
+      const carousel = mobileCarouselRef.current;
+      if (!carousel || !imagesArray.length) return;
+      const index = Math.round(carousel.scrollLeft / carousel.clientWidth);
+      const safeIndex = Math.max(0, Math.min(index, imagesArray.length - 1));
+      const nextImage = imagesArray[safeIndex];
+      if (nextImage && nextImage !== mainImage) {
+        setMainImage(nextImage);
+      }
+    });
+  };
+
+  useEffect(() => {
+    setMainImage(imagesArray?.[0] || null);
+    const carousel = mobileCarouselRef.current;
+    if (carousel) {
+      carousel.scrollLeft = 0;
+    }
+  }, [product._id]);
+
+  useEffect(() => {
+    const container = mobileThumbnailsRef.current;
+    if (!container) return;
+    const thumb = container.children[activeImageIndex];
+    if (thumb) {
+      thumb.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
+  }, [activeImageIndex]);
+
+  useEffect(() => () => {
+    if (mobileCarouselScrollRaf.current) {
+      cancelAnimationFrame(mobileCarouselScrollRaf.current);
+    }
+  }, []);
 
   // Check wishlist status
   useEffect(() => {
@@ -1121,8 +1177,8 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     <div className="bg-white">
       {/* Breadcrumb */}
       <div className="bg-white border-b border-gray-200">
-        <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 py-2.5">
-          <nav className="flex items-center flex-wrap gap-x-1 gap-y-0.5 text-xs text-gray-500">
+        <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 py-1.5 lg:py-2">
+          <nav className="flex items-center flex-wrap gap-x-1 gap-y-0.5 text-[11px] sm:text-xs text-gray-500 leading-tight">
             <a href="/" className="hover:underline hover:text-gray-800 whitespace-nowrap">Home</a>
             {(() => {
               // Build ordered chain: resolve first category, walk up to parent
@@ -1160,11 +1216,11 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
         </div>
       </div>
 
-      <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 py-6 pb-8">
+      <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 pt-0 pb-8 lg:py-6">
         <div className="product-page-grid gap-0 lg:gap-8 items-start">
 
           {/* LEFT: Media gallery */}
-          <div className="space-y-4 lg:min-w-0 lg:sticky lg:top-24 lg:self-start relative z-20">
+          <div className="space-y-3 lg:space-y-4 lg:min-w-0 lg:sticky lg:top-24 lg:self-start relative z-20">
             <div className="hidden lg:flex gap-3 items-start">
               <div className="flex flex-col gap-1.5 w-[56px] xl:w-[64px] flex-shrink-0 overflow-y-auto max-h-[720px] scrollbar-hide">
                 {imagesArray?.map((image, index) => (
@@ -1331,7 +1387,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
               </div>
             </div>
 
-            {/* Mobile: Main Image Only */}
+            {/* Mobile: Swipeable image slider */}
             <div className="lg:hidden relative -mx-4 sm:mx-0">
               <div className={`relative w-full ${aspectRatioClass} bg-white border border-gray-200 rounded-none sm:rounded-lg overflow-hidden`}>
                 {product.attributes?.condition === 'used' && (
@@ -1360,27 +1416,56 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   </button>
                 </div>
 
-                <Image
-                  src={mainImage || 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'}
-                  alt={safeProductName}
-                  fill
-                  className="object-cover"
-                  priority
-                  onError={(e) => { e.currentTarget.src = 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'; }}
-                />
+                {imagesArray.length > 1 ? (
+                  <div
+                    ref={mobileCarouselRef}
+                    onScroll={handleMobileCarouselScroll}
+                    className="absolute inset-0 flex overflow-x-auto snap-x snap-mandatory scroll-smooth scrollbar-hide touch-pan-x"
+                  >
+                    {imagesArray.map((image, index) => (
+                      <div
+                        key={`${image}-${index}`}
+                        className="relative h-full w-full flex-shrink-0 snap-center snap-always"
+                      >
+                        <Image
+                          src={image || 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'}
+                          alt={`${safeProductName} ${index + 1}`}
+                          fill
+                          className="object-cover"
+                          priority={index === 0}
+                          draggable={false}
+                          onError={(e) => { e.currentTarget.src = 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'; }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <Image
+                    src={mainImage || 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'}
+                    alt={safeProductName}
+                    fill
+                    className="object-cover"
+                    priority
+                    onError={(e) => { e.currentTarget.src = 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'; }}
+                  />
+                )}
               </div>
             </div>
 
             {/* Mobile Thumbnail Gallery */}
-            <div className="lg:hidden -mx-4 sm:mx-0 px-4 sm:px-0 flex gap-2 overflow-x-auto pb-2 scrollbar-hide cursor-grab active:cursor-grabbing">
+            <div
+              ref={mobileThumbnailsRef}
+              className="lg:hidden -mx-4 sm:mx-0 px-4 sm:px-0 flex gap-2 overflow-x-auto pb-2 scrollbar-hide scroll-smooth"
+            >
               {imagesArray?.map((image, index) => (
                 <button
-                  key={index}
-                  onClick={() => setMainImage(image)}
-                  className={`flex-shrink-0 w-14 h-14 border-2 rounded overflow-hidden transition-all bg-white cursor-pointer ${
-                    mainImage === image 
-                      ? 'border-orange-500' 
-                      : 'border-gray-200'
+                  key={`${image}-${index}-thumb`}
+                  type="button"
+                  onClick={() => goToMobileImage(index)}
+                  className={`flex-shrink-0 w-14 h-14 border-2 rounded overflow-hidden transition-all duration-200 bg-white cursor-pointer ${
+                    activeImageIndex === index
+                      ? 'border-orange-500 ring-1 ring-orange-200'
+                      : 'border-gray-200 opacity-80 hover:opacity-100'
                   }`}
                 >
                   <Image
@@ -1825,7 +1910,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 style={isArabic ? { justifyContent: 'flex-end' } : undefined}
               >
                 <label className="text-sm font-semibold text-gray-900 leading-none whitespace-nowrap">
-                  {isArabic ? 'Ø§Ù„ÙƒÙ…ÙŠØ©:' : 'Quantity:'}
+                  {isArabic ? 'الكمية:' : 'Quantity:'}
                 </label>
                 <select
                   value={quantity}
@@ -1873,77 +1958,88 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   </button>
                 </div>
               ) : (
-                <div className="space-y-2">
-                  <div className="overflow-hidden rounded-[2px] border border-gray-300 bg-white">
-                    <div className="flex items-center justify-between border-b border-gray-200 px-3 py-2.5">
-                      <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-                          {isArabic ? 'ÙÙŠ Ø§Ù„Ø³Ù„Ø©' : 'In cart'}
-                        </p>
-                        <p className="mt-0.5 text-sm font-bold text-gray-900">
-                          {cartQty} {cartQty === 1 ? (isArabic ? 'Ø¹Ù†ØµØ±' : 'item') : (isArabic ? 'Ø¹Ù†Ø§ØµØ±' : 'items')} added
-                        </p>
-                      </div>
-                      <ShoppingCartIcon size={18} className="text-orange-500" />
-                    </div>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2.5">
+                    <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-green-600 text-white">
+                      <Check size={14} strokeWidth={3} />
+                    </span>
+                    <p className="text-sm font-semibold text-green-900">
+                      {isArabic
+                        ? `تمت الإضافة · ${cartQty} ${cartQty === 1 ? 'عنصر' : 'عناصر'} في السلة`
+                        : `Added to cart · ${cartQty} ${cartQty === 1 ? 'item' : 'items'}`}
+                    </p>
+                  </div>
 
-                    <div className="flex h-12 items-center justify-between px-3">
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const pid = String(product._id || '');
-                        if (cartQty <= 1) {
-                          dispatch(deleteItemFromCart({ productId: pid }));
-                          if (isSignedIn) { try { await dispatch(uploadCart()).unwrap(); } catch (_) {} }
-                        } else {
-                          dispatch(removeFromCart({ productId: pid }));
-                          if (isSignedIn) { try { await dispatch(uploadCart()).unwrap(); } catch (_) {} }
-                        }
-                      }}
-                      className="flex h-8 w-8 items-center justify-center rounded-[2px] text-gray-900 transition hover:bg-gray-100"
-                      aria-label={cartQty <= 1 ? 'Remove from cart' : 'Decrease quantity'}
-                    >
-                      {cartQty <= 1 ? <Trash2 size={14} className="text-red-500" /> : <MinusIcon size={14} className="text-gray-900" />}
-                    </button>
-
-                    <div className="min-w-[64px] text-center leading-tight px-2">
-                      <p className="text-lg font-bold text-gray-950">{cartQty}</p>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        if (cartQty < Math.max(1, maxOrderQty)) {
-                          setQuantity((q) => q + 1);
-                          const payload = {
-                            productId: product._id,
-                            price: effPrice,
-                            variantOptions: { color: selectedColor || null, size: selectedSize || null, bundleQty: selectedBundleQty || null }
-                          };
-                          if (product.specialOffer?.offerToken) {
-                            payload.offerToken = product.specialOffer.offerToken;
-                            payload.discountPercent = product.specialOffer.discountPercent;
+                  <div className="overflow-hidden rounded-md border border-gray-300 bg-white shadow-sm">
+                    <div className="grid grid-cols-[1fr_auto_1fr] items-stretch">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const pid = String(product._id || '');
+                          if (cartQty <= 1) {
+                            dispatch(deleteItemFromCart({ productId: pid }));
+                            if (isSignedIn) { try { await dispatch(uploadCart()).unwrap(); } catch (_) {} }
+                          } else {
+                            dispatch(removeFromCart({ productId: pid }));
+                            if (isSignedIn) { try { await dispatch(uploadCart()).unwrap(); } catch (_) {} }
                           }
-                          dispatch(addToCart(payload));
-                          if (isSignedIn) { try { await dispatch(uploadCart()).unwrap(); } catch (_) {} }
-                        }
-                      }}
-                      className="flex h-8 w-8 items-center justify-center rounded-[2px] text-gray-900 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
-                      aria-label="Increase quantity"
-                      disabled={cartQty >= Math.max(1, maxOrderQty)}
-                    >
-                      <PlusIcon size={14} />
-                    </button>
+                        }}
+                        className="flex h-11 items-center justify-center border-r border-gray-200 text-gray-700 transition hover:bg-gray-50"
+                        aria-label={cartQty <= 1 ? 'Remove from cart' : 'Decrease quantity'}
+                      >
+                        {cartQty <= 1 ? <Trash2 size={16} className="text-red-500" /> : <MinusIcon size={16} />}
+                      </button>
+
+                      <div className="flex min-w-[88px] flex-col items-center justify-center border-r border-gray-200 bg-gray-50 px-4">
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                          {isArabic ? 'الكمية' : 'Qty'}
+                        </span>
+                        <span className="text-lg font-bold leading-none text-gray-900">{cartQty}</span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (cartQty < Math.max(1, maxOrderQty)) {
+                            setQuantity((q) => q + 1);
+                            const payload = {
+                              productId: product._id,
+                              price: effPrice,
+                              variantOptions: { color: selectedColor || null, size: selectedSize || null, bundleQty: selectedBundleQty || null }
+                            };
+                            if (product.specialOffer?.offerToken) {
+                              payload.offerToken = product.specialOffer.offerToken;
+                              payload.discountPercent = product.specialOffer.discountPercent;
+                            }
+                            dispatch(addToCart(payload));
+                            if (isSignedIn) { try { await dispatch(uploadCart()).unwrap(); } catch (_) {} }
+                          }
+                        }}
+                        className="flex h-11 items-center justify-center text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        aria-label="Increase quantity"
+                        disabled={cartQty >= Math.max(1, maxOrderQty)}
+                      >
+                        <PlusIcon size={16} />
+                      </button>
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => router.push('/checkout')}
-                    className="w-full h-12 px-4 rounded-[2px] bg-orange-500 text-white font-bold text-sm hover:bg-orange-600 transition text-center"
-                  >
-                    {isArabic ? 'المتابعة إلى الدفع' : 'Proceed to checkout'}
-                  </button>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => router.push('/cart')}
+                      className="h-11 rounded-md border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-800 transition hover:bg-gray-50"
+                    >
+                      {isArabic ? 'عرض السلة' : 'View cart'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => router.push('/checkout')}
+                      className="h-11 rounded-md bg-orange-500 px-4 text-sm font-bold text-white transition hover:bg-orange-600"
+                    >
+                      {isArabic ? 'إتمام الشراء' : 'Checkout'}
+                    </button>
+                  </div>
                 </div>
               )}
 

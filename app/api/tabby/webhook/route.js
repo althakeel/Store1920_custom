@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import { captureTabbyPayment, updateTabbyPayment } from '@/lib/tabby';
+import { recordPurchaseFromOrder } from '@/lib/serverCustomerTracking';
 
 export async function POST(request) {
     try {
@@ -33,6 +34,19 @@ export async function POST(request) {
                 order.isPaid = true;
                 if (paymentId) order.tabbyPaymentId = paymentId;
                 await order.save();
+
+                try {
+                    await recordPurchaseFromOrder({
+                        order,
+                        trackingContext: order.trackingContext || {},
+                        attribution: order.attribution || {},
+                        userId: order.userId || null,
+                        isGuest: Boolean(order.isGuest),
+                        source: 'tabby_webhook',
+                    });
+                } catch (trackingError) {
+                    console.error('Tabby purchase tracking failed for order', orderId, trackingError);
+                }
 
                 if (paymentId) {
                     try {

@@ -1,20 +1,24 @@
-'use client'
+'use client';
 
+import PolicyPageLayout from '@/components/PolicyPageLayout';
 import { useStorefrontI18n } from "@/lib/useStorefrontI18n";
+import {
+  STORE1920_CUSTOMER_SUPPORT_PHONE,
+  STORE1920_CUSTOMER_SUPPORT_TEL,
+} from '@/lib/storeContact';
 
 export default function TermsOfSalePage() {
   const { isArabic } = useStorefrontI18n();
 
   if (isArabic) {
     return (
-      <div className="bg-gray-50" dir="rtl">
-        <div className="max-w-[1250px] mx-auto px-4 py-10 min-h-[60vh]">
+      <PolicyPageLayout dir="rtl">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">شروط البيع</h1>
           <p className="text-gray-600 mb-8">
             توضح شروط البيع هذه البنود والأحكام المنظمة لعمليات بيع المنتجات عبر Store1920.com. بإتمامك أي عملية شراء، فإنك توافق على الالتزام بهذه الشروط.
           </p>
 
-          <div className="space-y-6 bg-white border border-gray-200 rounded-xl p-6">
+          <div className="space-y-6 border border-gray-200 rounded-xl p-6">
             <section>
               <h2 className="font-semibold text-gray-900 mb-2">1. العرض والقبول</h2>
               <p className="text-gray-700">
@@ -88,25 +92,28 @@ export default function TermsOfSalePage() {
                 <p className="text-gray-700 mb-1"><strong>اسم النشاط:</strong> Store1920</p>
                 <p className="text-gray-700 mb-1"><strong>الموقع:</strong> https://www.Store1920.com</p>
                 <p className="text-gray-700 mb-1"><strong>البريد الإلكتروني:</strong> support@Store1920.com</p>
-                <p className="text-gray-700"><strong>الهاتف:</strong> +91 7592875212</p>
+                <p className="text-gray-700">
+                  <strong>الهاتف:</strong>{' '}
+                  <a href={STORE1920_CUSTOMER_SUPPORT_TEL} className="text-orange-600 underline">
+                    {STORE1920_CUSTOMER_SUPPORT_PHONE}
+                  </a>
+                </p>
               </div>
             </section>
           </div>
-        </div>
-      </div>
+      </PolicyPageLayout>
     );
   }
 
   return (
-    <div className="bg-gray-50">
-      <div className="max-w-[1250px] mx-auto px-4 py-10 min-h-[60vh]">
+    <PolicyPageLayout>
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Terms of Sale</h1>
         <p className="text-gray-600 mb-8">
           These Terms of Sale outline the terms and conditions governing the sale of products on Store1920.com.
           By making a purchase, you agree to be bound by these terms.
         </p>
 
-        <div className="space-y-6 bg-white border border-gray-200 rounded-xl p-6">
+        <div className="space-y-6 border border-gray-200 rounded-xl p-6">
           
           {/* 1 */}
           <section>
@@ -140,11 +147,11 @@ export default function TermsOfSalePage() {
           <section>
             <h2 className="font-semibold text-gray-900 mb-2">3. Pricing & Taxes</h2>
             <p className="text-gray-700 mb-3">
-              All prices displayed on Store1920.com are in Indian Rupees (INR) unless otherwise specified.
+              All prices displayed on Store1920.com are in UAE Dirhams (AED) unless otherwise specified.
             </p>
             <ul className="list-disc ml-6 mb-3 text-gray-700">
               <li>Prices are subject to change without notice, though current prices apply to confirmed orders</li>
-              <li>Prices may be inclusive or exclusive of GST/applicable taxes as indicated</li>
+              <li>Prices may be inclusive or exclusive of VAT/applicable taxes as indicated</li>
               <li>Additional taxes, duties, or charges may apply depending on your location</li>
               <li>Shipping charges are displayed before checkout confirmation</li>
               <li>Promotional offers and discounts are subject to specific terms and expiration dates</li>
@@ -159,7 +166,7 @@ export default function TermsOfSalePage() {
               Payment must be received in full before an order is processed and shipped, unless otherwise agreed in writing.
             </p>
             <ul className="list-disc ml-6 mb-3 text-gray-700">
-              <li>We accept Credit/Debit Cards, UPI, Digital Wallets, Net Banking, and EMI options</li>
+              <li>We accept credit/debit cards, Apple Pay, Tabby, Tamara, and cash on delivery (where available)</li>
               <li>Payment transactions are processed through PCI-DSS compliant payment gateways</li>
               <li>You are responsible for ensuring your payment information is accurate and authorized</li>
               <li>Failed payment attempts will result in order cancellation</li>
@@ -313,11 +320,10 @@ export default function TermsOfSalePage() {
           <section>
             <h2 className="font-semibold text-gray-900 mb-2">14. Dispute Resolution & Jurisdiction</h2>
             <p className="text-gray-700 mb-3">
-              <strong>Applicable Law:</strong> These Terms of Sale are governed by Indian law.
+              <strong>Applicable Law:</strong> These Terms of Sale are governed by the laws of the United Arab Emirates.
             </p>
             <ul className="list-disc ml-6 mb-3 text-gray-700">
-              <li>All disputes shall be subject to the exclusive jurisdiction of courts in India</li>
-              <li>For consumer disputes, the Consumer Protection Act, 2019, applies</li>
+              <li>All disputes shall be subject to the exclusive jurisdiction of courts in the UAE</li>
               <li>We encourage resolving disputes through our customer support team first</li>
               <li>Unresolved complaints may be escalated to consumer dispute redressal mechanisms</li>
             </ul>
@@ -377,14 +383,18 @@ export default function TermsOfSalePage() {
               <p className="text-gray-700 mb-1"><strong>Business Name:</strong> Store1920</p>
               <p className="text-gray-700 mb-1"><strong>Website:</strong> https://www.Store1920.com</p>
               <p className="text-gray-700 mb-1"><strong>Email:</strong> support@Store1920.com</p>
-              <p className="text-gray-700"><strong>Phone:</strong> +91 7592875212</p>
+              <p className="text-gray-700">
+                <strong>Phone:</strong>{' '}
+                <a href={STORE1920_CUSTOMER_SUPPORT_TEL} className="text-orange-600 underline">
+                  {STORE1920_CUSTOMER_SUPPORT_PHONE}
+                </a>
+              </p>
             </div>
             <p className="text-xs text-gray-500 mt-4">
               <strong>Last Updated:</strong> February 2026
             </p>
           </section>
         </div>
-      </div>
-    </div>
+    </PolicyPageLayout>
   );
 }

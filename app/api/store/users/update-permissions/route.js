@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import connectDB from '@/lib/mongodb';
 import StoreUser from '@/models/StoreUser';
 import authSeller from '@/middlewares/authSeller';
+import { assertStoreOwner } from '@/lib/storeAccessControl';
 import { getAuth } from '@/lib/firebase-admin';
 
 export async function POST(request) {
@@ -21,6 +22,8 @@ export async function POST(request) {
     if (!storeId) {
       return NextResponse.json({ error: 'Store not found' }, { status: 404 });
     }
+
+    await assertStoreOwner(userId);
 
     const { userId: memberId, permissions } = await request.json();
     if (!memberId) {

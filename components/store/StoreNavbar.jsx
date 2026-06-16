@@ -10,8 +10,8 @@ import { useAuth } from "@/lib/useAuth";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 
-const SELLER_LOGO_MAX_WIDTH = 180;
-const SELLER_LOGO_MAX_HEIGHT = 48;
+const SELLER_LOGO_MAX_WIDTH = 140;
+const SELLER_LOGO_MAX_HEIGHT = 36;
 
 function clampSellerLogoDimensions(width, height) {
     const parsedWidth = Number(width);
@@ -97,7 +97,7 @@ const StoreNavbar = ({ storeInfo }) => {
     };
 
     return (
-        <div className="flex items-center justify-between px-12 py-3 border-b border-slate-200 bg-white text-slate-900 shadow-sm transition-all">
+        <div className="flex items-center justify-between px-4 py-2 lg:px-6 border-b border-slate-200 bg-white text-slate-900 shadow-sm transition-all">
             <Link href="/store" className="relative flex items-center">
                 {navbarLogo.url ? (
                   <img
@@ -105,25 +105,25 @@ const StoreNavbar = ({ storeInfo }) => {
                     alt={storeInfo?.name || 'Store Logo'}
                     width={navbarLogo.width}
                     height={navbarLogo.height}
-                    className="h-auto w-auto max-h-12 max-w-[180px] object-contain"
+                    className="h-auto w-auto max-h-9 max-w-[140px] object-contain"
                     style={{ width: navbarLogo.width, height: navbarLogo.height }}
                   />
                 ) : (
                   <Image
                     src={Logo}
                     alt="Store1920 Logo"
-                    width={180}
-                    height={48}
-                    className="max-h-12 max-w-[180px] object-contain"
+                    width={140}
+                    height={36}
+                    className="max-h-9 max-w-[140px] object-contain"
                     priority
                   />
                 )}
             </Link>
-            <div className="flex items-center gap-3 text-slate-700">
-                <p>Hi, {storeInfo?.name || user?.displayName || user?.name || user?.email || ''}</p>
+            <div className="flex items-center gap-2 text-sm text-slate-700">
+                <p className="hidden sm:block">Hi, {storeInfo?.name || user?.displayName || user?.name || user?.email || ''}</p>
                 <button
                     onClick={() => setShowConfirm(true)}
-                    className="ml-4 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition shadow-sm"
+                    className="px-3 py-1.5 text-sm bg-red-500 text-white rounded-md hover:bg-red-600 transition shadow-sm"
                 >
                     Logout
                 </button>

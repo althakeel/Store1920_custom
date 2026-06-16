@@ -70,7 +70,7 @@ export default function HelpPage() {
     'payments': [
       {
         question: 'What payment methods do you accept?',
-        answer: 'We accept credit/debit cards, UPI, net banking, digital wallets, and cash on delivery (where available).'
+        answer: 'We accept credit/debit cards, Apple Pay, Tabby, Tamara, and cash on delivery across the UAE (where available).'
       },
       {
         question: 'Is my payment information secure?',

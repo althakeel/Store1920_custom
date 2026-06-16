@@ -62,7 +62,7 @@ export async function GET(request) {
             provider: 'delhivery',
             balance: {
                 amount: balanceAmount,
-                currency: 'INR',
+                currency: 'AED',
                 label: 'Collected COD total',
                 lastUpdated: new Date().toISOString()
             },

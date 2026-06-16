@@ -190,7 +190,7 @@ export default function SalesReport() {
                             <span className="text-blue-100">Total Revenue</span>
                             <DollarSign size={24} className="text-blue-200" />
                         </div>
-                        <p className="text-3xl font-bold">{currency}{reportData?.totalRevenue?.toLocaleString('en-IN') || 0}</p>
+                        <p className="text-3xl font-bold">{currency}{reportData?.totalRevenue?.toLocaleString('en-AE') || 0}</p>
                         <p className="text-sm text-blue-100 mt-2">{reportData?.totalOrders || 0} orders</p>
                     </div>
                     
@@ -200,10 +200,10 @@ export default function SalesReport() {
                             <span className="text-orange-100">Total Costs</span>
                             <Package size={24} className="text-orange-200" />
                         </div>
-                        <p className="text-3xl font-bold">{currency}{reportData?.totalCosts?.toLocaleString('en-IN') || 0}</p>
+                        <p className="text-3xl font-bold">{currency}{reportData?.totalCosts?.toLocaleString('en-AE') || 0}</p>
                         <div className="text-sm text-orange-100 mt-2 space-y-1">
-                            <p>Products: {currency}{reportData?.productCosts?.toLocaleString('en-IN') || 0}</p>
-                            <p>Delivery: {currency}{reportData?.deliveryCosts?.toLocaleString('en-IN') || 0}</p>
+                            <p>Products: {currency}{reportData?.productCosts?.toLocaleString('en-AE') || 0}</p>
+                            <p>Delivery: {currency}{reportData?.deliveryCosts?.toLocaleString('en-AE') || 0}</p>
                         </div>
                     </div>
                     
@@ -219,7 +219,7 @@ export default function SalesReport() {
                             }
                         </div>
                         <p className="text-3xl font-bold">
-                            {currency}{Math.abs(reportData?.totalProfit || 0).toLocaleString('en-IN')}
+                            {currency}{Math.abs(reportData?.totalProfit || 0).toLocaleString('en-AE')}
                         </p>
                         <p className={`text-sm ${isProfitable ? 'text-emerald-100' : 'text-red-100'} mt-2`}>
                             {reportData?.profitMargin?.toFixed(2) || 0}% margin
@@ -232,8 +232,8 @@ export default function SalesReport() {
                             <span className="text-purple-100">Avg Order Value</span>
                             <BarChart3 size={24} className="text-purple-200" />
                         </div>
-                        <p className="text-3xl font-bold">{currency}{reportData?.avgOrderValue?.toLocaleString('en-IN') || 0}</p>
-                        <p className="text-sm text-purple-100 mt-2">Avg Profit: {currency}{reportData?.avgProfit?.toLocaleString('en-IN') || 0}</p>
+                        <p className="text-3xl font-bold">{currency}{reportData?.avgOrderValue?.toLocaleString('en-AE') || 0}</p>
+                        <p className="text-sm text-purple-100 mt-2">Avg Profit: {currency}{reportData?.avgProfit?.toLocaleString('en-AE') || 0}</p>
                     </div>
                     
                 </div>
@@ -245,7 +245,7 @@ export default function SalesReport() {
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div className="p-4 bg-gradient-to-br from-pink-50 to-pink-100 rounded-lg">
                                 <p className="text-sm text-pink-700 mb-1">Total Marketing Spend</p>
-                                <p className="text-2xl font-bold text-pink-900">{currency}{reportData?.marketingCosts?.toLocaleString('en-IN')}</p>
+                                <p className="text-2xl font-bold text-pink-900">{currency}{reportData?.marketingCosts?.toLocaleString('en-AE')}</p>
                             </div>
                             <div className="p-4 bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-lg">
                                 <p className="text-sm text-indigo-700 mb-1">Cost Per Order</p>
@@ -291,19 +291,19 @@ export default function SalesReport() {
                                                     #{order.shortOrderNumber}
                                                 </td>
                                                 <td className="px-6 py-4 text-sm text-slate-600">
-                                                    {new Date(order.createdAt).toLocaleDateString('en-IN')}
+                                                    {new Date(order.createdAt).toLocaleDateString('en-AE')}
                                                 </td>
                                                 <td className="px-6 py-4 text-sm font-semibold text-slate-900">
-                                                    {currency}{order.total?.toLocaleString('en-IN') || 0}
+                                                    {currency}{order.total?.toLocaleString('en-AE') || 0}
                                                 </td>
                                                 <td className="px-6 py-4 text-sm text-slate-600">
-                                                    {currency}{order.productCost?.toLocaleString('en-IN') || 0}
+                                                    {currency}{order.productCost?.toLocaleString('en-AE') || 0}
                                                 </td>
                                                 <td className="px-6 py-4 text-sm text-slate-600">
-                                                    {currency}{order.shippingFee?.toLocaleString('en-IN') || 0}
+                                                    {currency}{order.shippingFee?.toLocaleString('en-AE') || 0}
                                                 </td>
                                                 <td className={`px-6 py-4 text-sm font-bold ${isOrderProfitable ? 'text-emerald-600' : 'text-red-600'}`}>
-                                                    {isOrderProfitable ? '+' : ''}{currency}{orderProfit.toLocaleString('en-IN')}
+                                                    {isOrderProfitable ? '+' : ''}{currency}{orderProfit.toLocaleString('en-AE')}
                                                 </td>
                                                 <td className="px-6 py-4">
                                                     <span className={`px-3 py-1 rounded-full text-xs font-medium ${
@@ -343,11 +343,11 @@ export default function SalesReport() {
                                         <div className="flex items-center gap-4">
                                             <div className="w-32 font-medium text-slate-700">{month.month}</div>
                                             <div className="text-sm text-slate-600">
-                                                {month.orders} orders • {currency}{month.revenue?.toLocaleString('en-IN')} revenue
+                                                {month.orders} orders • {currency}{month.revenue?.toLocaleString('en-AE')} revenue
                                             </div>
                                         </div>
                                         <div className={`text-lg font-bold ${isMonthProfitable ? 'text-emerald-600' : 'text-red-600'}`}>
-                                            {isMonthProfitable ? '+' : ''}{currency}{monthProfit.toLocaleString('en-IN')}
+                                            {isMonthProfitable ? '+' : ''}{currency}{monthProfit.toLocaleString('en-AE')}
                                         </div>
                                     </div>
                                 );

@@ -2,6 +2,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
+import {
+  STORE1920_CUSTOMER_SUPPORT_PHONE,
+  STORE1920_CUSTOMER_SUPPORT_TEL,
+} from '@/lib/storeContact';
 
 const NAVBAR_APPEARANCE_CACHE_KEY = 'navbarAppearanceCache';
 const DEFAULT_BG = '#8f3404';
@@ -81,8 +85,8 @@ export default function ContactUs() {
                   </svg>
                 ),
                 label: 'Customer Support',
-                value: '+91 7592875212',
-                href: 'tel:+917592875212',
+                value: STORE1920_CUSTOMER_SUPPORT_PHONE,
+                href: STORE1920_CUSTOMER_SUPPORT_TEL,
               },
               {
                 icon: (

@@ -8,7 +8,7 @@ import {
   HOME_PRODUCT_GRID_CLASS,
   HOME_SECTION_CLASS,
   HOME_SECTION_BLOCK_HEADING_CLASS,
-  HOME_SECTION_INNER_CLASS,
+  HOME_SECTION_GRID_INNER_CLASS,
 } from '@/lib/storefrontCarousel';
 import { cleanDisplayText } from '@/lib/displayText';
 import { useHorizontalCarouselDrag } from '@/lib/useHorizontalCarouselDrag';
@@ -401,7 +401,7 @@ export default function CategoryInterestSection() {
 
   return (
     <section className={HOME_SECTION_CLASS}>
-      <div className={HOME_SECTION_INNER_CLASS}>
+      <div className={HOME_SECTION_GRID_INNER_CLASS}>
         <div className="mb-4 sm:mb-5">
           <h2 className={HOME_SECTION_BLOCK_HEADING_CLASS}>Explore your interests</h2>
         </div>

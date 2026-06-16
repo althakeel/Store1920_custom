@@ -5,6 +5,7 @@ import connectDB from '@/lib/mongodb';
 import Category from '@/models/Category';
 import { localizeRecord, resolveStorefrontLanguage } from '@/lib/storefrontLanguage';
 import { cleanDisplayText, sanitizeCategoryFields, sanitizeCategoryTree } from '@/lib/displayText';
+import { buildCategoryLookup, getProductCategoryLabels } from '@/lib/categoryLookup';
 import { deleteCacheKey } from '@/lib/cache';
 
 const CATEGORY_TREE_CACHE_KEY = 'public:categories:tree:v2';
@@ -29,7 +30,12 @@ export async function GET(req) {
             })
         );
 
-        return NextResponse.json({ categories: sanitizeCategoryTree(categoriesWithChildren) }, { status: 200 });
+        const lookup = buildCategoryLookup(categories);
+
+        return NextResponse.json({
+            categories: sanitizeCategoryTree(categoriesWithChildren),
+            lookup,
+        }, { status: 200 });
     } catch (error) {
         console.error("Error fetching categories:", error);
         return NextResponse.json({ error: "Failed to fetch categories", details: error.message }, { status: 500 });

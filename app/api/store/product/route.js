@@ -2,7 +2,9 @@
 import { uploadToS3 } from '@/lib/storage';
 import connectDB from '@/lib/mongodb';
 import Product from '@/models/Product';
+import Category from '@/models/Category';
 import authSeller from "@/middlewares/authSeller";
+import { buildCategoryLookup, getProductCategoryLabels } from '@/lib/categoryLookup';
 import { NextResponse } from "next/server";
 import { getAuth } from '@/lib/firebase-admin';
 
@@ -360,10 +362,17 @@ export async function GET(request) {
     try {
         await connectDB();
 
-        // ADMIN/GLOBAL: Return all products, no auth required
         const products = await Product.find({}).sort({ createdAt: -1 }).lean();
+        const categoryLookup = buildCategoryLookup(
+            await Category.find({}).select('_id name nameAr slug legacySourceId parentId').lean()
+        );
+        const enrichedProducts = products.map((product) => ({
+            ...product,
+            categoryNames: getProductCategoryLabels(product, categoryLookup),
+        }));
+
         return NextResponse.json(
-            { products },
+            { products: enrichedProducts, categoryLookup },
             {
                 headers: {
                     'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',

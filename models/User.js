@@ -25,6 +25,8 @@ const UserSchema = new mongoose.Schema({
   email: { type: String, unique: true, sparse: true },
   phone: String,
   image: String,
+  emailNotifications: { type: Boolean, default: true },
+  twoFactorEnabled: { type: Boolean, default: false },
   cart: {
     type: Map,
     of: mongoose.Schema.Types.Mixed,

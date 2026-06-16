@@ -12,6 +12,25 @@ const AbandonedCartSchema = new mongoose.Schema({
   currency: String,
   lastSeenAt: Date,
   source: { type: String, default: 'checkout' },
+  status: { type: String, enum: ['active', 'converted'], default: 'active', index: true },
+  convertedAt: { type: Date, default: null },
+  convertedBy: { type: String, default: null },
+  convertedByName: { type: String, default: null },
+  convertedCartTotal: { type: Number, default: null },
+  conversionNote: { type: String, default: null },
+  conversionDiscountType: { type: String, enum: ['none', 'amount', 'percent', 'custom'], default: null },
+  conversionDiscountValue: { type: Number, default: null },
+  conversionPaymentMethod: {
+    type: String,
+    enum: ['cod', 'card', 'stripe', 'tabby', 'tamara'],
+    default: null,
+  },
+  conversionPaymentLink: { type: String, default: null },
+  conversionPaymentLinkId: { type: String, default: null },
+  conversionCustomerEmail: { type: String, default: null },
+  conversionEmailSent: { type: Boolean, default: false },
+  conversionEmailSentAt: { type: Date, default: null },
+  conversionEmailError: { type: String, default: null },
 }, { timestamps: true });
 
 // Indexes for query performance

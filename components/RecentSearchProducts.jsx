@@ -14,7 +14,7 @@ import {
   HOME_SECTION_EYEBROW_CLASS,
   HOME_SECTION_HEADING_CLASS,
   HOME_SECTION_SUBTITLE_CLASS,
-  HOME_SECTION_INNER_CLASS,
+  HOME_SECTION_GRID_INNER_CLASS,
 } from '@/lib/storefrontCarousel';
 
 const normalizeImages = (images) => {
@@ -158,7 +158,7 @@ export default function RecentSearchProducts() {
   if (loading) {
     return (
       <section className={HOME_SECTION_CLASS}>
-        <div className={HOME_SECTION_INNER_CLASS}>
+        <div className={HOME_SECTION_GRID_INNER_CLASS}>
           <div className={HOME_SECTION_HEADER_CLASS}>
             <div>
               <div className="h-4 w-24 bg-gray-200 rounded animate-pulse mb-2"></div>
@@ -229,7 +229,7 @@ export default function RecentSearchProducts() {
 
   return (
     <section className={HOME_SECTION_CLASS}>
-      <div className={HOME_SECTION_INNER_CLASS}>
+      <div className={HOME_SECTION_GRID_INNER_CLASS}>
         <div className={HOME_SECTION_HEADER_CLASS}>
           <div>
             <span className={`${HOME_SECTION_EYEBROW_CLASS} text-orange-600`}>Your History</span>

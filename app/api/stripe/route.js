@@ -3,6 +3,7 @@ import Order from "@/models/Order";
 import User from "@/models/User";
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
+import { recordPurchaseFromOrder } from "@/lib/serverCustomerTracking";
 
 export async function POST(request){
     try {
@@ -20,12 +21,28 @@ export async function POST(request){
 
         const markOrdersPaid = async (orderIds, userId) => {
             await dbConnect()
-            await Promise.all(orderIds.map((orderId) =>
-                Order.findByIdAndUpdate(orderId, {
+            await Promise.all(orderIds.map(async (orderId) => {
+                const order = await Order.findByIdAndUpdate(orderId, {
                     paymentStatus: 'paid',
                     stripePaymentStatus: 'paid',
-                })
-            ))
+                    isPaid: true,
+                }, { new: true })
+
+                if (order) {
+                    try {
+                        await recordPurchaseFromOrder({
+                            order,
+                            trackingContext: order.trackingContext || {},
+                            attribution: order.attribution || {},
+                            userId: userId || order.userId || null,
+                            isGuest: Boolean(order.isGuest),
+                            source: 'stripe_webhook',
+                        })
+                    } catch (trackingError) {
+                        console.error('Stripe purchase tracking failed for order', orderId, trackingError)
+                    }
+                }
+            }))
             if (userId) {
                 await User.findOneAndUpdate({ firebaseUid: userId }, { cart: {} })
             }

@@ -1,20 +1,24 @@
 'use client';
 
+import PolicyPageLayout from '@/components/PolicyPageLayout';
 import { useStorefrontI18n } from "@/lib/useStorefrontI18n";
+import {
+  STORE1920_CUSTOMER_SUPPORT_PHONE,
+  STORE1920_CUSTOMER_SUPPORT_TEL,
+} from '@/lib/storeContact';
 
 export default function PrivacyPolicyPage() {
   const { isArabic } = useStorefrontI18n();
 
   if (isArabic) {
     return (
-      <div className="bg-gray-50" dir="rtl">
-        <div className="max-w-[1250px] mx-auto px-4 py-10 min-h-[60vh]">
+      <PolicyPageLayout dir="rtl">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">سياسة الخصوصية</h1>
           <p className="text-gray-600 mb-8">
             توضح سياسة الخصوصية هذه كيف يقوم Store1920.com بجمع واستخدام وحفظ وحماية معلوماتك الشخصية عند استخدام الموقع والخدمات.
           </p>
 
-          <div className="space-y-6 bg-white border border-gray-200 rounded-xl p-6">
+          <div className="space-y-6 border border-gray-200 rounded-xl p-6">
             <section>
               <h2 className="font-semibold text-gray-900 mb-2">1. المعلومات التي نجمعها</h2>
               <p className="text-gray-700">
@@ -73,17 +77,20 @@ export default function PrivacyPolicyPage() {
               <p className="text-gray-700 mb-1"><strong>اسم النشاط:</strong> Store1920</p>
               <p className="text-gray-700 mb-1"><strong>الموقع:</strong> https://www.Store1920.com</p>
               <p className="text-gray-700 mb-1"><strong>البريد الإلكتروني:</strong> support@Store1920.com</p>
-              <p className="text-gray-700"><strong>الدعم:</strong> +91 7592875212</p>
+              <p className="text-gray-700">
+                <strong>الدعم:</strong>{' '}
+                <a href={STORE1920_CUSTOMER_SUPPORT_TEL} className="text-orange-600 underline">
+                  {STORE1920_CUSTOMER_SUPPORT_PHONE}
+                </a>
+              </p>
             </section>
           </div>
-        </div>
-      </div>
+      </PolicyPageLayout>
     );
   }
 
   return (
-    <div className="bg-gray-50">
-      <div className="max-w-[1250px] mx-auto px-4 py-10 min-h-[60vh]">
+    <PolicyPageLayout>
         <h1 className="text-3xl font-bold text-gray-900 mb-2">
           Privacy Policy
         </h1>
@@ -94,7 +101,7 @@ export default function PrivacyPolicyPage() {
           services.
         </p>
 
-        <div className="space-y-6 bg-white border border-gray-200 rounded-xl p-6">
+        <div className="space-y-6 border border-gray-200 rounded-xl p-6">
 
           {/* 1 */}
           <section>
@@ -208,7 +215,7 @@ export default function PrivacyPolicyPage() {
               9. International Data Transfers
             </h2>
             <p className="text-gray-700">
-              Some service providers may be located outside India or the UAE. In
+              Some service providers may be located outside the UAE. In
               such cases, we ensure appropriate safeguards are in place to
               protect your data in accordance with applicable laws.
             </p>
@@ -253,12 +260,14 @@ export default function PrivacyPolicyPage() {
               <strong>Email:</strong> support@Store1920.com
             </p>
             <p className="text-gray-700">
-              <strong>Customer Support:</strong> +91 7592875212
+              <strong>Customer Support:</strong>{' '}
+              <a href={STORE1920_CUSTOMER_SUPPORT_TEL} className="text-orange-600 underline">
+                {STORE1920_CUSTOMER_SUPPORT_PHONE}
+              </a>
             </p>
           </section>
 
         </div>
-      </div>
-    </div>
+    </PolicyPageLayout>
   );
 }

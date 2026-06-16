@@ -1,13 +1,14 @@
-'use client'
+'use client';
+
+import PolicyPageLayout from '@/components/PolicyPageLayout';
 
 export default function ReturnPolicyPage() {
   return (
-    <div className="bg-gray-50 max-w-[1450px] mx-auto">
-      <div className="max-w-3xl mx-auto px-4 py-10 min-h-[60vh]">
+    <PolicyPageLayout>
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Return, Refund & Exchange Policy</h1>
         <p className="text-gray-600 mb-8">At Store1920, your satisfaction is our priority. Please read the policy below before requesting a return or refund.</p>
 
-        <div className="space-y-6 bg-white border border-gray-200 rounded-xl p-6">
+        <div className="space-y-6 border border-gray-200 rounded-xl p-6">
           <section>
             <h2 className="font-semibold text-gray-900 mb-2">1. Return Window & Eligible Cases</h2>
             <p className="text-gray-700 mb-2">Items can be returned after notifying us within <span className="font-medium">3 days</span> from the date of delivery in either of these cases:</p>
@@ -94,7 +95,6 @@ export default function ReturnPolicyPage() {
             <p className="text-gray-700 mt-2">Delivery times for returned/replaced products may vary depending on your location.</p>
           </section>
         </div>
-      </div>
-    </div>
+    </PolicyPageLayout>
   );
 }

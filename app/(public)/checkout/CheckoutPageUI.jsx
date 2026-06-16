@@ -18,6 +18,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useStorefrontI18n } from "@/lib/useStorefrontI18n";
 import { useStorefrontMarket } from "@/lib/useStorefrontMarket";
+import { trackCustomerEvent, withOrderTrackingFields } from '@/lib/trackingClient';
 import { getCartEntryProductId, getCartEntryQuantity, isFreeGiftEntry } from "@/lib/freeGiftUtils";
 import Creditimage1 from '../../../assets/creditcards/19 - Copy.webp';
 import Creditimage2 from '../../../assets/creditcards/16 - Copy.webp';
@@ -627,8 +628,22 @@ export default function CheckoutPage() {
       })),
     });
 
+    trackCustomerEvent({
+      eventType: 'checkout_start',
+      firebaseUid: user?.uid || null,
+      userId: user?.uid || null,
+      pageType: 'checkout',
+      pagePath: '/checkout',
+      value: Number(totalAfterWallet || 0),
+      currency: 'AED',
+      metadata: {
+        itemCount: cartArray.length,
+        cartValue: Number(totalAfterWallet || 0),
+      },
+    });
+
     sessionStorage.setItem(eventKey, '1');
-  }, [cartArray, totalAfterWallet]);
+  }, [cartArray, totalAfterWallet, user?.uid]);
 
   useEffect(() => {
     if (hasPersonalizedOfferItem && form.payment === 'cod') {
@@ -749,6 +764,7 @@ export default function CheckoutPage() {
 
   // Razorpay Payment Handler
   const handleRazorpayPayment = async (paymentPayload) => {
+    const trackedPayload = withOrderTrackingFields(paymentPayload);
     // Check if Razorpay is available (script might have loaded but state not updated)
     if (typeof window !== 'undefined' && window.Razorpay && !razorpayLoaded) {
       setRazorpayLoaded(true);
@@ -772,7 +788,7 @@ export default function CheckoutPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           amount: Math.round(totalAfterWallet), // Ensure it's a whole number
-          currency: "INR",
+          currency: "AED",
           receipt: `order_${Date.now()}`,
         }),
       });
@@ -810,7 +826,7 @@ export default function CheckoutPage() {
                 razorpay_payment_id: response.razorpay_payment_id,
                 razorpay_order_id: response.razorpay_order_id,
                 razorpay_signature: response.razorpay_signature,
-                paymentPayload: paymentPayload,
+                paymentPayload: trackedPayload,
               }),
             });
 
@@ -835,9 +851,9 @@ export default function CheckoutPage() {
           }
         },
         prefill: {
-          name: paymentPayload.guestInfo?.name || form.name || user?.displayName || "",
-          email: paymentPayload.guestInfo?.email || form.email || user?.email || "",
-          contact: paymentPayload.guestInfo?.phone || form.phone || "",
+          name: trackedPayload.guestInfo?.name || form.name || user?.displayName || "",
+          email: trackedPayload.guestInfo?.email || form.email || user?.email || "",
+          contact: trackedPayload.guestInfo?.phone || form.phone || "",
         },
         theme: {
           color: "#F97316", // Orange color
@@ -864,10 +880,11 @@ export default function CheckoutPage() {
   // Stripe Payment Handler — creates order with paymentMethod STRIPE, then redirects to Stripe Checkout
   const handleStripePayment = async (paymentPayload) => {
     try {
+      const trackedPayload = withOrderTrackingFields(paymentPayload);
       let fetchOptions = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(paymentPayload),
+        body: JSON.stringify(trackedPayload),
       };
 
       if (user && getToken) {
@@ -907,10 +924,11 @@ export default function CheckoutPage() {
   // Tamara BNPL Handler — creates order with paymentMethod TAMARA, then redirects to Tamara checkout
   const handleTamaraPayment = async (paymentPayload) => {
     try {
+      const trackedPayload = withOrderTrackingFields(paymentPayload);
       let fetchOptions = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(paymentPayload),
+        body: JSON.stringify(trackedPayload),
       };
 
       if (user && getToken) {
@@ -947,10 +965,11 @@ export default function CheckoutPage() {
   // Tabby BNPL Handler — creates order with paymentMethod TABBY, then redirects to Tabby checkout
   const handleTabbyPayment = async (paymentPayload) => {
     try {
+      const trackedPayload = withOrderTrackingFields(paymentPayload);
       let fetchOptions = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(paymentPayload),
+        body: JSON.stringify(trackedPayload),
       };
 
       if (user && getToken) {
@@ -1375,7 +1394,7 @@ export default function CheckoutPage() {
       let fetchOptions = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(withOrderTrackingFields(payload)),
       };
       
       if (user && getToken) {
@@ -1468,7 +1487,7 @@ export default function CheckoutPage() {
       const rpRes = await fetch('/api/razorpay/order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: discountedAmount, currency: 'INR', receipt: `order_${upsellOrderId}` })
+        body: JSON.stringify({ amount: discountedAmount, currency: 'AED', receipt: `order_${upsellOrderId}` })
       });
       const rpData = await rpRes.json();
       if (!rpRes.ok || !rpData.success || !rpData.orderId) {
@@ -2155,7 +2174,7 @@ export default function CheckoutPage() {
                       required
                     />
                   )}
-                  {/* Country dropdown (default India) */}
+                  {/* Country dropdown (default UAE) */}
                   <select
                     className="border border-gray-200 bg-white rounded px-4 py-2 focus:border-gray-400"
                     name="country"
@@ -2163,8 +2182,9 @@ export default function CheckoutPage() {
                     onChange={handleChange}
                     required
                   >
+                    <option value="United Arab Emirates">United Arab Emirates</option>
                     <option value="India">India</option>
-                    {countryCodes.filter(c => c.label !== 'India').map((c) => (
+                    {countryCodes.filter(c => c.label !== 'India' && !c.label.includes('United Arab Emirates')).map((c) => (
                       <option key={c.label} value={c.label.replace(/ \(.*\)/, '')}>{c.label.replace(/ \(.*\)/, '')}</option>
                     ))}
                   </select>

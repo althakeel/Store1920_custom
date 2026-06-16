@@ -8,7 +8,8 @@ import axios from "axios"
 import toast from "react-hot-toast"
 import ProductCard from "./ProductCard"
 import { useSelector } from "react-redux"
-import normalizeImportedRichText from "@/lib/normalizeImportedRichText"
+import { PRODUCT_RICH_CONTENT_CLASS, sanitizeProductRichHtml } from "@/lib/productRichContent"
+import { useStorefrontI18n } from "@/lib/useStorefrontI18n"
 import { useProductWishlist } from "@/lib/useProductWishlist"
 
 const formatReviewDate = (dateString) => {
@@ -43,6 +44,7 @@ function stripEmbeddedSpecTable(html = '') {
 const ProductDescription = ({ product, reviews = [], loadingReviews = false, onReviewAdded, showSuggestedProducts = true, showMainDescription = true, showOverviewSections = true }) => {
 
     const router = useRouter()
+    const { isArabic } = useStorefrontI18n()
     const { isInWishlist, loading: wishlistLoading, toggleWishlist } = useProductWishlist(product)
     const [showReportModal, setShowReportModal] = useState(false)
     const [reportReason, setReportReason] = useState('incorrect-information')
@@ -94,7 +96,11 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
     const [showAllReviewsModal, setShowAllReviewsModal] = useState(false)
     const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false)
     const [isAboutExpanded, setIsAboutExpanded] = useState(false)
-    const normalizedDescription = useMemo(() => normalizeImportedRichText(product?.description || ''), [product?.description])
+    const rawDescription = (isArabic && product?.descriptionAr) ? product.descriptionAr : (product?.description || '')
+    const normalizedDescription = useMemo(
+        () => sanitizeProductRichHtml(rawDescription),
+        [rawDescription]
+    )
 
     // Calculate rating distribution
     const ratingCounts = [0, 0, 0, 0, 0]
@@ -250,7 +256,7 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
     const descriptionPlainTextForCollapse = descriptionForDisplay.replace(/<[^>]*>/g, '').trim()
     const shouldCollapseDescription = descriptionPlainTextForCollapse.length > 280
     const normalizedShortDescription2 = useMemo(
-        () => normalizeImportedRichText(product?.shortDescription2 || product?.attributes?.shortDescription2 || ''),
+        () => sanitizeProductRichHtml(product?.shortDescription2 || product?.attributes?.shortDescription2 || ''),
         [product?.shortDescription2, product?.attributes?.shortDescription2]
     )
     const aboutPlainText = normalizedShortDescription2.replace(/<[^>]*>/g, '').trim()
@@ -329,12 +335,9 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
                     <h2 className="text-[30px] leading-none font-semibold text-gray-900 mb-3">About this item</h2>
                     <div className="relative">
                         <div
-                        className={`max-w-none text-[16px] leading-7 text-gray-900
-                        [&_p]:mb-2
-                        [&_ul]:list-disc [&_ul]:list-outside [&_ul]:pl-5 [&_ul]:mb-2
-                        [&_ol]:list-decimal [&_ol]:list-outside [&_ol]:pl-5 [&_ol]:mb-2
-                        [&_a]:text-blue-600 [&_a]:underline
+                        className={`${PRODUCT_RICH_CONTENT_CLASS} text-[16px] leading-7
                         ${shouldCollapseAbout && !isAboutExpanded ? 'overflow-hidden [display:-webkit-box] [-webkit-line-clamp:4] [-webkit-box-orient:vertical]' : ''}`}
+                        dir={isArabic ? 'rtl' : 'ltr'}
                         dangerouslySetInnerHTML={{ __html: normalizedShortDescription2 }}
                         />
 
@@ -358,9 +361,9 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
 
             {showMainDescription && (
                 <div className="order-2 bg-white border-t border-gray-200 pt-4">
-                    <div className="flex items-center justify-between mb-2">
-                        <h2 className="text-[18px] leading-none font-semibold text-gray-900">Product details</h2>
-                        <div className="hidden sm:flex items-center gap-2 text-[13px] text-gray-800">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                        <h2 className="text-[18px] font-semibold leading-none text-gray-900">Product details</h2>
+                        <div className="flex shrink-0 items-center gap-2 text-[13px] text-gray-800">
                             <button
                                 type="button"
                                 onClick={handleSave}
@@ -369,7 +372,7 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
                             >
                                 {isInWishlist ? 'Saved' : 'Save'}
                             </button>
-                            <span>|</span>
+                            <span className="text-gray-400">|</span>
                             <button
                                 type="button"
                                 onClick={() => setShowReportModal(true)}
@@ -382,17 +385,8 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
 
                     <div className="relative">
                         <div
-                            className={`product-rich-content max-w-none text-[14px] leading-[1.5] text-gray-900
-                            [&_h1]:text-[16px] [&_h1]:font-semibold [&_h1]:mb-2
-                            [&_h2]:text-[15px] [&_h2]:font-semibold [&_h2]:mb-2
-                            [&_h3]:text-[14px] [&_h3]:font-semibold [&_h3]:mb-1.5
-                            [&_p]:mb-2
-                            [&_ul]:list-disc [&_ul]:list-outside [&_ul]:pl-5 [&_ul]:mb-2
-                            [&_ol]:list-decimal [&_ol]:list-outside [&_ol]:pl-5 [&_ol]:mb-2
-                            [&_li_p]:mb-0 [&_li_p]:inline
-                            [&_img]:max-w-full [&_img]:h-auto [&_img]:my-4
-                            [&_video]:max-w-full [&_video]:w-full [&_video]:h-auto [&_video]:my-4
-                            ${shouldCollapseDescription && !isDescriptionExpanded ? 'overflow-hidden [display:-webkit-box] [-webkit-line-clamp:6] [-webkit-box-orient:vertical]' : ''}`}
+                            className={`${PRODUCT_RICH_CONTENT_CLASS} ${shouldCollapseDescription && !isDescriptionExpanded ? 'overflow-hidden [display:-webkit-box] [-webkit-line-clamp:8] [-webkit-box-orient:vertical]' : ''}`}
+                            dir={isArabic ? 'rtl' : 'ltr'}
                             dangerouslySetInnerHTML={{ __html: descriptionForDisplay }}
                         />
 

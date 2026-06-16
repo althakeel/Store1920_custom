@@ -14,7 +14,7 @@ export default function SettingsPage() {
     promotionalEmails: false,
     newsletter: true,
     language: 'en',
-    currency: 'INR'
+    currency: 'AED'
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -253,7 +253,7 @@ export default function SettingsPage() {
                 onChange={(e) => handleSelectChange('currency', e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
               >
-                <option value="INR">Indian Rupees (AED)</option>
+                <option value="AED">UAE Dirhams (AED)</option>
                 <option value="USD">US Dollars ($)</option>
                 <option value="EUR">Euro (€)</option>
                 <option value="GBP">British Pounds (£)</option>

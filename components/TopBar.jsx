@@ -3,6 +3,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ChevronDown, Check, Globe2 } from 'lucide-react';
+import {
+  STORE1920_CUSTOMER_SUPPORT_PHONE,
+  STORE1920_CUSTOMER_SUPPORT_TEL,
+} from '@/lib/storeContact';
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
 import tabbyLogo from '@/assets/payments/tabby.webp';
 import tamaraLogo from '@/assets/payments/tamara.webp';
@@ -13,12 +17,12 @@ import {
 } from '@/lib/storefrontLanguage';
 
 const GCC_MARKETS = [
-  { code: 'AE', countryName: 'United Arab Emirates', currency: 'AED', flag: '🇦🇪' },
-  { code: 'SA', countryName: 'Saudi Arabia', currency: 'SAR', flag: '🇸🇦' },
-  { code: 'QA', countryName: 'Qatar', currency: 'QAR', flag: '🇶🇦' },
-  { code: 'KW', countryName: 'Kuwait', currency: 'KWD', flag: '🇰🇼' },
-  { code: 'OM', countryName: 'Oman', currency: 'OMR', flag: '🇴🇲' },
-  { code: 'BH', countryName: 'Bahrain', currency: 'BHD', flag: '🇧🇭' },
+  { code: 'AE', countryName: 'United Arab Emirates', countryNameAr: 'الإمارات العربية المتحدة', currency: 'AED', flag: '🇦🇪' },
+  { code: 'SA', countryName: 'Saudi Arabia', countryNameAr: 'المملكة العربية السعودية', currency: 'SAR', flag: '🇸🇦' },
+  { code: 'QA', countryName: 'Qatar', countryNameAr: 'قطر', currency: 'QAR', flag: '🇶🇦' },
+  { code: 'KW', countryName: 'Kuwait', countryNameAr: 'الكويت', currency: 'KWD', flag: '🇰🇼' },
+  { code: 'OM', countryName: 'Oman', countryNameAr: 'عُمان', currency: 'OMR', flag: '🇴🇲' },
+  { code: 'BH', countryName: 'Bahrain', countryNameAr: 'البحرين', currency: 'BHD', flag: '🇧🇭' },
 ];
 
 const BNPL_PARTNERS = [
@@ -97,18 +101,36 @@ export default function TopBar() {
   };
 
   const activeBnplPartner = BNPL_PARTNERS[activeBnplIndex];
-  const languageLabel = storefrontLanguage === 'ar' ? 'العربية' : 'English';
-  const languageShort = storefrontLanguage === 'ar' ? 'AR' : 'EN';
+  const isArabic = storefrontLanguage === 'ar';
+  const languageLabel = isArabic ? 'العربية' : 'English';
+  const languageShort = isArabic ? 'AR' : 'EN';
+  const activeMarket = GCC_MARKETS.find((market) => market.code === storefrontMarket?.code) || GCC_MARKETS[0];
+  const activeCountryName = isArabic ? activeMarket.countryNameAr : activeMarket.countryName;
+
+  const copy = isArabic
+    ? {
+        language: 'اللغة',
+        shopIn: 'تسوّق في',
+        currency: 'العملة',
+        shoppingIn: `أنت تتسوق في ${activeCountryName}.`,
+      }
+    : {
+        language: 'Language',
+        shopIn: 'Shop in',
+        currency: 'Currency',
+        shoppingIn: `You are shopping in ${activeCountryName}.`,
+      };
 
   return (
     <div className="relative z-[1000] w-full border-b border-[#e7e7e7] bg-white text-xs">
       <div className="mx-auto flex max-w-[1400px] flex-nowrap items-center justify-between gap-1.5 px-2 py-1.5 sm:gap-3 sm:px-5 sm:py-1">
         <a
-          href="tel:8007861920"
+          href={STORE1920_CUSTOMER_SUPPORT_TEL}
           className="shrink-0 whitespace-nowrap text-[11px] leading-none text-[#222] no-underline sm:text-xs"
         >
+          <span className="font-normal text-[#666] sm:hidden">Toll-free: </span>
           <span className="hidden font-normal sm:inline">Support: </span>
-          <span className="font-bold">8007861920</span>
+          <span className="font-bold">{STORE1920_CUSTOMER_SUPPORT_PHONE}</span>
         </a>
 
         <div className="flex shrink-0 flex-nowrap items-center gap-1 sm:gap-2.5">
@@ -133,49 +155,85 @@ export default function TopBar() {
             </button>
 
             {dropdownOpen && (
-              <div className="absolute top-[calc(100%+6px)] right-0 z-[1001] w-[min(320px,calc(100vw-16px))] overflow-hidden rounded-2xl border border-[#e7e7e7] bg-white shadow-[0_4px_24px_rgba(0,0,0,0.10)] sm:left-0 sm:right-auto">
-                <div className="border-b border-[#efefef] p-5">
-                  <div className="mb-3 text-xs font-bold tracking-wide text-[#888]">LANGUAGE</div>
-                  <div className="flex flex-col gap-2">
-                    <label className={`flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 ${storefrontLanguage === 'ar' ? 'bg-[#fff7ed] font-bold text-amber-600' : 'text-[#222]'}`}>
-                      <input type="radio" name="lang" checked={storefrontLanguage === 'ar'} onChange={() => handleLanguageChange('ar')} className="accent-amber-600" />
-                      العربية
-                    </label>
-                    <label className={`flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 ${storefrontLanguage === 'en' ? 'bg-[#fff7ed] font-bold text-amber-600' : 'text-[#222]'}`}>
-                      <input type="radio" name="lang" checked={storefrontLanguage === 'en'} onChange={() => handleLanguageChange('en')} className="accent-amber-600" />
-                      English
-                    </label>
+              <div
+                dir={isArabic ? 'rtl' : 'ltr'}
+                className="absolute top-[calc(100%+8px)] end-0 z-[1001] w-[min(320px,calc(100vw-24px))] max-h-[min(72vh,520px)] overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.14)] sm:start-0 sm:end-auto sm:w-[320px]"
+              >
+                  <div className="border-b border-gray-100 px-4 py-4">
+                    <div className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-500">
+                      {copy.language}
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      {[
+                        { value: 'ar', label: 'العربية' },
+                        { value: 'en', label: 'English' },
+                      ].map((option) => {
+                        const isActive = storefrontLanguage === option.value;
+                        return (
+                          <label
+                            key={option.value}
+                            className={`flex cursor-pointer items-center justify-between gap-3 rounded-xl px-3 py-2.5 transition ${
+                              isActive
+                                ? 'bg-orange-50 font-semibold text-orange-700 ring-1 ring-orange-200'
+                                : 'text-gray-800 hover:bg-gray-50'
+                            }`}
+                          >
+                            <span className="text-sm">{option.label}</span>
+                            <input
+                              type="radio"
+                              name="lang"
+                              checked={isActive}
+                              onChange={() => handleLanguageChange(option.value)}
+                              className="h-4 w-4 shrink-0 accent-orange-600"
+                            />
+                          </label>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-                <div className="border-b border-[#efefef] p-5">
-                  <div className="mb-3 text-xs font-bold tracking-wide text-[#888]">SHOP IN</div>
-                  <div className="flex flex-col gap-2">
-                    {GCC_MARKETS.map((market) => {
-                      const isActive = storefrontMarket?.code === market.code;
-                      return (
-                        <button
-                          key={market.code}
-                          type="button"
-                          onClick={() => handleMarketChange(market.code)}
-                          className={`flex w-full items-center justify-between rounded-[10px] border px-3.5 py-2.5 ${isActive ? 'border-[#fdba74] bg-[#fff7ed] font-bold text-amber-600' : 'border-[#e7e7e7] bg-white font-medium text-[#222]'}`}
-                        >
-                          <span className="flex items-center gap-2.5">
-                            <span className="w-7 text-sm font-bold">{market.code}</span>
-                            <span className="font-semibold">{market.countryName}</span>
-                          </span>
-                          <span className="flex flex-col items-end gap-0.5">
-                            <span className="text-[13px] font-semibold">{market.currency}</span>
-                            {isActive ? <Check size={18} className="text-amber-600" /> : null}
-                          </span>
-                        </button>
-                      );
-                    })}
+
+                  <div className="border-b border-gray-100 px-4 py-4">
+                    <div className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-500">
+                      {copy.shopIn}
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      {GCC_MARKETS.map((market) => {
+                        const isActive = storefrontMarket?.code === market.code;
+                        const countryName = isArabic ? market.countryNameAr : market.countryName;
+                        return (
+                          <button
+                            key={market.code}
+                            type="button"
+                            onClick={() => handleMarketChange(market.code)}
+                            className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-start transition ${
+                              isActive
+                                ? 'border-orange-300 bg-orange-50 text-orange-800 ring-1 ring-orange-200'
+                                : 'border-gray-200 bg-white text-gray-800 hover:border-gray-300 hover:bg-gray-50'
+                            }`}
+                          >
+                            <span className="text-lg leading-none">{market.flag}</span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block text-[11px] font-bold uppercase tracking-wide text-gray-500">
+                                {market.code}
+                              </span>
+                              <span className="block truncate text-sm font-semibold">{countryName}</span>
+                            </span>
+                            <span className="flex shrink-0 flex-col items-end gap-1">
+                              <span className="text-sm font-semibold">{market.currency}</span>
+                              {isActive ? <Check size={16} className="text-orange-600" strokeWidth={2.5} /> : null}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-                <div className="p-5 text-[13px] text-[#444]">
-                  <div className="font-semibold">Currency: {storefrontMarket?.currency}</div>
-                  <div className="mt-1">You are shopping in {storefrontMarket?.countryName}.</div>
-                </div>
+
+                  <div className="px-4 py-3.5 text-sm text-gray-600">
+                    <div className="font-semibold text-gray-800">
+                      {copy.currency}: {storefrontMarket?.currency}
+                    </div>
+                    <div className="mt-1 leading-snug">{copy.shoppingIn}</div>
+                  </div>
               </div>
             )}
           </div>

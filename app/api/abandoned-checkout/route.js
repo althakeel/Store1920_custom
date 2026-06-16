@@ -60,7 +60,7 @@ export async function POST(request) {
       }
 
       await AbandonedCart.updateOne(
-        filter,
+        { ...filter, status: { $ne: 'converted' } },
         {
           $set: {
             storeId,
@@ -74,6 +74,7 @@ export async function POST(request) {
             currency: currency || null,
             lastSeenAt: now,
             source: 'checkout',
+            status: 'active',
           },
         },
         { upsert: true }

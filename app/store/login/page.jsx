@@ -73,9 +73,11 @@ export default function StoreLogin() {
       })
       const data = await response.json()
       
-      if (!response.ok && data?.reason === 'database-unavailable') {
-        toast.error('Store access check failed because the database is unreachable. Try again when the server connection is restored.')
-        return
+      if (!response.ok) {
+        if (response.status === 503 || data?.reason === 'database-unavailable' || data?.reason === 'server-error') {
+          toast.error('Store access check failed temporarily. Please try again.')
+          return
+        }
       }
 
       if (data.isSeller) {
@@ -106,9 +108,11 @@ export default function StoreLogin() {
       })
       const data = await response.json()
       
-      if (!response.ok && data?.reason === 'database-unavailable') {
-        toast.error('Store access check failed because the database is unreachable. Try again when the server connection is restored.')
-        return
+      if (!response.ok) {
+        if (response.status === 503 || data?.reason === 'database-unavailable' || data?.reason === 'server-error') {
+          toast.error('Store access check failed temporarily. Please try again.')
+          return
+        }
       }
 
       if (data.isSeller) {

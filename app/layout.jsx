@@ -2,7 +2,6 @@ import "./globals.css";
 import Script from "next/script";
 import React from "react";
 import { cookies, headers } from "next/headers";
-import SocialProofPopup from "@/components/SocialProofPopup";
 import ClientLayout from "./ClientLayout";
 import {
   STOREFRONT_LANGUAGE_COOKIE,

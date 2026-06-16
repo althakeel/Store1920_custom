@@ -18,12 +18,6 @@ const maskReviewerName = (name) => {
   return `${safeName.slice(0, 3)}***${safeName.slice(-1)}`;
 };
 
-const toTitleCase = (value) => value
-  .split(' ')
-  .filter(Boolean)
-  .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-  .join(' ');
-
 function StarRow({ rating, size = 16, filledColor = '#16a34a', emptyColor = '#d1d5db' }) {
   return (
     <div className="flex items-center gap-0.5">
@@ -156,52 +150,6 @@ export default function ProductReviewsSection({
     return counts;
   }, [reviews]);
 
-  const reviewKeywordPills = useMemo(() => {
-    if (!Array.isArray(reviews) || reviews.length === 0) return [];
-
-    const stopWords = new Set([
-      'the', 'and', 'for', 'that', 'this', 'with', 'you', 'your', 'are', 'was', 'were', 'from', 'have',
-      'has', 'had', 'not', 'but', 'very', 'just', 'also', 'really', 'will', 'would', 'could', 'should',
-      'its', 'it', 'they', 'them', 'their', 'our', 'out', 'into', 'onto', 'about', 'after', 'before',
-      'been', 'being', 'can', 'item', 'product', 'order', 'delivery', 'shipping', 'arrived', 'good',
-      'nice', 'great', 'best', 'bad', 'poor', 'ok', 'okay', 'use', 'used', 'using', 'one', 'two', 'buy', 'bought',
-    ]);
-
-    const wordFrequency = new Map();
-    const phraseFrequency = new Map();
-
-    reviews.forEach((review) => {
-      const rawText = String(review?.review || review?.comment || '').toLowerCase();
-      if (!rawText.trim()) return;
-
-      const tokens = rawText
-        .replace(/[^a-z0-9\s]/g, ' ')
-        .split(/\s+/)
-        .map((word) => word.trim())
-        .filter((word) => word.length >= 3 && !stopWords.has(word) && !/^\d+$/.test(word));
-
-      const uniqueWordsInReview = new Set(tokens);
-      uniqueWordsInReview.forEach((word) => {
-        wordFrequency.set(word, (wordFrequency.get(word) || 0) + 1);
-      });
-
-      for (let index = 0; index < tokens.length - 1; index += 1) {
-        const phrase = `${tokens[index]} ${tokens[index + 1]}`;
-        phraseFrequency.set(phrase, (phraseFrequency.get(phrase) || 0) + 1);
-      }
-    });
-
-    const pills = [
-      ...[...phraseFrequency.entries()].filter(([, count]) => count >= 2).map(([label, count]) => ({ label: toTitleCase(label), count })),
-      ...[...wordFrequency.entries()].filter(([, count]) => count >= 2).map(([label, count]) => ({ label: toTitleCase(label), count })),
-    ]
-      .sort((a, b) => b.count - a.count || a.label.length - b.label.length)
-      .filter((pill, index, array) => array.findIndex((entry) => entry.label === pill.label) === index)
-      .slice(0, 4);
-
-    return pills;
-  }, [reviews]);
-
   const customerPhotos = useMemo(() => {
     return reviews.flatMap((review) => (Array.isArray(review.images) ? review.images : [])).filter(Boolean);
   }, [reviews]);
@@ -329,24 +277,6 @@ export default function ProductReviewsSection({
                 </label>
               </div>
             </div>
-
-            {reviewKeywordPills.length > 0 ? (
-              <div className="mb-5 rounded-xl bg-gray-50 px-4 py-3">
-                <p className="text-[13px] font-medium bg-gradient-to-r from-violet-600 to-blue-600 bg-clip-text text-transparent">
-                  Store1920 is summarising the reviews
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {reviewKeywordPills.map((pill) => (
-                    <span
-                      key={pill.label}
-                      className="rounded-full border border-gray-200 bg-white px-3 py-1 text-[12px] text-gray-700"
-                    >
-                      {pill.label}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ) : null}
 
             {customerPhotos.length > 0 ? (
               <div className="mb-6">

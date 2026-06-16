@@ -3,28 +3,19 @@ import Loading from "@/components/Loading"
 
 
 import axios from "axios"
-import { CircleDollarSignIcon, ShoppingBasketIcon, StarIcon, TagsIcon, UsersIcon, ShoppingCartIcon, UserPlusIcon, UploadCloudIcon, FolderTreeIcon } from "lucide-react"
+import { UserPlusIcon, UploadCloudIcon, FolderTreeIcon } from "lucide-react"
 import ContactMessagesSeller from "./ContactMessagesSeller.jsx";
 import dynamic from "next/dynamic";
-import Image from "next/image"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 import toast from "react-hot-toast"
 import { useAuth } from '@/lib/useAuth'
 
-
-// Dynamically import CarouselProducts to avoid SSR issues
-const CarouselProducts = dynamic(() => import("@/components/admin/CarouselProducts"), { ssr: false });
-
-// Rename export to avoid conflict with import
-export const dynamicSetting = 'force-dynamic'
+const StoreDashboardCharts = dynamic(() => import("@/components/store/StoreDashboardCharts"), { ssr: false });
 
 export default function Dashboard() {
     const { user, loading: authLoading, getToken } = useAuth();
-    console.log('[page.jsx] user:', user, 'authLoading:', authLoading);
     const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || 'AED'
-    const router = useRouter()
     const [loading, setLoading] = useState(true)
     const [dashboardData, setDashboardData] = useState({
         totalProducts: 0,
@@ -33,6 +24,24 @@ export default function Dashboard() {
         totalCustomers: 0,
         abandonedCarts: 0,
         ratings: [],
+        analytics: {
+            ordersTrend: [],
+            ordersStatusTrend: [],
+            statusTotals: {
+                total: 0,
+                processing: 0,
+                shipping: 0,
+                delivered: 0,
+                returned: 0,
+                cancelled: 0,
+            },
+            orderStatusBreakdown: [],
+            ratingBreakdown: [],
+            avgOrderValue: 0,
+            avgRating: 0,
+            ordersThisWeek: 0,
+            revenueThisWeek: 0,
+        },
     })
     
     // Invitation states
@@ -40,14 +49,6 @@ export default function Dashboard() {
     const [inviteLoading, setInviteLoading] = useState(false)
     const [teamUsers, setTeamUsers] = useState([])
     const [loadingUsers, setLoadingUsers] = useState(true)
-    const dashboardCardsData = [
-        { title: 'Total Products', value: dashboardData.totalProducts, icon: ShoppingBasketIcon },
-        { title: 'Total Earnings', value: currency + dashboardData.totalEarnings, icon: CircleDollarSignIcon },
-        { title: 'Total Orders', value: dashboardData.totalOrders, icon: TagsIcon },
-        { title: 'Total Customers', value: dashboardData.totalCustomers, icon: UsersIcon },
-        { title: 'Abandoned Carts', value: dashboardData.abandonedCarts, icon: ShoppingCartIcon },
-        { title: 'Total Ratings', value: dashboardData.ratings?.length || 0, icon: StarIcon },
-    ]
 
     const withTokenRetry = async (requestFn) => {
         try {
@@ -149,51 +150,36 @@ export default function Dashboard() {
     }
 
     return (
-        <div className=" text-slate-500 mb-28">
-            <div className="flex items-center justify-between mb-4">
-                <h1 className="text-2xl">Seller <span className="text-slate-800 font-medium">Dashboard</span></h1>
-                <div className="flex items-center gap-2">
+        <div className="mb-16 w-full max-w-none text-slate-500">
+            <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <h1 className="text-lg font-medium text-slate-800 sm:text-xl">Seller Dashboard</h1>
+                <div className="flex flex-wrap items-center gap-2">
                     <Link
                         href="/store/categories"
-                        className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg transition shadow-sm"
+                        className="flex items-center gap-1.5 rounded-md bg-amber-600 px-3 py-1.5 text-sm text-white transition hover:bg-amber-700"
                     >
-                        <FolderTreeIcon size={18} />
+                        <FolderTreeIcon size={15} />
                         <span>Import Categories</span>
                     </Link>
                     <Link
                         href="/store/bulk-import"
-                        className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg transition shadow-sm"
+                        className="flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-sm text-white transition hover:bg-emerald-700"
                     >
-                        <UploadCloudIcon size={18} />
+                        <UploadCloudIcon size={15} />
                         <span>Bulk Import</span>
                     </Link>
                     <Link 
                         href="/store/settings/users" 
-                        className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition shadow-sm"
+                        className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white transition hover:bg-blue-700"
                     >
-                        <UserPlusIcon size={18} />
+                        <UserPlusIcon size={15} />
                         <span>Invite Team Members</span>
                     </Link>
                 </div>
             </div>
 
-            <div className="flex flex-wrap gap-5 my-10 mt-4">
-                {
-                    dashboardCardsData.map((card, index) => (
-                        <div key={index} className="flex items-center gap-11 border border-slate-200 p-3 px-6 rounded-lg">
-                            <div className="flex flex-col gap-3 text-xs">
-                                <p>{card.title}</p>
-                                <b className="text-2xl font-medium text-slate-700">{card.value}</b>
-                            </div>
-                            <card.icon size={50} className=" w-11 h-11 p-2.5 text-slate-400 bg-slate-100 rounded-full" />
-                        </div>
-                    ))
-                }
-            </div>
+            <StoreDashboardCharts data={dashboardData} currency={currency} />
 
-
-            {/* CarouselProducts and reviews removed as requested */}
-            {/* Contact Us Messages Section */}
             <ContactMessagesSeller />
         </div>
     )

@@ -1,16 +1,17 @@
-'use client'
+'use client';
+
+import PolicyPageLayout from '@/components/PolicyPageLayout';
 
 export default function PaymentAndPricingPolicyPage() {
   return (
-    <div className="bg-gray-50">
-      <div className="max-w-3xl mx-auto px-4 py-10 min-h-[60vh]">
+    <PolicyPageLayout>
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Payment & Pricing Policy</h1>
         <p className="text-gray-600 mb-8">
           Details about accepted payment methods, pricing, taxes, billing, and security for purchases made on
           store1920.com in the UAE.
         </p>
 
-        <div className="space-y-6 bg-white border border-gray-200 rounded-xl p-6">
+        <div className="space-y-6 border border-gray-200 rounded-xl p-6">
           
           {/* 1. Accepted Methods */}
           <section>
@@ -92,7 +93,6 @@ export default function PaymentAndPricingPolicyPage() {
           </section>
 
         </div>
-      </div>
-    </div>
+    </PolicyPageLayout>
   );
 }

@@ -217,7 +217,7 @@ export default function ProductPricing() {
                                                     {product.sku || '-'}
                                                 </td>
                                                 <td className="px-6 py-4 text-sm font-semibold text-slate-900">
-                                                    {currency}{product.price?.toLocaleString('en-IN') || 0}
+                                                    {currency}{product.price?.toLocaleString('en-AE') || 0}
                                                 </td>
                                                 <td className="px-6 py-4">
                                                     {isEditing ? (
@@ -236,7 +236,7 @@ export default function ProductPricing() {
                                                         <div className="text-sm">
                                                             {product.costPrice ? (
                                                                 <span className="font-medium text-slate-900">
-                                                                    {currency}{product.costPrice?.toLocaleString('en-IN')}
+                                                                    {currency}{product.costPrice?.toLocaleString('en-AE')}
                                                                 </span>
                                                             ) : (
                                                                 <span className="text-orange-600 font-medium">Not Set</span>

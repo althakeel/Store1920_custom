@@ -336,7 +336,7 @@ const OrderSummary = ({ totalPrice, items }) => {
             const rpRes = await fetch('/api/razorpay/order', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ amount: discountedAmount, currency: 'INR', receipt: `order_${upsellOrderId}` })
+                body: JSON.stringify({ amount: discountedAmount, currency: 'AED', receipt: `order_${upsellOrderId}` })
             });
             const rpData = await rpRes.json();
             if (!rpRes.ok || !rpData.success || !rpData.orderId) {

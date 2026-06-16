@@ -13,8 +13,39 @@ import Loading from "@/components/Loading"
 
 import axios from "axios"
 import ProductForm from "../add-product/page"
+import {
+    buildCategoryLookup,
+    getProductCategoryLabels,
+    resolveCategoryName,
+} from '@/lib/categoryLookup'
 
+const MAX_VISIBLE_TAGS = 3
+const MAX_VISIBLE_CATEGORIES = 2
 
+function CompactPills({ items = [], maxVisible = 2, pillClassName, moreClassName }) {
+    if (!items.length) return null
+
+    const visibleItems = items.slice(0, maxVisible)
+    const hiddenItems = items.slice(maxVisible)
+
+    return (
+        <div className="flex max-w-[220px] flex-wrap items-center gap-1">
+            {visibleItems.map((item, index) => (
+                <span key={`${item}-${index}`} className={pillClassName}>
+                    {item}
+                </span>
+            ))}
+            {hiddenItems.length > 0 ? (
+                <span
+                    className={moreClassName}
+                    title={hiddenItems.join(', ')}
+                >
+                    +{hiddenItems.length}
+                </span>
+            ) : null}
+        </div>
+    )
+}
 
 export default function StoreManageProducts() {
     const dispatch = useDispatch();
@@ -83,6 +114,9 @@ export default function StoreManageProducts() {
              const { data } = await axios.get('/api/store/product', {headers: { Authorization: `Bearer ${token}` } })
              const nextProducts = data.products.sort((a, b)=> new Date(b.createdAt) - new Date(a.createdAt))
              setProducts(nextProducts)
+             if (data.categoryLookup && typeof data.categoryLookup === 'object') {
+                setCategoryMap(data.categoryLookup)
+             }
              setSelectedProductIds((prev) => prev.filter((id) => nextProducts.some((product) => String(product._id) === id)))
         } catch (error) {
             toast.error(error?.response?.data?.error || error.message)
@@ -94,14 +128,21 @@ export default function StoreManageProducts() {
     const fetchCategories = async () => {
         try {
             const { data } = await axios.get('/api/store/categories')
-            const map = {}
-            data.categories?.forEach(cat => {
-                map[cat._id] = cat.name
-            })
-            setCategoryMap(map)
+            setCategoryMap((current) => ({
+                ...current,
+                ...buildCategoryLookup(data.categories || []),
+                ...(data.lookup || {}),
+            }))
         } catch (error) {
             console.error('Error fetching categories:', error)
         }
+    }
+
+    const getDisplayCategoryLabels = (product) => {
+        if (Array.isArray(product?.categoryNames) && product.categoryNames.length) {
+            return product.categoryNames
+        }
+        return getProductCategoryLabels(product, categoryMap)
     }
 
     const toggleStock = async (productId) => {
@@ -130,10 +171,6 @@ export default function StoreManageProducts() {
     }
 
     const handleEdit = (product) => {
-        console.log('Editing product:', product)
-        console.log('  - product.category:', product.category)
-        console.log('  - product.categories:', product.categories)
-        console.log('  - categories is array?', Array.isArray(product.categories))
         setEditingProduct(product)
         setShowEditModal(true)
     }
@@ -283,8 +320,8 @@ export default function StoreManageProducts() {
         if (wordBoundaryRegex.test(product.sku?.toLowerCase() || '')) return true;
         
         // Search in categories
-        if (product.categories?.some(catId => wordBoundaryRegex.test(categoryMap[catId]?.toLowerCase() || ''))) return true;
-        if (product.category && wordBoundaryRegex.test(categoryMap[product.category]?.toLowerCase() || '')) return true;
+        if (product.categories?.some(catId => wordBoundaryRegex.test(resolveCategoryName(categoryMap, catId)?.toLowerCase() || ''))) return true;
+        if (product.category && wordBoundaryRegex.test(resolveCategoryName(categoryMap, product.category)?.toLowerCase() || '')) return true;
         
         // Search in tags
         if (product.tags?.some(tag => wordBoundaryRegex.test(tag.toLowerCase() || ''))) return true;
@@ -403,7 +440,7 @@ export default function StoreManageProducts() {
             name: product.name || '',
             slug: product.slug || '',
             sku: product.sku || '',
-            categories: (product.categories || []).map((categoryId) => categoryMap[categoryId] || categoryId).join(', '),
+            categories: getDisplayCategoryLabels(product).join(', '),
             tags: Array.isArray(product.tags) ? product.tags.join(', ') : '',
             description: String(product.description || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim(),
             AED: product.AED ?? product.mrp ?? '',
@@ -516,11 +553,11 @@ export default function StoreManageProducts() {
     }
 
     return (
-        <>
+        <div className="w-full max-w-[1920px]">
             <h1 className="text-2xl text-slate-500 mb-5">Manage <span className="text-slate-800 font-medium">Products</span></h1>
             
             {/* Search Bar and Category Filter */}
-            <div className="mb-6 max-w-5xl flex gap-4 flex-wrap">
+            <div className="mb-6 flex w-full gap-4 flex-wrap">
                 <div className="flex-1 min-w-xs">
                     <input
                         type="text"
@@ -587,7 +624,7 @@ export default function StoreManageProducts() {
             </div>
 
             {/* Quick Category Filter Buttons */}
-            <div className="mb-6 max-w-5xl">
+            <div className="mb-6 w-full">
                 <p className="text-sm text-gray-600 font-medium mb-3">Quick Filter by Category:</p>
                 <div className="flex flex-wrap gap-2 mb-3">
                     {['Trending & Featured', "Men's Fashion", "Women's Fashion", 'Kids', 'Electronics', 'Mobile Accessories', 'Home & Kitchen', 'Beauty', 'Car Essentials'].map((categoryName) => {
@@ -631,7 +668,7 @@ export default function StoreManageProducts() {
             </div>
 
             {hasSelectedProducts && (
-                <div className="mb-4 max-w-5xl flex flex-wrap items-center justify-between gap-3 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3">
+                <div className="mb-4 flex w-full flex-wrap items-center justify-between gap-3 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3">
                     <div className="text-sm font-medium text-orange-900">
                         {selectedProductIds.length} product(s) selected
                     </div>
@@ -662,7 +699,8 @@ export default function StoreManageProducts() {
                 </div>
             )}
 
-            <table className="w-full max-w-5xl text-left  ring ring-slate-200  rounded overflow-hidden text-sm">
+            <div className="w-full overflow-x-auto">
+            <table className="w-full min-w-[1200px] text-left ring ring-slate-200 rounded overflow-hidden text-sm">
                 <thead className="bg-slate-50 text-gray-700 uppercase tracking-wider">
                     <tr>
                         <th className="px-4 py-3">
@@ -732,32 +770,26 @@ export default function StoreManageProducts() {
                                 </div>
                             </td>
                             <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{product.sku || '-'}</td>
-                            <td className="px-4 py-3 hidden md:table-cell">
-                                {product.categories && product.categories.length > 0 ? (
-                                    <div className="flex flex-wrap gap-1">
-                                        {product.categories.map((catId, idx) => (
-                                            <span key={idx} className="inline-block px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded">
-                                                {categoryMap[catId] || catId}
-                                            </span>
-                                        ))}
-                                    </div>
-                                ) : product.category ? (
-                                    <span className="inline-block px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded">
-                                        {categoryMap[product.category] || product.category}
-                                    </span>
+                            <td className="px-4 py-3 hidden md:table-cell align-top">
+                                {getDisplayCategoryLabels(product).length > 0 ? (
+                                    <CompactPills
+                                        items={getDisplayCategoryLabels(product)}
+                                        maxVisible={MAX_VISIBLE_CATEGORIES}
+                                        pillClassName="inline-block max-w-[160px] truncate px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded"
+                                        moreClassName="inline-block px-2 py-1 text-xs font-medium bg-slate-100 text-slate-600 rounded"
+                                    />
                                 ) : (
                                     <span className="text-slate-400">-</span>
                                 )}
                             </td>
-                            <td className="px-4 py-3 hidden xl:table-cell">
+                            <td className="px-4 py-3 hidden xl:table-cell align-top">
                                 {product.tags && product.tags.length > 0 ? (
-                                    <div className="flex flex-wrap gap-1 max-w-xs">
-                                        {product.tags.map((tag, idx) => (
-                                            <span key={idx} className="inline-block px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded">
-                                                {tag}
-                                            </span>
-                                        ))}
-                                    </div>
+                                    <CompactPills
+                                        items={product.tags}
+                                        maxVisible={MAX_VISIBLE_TAGS}
+                                        pillClassName="inline-block max-w-[140px] truncate px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded"
+                                        moreClassName="inline-block px-2 py-1 text-xs font-medium bg-slate-100 text-slate-600 rounded"
+                                    />
                                 ) : (
                                     <span className="text-slate-400">-</span>
                                 )}
@@ -822,8 +854,9 @@ export default function StoreManageProducts() {
                     )}
                 </tbody>
             </table>
+            </div>
 
-            <div className="mt-4 max-w-5xl flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="mt-4 flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm text-slate-600">
                     Showing {paginationStart}-{paginationEnd} of {filteredProducts.length} product{filteredProducts.length !== 1 ? 's' : ''}
                 </p>
@@ -1054,6 +1087,6 @@ export default function StoreManageProducts() {
                     </div>
                 </div>
             )}
-        </>
+        </div>
     )
 }

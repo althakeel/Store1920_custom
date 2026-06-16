@@ -4,6 +4,7 @@ import { Suspense } from 'react';
 import { useEffect, useState } from 'react';
 import Loading from '@/components/Loading';
 import { useAuth } from '@/lib/useAuth';
+import { trackCustomerEvent } from '@/lib/trackingClient';
 
 export default function OrderSuccess() {
   return (
@@ -68,6 +69,31 @@ function OrderSuccessContent() {
   }, [params, router, user, getToken]);
 
   const order = orders && orders.length > 0 ? orders[0] : null;
+
+  useEffect(() => {
+    if (!order?._id) return;
+    const eventKey = `tracking_purchase_${order._id}`;
+    if (sessionStorage.getItem(eventKey)) return;
+
+    trackCustomerEvent({
+      storeId: order.storeId,
+      eventType: 'purchase',
+      firebaseUid: user?.uid || order.userId || null,
+      userId: user?.uid || order.userId || null,
+      pageType: 'order_success',
+      pagePath: '/order-success',
+      value: Number(order.total || 0),
+      currency: order.currency || 'AED',
+      metadata: {
+        orderId: String(order._id),
+        orderNumber: order.shortOrderNumber || null,
+        itemCount: Array.isArray(order.orderItems) ? order.orderItems.length : 0,
+        paymentMethod: order.paymentMethod || null,
+      },
+    });
+
+    sessionStorage.setItem(eventKey, '1');
+  }, [order, user?.uid]);
   function getOrderNumber(orderObj) {
     if (!orderObj) return '';
     return String(orderObj.shortOrderNumber || orderObj._id.slice(0, 8));
