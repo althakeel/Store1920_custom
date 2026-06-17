@@ -43,15 +43,28 @@ function TopDealsSkeleton() {
   )
 }
 
-export default function TopDeals({ homeSections = [], sectionsLoading = false }) {
-  const [products, setProducts] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [title, setTitle] = useState('Top Deals')
+export default function TopDeals({
+  homeSections = [],
+  sectionsLoading = false,
+  initialProducts = null,
+  initialTitle = 'Top Deals',
+}) {
+  const hasInitialProducts = Array.isArray(initialProducts) && initialProducts.length > 0
+  const [products, setProducts] = useState(hasInitialProducts ? initialProducts : [])
+  const [loading, setLoading] = useState(!hasInitialProducts)
+  const [title, setTitle] = useState(initialTitle)
 
   useEffect(() => {
+    if (hasInitialProducts) {
+      setProducts(initialProducts)
+      setTitle(initialTitle)
+      setLoading(false)
+      return undefined
+    }
+
     if (sectionsLoading) {
       setLoading(true)
-      return
+      return undefined
     }
 
     let cancelled = false
@@ -102,7 +115,7 @@ export default function TopDeals({ homeSections = [], sectionsLoading = false })
     return () => {
       cancelled = true
     }
-  }, [homeSections, sectionsLoading])
+  }, [hasInitialProducts, homeSections, sectionsLoading, initialProducts, initialTitle])
 
   if (!loading && products.length === 0) {
     return null

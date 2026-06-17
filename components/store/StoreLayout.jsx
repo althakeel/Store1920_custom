@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Loading from "../Loading"
 import Link from "next/link"
 import { ArrowRightIcon, Lock } from "lucide-react"
@@ -17,6 +17,7 @@ import {
     getPermissionIdForHref,
     getPermissionLabel,
 } from "@/lib/storeDashboardPermissions";
+import { readSellerCache, writeSellerCache } from "@/lib/storeDashboardCache";
 
 const StoreLayout = ({ children }) => {
 
@@ -34,15 +35,18 @@ const StoreLayout = ({ children }) => {
         accessRole: 'member',
         canManageTeamAccess: false,
     });
+    const sellerCacheHydratedRef = useRef(false);
 
-    const fetchIsSeller = async (retryCount = 0) => {
+    const fetchIsSeller = async (retryCount = 0, { silent = false } = {}) => {
         if (!user) {
             setSellerLoading(false);
             setAccessIssue(null);
             return;
         }
 
-        setSellerLoading(true);
+        if (!silent && !readSellerCache()) {
+            setSellerLoading(true);
+        }
         setAccessIssue(null);
         try {
             const token = await getToken(true);
@@ -59,11 +63,17 @@ const StoreLayout = ({ children }) => {
             });
             setIsSeller(data.isSeller);
             setStoreInfo(data.storeInfo);
-            setDashboardAccess({
+            const nextAccess = {
                 isOwner: Boolean(data.isOwner),
                 permissions: data.permissions || buildDeniedPermissions(),
                 accessRole: data.accessRole || 'member',
                 canManageTeamAccess: Boolean(data.canManageTeamAccess),
+            };
+            setDashboardAccess(nextAccess);
+            writeSellerCache({
+                isSeller: data.isSeller,
+                storeInfo: data.storeInfo,
+                dashboardAccess: nextAccess,
             });
             if (!data.isSeller) {
                 setAccessIssue({
@@ -106,14 +116,30 @@ const StoreLayout = ({ children }) => {
     };
 
     useEffect(() => {
+        if (sellerCacheHydratedRef.current) return;
+        sellerCacheHydratedRef.current = true;
+        const cached = readSellerCache();
+        if (!cached) return;
+        setIsSeller(Boolean(cached.isSeller));
+        setStoreInfo(cached.storeInfo || null);
+        setDashboardAccess(cached.dashboardAccess || {
+            isOwner: false,
+            permissions: buildDeniedPermissions(),
+            accessRole: 'member',
+            canManageTeamAccess: false,
+        });
+        setSellerLoading(false);
+    }, []);
+
+    useEffect(() => {
         if (!loading && user) {
-            fetchIsSeller();
+            fetchIsSeller(0, { silent: Boolean(readSellerCache()) });
         }
     }, [loading, user]);
 
     useEffect(() => {
         const refreshAccess = () => {
-            if (user) fetchIsSeller();
+            if (user) fetchIsSeller(0, { silent: true });
         };
 
         window.addEventListener('focus', refreshAccess);

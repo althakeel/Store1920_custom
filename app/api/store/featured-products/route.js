@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import connectDB from '@/lib/mongodb'
+import { getCachedData, setCachedData } from '@/lib/cache'
 import { getAuth } from '@/lib/firebase-admin'
 import authSeller from '@/middlewares/authSeller'
 import Store from '@/models/Store'
@@ -15,11 +16,11 @@ const DEFAULT_FEATURED_RESPONSE = {
     sectionDescription: "Grab the best deals before they're gone!"
 }
 
-function createFeaturedResponse(payload) {
+function createFeaturedResponse(payload, cacheable = false) {
     return NextResponse.json(payload, {
-        headers: {
-            'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0'
-        }
+        headers: cacheable
+            ? { 'Cache-Control': 'public, s-maxage=120, stale-while-revalidate=300' }
+            : { 'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0' }
     })
 }
 
@@ -74,6 +75,15 @@ export async function GET(request) {
             userId = await getUserIdFromAuthHeader(request)
         } catch (authError) {
             console.warn('[featured-products GET] auth lookup failed, falling back to public data:', authError?.message || authError)
+        }
+
+        const isPublicRequest = !userId
+        const cacheKey = isPublicRequest ? `public:featured-products:api:v1:${includeProducts}:${limit}` : null
+        if (cacheKey) {
+            const cached = getCachedData(cacheKey)
+            if (cached) {
+                return createFeaturedResponse(cached, true)
+            }
         }
 
         let store = null
@@ -139,14 +149,16 @@ export async function GET(request) {
         }
 
         if (!includeProducts) {
-            return createFeaturedResponse({
+            const payload = {
                 productIds,
                 sourceMode,
                 categoryIds,
                 tags,
                 sectionTitle,
                 sectionDescription
-            })
+            }
+            if (cacheKey) setCachedData(cacheKey, payload, 120)
+            return createFeaturedResponse(payload, isPublicRequest)
         }
 
         let products = await resolveProducts()
@@ -157,7 +169,7 @@ export async function GET(request) {
 
         const resolvedProductIds = products.map((product) => normalizeId(product?._id || product?.id)).filter(Boolean)
 
-        return createFeaturedResponse({
+        const payload = {
             productIds: resolvedProductIds,
             sourceMode,
             categoryIds,
@@ -165,7 +177,9 @@ export async function GET(request) {
             sectionTitle,
             sectionDescription,
             products
-        })
+        }
+        if (cacheKey) setCachedData(cacheKey, payload, 120)
+        return createFeaturedResponse(payload, isPublicRequest)
     } catch (error) {
         console.error('Error fetching featured products:', error)
         return createFeaturedResponse({

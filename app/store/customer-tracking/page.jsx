@@ -2,18 +2,29 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
+import Image from 'next/image';
 import {
   Activity,
+  ArrowDown,
   Clock3,
   Eye,
+  Home,
   MousePointerClick,
+  Package,
+  Play,
   ScrollText,
+  ShoppingBag,
   UserCheck,
   Users,
   X,
   MapPin,
+  Mail,
+  Phone,
+  Fingerprint,
   ChevronLeft,
   ChevronRight,
+  Sparkles,
+  ExternalLink,
 } from 'lucide-react';
 import { useAuth } from '@/lib/useAuth';
 import Loading from '@/components/Loading';
@@ -37,23 +48,69 @@ function formatDate(value) {
 function getVisitorLabel(visitor) {
   if (!visitor) return 'Visitor';
   if (visitor.displayName) return visitor.displayName;
-  if (visitor.visitorType === 'logged_in') return 'Customer';
+  if (visitor.customerEmail) return visitor.customerEmail.split('@')[0];
+  if (visitor.accountId) return `User · ${String(visitor.accountId).slice(0, 8)}`;
+  if (visitor.visitorType === 'logged_in') return 'Logged-in visitor';
   return 'Guest';
 }
 
 function getVisitorSubtitle(visitor) {
   if (!visitor) return null;
   if (visitor.displaySubtitle) return visitor.displaySubtitle;
+  if (visitor.visitorType === 'logged_in') {
+    if (visitor.customerEmail) return visitor.customerEmail;
+    if (visitor.accountId) return `Account ID · ${String(visitor.accountId).slice(0, 12)}`;
+    return 'Signed-in account (no profile saved yet)';
+  }
   if (visitor.visitorType === 'guest' && visitor.anonymousId) {
     return `Browser ID · ${String(visitor.anonymousId).slice(0, 10)}`;
   }
   return null;
 }
 
+function VisitorIdentityPanel({ visitor }) {
+  if (!visitor || visitor.visitorType !== 'logged_in') return null;
+
+  const items = [
+    visitor.customerEmail ? { icon: Mail, label: 'Email', value: visitor.customerEmail } : null,
+    visitor.customerPhone ? { icon: Phone, label: 'Phone', value: visitor.customerPhone } : null,
+    visitor.accountId ? { icon: Fingerprint, label: 'Account ID', value: visitor.accountId } : null,
+    visitor.anonymousId ? { icon: Users, label: 'Browser ID', value: visitor.anonymousId } : null,
+  ].filter(Boolean);
+
+  if (!items.length) return null;
+
+  return (
+    <div className="mt-4 rounded-2xl border border-white/20 bg-white/10 p-3 backdrop-blur-sm">
+      <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-indigo-100">
+        How to identify this customer
+      </p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {items.map(({ icon: Icon, label, value }) => (
+          <div key={label} className="flex items-start gap-2 rounded-xl bg-white/10 px-3 py-2">
+            <Icon size={14} className="mt-0.5 shrink-0 text-indigo-100" />
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-200/90">{label}</p>
+              <p className="break-all text-xs font-medium text-white">{value}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+      {!visitor.hasKnownProfile ? (
+        <p className="mt-2 text-[11px] leading-relaxed text-indigo-100/90">
+          No name saved yet. Match this visitor using the Account ID above, or check Customers after they place an order.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function getEventLabel(event) {
   const labels = {
     page_view: 'Page view',
     product_view: 'Product view',
+    product_view_ping: 'Viewing product',
+    product_view_end: 'Left product',
     time_on_page: 'Time on page',
     scroll_depth: 'Scroll depth',
     click: 'Click',
@@ -64,6 +121,64 @@ function getEventLabel(event) {
     session_end: 'Session end',
   };
   return labels[event.eventType] || event.eventType;
+}
+
+function getEventStyle(eventType) {
+  const styles = {
+    page_view: { badge: 'bg-sky-100 text-sky-800', dot: 'bg-sky-500', icon: Eye },
+    product_view: { badge: 'bg-amber-100 text-amber-800', dot: 'bg-amber-500', icon: Package },
+    product_view_ping: { badge: 'bg-amber-50 text-amber-700', dot: 'bg-amber-400', icon: Package },
+    product_view_end: { badge: 'bg-slate-100 text-slate-700', dot: 'bg-slate-400', icon: Package },
+    time_on_page: { badge: 'bg-emerald-100 text-emerald-800', dot: 'bg-emerald-500', icon: Clock3 },
+    scroll_depth: { badge: 'bg-indigo-100 text-indigo-800', dot: 'bg-indigo-500', icon: ArrowDown },
+    click: { badge: 'bg-rose-100 text-rose-800', dot: 'bg-rose-500', icon: MousePointerClick },
+    session_start: { badge: 'bg-violet-100 text-violet-800', dot: 'bg-violet-500', icon: Play },
+    add_to_cart: { badge: 'bg-orange-100 text-orange-800', dot: 'bg-orange-500', icon: ShoppingBag },
+    checkout_start: { badge: 'bg-fuchsia-100 text-fuchsia-800', dot: 'bg-fuchsia-500', icon: ShoppingBag },
+    purchase: { badge: 'bg-green-100 text-green-800', dot: 'bg-green-500', icon: Sparkles },
+    session_end: { badge: 'bg-slate-100 text-slate-700', dot: 'bg-slate-400', icon: Clock3 },
+  };
+  return styles[eventType] || { badge: 'bg-slate-100 text-slate-700', dot: 'bg-slate-400', icon: Activity };
+}
+
+function humanizeSlug(slug) {
+  return String(slug || '')
+    .split('-')
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+function formatPageLabel(path, watchedProducts = []) {
+  if (!path || path === '/') return { label: 'Homepage', sub: '/', icon: Home };
+
+  const slugMatch = String(path).match(/\/product\/([^/?#]+)/);
+  if (slugMatch) {
+    const slug = decodeURIComponent(slugMatch[1]);
+    const matched = watchedProducts.find((product) => product.slug === slug);
+    return {
+      label: matched?.name || humanizeSlug(slug),
+      sub: path,
+      icon: Package,
+    };
+  }
+
+  if (path.startsWith('/cart')) return { label: 'Cart', sub: path, icon: ShoppingBag };
+  if (path.startsWith('/checkout')) return { label: 'Checkout', sub: path, icon: ShoppingBag };
+  if (path.startsWith('/shop')) return { label: 'Shop', sub: path, icon: ShoppingBag };
+
+  return { label: path, sub: null, icon: MapPin };
+}
+
+function formatShortDate(value) {
+  if (!value) return '—';
+  return new Date(value).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
 }
 
 function PaginationBar({
@@ -158,121 +273,236 @@ function VisitorDetailModal({
   if (!open) return null;
 
   const visitor = detail;
+  const watchedProducts = visitor?.watchedProducts?.length
+    ? visitor.watchedProducts
+    : (visitor?.productViews || []).map((name, index) => ({
+        id: `${name}-${index}`,
+        name,
+        slug: null,
+        image: null,
+      }));
+
+  const statItems = visitor ? [
+    { label: 'First seen', value: formatShortDate(visitor.firstSeen), icon: Play, tone: 'from-violet-500 to-indigo-600' },
+    { label: 'Last seen', value: formatShortDate(visitor.lastSeen), icon: Clock3, tone: 'from-sky-500 to-blue-600' },
+    { label: 'Pages', value: visitor.pageViews, icon: Eye, tone: 'from-emerald-500 to-teal-600' },
+    { label: 'Products', value: watchedProducts.length, icon: Package, tone: 'from-amber-500 to-orange-600' },
+    { label: 'Total time', value: formatDuration(visitor.totalTimeSeconds), icon: Clock3, tone: 'from-fuchsia-500 to-pink-600' },
+    { label: 'Max scroll', value: `${visitor.maxScrollPercent || 0}%`, icon: ArrowDown, tone: 'from-indigo-500 to-purple-600' },
+  ] : [];
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4">
-      <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl">
-        <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-3 sm:px-5 sm:py-4">
-          <div className="min-w-0">
-            <h2 className="truncate text-base font-bold text-slate-900 sm:text-lg">
-              {getVisitorLabel(visitor)}
-            </h2>
-            {getVisitorSubtitle(visitor) ? (
-              <p className="mt-0.5 truncate text-xs text-slate-500">{getVisitorSubtitle(visitor)}</p>
-            ) : null}
-            <p className="mt-0.5 text-xs text-slate-500 sm:text-sm">
-              Full tracking history — pages, products, time spent, scroll, and clicks
-            </p>
+    <div className="fixed inset-0 z-[1000] flex items-end justify-center bg-slate-900/60 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="flex max-h-[min(94dvh,940px)] w-full max-w-5xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl ring-1 ring-slate-200 sm:max-h-[90vh] sm:rounded-3xl">
+        {/* shrink-0 keeps flex from crushing the header when body scrolls */}
+        <div className="relative shrink-0 overflow-hidden rounded-t-3xl border-b border-violet-500/30 bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-600 px-4 pb-6 pt-5 sm:rounded-t-3xl sm:px-6 sm:pb-7 sm:pt-6">
+          <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-white/10" />
+          <div className="pointer-events-none absolute -bottom-10 left-10 h-24 w-24 rounded-full bg-white/10" />
+          <div className="relative flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white/20 text-white shadow-lg backdrop-blur sm:h-14 sm:w-14">
+                {visitor?.customerImage ? (
+                  <Image
+                    src={visitor.customerImage}
+                    alt={getVisitorLabel(visitor)}
+                    width={56}
+                    height={56}
+                    className="h-full w-full object-cover"
+                  />
+                ) : visitor?.visitorType === 'logged_in' ? (
+                  <UserCheck size={24} />
+                ) : (
+                  <Users size={24} />
+                )}
+              </div>
+              <div className="min-w-0 py-0.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="truncate text-lg font-bold leading-tight text-white sm:text-xl">
+                    {getVisitorLabel(visitor)}
+                  </h2>
+                  {visitor ? (
+                    <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                      visitor.visitorType === 'logged_in'
+                        ? 'bg-emerald-400/25 text-emerald-50'
+                        : 'bg-white/20 text-white'
+                    }`}>
+                      {visitor.visitorType === 'logged_in' ? 'Logged in' : 'Guest'}
+                    </span>
+                  ) : null}
+                </div>
+                {getVisitorSubtitle(visitor) ? (
+                  <p className="mt-1 truncate text-xs text-indigo-100">{getVisitorSubtitle(visitor)}</p>
+                ) : null}
+                <p className="mt-1.5 text-xs leading-relaxed text-indigo-100/90 sm:text-sm">
+                  Full journey — pages, products, scroll depth, clicks & time spent
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="shrink-0 rounded-xl bg-white/15 p-2.5 text-white transition hover:bg-white/25"
+              aria-label="Close"
+            >
+              <X size={20} />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
-            aria-label="Close"
-          >
-            <X size={20} />
-          </button>
+          <VisitorIdentityPanel visitor={visitor} />
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-slate-50/80 px-4 py-4 sm:px-6 sm:py-5">
           {loading && !visitor ? (
-            <div className="py-16 text-center text-sm text-slate-500">Loading visitor activity...</div>
+            <div className="py-20 text-center text-sm text-slate-500">Loading visitor activity...</div>
           ) : !visitor ? (
-            <div className="py-16 text-center text-sm text-slate-500">No tracking data found for this visitor.</div>
+            <div className="py-20 text-center text-sm text-slate-500">No tracking data found for this visitor.</div>
           ) : (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
-                <div className="rounded-lg bg-blue-50 p-2.5">
-                  <p className="text-[10px] uppercase text-blue-700">First seen</p>
-                  <p className="mt-1 text-xs font-semibold text-slate-900">{formatDate(visitor.firstSeen)}</p>
-                </div>
-                <div className="rounded-lg bg-blue-50 p-2.5">
-                  <p className="text-[10px] uppercase text-blue-700">Last seen</p>
-                  <p className="mt-1 text-xs font-semibold text-slate-900">{formatDate(visitor.lastSeen)}</p>
-                </div>
-                <div className="rounded-lg bg-slate-50 p-2.5">
-                  <p className="text-[10px] uppercase text-slate-500">Pages</p>
-                  <p className="text-sm font-semibold text-slate-900">{visitor.pageViews}</p>
-                </div>
-                <div className="rounded-lg bg-slate-50 p-2.5">
-                  <p className="text-[10px] uppercase text-slate-500">Products</p>
-                  <p className="text-sm font-semibold text-slate-900">{visitor.productViews?.length || 0}</p>
-                </div>
-                <div className="rounded-lg bg-slate-50 p-2.5">
-                  <p className="text-[10px] uppercase text-slate-500">Total time</p>
-                  <p className="text-sm font-semibold text-slate-900">{formatDuration(visitor.totalTimeSeconds)}</p>
-                </div>
-                <div className="rounded-lg bg-slate-50 p-2.5">
-                  <p className="text-[10px] uppercase text-slate-500">Max scroll</p>
-                  <p className="text-sm font-semibold text-slate-900">{visitor.maxScrollPercent || 0}%</p>
-                </div>
+            <div className="space-y-5">
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+                {statItems.map(({ label, value, icon: Icon, tone }) => (
+                  <div key={label} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                    <div className={`h-1 bg-gradient-to-r ${tone}`} />
+                    <div className="p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+                        <Icon size={14} className="text-slate-400" />
+                      </div>
+                      <p className="mt-1 text-sm font-bold text-slate-900">{value}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
 
-              {visitor.pagesVisited?.length ? (
-                <div>
-                  <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    <MapPin size={14} />
-                    Where they went
-                  </p>
-                  <div className="space-y-1.5">
-                    {visitor.pagesVisited.map((page, index) => (
-                      <div key={`${page}-${index}`} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
-                        <span className="mr-2 inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 text-[10px] font-bold text-slate-600">
-                          {index + 1}
-                        </span>
-                        {page}
+              {watchedProducts.length ? (
+                <section className="rounded-2xl border border-amber-200/70 bg-white p-4 shadow-sm">
+                  <div className="mb-3 flex items-center gap-2">
+                    <div className="rounded-lg bg-amber-100 p-1.5 text-amber-700">
+                      <Package size={16} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">Products watched</p>
+                      <p className="text-xs text-slate-500">{watchedProducts.length} product{watchedProducts.length === 1 ? '' : 's'} viewed</p>
+                    </div>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {watchedProducts.map((product) => (
+                      <div
+                        key={product.id || product.slug || product.name}
+                        className="group flex items-center gap-3 rounded-xl border border-amber-100 bg-gradient-to-br from-amber-50 via-white to-orange-50 p-3 transition hover:border-amber-200 hover:shadow-md"
+                      >
+                        <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-amber-100 ring-1 ring-amber-200/60">
+                          {product.image ? (
+                            <Image
+                              src={product.image}
+                              alt={product.name}
+                              fill
+                              className="object-cover"
+                              sizes="64px"
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-amber-600">
+                              <Package size={22} />
+                            </div>
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="line-clamp-2 text-sm font-semibold leading-snug text-slate-900">
+                            {product.name}
+                          </p>
+                          {product.slug ? (
+                            <a
+                              href={`/product/${product.slug}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-amber-700 hover:text-amber-900"
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              View on store
+                              <ExternalLink size={12} />
+                            </a>
+                          ) : null}
+                        </div>
                       </div>
                     ))}
                   </div>
-                </div>
+                </section>
               ) : null}
 
-              {visitor.productViews?.length ? (
-                <div>
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Products watched</p>
-                  <div className="flex flex-wrap gap-2">
-                    {visitor.productViews.map((item) => (
-                      <span key={item} className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800">
-                        {item}
-                      </span>
-                    ))}
+              {visitor.pagesVisited?.length ? (
+                <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="mb-3 flex items-center gap-2">
+                    <div className="rounded-lg bg-sky-100 p-1.5 text-sky-700">
+                      <MapPin size={16} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">Browsing path</p>
+                      <p className="text-xs text-slate-500">Pages visited in order</p>
+                    </div>
                   </div>
-                </div>
+                  <div className="relative space-y-0 pl-1">
+                    {visitor.pagesVisited.map((page, index) => {
+                      const pageInfo = formatPageLabel(page, watchedProducts);
+                      const PageIcon = pageInfo.icon;
+                      const isLast = index === visitor.pagesVisited.length - 1;
+
+                      return (
+                        <div key={`${page}-${index}`} className="relative flex gap-3 pb-4">
+                          {!isLast ? (
+                            <span className="absolute left-[15px] top-8 h-[calc(100%-12px)] w-0.5 bg-gradient-to-b from-indigo-200 to-transparent" />
+                          ) : null}
+                          <div className="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-xs font-bold text-white shadow-md">
+                            {index + 1}
+                          </div>
+                          <div className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+                            <div className="flex items-start gap-2">
+                              <PageIcon size={14} className="mt-0.5 shrink-0 text-indigo-500" />
+                              <div className="min-w-0">
+                                <p className="text-sm font-semibold text-slate-900">{pageInfo.label}</p>
+                                {pageInfo.sub ? (
+                                  <p className="mt-0.5 truncate text-[11px] text-slate-500">{pageInfo.sub}</p>
+                                ) : null}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
               ) : null}
 
               {visitor.sessions?.length ? (
-                <div>
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Sessions</p>
-                  <div className="space-y-2">
+                <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <p className="mb-3 text-sm font-semibold text-slate-900">Sessions</p>
+                  <div className="grid gap-3 sm:grid-cols-2">
                     {visitor.sessions.map((session) => (
-                      <div key={session.sessionKey} className="rounded-lg border border-slate-200 px-3 py-2.5">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div key={session.sessionKey} className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-3">
+                        <div className="flex items-center justify-between gap-2">
                           <p className="text-xs font-semibold text-slate-900">
                             Session · {String(session.sessionId || '').slice(0, 8)}
                           </p>
-                          <p className="text-[11px] text-slate-500">{formatDuration(session.totalTimeSeconds)}</p>
+                          <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-700">
+                            {formatDuration(session.totalTimeSeconds)}
+                          </span>
                         </div>
-                        <p className="mt-1 text-[11px] text-slate-500">
+                        <p className="mt-2 text-xs text-slate-500">
                           {session.pageViews} pages · max scroll {session.maxScrollPercent || 0}%
                         </p>
                       </div>
                     ))}
                   </div>
-                </div>
+                </section>
               ) : null}
 
-              <div>
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Full activity timeline</p>
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="mb-3 flex items-center gap-2">
+                  <div className="rounded-lg bg-violet-100 p-1.5 text-violet-700">
+                    <Activity size={16} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">Activity timeline</p>
+                    <p className="text-xs text-slate-500">Every tracked action in order</p>
+                  </div>
+                </div>
 
                 {eventPagination ? (
                   <PaginationBar
@@ -283,65 +513,81 @@ function VisitorDetailModal({
                     total={eventPagination.totalEvents}
                     itemLabel="events"
                     onPageChange={(page) => fetchDetail(page)}
-                    className="mb-3"
+                    className="mb-4 border-violet-100 bg-violet-50/50"
                   />
                 ) : null}
 
-                <div className="space-y-2">
-                  {(visitor.allEvents || []).map((event) => (
-                    <div key={`${event.id}-${event.createdAt}`} className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase text-slate-700">
-                            {getEventLabel(event)}
-                          </span>
-                          {event.pageType ? (
-                            <span className="text-[11px] text-slate-400">{event.pageType}</span>
-                          ) : null}
+                <div className="space-y-3">
+                  {(visitor.allEvents || []).map((event) => {
+                    const style = getEventStyle(event.eventType);
+                    const EventIcon = style.icon;
+                    const productName = event.metadata?.productName
+                      || (event.metadata?.productSlug ? humanizeSlug(event.metadata.productSlug) : null);
+
+                    return (
+                      <div
+                        key={`${event.id}-${event.createdAt}`}
+                        className="relative rounded-xl border border-slate-200 bg-white p-3 pl-4 shadow-sm"
+                      >
+                        <span className={`absolute left-0 top-3 bottom-3 w-1 rounded-full ${style.dot}`} />
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${style.badge}`}>
+                              <EventIcon size={12} />
+                              {getEventLabel(event)}
+                            </span>
+                            {event.pageType ? (
+                              <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                                {event.pageType.replace(/_/g, ' ')}
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className="text-[11px] font-medium text-slate-400">{formatShortDate(event.createdAt)}</p>
                         </div>
-                        <p className="text-[11px] text-slate-400">{formatDate(event.createdAt)}</p>
+
+                        {event.pagePath ? (
+                          <p className="mt-2 truncate text-xs text-slate-600">{formatPageLabel(event.pagePath, watchedProducts).label}</p>
+                        ) : null}
+
+                        {productName ? (
+                          <p className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800">
+                            <Package size={12} />
+                            {productName}
+                          </p>
+                        ) : null}
+
+                        {event.metadata?.seconds ? (
+                          <p className="mt-1.5 text-xs text-emerald-700">
+                            Time on page: {formatDuration(event.metadata.seconds)}
+                            {event.metadata.maxScrollPercent ? ` · scrolled to ${event.metadata.maxScrollPercent}%` : ''}
+                          </p>
+                        ) : null}
+
+                        {event.metadata?.depthPercent ? (
+                          <p className="mt-1.5 text-xs text-indigo-700">
+                            Scrolled to {event.metadata.depthPercent}%
+                            {event.metadata.secondsOnPage
+                              ? ` after ${formatDuration(event.metadata.secondsOnPage)}`
+                              : ''}
+                          </p>
+                        ) : null}
+
+                        {event.metadata?.href || event.metadata?.text ? (
+                          <p className="mt-1.5 rounded-lg bg-rose-50 px-2 py-1.5 text-xs text-rose-800">
+                            <span className="font-semibold">Clicked:</span>{' '}
+                            {String(event.metadata.text || event.metadata.href || '').slice(0, 120)}
+                            {event.metadata.secondsOnPage
+                              ? ` · after ${formatDuration(event.metadata.secondsOnPage)}`
+                              : ''}
+                          </p>
+                        ) : null}
                       </div>
-
-                      {event.pagePath ? (
-                        <p className="mt-1.5 break-all text-xs text-slate-700">{event.pagePath}</p>
-                      ) : null}
-
-                      {event.metadata?.productSlug || event.metadata?.productName ? (
-                        <p className="mt-1 text-xs font-medium text-amber-700">
-                          Product: {event.metadata.productName || event.metadata.productSlug}
-                        </p>
-                      ) : null}
-
-                      {event.metadata?.seconds ? (
-                        <p className="mt-1 text-xs text-emerald-700">
-                          Time spent: {formatDuration(event.metadata.seconds)}
-                          {event.metadata.maxScrollPercent ? ` · scrolled to ${event.metadata.maxScrollPercent}%` : ''}
-                        </p>
-                      ) : null}
-
-                      {event.metadata?.depthPercent ? (
-                        <p className="mt-1 text-xs text-indigo-700">
-                          Scrolled to {event.metadata.depthPercent}%
-                          {event.metadata.secondsOnPage
-                            ? ` after ${formatDuration(event.metadata.secondsOnPage)} on page`
-                            : ''}
-                        </p>
-                      ) : null}
-
-                      {event.metadata?.href || event.metadata?.text ? (
-                        <p className="mt-1 text-xs text-rose-700">
-                          Clicked: {event.metadata.text || event.metadata.href}
-                          {event.metadata.secondsOnPage
-                            ? ` · after ${formatDuration(event.metadata.secondsOnPage)} on page`
-                            : ''}
-                        </p>
-                      ) : null}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 {loading ? (
-                  <p className="mt-3 text-center text-xs text-slate-500">Updating timeline...</p>
+                  <p className="mt-4 text-center text-xs text-slate-500">Updating timeline...</p>
                 ) : null}
 
                 {eventPagination && eventPagination.totalPages > 1 ? (
@@ -353,10 +599,10 @@ function VisitorDetailModal({
                     total={eventPagination.totalEvents}
                     itemLabel="events"
                     onPageChange={(page) => fetchDetail(page)}
-                    className="mt-3"
+                    className="mt-4 border-violet-100 bg-violet-50/50"
                   />
                 ) : null}
-              </div>
+              </section>
             </div>
           )}
         </div>
@@ -422,39 +668,42 @@ export default function CustomerTrackingPage() {
   if (loading && !data.visitors.length) return <Loading />;
 
   return (
-    <div className="space-y-4 sm:space-y-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">Customer Tracking</h1>
-          <p className="mt-1 text-xs text-slate-600 sm:text-sm">
-            Click any visitor to open a popup with their full journey, time spent, and every tracked action.
-          </p>
-        </div>
+    <div className="space-y-5 sm:space-y-6">
+      <div className="relative overflow-hidden rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-violet-50 p-4 shadow-sm sm:p-5">
+        <div className="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-indigo-100/60" />
+        <div className="relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">Customer Tracking</h1>
+            <p className="mt-1 max-w-2xl text-xs text-slate-600 sm:text-sm">
+              See who visited your store, what they viewed, and how they interacted. Click any visitor for the full journey.
+            </p>
+          </div>
 
-        <select
-          value={range}
-          onChange={(event) => {
-            setVisitorPage(1);
-            setRange(event.target.value);
-          }}
-          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
-        >
-          <option value="today">Today</option>
-          <option value="week">Last 7 days</option>
-          <option value="month">Last 30 days</option>
-          <option value="quarter">Last 3 months</option>
-        </select>
+          <select
+            value={range}
+            onChange={(event) => {
+              setVisitorPage(1);
+              setRange(event.target.value);
+            }}
+            className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 shadow-sm"
+          >
+            <option value="today">Today</option>
+            <option value="week">Last 7 days</option>
+            <option value="month">Last 30 days</option>
+            <option value="quarter">Last 3 months</option>
+          </select>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-7">
         {statCards.map(({ label, value, icon: Icon, tone }) => (
-          <div key={label} className="rounded-xl border border-slate-200 bg-white p-3 shadow-md">
+          <div key={label} className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm transition hover:shadow-md">
             <div className="flex items-start justify-between gap-2">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 sm:text-xs">{label}</p>
                 <p className="mt-1 text-lg font-bold text-slate-900 sm:text-xl">{value}</p>
               </div>
-              <div className={`rounded-lg p-2 ${tone}`}>
+              <div className={`rounded-xl p-2 ${tone}`}>
                 <Icon size={16} />
               </div>
             </div>
@@ -462,10 +711,10 @@ export default function CustomerTrackingPage() {
         ))}
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white shadow-md">
-        <div className="border-b border-slate-200 px-4 py-3">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 bg-slate-50/80 px-4 py-3.5">
           <h2 className="text-sm font-semibold text-slate-900 sm:text-base">Visitors</h2>
-          <p className="text-xs text-slate-500">Click a row to view full tracking in a popup.</p>
+          <p className="text-xs text-slate-500">Click a row to open the full activity popup.</p>
         </div>
 
         {data.visitorPagination ? (
@@ -501,17 +750,27 @@ export default function CustomerTrackingPage() {
                   </td>
                 </tr>
               ) : (
-                data.visitors.map((visitor) => (
+                data.visitors.map((visitor) => {
+                  const productNames = visitor.productViews?.length
+                    ? visitor.productViews
+                    : (visitor.watchedProducts || []).map((product) => product.name);
+
+                  return (
                   <tr
                     key={visitor.visitorKey}
                     onClick={() => setModalVisitorKey(visitor.visitorKey)}
-                    className="cursor-pointer border-t border-slate-100 transition hover:bg-blue-50"
+                    className="cursor-pointer border-t border-slate-100 transition hover:bg-indigo-50/60"
                   >
                     <td className="px-4 py-3">
                       <div>
                         <p className="font-medium text-slate-900">{getVisitorLabel(visitor)}</p>
                         {getVisitorSubtitle(visitor) ? (
                           <p className="mt-0.5 text-[11px] text-slate-500">{getVisitorSubtitle(visitor)}</p>
+                        ) : null}
+                        {visitor.visitorType === 'logged_in' && visitor.accountId && !visitor.customerEmail ? (
+                          <p className="mt-0.5 font-mono text-[10px] text-violet-600">
+                            ID {String(visitor.accountId).slice(0, 12)}
+                          </p>
                         ) : null}
                       </div>
                     </td>
@@ -525,11 +784,20 @@ export default function CustomerTrackingPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-slate-700">{visitor.pageViews}</td>
-                    <td className="px-4 py-3 text-slate-700">{visitor.productViews?.length || 0}</td>
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-slate-900">{productNames.length || 0}</p>
+                      {productNames.length ? (
+                        <p className="mt-0.5 line-clamp-2 max-w-[220px] text-[11px] text-amber-700">
+                          {productNames.slice(0, 2).join(' · ')}
+                          {productNames.length > 2 ? ` +${productNames.length - 2} more` : ''}
+                        </p>
+                      ) : null}
+                    </td>
                     <td className="px-4 py-3 text-slate-700">{formatDuration(visitor.totalTimeSeconds)}</td>
                     <td className="px-4 py-3 text-xs text-slate-500">{formatDate(visitor.lastSeen)}</td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -549,17 +817,22 @@ export default function CustomerTrackingPage() {
         ) : null}
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white shadow-md">
-        <div className="border-b border-slate-200 px-4 py-3">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 bg-slate-50/80 px-4 py-3.5">
           <h2 className="text-sm font-semibold text-slate-900 sm:text-base">Event Breakdown</h2>
         </div>
         <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 lg:grid-cols-6">
-          {Object.entries(data.summary.byEventType || {}).map(([eventType, count]) => (
-            <div key={eventType} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
-              <p className="text-[10px] uppercase tracking-wide text-slate-500">{eventType}</p>
-              <p className="mt-1 text-lg font-bold text-slate-900">{count}</p>
+          {Object.entries(data.summary.byEventType || {}).map(([eventType, count]) => {
+            const style = getEventStyle(eventType);
+            return (
+            <div key={eventType} className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 px-3 py-2.5">
+              <p className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${style.badge}`}>
+                {getEventLabel({ eventType })}
+              </p>
+              <p className="mt-2 text-lg font-bold text-slate-900">{count}</p>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 

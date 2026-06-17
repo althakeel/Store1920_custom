@@ -125,10 +125,17 @@ function getCategoryIconByName(name) {
   return Info
 }
 
-export default function ShopShowcaseSection({ initialShowcaseData = null }) {
-  const [loading, setLoading] = useState(!initialShowcaseData)
-  const [data, setData] = useState(initialShowcaseData || { config: null, sectionProducts: [], products: [], categories: [] })
-  const [storeMenuItems, setStoreMenuItems] = useState([])
+export default function ShopShowcaseSection({
+  initialShowcaseData = null,
+  initialStoreSettings = null,
+  skipInitialFetch = false,
+}) {
+  const hasInitialData = Boolean(initialShowcaseData);
+  const [loading, setLoading] = useState(!hasInitialData && !skipInitialFetch);
+  const [data, setData] = useState(initialShowcaseData || { config: null, sectionProducts: [], products: [], categories: [] });
+  const [storeMenuItems, setStoreMenuItems] = useState(
+    Array.isArray(initialStoreSettings?.navMenuItems) ? initialStoreSettings.navMenuItems : []
+  );
   const [menuStyle, setMenuStyle] = useState({
     showcaseFlyoutBackgroundColor: '#ffffff',
     showcaseFlyoutTitleColor: '#0f172a',
@@ -155,6 +162,26 @@ export default function ShopShowcaseSection({ initialShowcaseData = null }) {
   }
 
   useEffect(() => {
+    if (skipInitialFetch && initialShowcaseData) {
+      const advancedItems = Array.isArray(initialStoreSettings?.navMenuItems) ? initialStoreSettings.navMenuItems : [];
+      if (advancedItems.length) {
+        setStoreMenuItems(advancedItems);
+      }
+      const resolvedMenuStyle = initialStoreSettings?.navMenuStyle && typeof initialStoreSettings.navMenuStyle === 'object'
+        ? initialStoreSettings.navMenuStyle
+        : {};
+      setMenuStyle((prev) => ({
+        ...prev,
+        showcaseFlyoutBackgroundColor: String(resolvedMenuStyle.showcaseFlyoutBackgroundColor || prev.showcaseFlyoutBackgroundColor),
+        showcaseFlyoutTitleColor: String(resolvedMenuStyle.showcaseFlyoutTitleColor || prev.showcaseFlyoutTitleColor),
+        showcaseFlyoutLinkColor: String(resolvedMenuStyle.showcaseFlyoutLinkColor || prev.showcaseFlyoutLinkColor),
+        showcaseFlyoutHoverColor: String(resolvedMenuStyle.showcaseFlyoutHoverColor || prev.showcaseFlyoutHoverColor),
+        showcaseFlyoutBorderColor: String(resolvedMenuStyle.showcaseFlyoutBorderColor || prev.showcaseFlyoutBorderColor),
+      }));
+      setLoading(false);
+      return undefined;
+    }
+
     const load = async () => {
       try {
         const [showcaseRes, settingsRes, navbarRes] = await Promise.all([
@@ -205,7 +232,7 @@ export default function ShopShowcaseSection({ initialShowcaseData = null }) {
       }
     }
     load()
-  }, [initialShowcaseData])
+  }, [initialShowcaseData, initialStoreSettings, skipInitialFetch])
 
   const config = data.config
   const categoryMenuItems = useMemo(() => {

@@ -180,7 +180,7 @@ export default function CategoryInterestSection() {
 
     const fetchCategories = async () => {
       try {
-        const response = await fetch('/api/store/categories', { cache: 'no-store' });
+        const response = await fetch('/api/categories', { next: { revalidate: 300 } });
         if (!response.ok) return;
 
         const data = await response.json();

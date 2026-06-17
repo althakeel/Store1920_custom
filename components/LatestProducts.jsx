@@ -12,18 +12,32 @@ const DEFAULT_ITEMS_PER_ROW = 6
 const DEFAULT_ROWS = 2
 
 // Featured selection component (only show admin-selected featured products)
-const BestSelling = () => {
-  const { getToken, user, loading } = useAuth()
+const BestSelling = ({
+  initialProducts = null,
+  initialSectionTitle = null,
+  initialSectionDescription = null,
+  initialLayout = null,
+}) => {
+  const hasInitialProducts = Array.isArray(initialProducts) && initialProducts.length > 0
+  const { getToken, user, loading: authLoading } = useAuth()
   const { t } = useStorefrontI18n()
-  const [featuredProducts, setFeaturedProducts] = useState([])
-  const [isLoading, setIsLoading] = useState(true)
+  const [featuredProducts, setFeaturedProducts] = useState(hasInitialProducts ? initialProducts : [])
+  const [isLoading, setIsLoading] = useState(!hasInitialProducts)
   const [error, setError] = useState(null)
-  const [sectionTitle, setSectionTitle] = useState('Craziest sale of the year!')
-  const [sectionDescription, setSectionDescription] = useState("Grab the best deals before they're gone!")
-  const [layoutSettings, setLayoutSettings] = useState({ style: 'grid', itemsPerRow: DEFAULT_ITEMS_PER_ROW, rows: DEFAULT_ROWS })
+  const [sectionTitle, setSectionTitle] = useState(initialSectionTitle || 'Craziest sale of the year!')
+  const [sectionDescription, setSectionDescription] = useState(initialSectionDescription || "Grab the best deals before they're gone!")
+  const [layoutSettings, setLayoutSettings] = useState(() => {
+    const homeMenu = initialLayout || {}
+    return {
+      style: ['grid', 'list', 'carousel', 'horizontal'].includes(homeMenu.style) ? homeMenu.style : 'grid',
+      itemsPerRow: DEFAULT_ITEMS_PER_ROW,
+      rows: Math.max(1, Math.min(6, Number(homeMenu.rows || DEFAULT_ROWS))),
+    }
+  })
   const fetchControllerRef = useRef(null)
   const retryTimerRef = useRef(null)
-  const featuredProductsLengthRef = useRef(0)
+  const featuredProductsLengthRef = useRef(hasInitialProducts ? initialProducts.length : 0)
+  const skipInitialFetchRef = useRef(hasInitialProducts)
 
   const visibleCount = Math.max(1, Math.min(40, Number(layoutSettings.itemsPerRow || DEFAULT_ITEMS_PER_ROW) * Number(layoutSettings.rows || DEFAULT_ROWS)))
   const effectiveSectionTitle = sectionTitle === 'Craziest sale of the year!' ? t('featured.title') : sectionTitle
@@ -55,20 +69,18 @@ const BestSelling = () => {
 
         const appearanceRequest = headers
           ? axios.get('/api/store/appearance/sections', {
-              params: { t: Date.now() },
               headers,
               signal: controller.signal,
               timeout: 10000
             })
           : axios.get('/api/store/appearance/sections/public', {
-              params: { t: Date.now() },
               signal: controller.signal,
               timeout: 10000
             })
 
         const [{ data: featuredData }, { data: appearanceData }] = await Promise.all([
           axios.get('/api/store/featured-products', {
-            params: { t: Date.now(), includeProducts: true, limit: visibleCount },
+            params: { includeProducts: true, limit: visibleCount },
             headers,
             signal: controller.signal,
             timeout: 15000
@@ -142,7 +154,7 @@ const BestSelling = () => {
           }
         }
       }
-    }, [getToken])
+    }, [getToken, visibleCount])
 
   useEffect(() => {
     return () => {
@@ -152,10 +164,13 @@ const BestSelling = () => {
   }, [])
 
   useEffect(() => {
-    // Wait for auth resolution so logged-in sellers don't get stuck on public fallback data.
-    if (loading) return
+    if (skipInitialFetchRef.current) {
+      skipInitialFetchRef.current = false
+      return
+    }
+    if (authLoading && !hasInitialProducts) return
     fetchFeaturedAndSectionText()
-  }, [fetchFeaturedAndSectionText, user?.uid, loading])
+  }, [fetchFeaturedAndSectionText, user?.uid, authLoading, hasInitialProducts])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
