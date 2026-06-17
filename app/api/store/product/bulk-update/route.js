@@ -3,16 +3,20 @@ import connectDB from '@/lib/mongodb'
 import Product from '@/models/Product'
 import authSeller from '@/middlewares/authSeller'
 import { getAuth } from '@/lib/firebase-admin'
+import { getCurrentStock } from '@/lib/storeInventory'
+import { recordInventoryHistory, resolveInventoryActor } from '@/lib/inventoryHistory'
 
 export const runtime = 'nodejs'
 
-async function getStoreIdFromRequest(request) {
+async function getSellerContextFromRequest(request) {
   const authHeader = request.headers.get('authorization') || ''
   if (!authHeader.startsWith('Bearer ')) return null
 
   const idToken = authHeader.replace('Bearer ', '')
   const decodedToken = await getAuth().verifyIdToken(idToken)
-  return authSeller(decodedToken.uid)
+  const storeId = await authSeller(decodedToken.uid)
+  if (!storeId) return null
+  return { storeId, userId: decodedToken.uid, decodedToken }
 }
 
 function parseOptionalNumber(value) {
@@ -32,10 +36,12 @@ function applyBooleanDirective(updateData, fieldName, directive) {
 
 export async function PATCH(request) {
   try {
-    const storeId = await getStoreIdFromRequest(request)
-    if (!storeId) {
+    const sellerContext = await getSellerContextFromRequest(request)
+    if (!sellerContext) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const { storeId, userId, decodedToken } = sellerContext
 
     const body = await request.json()
     const productIds = Array.isArray(body?.productIds)
@@ -57,6 +63,7 @@ export async function PATCH(request) {
 
     if (stockQuantity !== undefined) {
       updateData.stockQuantity = stockQuantity
+      updateData.stockUpdatedAt = new Date()
     }
     if (price !== undefined) {
       updateData.price = price
@@ -71,6 +78,13 @@ export async function PATCH(request) {
 
     await connectDB()
 
+    const stockChangeRequested = stockQuantity !== undefined
+    const productsBeforeUpdate = stockChangeRequested
+      ? await Product.find({ _id: { $in: productIds }, storeId: String(storeId) })
+        .select('_id name sku stockQuantity hasVariants variants')
+        .lean()
+      : []
+
     const result = await Product.updateMany(
       {
         _id: { $in: productIds },
@@ -78,6 +92,26 @@ export async function PATCH(request) {
       },
       { $set: updateData }
     )
+
+    if (stockChangeRequested && productsBeforeUpdate.length) {
+      const actor = await resolveInventoryActor(userId, decodedToken)
+      await Promise.all(productsBeforeUpdate.map((product) => {
+        const previousStock = getCurrentStock(product)
+        const newStock = stockQuantity
+        return recordInventoryHistory({
+          ...actor,
+          productId: String(product._id),
+          productName: product.name || '',
+          sku: product.sku || '',
+          action: 'bulk_update',
+          quantityDelta: newStock - previousStock,
+          previousStock,
+          newStock,
+          source: 'bulk_update',
+          details: `Bulk update for ${productIds.length} product(s)`,
+        })
+      }))
+    }
 
     return NextResponse.json({
       success: true,

@@ -3,27 +3,15 @@ import authSeller from "@/middlewares/authSeller";
 import connectDB from '@/lib/mongodb';
 import Category from '@/models/Category';
 import {
-    buildRichDescriptionHtml,
-    buildSpecTableHtml,
-    matchCategoryIds,
-    normalizeSpecRows,
+    parseAutofillJson,
+    formatProductAutofillPayload,
 } from '@/lib/productAiAutofill';
-
+import { generateProductAutofillFromImage, shouldUseGeminiForProducts } from '@/lib/geminiProductAutofill';
 import { NextResponse } from "next/server";
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
-const parseJsonReply = (raw) => {
-    const text = String(raw || '').trim();
-    if (!text) throw new Error('AI returned empty response');
-    const cleaned = text.replace(/```json|```/g, '').trim();
-    return JSON.parse(cleaned);
-};
-
-const normalizeList = (value) => {
-    if (!Array.isArray(value)) return [];
-    return Array.from(new Set(value.map((item) => String(item || '').trim()).filter(Boolean)));
-};
+const parseJsonReply = parseAutofillJson;
 
 async function loadImageFromUrl(imageUrl) {
     const url = String(imageUrl || '').trim();
@@ -197,71 +185,15 @@ async function main(base64Image, mimeType, additionalContext = '', includeArabic
 
     const raw = response.choices[0].message.content;
     const parsed = parseJsonReply(raw);
-
-    const specTableColumns = normalizeList(parsed.specTableColumns);
-    const normalizedColumns = specTableColumns.length >= 2
-        ? specTableColumns.slice(0, 2)
-        : ['Property', 'Value'];
-    const specTableRows = normalizeSpecRows(parsed.specTableRows, normalizedColumns.length);
-    const specTableTitle = String(parsed.specTableTitle || 'Product information').trim() || 'Product information';
-    const specTableHtml = buildSpecTableHtml(normalizedColumns, specTableRows, specTableTitle);
-    const descriptionHtml = buildRichDescriptionHtml({
-        overview: parsed.descriptionOverview || parsed.shortDescription,
-        details: parsed.descriptionDetails,
-        features: normalizeList(parsed.features),
-        specTableHtml,
-    });
-    const descriptionArHtml = includeArabic
-        ? buildRichDescriptionHtml({
-            overview: parsed.descriptionOverviewAr || parsed.shortDescriptionAr,
-            details: parsed.descriptionDetailsAr || parsed.descriptionAr,
-            features: [],
-            specTableHtml: '',
-        })
-        : '';
-
-    const suggestedCategoryIds = matchCategoryIds(
-        normalizeList(parsed.suggestedCategories),
-        storeCategories,
-        3
-    );
-
-    return {
-        name: String(parsed.name || '').trim(),
-        brand: String(parsed.brand || '').trim(),
-        shortDescription: String(parsed.shortDescription || '').trim(),
-        shortDescription2: String(parsed.shortDescription2 || '').trim(),
-        description: descriptionHtml,
-        descriptionOverview: String(parsed.descriptionOverview || '').trim(),
-        descriptionDetails: String(parsed.descriptionDetails || '').trim(),
-        features: normalizeList(parsed.features).slice(0, 8),
-        suggestedCategories: normalizeList(parsed.suggestedCategories).slice(0, 3),
-        suggestedCategoryIds,
-        nameAr: String(parsed.nameAr || '').trim(),
-        brandAr: String(parsed.brandAr || '').trim(),
-        shortDescriptionAr: String(parsed.shortDescriptionAr || '').trim(),
-        descriptionAr: descriptionArHtml || String(parsed.descriptionAr || '').trim(),
-        tags: normalizeList(parsed.tags).slice(0, 10),
-        seoTitle: String(parsed.seoTitle || '').trim(),
-        seoDescription: String(parsed.seoDescription || '').trim(),
-        seoKeywords: normalizeList(parsed.seoKeywords).slice(0, 10),
-        badges: normalizeList(parsed.badges).slice(0, 6),
-        deliveredBy: String(parsed.deliveredBy || '').trim(),
-        soldBy: String(parsed.soldBy || '').trim(),
-        paymentInfo: String(parsed.paymentInfo || '').trim(),
-        specTableTitle,
-        specTableColumns: normalizedColumns,
-        specTableRows,
-        specTableEnabled: specTableRows.length > 0,
-    };
-
+    return formatProductAutofillPayload(parsed, storeCategories, includeArabic);
 }
 
 
 export async function POST(request) {
     try {
-        if (!isOpenAIConfigured()) {
-            return NextResponse.json({ error: 'AI is disabled (missing OPENAI_API_KEY)' }, { status: 503 });
+        const useGemini = shouldUseGeminiForProducts();
+        if (!useGemini && !isOpenAIConfigured()) {
+            return NextResponse.json({ error: 'AI is disabled (set GEMINI_API_KEY or OPENAI_API_KEY)' }, { status: 503 });
         }
 
         const authHeader = request.headers.get('authorization');
@@ -308,14 +240,22 @@ export async function POST(request) {
             );
         }
 
-        const result = await main(
-            resolvedImage.base64Image,
-            resolvedImage.mimeType,
-            additionalContext || '',
-            Boolean(includeArabic),
-            storeCategories
-        );
-        return NextResponse.json({ ...result });
+        const result = useGemini
+            ? await generateProductAutofillFromImage({
+                base64Image: resolvedImage.base64Image,
+                mimeType: resolvedImage.mimeType,
+                additionalContext: additionalContext || '',
+                includeArabic: Boolean(includeArabic),
+                storeCategories,
+            })
+            : await main(
+                resolvedImage.base64Image,
+                resolvedImage.mimeType,
+                additionalContext || '',
+                Boolean(includeArabic),
+                storeCategories
+            );
+        return NextResponse.json({ ...result, provider: useGemini ? 'gemini' : 'openai' });
     } catch (error) {
         console.error('[API /store/ai]', error);
         const status = Number(error?.status || error?.response?.status || 500);

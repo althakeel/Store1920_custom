@@ -407,6 +407,10 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
         const [bulkOptions, setBulkOptions] = useState([]);
         const [aiAdditionalDetails, setAiAdditionalDetails] = useState('');
         const [aiLoading, setAiLoading] = useState(false);
+        const [importUrl, setImportUrl] = useState('');
+        const [importUrlLoading, setImportUrlLoading] = useState(false);
+        const [importUrlStatus, setImportUrlStatus] = useState('');
+        const [enhanceImportedImages, setEnhanceImportedImages] = useState(true);
     const router = useRouter();
     // ...existing state declarations...
 
@@ -985,19 +989,129 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 setSelectedCategories(dedupeCategoryIds(data.suggestedCategoryIds))
             }
 
-            toast.success(showArabic ? 'Product details auto-filled (English + Arabic)' : 'Product details auto-filled from image')
+            const providerLabel = data?.provider === 'openai' ? 'OpenAI' : 'Gemini AI'
+            toast.success(
+                showArabic
+                    ? `Product details auto-filled with ${providerLabel} (English + Arabic)`
+                    : `Product details auto-filled with ${providerLabel} from image`
+            )
         } catch (error) {
             const status = Number(error?.response?.status)
             const apiError = error?.response?.data?.error
             const fallback = status === 429
-                ? 'OpenAI rate limit reached. Wait 30-60 seconds, then try again.'
+                ? 'AI rate limit reached. Wait 30-60 seconds, then try again.'
                 : status === 400
                     ? 'Upload a product image first, then run AI autofill.'
-                    : 'AI autofill failed'
+                    : 'Gemini AI autofill failed'
             const message = normalizeErrorMessage(apiError || error?.response?.data || error?.message, fallback)
             toast.error(message)
         } finally {
             setAiLoading(false)
+        }
+    }
+
+    const suggestCategoryIdsFromImport = (imported = {}, categories = []) => {
+        const haystack = `${imported.name || ''} ${imported.brand || ''} ${(imported.tags || []).join(' ')}`.toLowerCase();
+        if (!haystack.trim()) return [];
+
+        const matches = categories
+            .map((category) => {
+                const label = String(category?.name || '').trim().toLowerCase();
+                if (!label || label.length < 3) return null;
+                if (haystack.includes(label)) return String(category._id);
+                return null;
+            })
+            .filter(Boolean);
+
+        return dedupeCategoryIds(matches).slice(0, 3);
+    }
+
+    const handleImportFromUrl = async () => {
+        const url = importUrl.trim();
+        if (!url) {
+            toast.error('Paste a product URL first');
+            return;
+        }
+
+        try {
+            setImportUrlLoading(true);
+            setImportUrlStatus('Fetching product page...');
+            const token = await getAuthTokenOrThrow();
+            const { data } = await axios.post('/api/store/product/import-from-url', {
+                url,
+                enhanceImages: enhanceImportedImages,
+            }, {
+                headers: { Authorization: `Bearer ${token}` },
+                timeout: 300000,
+                onUploadProgress: () => {
+                    setImportUrlStatus((prev) => (
+                        prev.includes('Gemini') ? prev : 'Analyzing product with Gemini AI...'
+                    ));
+                },
+            });
+
+            const imported = data?.product || {};
+            const nextName = String(imported.name || '').trim();
+            const nextRows = Array.isArray(imported.specTableRows) && imported.specTableRows.length
+                ? imported.specTableRows
+                : [];
+
+            setProductInfo((prev) => ({
+                ...prev,
+                name: nextName || prev.name,
+                slug: isSlugManuallyEdited ? prev.slug : slugifyValue(nextName || prev.name),
+                brand: imported.brand || prev.brand,
+                shortDescription: imported.shortDescription || prev.shortDescription,
+                shortDescription2: imported.shortDescription2 || prev.shortDescription2,
+                description: imported.description || prev.description,
+                AED: imported.AED || prev.AED,
+                price: imported.price || prev.price,
+                specTableEnabled: nextRows.length > 0 ? true : prev.specTableEnabled,
+                specTableRows: nextRows.length > 0 ? nextRows : prev.specTableRows,
+                tags: appendUniqueTags(prev.tags || [], imported.tags || []),
+                seoTitle: imported.seoTitle || prev.seoTitle,
+                seoDescription: imported.seoDescription || prev.seoDescription,
+                seoKeywords: appendUniqueTags(prev.seoKeywords || [], imported.seoKeywords || []),
+            }));
+
+            if (Array.isArray(imported.images) && imported.images.length > 0) {
+                const imgState = { "1": null, "2": null, "3": null, "4": null, "5": null, "6": null, "7": null, "8": null };
+                imported.images.slice(0, 8).forEach((imageUrl, index) => {
+                    if (imageUrl) imgState[String(index + 1)] = imageUrl;
+                });
+                setImages(imgState);
+            }
+
+            const suggestedCategoryIds = Array.isArray(data?.suggestedCategoryIds) && data.suggestedCategoryIds.length
+                ? data.suggestedCategoryIds
+                : suggestCategoryIdsFromImport(imported, dbCategories);
+            if (suggestedCategoryIds.length > 0) {
+                setSelectedCategories((prev) => dedupeCategoryIds([...prev, ...suggestedCategoryIds]));
+            }
+
+            toast.success(
+                data?.imageEnhancement?.enhancedCount
+                    ? `Imported with Gemini AI and enhanced ${data.imageEnhancement.enhancedCount} image(s). Review before saving.`
+                    : data?.imageEnhancement?.skipped
+                        ? `Imported product details. Image enhancement was skipped — original images kept.`
+                    : data?.aiProvider === 'gemini'
+                        ? `Imported product details with Gemini AI from ${data?.source || 'website'}. Review before saving.`
+                        : `Imported product details from ${data?.source || 'website'}. Review before saving.`
+            );
+        } catch (error) {
+            const status = Number(error?.response?.status);
+            const apiError = error?.response?.data?.error;
+            const isTimeout = error?.code === 'ECONNABORTED' || /timeout/i.test(String(error?.message || ''));
+            const fallback = isTimeout
+                ? 'Import took too long. Try again with image enhancement turned off, or use a shorter product link.'
+                : status === 400
+                    ? 'Could not read this product URL. Some sites block imports — try another link.'
+                    : 'Could not import product from this URL. Try another link or fill manually.';
+            const message = normalizeErrorMessage(apiError || error?.message, fallback);
+            toast.error(message);
+        } finally {
+            setImportUrlLoading(false);
+            setImportUrlStatus('');
         }
     }
 
@@ -1198,6 +1312,54 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
                 {/* LEFT COLUMN */}
                 <div className="space-y-4">
+
+                <div className="rounded-2xl border border-sky-200 bg-sky-50/80 shadow-[0_8px_24px_rgba(14,116,144,0.08)] overflow-hidden">
+                    <div className="flex items-center gap-2 px-4 py-3 bg-white border-b border-sky-200">
+                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-sky-100 text-sky-700 text-xs">🔗</span>
+                        <h3 className="text-sm font-semibold text-slate-800 tracking-wide">Import From Product URL</h3>
+                    </div>
+                    <div className="p-4 space-y-3">
+                        <p className="text-xs text-slate-600">
+                            Paste a product link from Amazon, Noon, or another store. Gemini AI will fetch and enrich the name, price, description, images, and specs when available.
+                        </p>
+                        <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={enhanceImportedImages}
+                                onChange={(e) => setEnhanceImportedImages(e.target.checked)}
+                                className="accent-sky-600"
+                            />
+                            <span>Use Gemini to auto-enhance imported images to high resolution (recommended)</span>
+                        </label>
+                        <div className="flex flex-col sm:flex-row gap-2">
+                            <input
+                                type="url"
+                                value={importUrl}
+                                onChange={(e) => setImportUrl(e.target.value)}
+                                placeholder="https://www.amazon.ae/... or https://www.noon.com/..."
+                                className="flex-1 border border-sky-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-300 bg-white"
+                            />
+                            <button
+                                type="button"
+                                onClick={handleImportFromUrl}
+                                disabled={importUrlLoading}
+                                className="px-4 py-2 rounded-lg bg-sky-600 text-white text-sm font-semibold hover:bg-sky-700 disabled:opacity-60 whitespace-nowrap"
+                            >
+                                {importUrlLoading
+                                    ? (importUrlStatus || 'Importing with Gemini...')
+                                    : 'Import Details'}
+                            </button>
+                        </div>
+                        {importUrlLoading && (
+                            <p className="text-[11px] text-sky-700">
+                                {importUrlStatus || 'Fetching page and enriching with Gemini AI. This can take up to 2 minutes when image enhancement is on.'}
+                            </p>
+                        )}
+                        <p className="text-[11px] text-slate-500">
+                            Product details are enriched with Gemini AI. Image enhancement uploads sharper images to your store. Requires GEMINI_API_KEY. Some websites block automatic imports.
+                        </p>
+                    </div>
+                </div>
 
                 {/* Basic Info */}
                                 <div className="rounded-2xl border border-slate-200 bg-slate-50/70 shadow-[0_8px_24px_rgba(15,23,42,0.06)] overflow-hidden">
@@ -1535,15 +1697,15 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 <div className="rounded-2xl border border-slate-200 bg-slate-50/80 shadow-[0_8px_24px_rgba(15,23,42,0.06)] overflow-hidden">
                     <div className="flex items-center gap-2 px-4 py-3 bg-white border-b border-slate-200">
                         <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-100 text-blue-700 text-xs">AI</span>
-                        <h3 className="text-sm font-semibold text-slate-800 tracking-wide">AI Auto Fill</h3>
+                        <h3 className="text-sm font-semibold text-slate-800 tracking-wide">Gemini AI Auto Fill</h3>
                     </div>
                     <div className="p-4 space-y-3">
                         <p className="text-xs text-gray-600">
-                            Upload at least one image in Product Media, then click auto fill. AI will populate name, detailed description (with a specs table when useful), categories, tags, SEO, badges, and product information rows.
+                            Upload at least one image in Product Media, then click auto fill. Gemini AI will populate name, detailed description (with a specs table when useful), categories, tags, SEO, badges, and product information rows.
                         </p>
                         <div>
                             <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">
-                                Extra Details For AI (Optional)
+                                Extra Details For Gemini (Optional)
                             </label>
                             <textarea
                                 value={aiAdditionalDetails}
@@ -1552,7 +1714,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-200"
                                 placeholder="Example: material is stainless steel, 2-year warranty, package includes charger and carry case"
                             />
-                            <p className="mt-1 text-xs text-gray-500">This helps AI include product-specific details you want in the final listing.</p>
+                            <p className="mt-1 text-xs text-gray-500">This helps Gemini include product-specific details you want in the final listing.</p>
                         </div>
                         <button
                             type="button"
@@ -1560,7 +1722,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                             disabled={aiLoading}
                             className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-60"
                         >
-                            {aiLoading ? 'Auto filling...' : 'Auto Fill From First Uploaded Image'}
+                            {aiLoading ? 'Auto filling with Gemini...' : 'Auto Fill With Gemini AI'}
                         </button>
                     </div>
                 </div>

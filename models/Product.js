@@ -26,6 +26,7 @@ const ProductSchema = new mongoose.Schema({
   sku: String,
   inStock: { type: Boolean, default: true },
   stockQuantity: { type: Number, default: 0 },
+  stockUpdatedAt: { type: Date, default: null },
   hasVariants: { type: Boolean, default: false },
   variants: { type: Array, default: [] },
   attributes: { type: Object, default: {} },
@@ -51,7 +52,7 @@ const ProductSchema = new mongoose.Schema({
 
 // Add indexes for better query performance
 ProductSchema.index({ inStock: 1, createdAt: -1 });
-ProductSchema.index({ storeId: 1, inStock: 1 });
+ProductSchema.index({ storeId: 1, stockUpdatedAt: -1 });
 ProductSchema.index({ category: 1, inStock: 1 }); // For category filtering
 ProductSchema.index({ price: 1, AED: 1 }); // For discount calculations and price sorting
 ProductSchema.index({ tags: 1, inStock: 1 }); // For tag-based filtering

@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation"
 
-import { HomeIcon, LayoutListIcon, SquarePenIcon, SquarePlusIcon, StarIcon, FolderIcon, TicketIcon, TruckIcon, RefreshCw, User as UserIcon, Users as UsersIcon, MessageSquare, Sparkles, BellIcon, MailIcon, Image as ImageIcon, ShoppingCart, Wallet, BarChart3, Target, Gift, Palette, CircleDashed, PackagePlus, Activity, Layers, LineChart } from "lucide-react"
+import { HomeIcon, LayoutListIcon, SquarePenIcon, SquarePlusIcon, StarIcon, FolderIcon, TicketIcon, TruckIcon, RefreshCw, User as UserIcon, Users as UsersIcon, MessageSquare, Sparkles, BellIcon, MailIcon, Image as ImageIcon, ShoppingCart, Wallet, BarChart3, Target, Gift, Palette, CircleDashed, PackagePlus, Activity, Layers, LineChart, Warehouse } from "lucide-react"
 
 import Link from "next/link"
 
@@ -37,6 +37,8 @@ const StoreSidebar = ({ storeInfo, isOwner = false, permissions = {} }) => {
         { name: 'Add Product', href: '/store/add-product', icon: SquarePlusIcon },
 
         { name: 'Manage Product', href: '/store/manage-product', icon: SquarePenIcon },
+
+        { name: 'Inventory', href: '/store/inventory', icon: Warehouse },
 
         { name: 'Database Import', href: '/store/settings/database-import', icon: RefreshCw },
 
@@ -186,6 +188,18 @@ const StoreSidebar = ({ storeInfo, isOwner = false, permissions = {} }) => {
 
         {
 
+            name: 'Warehouse',
+
+            links: [
+
+                '/store/inventory',
+
+            ]
+
+        },
+
+        {
+
             name: 'Customers & Support',
 
             links: [
@@ -253,6 +267,10 @@ const StoreSidebar = ({ storeInfo, isOwner = false, permissions = {} }) => {
             case 'Sales & Operations':
 
                 return LayoutListIcon;
+
+            case 'Warehouse':
+
+                return Warehouse;
 
             case 'Customers & Support':
 
@@ -373,6 +391,32 @@ const StoreSidebar = ({ storeInfo, isOwner = false, permissions = {} }) => {
                     hoverIconText: 'group-hover:text-amber-700',
 
                     dot: 'bg-amber-600'
+
+                }
+
+            case 'Warehouse':
+
+                return {
+
+                    headerText: 'text-indigo-700',
+
+                    headerIconBg: 'bg-indigo-100',
+
+                    headerIconText: 'text-indigo-700',
+
+                    activeLink: 'bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-sm font-semibold',
+
+                    activeIconBg: 'bg-indigo-100',
+
+                    activeIconText: 'text-indigo-700',
+
+                    hoverLink: 'hover:bg-indigo-50/60 hover:text-indigo-700',
+
+                    hoverIconBg: 'group-hover:bg-indigo-100',
+
+                    hoverIconText: 'group-hover:text-indigo-700',
+
+                    dot: 'bg-indigo-600'
 
                 }
 

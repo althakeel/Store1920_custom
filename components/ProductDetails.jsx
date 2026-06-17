@@ -2,7 +2,8 @@
 
 import { StarIcon, Share2Icon, HeartIcon, MinusIcon, PlusIcon, ShoppingCartIcon, Trash2, Check } from "lucide-react";
 import Image from "next/image";
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { createPortal } from "react-dom";
 
 import { useRouter } from "next/navigation";
 import axios from "axios";
@@ -639,7 +640,44 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const imageContainerRef = useRef(null);
   const [showZoom, setShowZoom] = useState(false);
   const [zoomPos, setZoomPos] = useState({ x: 0.5, y: 0.5 });
-  const [zoomPanelPos, setZoomPanelPos] = useState({ top: 0, left: 0, height: 0 });
+  const [zoomPanelPos, setZoomPanelPos] = useState({ top: 0, left: 0, height: 0, width: 0, panelSize: 420 });
+  const [zoomPortalReady, setZoomPortalReady] = useState(false);
+
+  useEffect(() => {
+    setZoomPortalReady(true);
+  }, []);
+
+  const isRtlLayout = useCallback(() => {
+    if (typeof document === 'undefined') return isArabic;
+    return document.documentElement.getAttribute('dir') === 'rtl' || isArabic;
+  }, [isArabic]);
+
+  const computeZoomPanelPosition = useCallback((rect) => {
+    const panelSize = Math.min(Math.max(rect.height, 360), 520);
+    const gap = 12;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const rtl = isRtlLayout();
+
+    const spaceOnLeft = rect.left - gap;
+    const spaceOnRight = viewportWidth - rect.right - gap;
+
+    let left;
+    if (rtl) {
+      left = spaceOnLeft >= panelSize
+        ? rect.left - panelSize - gap
+        : rect.right + gap;
+    } else {
+      left = spaceOnRight >= panelSize
+        ? rect.right + gap
+        : rect.left - panelSize - gap;
+    }
+
+    left = Math.max(gap, Math.min(left, viewportWidth - panelSize - gap));
+    const top = Math.max(gap, Math.min(rect.top, viewportHeight - panelSize - gap));
+
+    return { top, left, height: rect.height, width: rect.width, panelSize };
+  }, [isRtlLayout]);
 
   const handleImageMouseMove = (e) => {
     const rect = imageContainerRef.current?.getBoundingClientRect();
@@ -647,7 +685,36 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     const x = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1);
     const y = Math.min(Math.max((e.clientY - rect.top) / rect.height, 0), 1);
     setZoomPos({ x, y });
-    setZoomPanelPos({ top: rect.top, left: rect.right + 12, height: rect.height });
+    setZoomPanelPos(computeZoomPanelPosition(rect));
+  };
+
+  const renderZoomPanel = () => {
+    if (!showZoom || !mainImage || !zoomPortalReady || isRtlLayout()) return null;
+
+    const panelSize = zoomPanelPos.panelSize || Math.min(Math.max(zoomPanelPos.height, 360), 520);
+
+    return createPortal(
+      <div
+        style={{
+          position: 'fixed',
+          top: zoomPanelPos.top,
+          left: zoomPanelPos.left,
+          width: panelSize,
+          height: panelSize,
+          backgroundImage: `url(${mainImage})`,
+          backgroundSize: '400% 400%',
+          backgroundPosition: `${zoomPos.x * 100}% ${zoomPos.y * 100}%`,
+          backgroundRepeat: 'no-repeat',
+          backgroundColor: '#fff',
+          zIndex: 99999,
+          border: '1px solid #e5e7eb',
+          borderRadius: '8px',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+          pointerEvents: 'none',
+        }}
+      />,
+      document.body
+    );
   };
 
   const openShareMenu = () => {
@@ -1340,7 +1407,11 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 <div
                   ref={imageContainerRef}
                   className="overflow-hidden rounded w-full h-full relative cursor-crosshair"
-                  onMouseEnter={() => setShowZoom(true)}
+                  onMouseEnter={(e) => {
+                    setShowZoom(true);
+                    const rect = imageContainerRef.current?.getBoundingClientRect();
+                    if (rect) setZoomPanelPos(computeZoomPanelPosition(rect));
+                  }}
                   onMouseLeave={() => setShowZoom(false)}
                   onMouseMove={handleImageMouseMove}
                 >
@@ -1349,37 +1420,29 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                     alt={safeProductName}
                     fill
                     sizes="(max-width: 1024px) 100vw, 520px"
-                    className="object-contain bg-white"
+                    className="object-contain bg-white pointer-events-none"
                     priority
                     onError={(e) => { e.currentTarget.src = 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'; }}
                   />
-                </div>
-
-                {/* Hover zoom panel – appears to the right of the image */}
-                {showZoom && mainImage && typeof window !== 'undefined' && (() => {
-                  const panelSize = Math.min(Math.max(zoomPanelPos.height, 360), 520);
-                  return (
+                  {showZoom && isRtlLayout() && (
                     <div
+                      className="absolute z-20 pointer-events-none border-2 border-orange-400 rounded-md shadow-lg overflow-hidden"
                       style={{
-                        position: 'fixed',
-                        top: zoomPanelPos.top,
-                        left: zoomPanelPos.left,
-                        width: panelSize,
-                        height: panelSize,
+                        width: 148,
+                        height: 148,
+                        left: `calc(${zoomPos.x * 100}% - 74px)`,
+                        top: `calc(${zoomPos.y * 100}% - 74px)`,
                         backgroundImage: `url(${mainImage})`,
-                        backgroundSize: '400% 400%',
+                        backgroundSize: '350% 350%',
                         backgroundPosition: `${zoomPos.x * 100}% ${zoomPos.y * 100}%`,
                         backgroundRepeat: 'no-repeat',
                         backgroundColor: '#fff',
-                        zIndex: 2147483647,
-                        border: '1px solid #e5e7eb',
-                        borderRadius: '8px',
-                        boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
-                        pointerEvents: 'none',
                       }}
                     />
-                  );
-                })()}
+                  )}
+                </div>
+
+                {renderZoomPanel()}
               </div>
                 <div className="mt-2 hidden lg:flex items-center justify-center">
                   <a href="#" className="text-sm text-blue-600 hover:underline">Click to see full view</a>

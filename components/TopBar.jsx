@@ -41,6 +41,20 @@ export default function TopBar({ initialLanguage = 'en' }) {
   const [showBnplBanner, setShowBnplBanner] = useState(true);
   const [bnplLogoError, setBnplLogoError] = useState({ tamara: false, tabby: false });
   const dropdownRef = useRef(null);
+  const suppressToggleRef = useRef(false);
+
+  const closeDropdown = () => {
+    suppressToggleRef.current = true;
+    setDropdownOpen(false);
+    window.setTimeout(() => {
+      suppressToggleRef.current = false;
+    }, 250);
+  };
+
+  const toggleDropdown = () => {
+    if (suppressToggleRef.current) return;
+    setDropdownOpen((value) => !value);
+  };
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -65,7 +79,7 @@ export default function TopBar({ initialLanguage = 'en' }) {
   useEffect(() => {
     function handleClickOutside(event) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setDropdownOpen(false);
+        closeDropdown();
       }
     }
     if (dropdownOpen) document.addEventListener('mousedown', handleClickOutside);
@@ -109,11 +123,12 @@ export default function TopBar({ initialLanguage = 'en' }) {
       document.cookie = `${STOREFRONT_LANGUAGE_COOKIE}=${nextLanguage}; path=/; max-age=31536000; SameSite=Lax`;
       window.dispatchEvent(new CustomEvent(STOREFRONT_LANGUAGE_EVENT, { detail: { language: nextLanguage } }));
     }
+    closeDropdown();
   };
 
   const handleMarketChange = (code) => {
     setMarketCode(code);
-    setDropdownOpen(false);
+    closeDropdown();
   };
 
   const activeBnplPartner = BNPL_PARTNERS[activeBnplIndex];
@@ -153,7 +168,7 @@ export default function TopBar({ initialLanguage = 'en' }) {
           <div className="relative" ref={dropdownRef}>
             <button
               type="button"
-              onClick={() => setDropdownOpen((value) => !value)}
+              onClick={toggleDropdown}
               className="flex flex-nowrap items-center gap-1 rounded-md border border-[#e2e2e2] bg-white px-1.5 py-1 text-[11px] font-medium whitespace-nowrap sm:gap-2 sm:rounded-lg sm:px-3 sm:py-1.5 sm:text-xs"
               aria-expanded={dropdownOpen}
               aria-haspopup="true"
@@ -174,6 +189,7 @@ export default function TopBar({ initialLanguage = 'en' }) {
               <div
                 dir={isArabic ? 'rtl' : 'ltr'}
                 className="absolute top-[calc(100%+8px)] end-0 z-[1001] w-[min(320px,calc(100vw-24px))] max-h-[min(72vh,520px)] overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.14)] sm:start-0 sm:end-auto sm:w-[320px]"
+                onMouseDown={(event) => event.stopPropagation()}
               >
                   <div className="border-b border-gray-100 px-4 py-4">
                     <div className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-500">
@@ -188,6 +204,12 @@ export default function TopBar({ initialLanguage = 'en' }) {
                         return (
                           <label
                             key={option.value}
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              handleLanguageChange(option.value);
+                            }}
                             className={`flex cursor-pointer items-center justify-between gap-3 rounded-xl px-3 py-2.5 transition ${
                               isActive
                                 ? 'bg-orange-50 font-semibold text-orange-700 ring-1 ring-orange-200'
@@ -199,8 +221,8 @@ export default function TopBar({ initialLanguage = 'en' }) {
                               type="radio"
                               name="lang"
                               checked={isActive}
-                              onChange={() => handleLanguageChange(option.value)}
-                              className="h-4 w-4 shrink-0 accent-orange-600"
+                              readOnly
+                              className="h-4 w-4 shrink-0 accent-orange-600 pointer-events-none"
                             />
                           </label>
                         );
@@ -220,7 +242,12 @@ export default function TopBar({ initialLanguage = 'en' }) {
                           <button
                             key={market.code}
                             type="button"
-                            onClick={() => handleMarketChange(market.code)}
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              handleMarketChange(market.code);
+                            }}
                             className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-start transition ${
                               isActive
                                 ? 'border-orange-300 bg-orange-50 text-orange-800 ring-1 ring-orange-200'
