@@ -323,6 +323,130 @@ const resolveParentRow = (row, indexes) => {
     || null;
 };
 
+const normalizeParentReference = (value = '') => String(value || '').trim().replace(/^id:/i, '').trim();
+
+const getParentLookupKeys = (row = {}) => {
+  const keys = new Set();
+  const id = String(row.ID || row.id || '').trim();
+  const sku = String(row.SKU || row.sku || '').trim();
+  const slug = slugify(row.Slug || row.slug || row.Name || row.name || '');
+
+  if (id) keys.add(id);
+  if (sku) keys.add(sku);
+  if (slug) keys.add(slug);
+
+  return [...keys];
+};
+
+const buildVariationRowsByParent = (rows = [], indexes) => {
+  const map = new Map();
+
+  rows.forEach((row, index) => {
+    if (parseRowType(row.Type || row.type) !== 'variation') return;
+
+    const rawParent = normalizeParentReference(row?.Parent || row?.parent);
+    if (!rawParent) return;
+
+    const keys = new Set([rawParent]);
+    const parentRow = resolveParentRow(row, indexes);
+    if (parentRow) {
+      getParentLookupKeys(parentRow).forEach((key) => keys.add(key));
+    }
+
+    const entry = { row, rowNumber: index + 2 };
+    keys.forEach((key) => {
+      if (!map.has(key)) map.set(key, []);
+      const bucket = map.get(key);
+      if (!bucket.some((item) => item.rowNumber === entry.rowNumber)) {
+        bucket.push(entry);
+      }
+    });
+  });
+
+  return map;
+};
+
+const collectVariationRowsForParent = (parentRow, variationRowsByParent) => {
+  const merged = new Map();
+  getParentLookupKeys(parentRow).forEach((key) => {
+    (variationRowsByParent.get(key) || []).forEach((entry) => {
+      merged.set(entry.rowNumber, entry);
+    });
+  });
+  return [...merged.values()];
+};
+
+const mapAttributeToOptionKey = (name = '') => {
+  const normalized = String(name || '').trim().toLowerCase();
+  if (normalized.includes('color') || normalized.includes('colour')) return 'color';
+  if (normalized.includes('size')) return 'size';
+  return null;
+};
+
+const buildVariantOptionsFromRow = (row, parentRow) => {
+  const attributeMap = extractWooAttributes(row, parentRow);
+  const options = {};
+  const labels = [];
+
+  Object.entries(attributeMap).forEach(([name, values]) => {
+    const valueList = Array.isArray(values) ? values : parseStringArray(values);
+    const value = String(valueList[0] || '').trim();
+    if (!value) return;
+
+    labels.push(value);
+    const optionKey = mapAttributeToOptionKey(name);
+    if (optionKey && !options[optionKey]) {
+      options[optionKey] = value;
+    } else if (!optionKey) {
+      options[name] = value;
+    }
+  });
+
+  const parentName = String(parentRow?.Name || parentRow?.name || '').trim();
+  if (labels.length) {
+    options.title = parentName ? `${parentName} - ${labels.join(' / ')}` : labels.join(' / ');
+  }
+
+  return options;
+};
+
+const buildVariantsFromVariationRows = async (parentRow, variationRowsByParent, storeId, parentSlug) => {
+  const entries = collectVariationRowsForParent(parentRow, variationRowsByParent);
+  const variants = [];
+
+  for (const { row } of entries) {
+    const salePrice = parseNumber(getFirstPresentValue(row['Sale price'], row.price, row.Price), 0);
+    const regularPrice = parseNumber(getFirstPresentValue(row['Regular price'], row.mrp, row.MRP), salePrice);
+    const stock = parseNumber(
+      getFirstPresentValue(row['Meta: _total_stock_quantity'], row.Stock, row.stock, row.stockQuantity),
+      0
+    );
+    const images = parseStringArray(getFirstPresentValue(row.Images, row.images, row.Image, row.image));
+    const options = buildVariantOptionsFromRow(row, parentRow);
+
+    if (images.length) {
+      const mirrored = await resolveImportedImages(
+        images.slice(0, 1),
+        { storeId, slug: `${parentSlug}-var-${variants.length + 1}` }
+      );
+      if (mirrored.finalUrls[0]) {
+        options.image = mirrored.finalUrls[0];
+      }
+    }
+
+    variants.push({
+      sku: String(getFirstPresentValue(row.SKU, row.sku) || '').trim() || undefined,
+      price: salePrice,
+      AED: regularPrice || salePrice,
+      stock,
+      options,
+      legacySourceId: row.ID ? `woo:${row.ID}` : undefined,
+    });
+  }
+
+  return variants;
+};
+
 const extractCategoryNames = (rawCategories = '') => {
   const entries = parseStringArray(rawCategories);
   const names = entries
@@ -456,6 +580,7 @@ export async function POST(request) {
     }
 
     const indexes = buildRowIndexes(rows);
+    const variationRowsByParent = buildVariationRowsByParent(rows, indexes);
 
     let created = 0;
     let updated = 0;
@@ -464,6 +589,7 @@ export async function POST(request) {
     let skippedExisting = 0;
     let skippedMissingName = 0;
     let skippedUnsupportedType = 0;
+    let skippedVariationRows = 0;
     let mirroredImages = 0;
     let failedImageMirrors = 0;
     const failures = [];
@@ -474,6 +600,12 @@ export async function POST(request) {
 
       try {
         const rowType = parseRowType(row.Type || row.type);
+        if (rowType === 'variation') {
+          skipped += 1;
+          skippedVariationRows += 1;
+          continue;
+        }
+
         if (!hasMeaningfulRowContent(row)) {
           skipped += 1;
           skippedMissingName += 1;
@@ -655,6 +787,37 @@ export async function POST(request) {
           continue;
         }
 
+        let variants = [];
+        if (rowType === 'variable') {
+          variants = await buildVariantsFromVariationRows(row, variationRowsByParent, storeId, slug);
+        }
+
+        const variantImageUrls = variants
+          .map((variant) => String(variant?.options?.image || '').trim())
+          .filter(Boolean);
+        const mergedProductImages = [...new Set([
+          ...mirroredImageResult.finalUrls,
+          ...variantImageUrls,
+        ])].slice(0, 8);
+        const mergedOriginalImages = [...new Set([
+          ...mirroredImageResult.originalUrls,
+          ...variantImageUrls,
+        ])].slice(0, 8);
+
+        const variantPrices = variants.map((variant) => Number(variant.price)).filter((value) => Number.isFinite(value) && value > 0);
+        const variantRegularPrices = variants.map((variant) => Number(variant.AED)).filter((value) => Number.isFinite(value) && value > 0);
+        const variantStockTotal = variants.reduce((sum, variant) => sum + Number(variant.stock || 0), 0);
+        const resolvedPrice = variants.length && variantPrices.length
+          ? Math.min(...variantPrices)
+          : price;
+        const resolvedRegularPrice = variants.length && variantRegularPrices.length
+          ? Math.min(...variantRegularPrices)
+          : regularPrice;
+        const resolvedInStock = variants.length
+          ? variants.some((variant) => Number(variant.stock || 0) > 0)
+          : inStock;
+        const resolvedStockQuantity = variants.length ? variantStockTotal : stockQuantity;
+
         const productPayload = {
           name,
           legacySourceId,
@@ -662,22 +825,22 @@ export async function POST(request) {
           brand,
           description,
           shortDescription,
-          price,
-          AED: regularPrice || price,
+          price: resolvedPrice,
+          AED: resolvedRegularPrice || resolvedPrice,
           category: categoryIds[0],
           categories: categoryIds,
           sku,
-          images: mirroredImageResult.finalUrls,
-          externalImages: mirroredImageResult.originalUrls,
+          images: mergedProductImages.length ? mergedProductImages : mirroredImageResult.finalUrls,
+          externalImages: mergedOriginalImages.length ? mergedOriginalImages : mirroredImageResult.originalUrls,
           imageImportStatus: {
             mirrored: mirroredImageResult.mirroredCount,
             failed: mirroredImageResult.failed.length,
             failures: mirroredImageResult.failed,
           },
-          stockQuantity,
-          inStock,
-          hasVariants: rowType === 'variable',
-          variants: [],
+          stockQuantity: resolvedStockQuantity,
+          inStock: resolvedInStock,
+          hasVariants: variants.length > 0,
+          variants,
           attributes: compactObject({
             brand,
             badges,
@@ -735,7 +898,9 @@ export async function POST(request) {
           await Product.findByIdAndUpdate(existingProduct._id, {
             $set: {
               ...productPayload,
-              images: mirroredImageResult.finalUrls.length ? mirroredImageResult.finalUrls : existingProduct.images || [],
+              images: mergedProductImages.length
+                ? mergedProductImages
+                : (mirroredImageResult.finalUrls.length ? mirroredImageResult.finalUrls : existingProduct.images || []),
             },
           });
           updated += 1;
@@ -761,6 +926,7 @@ export async function POST(request) {
       skippedExisting,
       skippedMissingName,
       skippedUnsupportedType,
+      skippedVariationRows,
       mirroredImages,
       failedImageMirrors,
       importMode: 'update',

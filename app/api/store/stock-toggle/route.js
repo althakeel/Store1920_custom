@@ -1,6 +1,7 @@
 import dbConnect from "@/lib/mongodb";
 import Product from "@/models/Product";
 import authSeller from "@/middlewares/authSeller";
+import { invalidateStorefrontProductCaches } from "@/lib/cache";
 
 import { NextResponse } from "next/server";
 
@@ -63,6 +64,8 @@ export async function POST(request){
         await Product.findByIdAndUpdate(productId, {
             inStock: !product.inStock
         });
+
+        invalidateStorefrontProductCaches();
 
         return NextResponse.json({message: "Product stock updated successfully"});
     } catch (error) {

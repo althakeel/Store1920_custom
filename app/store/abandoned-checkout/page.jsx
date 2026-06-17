@@ -857,7 +857,7 @@ export default function AbandonedCheckoutPage() {
     (async () => {
       try {
         const token = await getToken();
-        const [cartsResponse, usersResponse] = await Promise.all([
+        const [cartsResult, usersResult] = await Promise.allSettled([
           axios.get('/api/store/abandoned-checkout', {
             headers: { Authorization: `Bearer ${token}` },
           }),
@@ -866,10 +866,18 @@ export default function AbandonedCheckoutPage() {
           }),
         ]);
 
-        setCarts(Array.isArray(cartsResponse.data.carts) ? cartsResponse.data.carts : []);
-        setDashboardUsers(Array.isArray(usersResponse.data.dashboardAccessUsers)
-          ? usersResponse.data.dashboardAccessUsers
-          : []);
+        if (cartsResult.status === 'fulfilled') {
+          setCarts(Array.isArray(cartsResult.value.data.carts) ? cartsResult.value.data.carts : []);
+        } else {
+          const cartsError = cartsResult.reason;
+          setError(cartsError?.response?.data?.error || cartsError?.message || 'Failed to fetch abandoned carts');
+        }
+
+        if (usersResult.status === 'fulfilled') {
+          setDashboardUsers(Array.isArray(usersResult.value.data.dashboardAccessUsers)
+            ? usersResult.value.data.dashboardAccessUsers
+            : []);
+        }
       } catch (err) {
         setError(err?.response?.data?.error || err.message || 'Failed to fetch abandoned carts');
       } finally {

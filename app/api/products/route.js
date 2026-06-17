@@ -106,7 +106,7 @@ export async function GET(request){
     const fetchAll = searchParams.get('all') === 'true';
     const parsedLimit = parseInt(searchParams.get('limit') || '20', 10);
     const parsedOffset = parseInt(searchParams.get('offset') || '0', 10);
-    const limit = fetchAll ? 500 : Math.min(Number.isFinite(parsedLimit) ? parsedLimit : 20, 300);
+    const limit = fetchAll ? 10000 : Math.min(Number.isFinite(parsedLimit) ? parsedLimit : 20, 300);
     const offset = Number.isFinite(parsedOffset) ? parsedOffset : 0;
     const fastDelivery = searchParams.get('fastDelivery');
     const categoryParam = searchParams.get('category');

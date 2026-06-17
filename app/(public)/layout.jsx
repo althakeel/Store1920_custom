@@ -18,17 +18,17 @@ function PublicLayoutContent({ children }) {
     const isHomePage = pathname === '/';
     const isCheckout = pathname === '/checkout';
     const isCartPage = pathname === '/cart';
-    const isShopCategoryPage = pathname === '/shop' && Boolean(searchParams.get('category'));
+    const isShopPage = pathname === '/shop';
 
     useEffect(() => { 
-        // Homepage sections load their own product slices; shop pages load catalog as needed.
-        if (isHomePage || isShopCategoryPage) return undefined;
+        // Homepage and shop load their own product data; avoid overwriting shop catalog in Redux.
+        if (isHomePage || isShopPage) return undefined;
 
         const timer = setTimeout(() => {
             dispatch(fetchProducts({ limit: 100 }));
         }, 100);
         return () => clearTimeout(timer);
-    }, [dispatch, isHomePage, isShopCategoryPage]);
+    }, [dispatch, isHomePage, isShopPage]);
 
     return (
         <div className={`flex flex-col ${isCartPage ? '' : 'min-h-screen'}`}>

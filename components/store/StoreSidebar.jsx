@@ -7,12 +7,14 @@ import { HomeIcon, LayoutListIcon, SquarePenIcon, SquarePlusIcon, StarIcon, Fold
 import Link from "next/link"
 
 import { canAccessDashboardArea, getPermissionIdForHref } from "@/lib/storeDashboardPermissions"
+import { useStoreOrderNotifications } from "./StoreOrderNotificationProvider"
 
 
 
 const StoreSidebar = ({ storeInfo, isOwner = false, permissions = {} }) => {
 
     const pathname = usePathname()
+    const { unreadCount, canViewOrders } = useStoreOrderNotifications()
 
 
 
@@ -510,7 +512,7 @@ const StoreSidebar = ({ storeInfo, isOwner = false, permissions = {} }) => {
 
                                                 >
 
-                                                    <div className={`rounded-md p-1.5 transition-colors lg:p-1 ${
+                                                    <div className={`relative rounded-md p-1.5 transition-colors lg:p-1 ${
 
                                                         isActive 
 
@@ -522,9 +524,19 @@ const StoreSidebar = ({ storeInfo, isOwner = false, permissions = {} }) => {
 
                                                         <Icon size={18} className={`lg:h-[15px] lg:w-[15px] ${isActive ? theme.activeIconText : `text-slate-600 ${theme.hoverIconText}`}`} />
 
+                                                        {link.href === '/store/orders' && canViewOrders && unreadCount > 0 ? (
+                                                            <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-emerald-600 lg:hidden" />
+                                                        ) : null}
+
                                                     </div>
 
                                                     <span className="hidden flex-1 leading-tight lg:inline text-[13px]">{link.name}</span>
+
+                                                    {link.href === '/store/orders' && canViewOrders && unreadCount > 0 ? (
+                                                        <span className="hidden rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white lg:inline">
+                                                            {unreadCount > 9 ? '9+' : unreadCount}
+                                                        </span>
+                                                    ) : null}
 
                                                     {isActive && (
 

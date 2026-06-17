@@ -116,6 +116,8 @@ export default function MarketingStackPage() {
                           {item.href && item.status !== 'planned' ? (
                             <Link
                               href={item.href}
+                              target="_blank"
+                              rel="noopener noreferrer"
                               className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 hover:underline"
                             >
                               Open <ExternalLink size={12} />

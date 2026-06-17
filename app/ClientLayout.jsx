@@ -16,7 +16,7 @@ function shouldHideStorefrontChrome(pathname) {
   return STOREFRONT_HIDDEN_PREFIXES.some((prefix) => pathname?.startsWith(prefix));
 }
 
-export default function ClientLayout({ children }) {
+export default function ClientLayout({ children, initialStorefrontLanguage = 'en' }) {
   const pathname = usePathname();
   const hideStorefrontChrome = shouldHideStorefrontChrome(pathname);
 
@@ -24,7 +24,7 @@ export default function ClientLayout({ children }) {
     <ReduxProvider>
       {!hideStorefrontChrome && (
         <>
-          <TopBar />
+          <TopBar initialLanguage={initialStorefrontLanguage} />
           <Navbar />
           <div
             className="h-3 w-full bg-white sm:h-4 lg:h-5"

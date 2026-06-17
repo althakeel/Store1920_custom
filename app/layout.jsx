@@ -129,7 +129,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
           />
         </noscript>
         {/* Add Navbar and Footer globally via ClientLayout */}
-        <ClientLayout>{children}</ClientLayout>
+        <ClientLayout initialStorefrontLanguage={storefrontLanguage}>{children}</ClientLayout>
       </body>
     </html>
   );

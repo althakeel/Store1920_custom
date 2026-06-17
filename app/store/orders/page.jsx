@@ -32,6 +32,7 @@ import toast from "react-hot-toast"
 import { Package, Truck, X, Download, Printer, RefreshCw, MapPin, Trash2 } from "lucide-react"
 import { downloadInvoice, printInvoice } from "@/lib/generateInvoice"
 import { schedulePickup } from '@/lib/delhivery'
+import { STORE_ORDER_NOTIFICATION_EVENT } from '@/lib/storeOrderNotifications'
 
 // Add updateTrackingDetails function
 // (must be inside the component, not top-level)
@@ -88,6 +89,7 @@ export default function StoreOrders() {
         serviceType: 'NOR'
     });
     const [refreshInterval, setRefreshInterval] = useState(30); // seconds
+    const [liveOrderAlert, setLiveOrderAlert] = useState('');
     const [showRejectModal, setShowRejectModal] = useState(false);
     const [rejectReason, setRejectReason] = useState('');
     const [rejectingReturnIndex, setRejectingReturnIndex] = useState(null);
@@ -709,6 +711,24 @@ export default function StoreOrders() {
     }, [authLoading, user]);
 
     useEffect(() => {
+        const handleNewStoreOrder = (event) => {
+            const incoming = Array.isArray(event?.detail?.orders) ? event.detail.orders : [];
+            fetchOrders();
+            if (incoming.length === 1) {
+                const order = incoming[0];
+                const label = order.shortOrderNumber ? `#${order.shortOrderNumber}` : 'A new order';
+                setLiveOrderAlert(`${label} just arrived · AED ${Number(order.total || 0).toLocaleString()}`);
+            } else if (incoming.length > 1) {
+                setLiveOrderAlert(`${incoming.length} new orders just arrived`);
+            }
+        };
+
+        window.addEventListener(STORE_ORDER_NOTIFICATION_EVENT, handleNewStoreOrder);
+        return () => window.removeEventListener(STORE_ORDER_NOTIFICATION_EVENT, handleNewStoreOrder);
+        // eslint-disable-next-line
+    }, [user]);
+
+    useEffect(() => {
         setCurrentPage(1);
     }, [filterStatus, fromDate, toDate, datePreset, ordersPerPage]);
 
@@ -1239,6 +1259,19 @@ export default function StoreOrders() {
     return (
         <>
             <h1 className="text-2xl text-slate-500 mb-6">Store <span className="text-slate-800 font-medium">Orders</span></h1>
+
+            {liveOrderAlert ? (
+                <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                    <span>{liveOrderAlert}</span>
+                    <button
+                        type="button"
+                        onClick={() => setLiveOrderAlert('')}
+                        className="rounded-md px-2 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
+                    >
+                        Dismiss
+                    </button>
+                </div>
+            ) : null}
             
             {/* Order Statistics Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">

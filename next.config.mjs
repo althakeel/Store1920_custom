@@ -56,6 +56,10 @@ const nextConfig = {
     serverExternalPackages: ['mongoose', 'firebase-admin'],
 
     webpack: (config, { dev }) => {
+        config.module.rules.push({
+            test: /\.mp3$/i,
+            type: 'asset/resource',
+        });
         if (dev) {
             // Avoid EPERM cache rename failures on Windows when multiple tools touch .next/cache
             config.cache = { type: 'memory' };

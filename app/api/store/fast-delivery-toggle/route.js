@@ -1,60 +1,53 @@
-import dbConnect from "@/lib/mongodb";
-import Product from "@/models/Product";
-import authSeller from "@/middlewares/authSeller";
+import dbConnect from '@/lib/mongodb';
+import Product from '@/models/Product';
+import authSeller from '@/middlewares/authSeller';
+import { NextResponse } from 'next/server';
 
 export async function POST(request) {
   try {
-    // Extract userId from Firebase token in Authorization header
-    const authHeader = request.headers.get("authorization");
-    let userId = null;
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      const idToken = authHeader.split(" ")[1];
-      const { getAuth } = await import("firebase-admin/auth");
-      const { initializeApp, applicationDefault, getApps } = await import("firebase-admin/app");
-      if (getApps().length === 0) {
-        initializeApp({ credential: applicationDefault() });
-      }
-      try {
-        const decodedToken = await getAuth().verifyIdToken(idToken);
-        userId = decodedToken.uid;
-      } catch (e) {
-        return Response.json({ error: "Unauthorized" }, { status: 401 });
-      }
+    const authHeader = request.headers.get('authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    if (!userId) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-    const storeId = await authSeller(userId);
-    if (!storeId) return Response.json({ error: "Not authorized as seller" }, { status: 401 });
+    const idToken = authHeader.split('Bearer ')[1];
+    const { getAuth } = await import('@/lib/firebase-admin');
+    let decodedToken;
+    try {
+      decodedToken = await getAuth().verifyIdToken(idToken);
+    } catch {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const storeId = await authSeller(decodedToken.uid);
+    if (!storeId) {
+      return NextResponse.json({ error: 'Not authorized as seller' }, { status: 401 });
+    }
 
     const { productId } = await request.json();
     if (!productId) {
-      return Response.json({ error: "Product ID is required" }, { status: 400 });
+      return NextResponse.json({ error: 'Product ID is required' }, { status: 400 });
     }
 
     await dbConnect();
 
-    const product = await Product.findById(productId)
-      .select('_id name price mrp AED fastDelivery')
+    const product = await Product.findOne({ _id: productId, storeId })
+      .select('_id fastDelivery')
       .lean();
+
     if (!product) {
-      return Response.json({ error: "Product not found" }, { status: 404 });
+      return NextResponse.json({ error: 'Product not found' }, { status: 404 });
     }
 
-    // Verify the product belongs to the seller's store
-    if (product.storeId !== storeId) {
-      return Response.json({ error: "Unauthorized to modify this product" }, { status: 403 });
-    }
+    const nextValue = !product.fastDelivery;
+    await Product.findByIdAndUpdate(productId, { fastDelivery: nextValue });
 
-    // Toggle fast delivery
-    product.fastDelivery = !product.fastDelivery;
-    await product.save();
-
-    return Response.json({ 
-      message: product.fastDelivery ? "Fast delivery enabled" : "Fast delivery disabled",
-      fastDelivery: product.fastDelivery 
+    return NextResponse.json({
+      message: nextValue ? 'Fast delivery enabled' : 'Fast delivery disabled',
+      fastDelivery: nextValue,
     });
   } catch (error) {
-    console.error("Error toggling fast delivery:", error);
-    return Response.json({ error: error.message }, { status: 500 });
+    console.error('Error toggling fast delivery:', error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

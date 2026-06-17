@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import connectDB from '@/lib/mongodb'
-import { getCachedData, setCachedData } from '@/lib/cache'
+import { getCachedData, setCachedData, invalidateStorefrontProductCaches } from '@/lib/cache'
+import { buildFeaturedProductsListQuery, isManualFeaturedSelection, resolvePublicFeaturedStore } from '@/lib/featuredProducts'
 import { getAuth } from '@/lib/firebase-admin'
 import authSeller from '@/middlewares/authSeller'
 import Store from '@/models/Store'
@@ -98,14 +99,9 @@ export async function GET(request) {
             }
         }
 
-        // Public fallback: resolve the most recently updated store that has featured products.
+        // Public fallback: use the store that most recently listed an in-stock product.
         if (!store) {
-            store = await Store.findOne({ featuredProductIds: { $exists: true, $ne: [] } })
-                .sort({ updatedAt: -1 })
-                .lean()
-        }
-        if (!store) {
-            store = await Store.findOne().sort({ updatedAt: -1 }).lean()
+            store = await resolvePublicFeaturedStore(Store, Product)
         }
         const sourceMode = normalizeMode(store?.featuredProductsSource)
         const productIds = normalizeList(store?.featuredProductIds)
@@ -115,7 +111,7 @@ export async function GET(request) {
         const sectionDescription = store?.featuredSectionDescription || "Grab the best deals before they're gone!"
 
         const resolveProducts = async () => {
-            if (sourceMode === 'manual' && productIds.length > 0) {
+            if (isManualFeaturedSelection(sourceMode, productIds)) {
                 const productsRaw = await Product.find({ _id: { $in: productIds } })
                     .select(buildProductProjection)
                     .lean()
@@ -123,22 +119,13 @@ export async function GET(request) {
                 return productIds.map((id) => productMap.get(id)).filter(Boolean)
             }
 
-            const query = {
-                ...(store?._id ? { storeId: String(store._id) } : {}),
-            }
-
-            if (sourceMode === 'category' && categoryIds.length > 0) {
-                query.$or = [
-                    { category: { $in: categoryIds } },
-                    { categories: { $in: categoryIds } },
-                ]
-            } else if (sourceMode === 'tag' && tags.length > 0) {
-                query.tags = { $in: tags }
-            }
-
-            const sort = sourceMode === 'latest'
-                ? { createdAt: -1 }
-                : { updatedAt: -1, createdAt: -1 }
+            const { query, sort } = buildFeaturedProductsListQuery({
+                sourceMode,
+                productIds,
+                categoryIds,
+                tags,
+                storeId: store?._id,
+            })
 
             const productsRaw = await Product.find(query)
                 .sort(sort)
@@ -225,6 +212,8 @@ export async function POST(request) {
             },
             { new: true, strict: false }
         )
+
+        invalidateStorefrontProductCaches()
 
         return NextResponse.json({ 
             message: 'Featured products updated successfully',

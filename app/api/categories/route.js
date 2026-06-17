@@ -5,7 +5,7 @@ import { localizeRecord, resolveStorefrontLanguage } from '@/lib/storefrontLangu
 import { getCachedData, setCachedData } from '@/lib/cache';
 import { sanitizeCategoryFields, sanitizeCategoryTree } from '@/lib/displayText';
 
-const CACHE_KEY = 'public:categories:tree:v2';
+const CACHE_KEY = 'public:categories:tree:v3';
 
 // GET - Fetch all categories (public endpoint)
 export async function GET(req) {

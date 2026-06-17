@@ -2,22 +2,23 @@
 import { Suspense, useMemo, useState, useCallback, useEffect, useRef } from "react";
 import ProductCard from "@/components/ProductCard"
 import { useRouter, useSearchParams } from "next/navigation"
-import { useDispatch, useSelector } from "react-redux"
-import { fetchProducts } from "@/lib/features/product/productSlice"
 import { useAuth } from '@/lib/useAuth'
 import axios from 'axios'
 import { SlidersHorizontal, X } from 'lucide-react'
+import ShopPagination from '@/components/ShopPagination'
+
+const PRODUCTS_PER_PAGE = 100;
+const SHOP_CATALOG_URL = '/api/products?all=true&includeOutOfStock=true';
 
 function ShopContent() {
-    const dispatch = useDispatch();
     const searchParams = useSearchParams();
     const search = searchParams.get('search');
     const categoryParam = searchParams.get('category');
+    const currentPage = Math.max(1, Number.parseInt(searchParams.get('page') || '1', 10) || 1);
     const router = useRouter();
-    const products = useSelector(state => state.product.list);
-    const loading = useSelector(state => state.product.loading);
     const [mounted, setMounted] = useState(false);
-    const fetchedRef = useRef({ category: null, general: false });
+    const [shopProducts, setShopProducts] = useState([]);
+    const [shopLoading, setShopLoading] = useState(true);
     const [categoryProducts, setCategoryProducts] = useState([]);
     const [categoryLoading, setCategoryLoading] = useState(false);
     const [sortBy, setSortBy] = useState('newest');
@@ -76,7 +77,6 @@ function ShopContent() {
     }, [search, user, getToken]);
 
     useEffect(() => {
-        // Fetch category products directly to avoid global list overrides
         let isActive = true;
 
         if (categoryParam) {
@@ -100,16 +100,26 @@ function ShopContent() {
             };
         }
 
-        // Fallback: ensure general list is available when no category filter
-        if (!categoryParam && !fetchedRef.current.general && !loading) {
-            fetchedRef.current.general = true;
-            dispatch(fetchProducts({ all: true, includeOutOfStock: true }));
-        }
+        setShopLoading(true);
+        fetch(SHOP_CATALOG_URL)
+            .then((res) => res.json())
+            .then((data) => {
+                if (!isActive) return;
+                setShopProducts(Array.isArray(data.products) ? data.products : []);
+            })
+            .catch(() => {
+                if (!isActive) return;
+                setShopProducts([]);
+            })
+            .finally(() => {
+                if (!isActive) return;
+                setShopLoading(false);
+            });
 
         return () => {
             isActive = false;
         };
-    }, [dispatch, categoryParam, loading]);
+    }, [categoryParam]);
 
     const normalizeText = useCallback((value) => {
         if (value === null || value === undefined) return '';
@@ -166,7 +176,7 @@ function ShopContent() {
         return hasBadge || hasTag;
     }, []);
 
-    const sourceProducts = categoryParam ? categoryProducts : products;
+    const sourceProducts = categoryParam ? categoryProducts : shopProducts;
 
     // Filter by search
     const filteredProducts = useMemo(() => {
@@ -290,6 +300,68 @@ function ShopContent() {
         return list;
     }, [filteredProducts, priceFilter, minPrice, maxPrice, stockFilter, ratingFilter, reviewFilter, bestSellerOnly, fastDeliveryOnly, sortBy, getProductPrice, isProductInStock, getAverageRating, getReviewCount, isBestSeller]);
 
+    const totalPages = Math.max(1, Math.ceil(visibleProducts.length / PRODUCTS_PER_PAGE));
+    const safePage = Math.min(currentPage, totalPages);
+
+    const paginatedProducts = useMemo(() => {
+        const start = (safePage - 1) * PRODUCTS_PER_PAGE;
+        return visibleProducts.slice(start, start + PRODUCTS_PER_PAGE);
+    }, [visibleProducts, safePage]);
+
+    const updatePage = useCallback((nextPage) => {
+        const params = new URLSearchParams(searchParams.toString());
+        if (nextPage <= 1) {
+            params.delete('page');
+        } else {
+            params.set('page', String(nextPage));
+        }
+
+        const query = params.toString();
+        router.push(query ? `/shop?${query}` : '/shop', { scroll: false });
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, [router, searchParams]);
+
+    const filterSignature = useMemo(() => JSON.stringify({
+        search,
+        categoryParam,
+        sortBy,
+        priceFilter,
+        minPrice,
+        maxPrice,
+        stockFilter,
+        ratingFilter,
+        reviewFilter,
+        bestSellerOnly,
+        fastDeliveryOnly,
+    }), [
+        search,
+        categoryParam,
+        sortBy,
+        priceFilter,
+        minPrice,
+        maxPrice,
+        stockFilter,
+        ratingFilter,
+        reviewFilter,
+        bestSellerOnly,
+        fastDeliveryOnly,
+    ]);
+    const previousFilterSignatureRef = useRef(filterSignature);
+
+    useEffect(() => {
+        if (previousFilterSignatureRef.current === filterSignature) return;
+        previousFilterSignatureRef.current = filterSignature;
+        if (currentPage > 1) {
+            updatePage(1);
+        }
+    }, [filterSignature, currentPage, updatePage]);
+
+    useEffect(() => {
+        if (currentPage > totalPages) {
+            updatePage(totalPages);
+        }
+    }, [currentPage, totalPages, updatePage]);
+
     const fastSellingProducts = useMemo(() => {
         const list = [...sourceProducts]
             .filter((product) => product && (product.slug || product._id || product.id))
@@ -356,7 +428,7 @@ function ShopContent() {
                 </div>
 
                 {/* Products Grid - Full Width (No Sidebar) */}
-                {!mounted || (categoryParam ? categoryLoading : loading) ? (
+                {!mounted || (categoryParam ? categoryLoading : shopLoading) ? (
                     <div className="text-center py-16 bg-white rounded-lg border border-gray-200">
                         <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-orange-500 mb-4"></div>
                         <p className="text-gray-500 text-lg">Loading products...</p>
@@ -552,7 +624,14 @@ function ShopContent() {
 
                             <div>
                                 <div className="mb-4 flex flex-wrap items-center gap-2 text-sm text-gray-600">
-                                    Showing {visibleProducts.length} {visibleProducts.length === 1 ? 'product' : 'products'}
+                                    {visibleProducts.length > 0 ? (
+                                        <>
+                                            Showing {((safePage - 1) * PRODUCTS_PER_PAGE + 1).toLocaleString()}-
+                                            {Math.min(safePage * PRODUCTS_PER_PAGE, visibleProducts.length).toLocaleString()} of {visibleProducts.length.toLocaleString()} {visibleProducts.length === 1 ? 'product' : 'products'}
+                                        </>
+                                    ) : (
+                                        <>Showing 0 products</>
+                                    )}
                                     {(bestSellerOnly || fastDeliveryOnly || reviewFilter !== 'all' || minPrice || maxPrice) && (
                                         <span className="text-xs bg-orange-50 text-orange-700 border border-orange-200 rounded-full px-2 py-1">
                                             Advanced filters active
@@ -571,11 +650,20 @@ function ShopContent() {
                                         </button>
                                     </div>
                                 ) : (
-                                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
-                                        {visibleProducts.map((product) => (
-                                            <ProductCard key={product._id || product.id} product={product} />
-                                        ))}
-                                    </div>
+                                    <>
+                                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
+                                            {paginatedProducts.map((product) => (
+                                                <ProductCard key={product._id || product.id} product={product} />
+                                            ))}
+                                        </div>
+                                        <ShopPagination
+                                            page={safePage}
+                                            totalPages={totalPages}
+                                            totalItems={visibleProducts.length}
+                                            pageSize={PRODUCTS_PER_PAGE}
+                                            onPageChange={updatePage}
+                                        />
+                                    </>
                                 )}
                             </div>
                         </div>

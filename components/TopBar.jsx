@@ -14,6 +14,8 @@ import {
   STOREFRONT_LANGUAGE_KEY,
   STOREFRONT_LANGUAGE_EVENT,
   STOREFRONT_LANGUAGE_COOKIE,
+  normalizeStorefrontLanguage,
+  readPersistedStorefrontLanguage,
 } from '@/lib/storefrontLanguage';
 
 const GCC_MARKETS = [
@@ -30,22 +32,35 @@ const BNPL_PARTNERS = [
   { key: 'tabby', name: 'Tabby', logoUrl: tabbyLogo.src, logoWidth: 62 },
 ];
 
-export default function TopBar() {
+export default function TopBar({ initialLanguage = 'en' }) {
   const router = useRouter();
   const { market: storefrontMarket, setMarketCode } = useStorefrontMarket();
-  const [storefrontLanguage, setStorefrontLanguage] = useState(() => {
-    if (typeof window === 'undefined') return 'en';
-    try {
-      const saved = window.localStorage.getItem(STOREFRONT_LANGUAGE_KEY);
-      if (saved === 'ar' || saved === 'en') return saved;
-    } catch {}
-    return 'en';
-  });
+  const [storefrontLanguage, setStorefrontLanguage] = useState(() => normalizeStorefrontLanguage(initialLanguage));
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [activeBnplIndex, setActiveBnplIndex] = useState(0);
   const [showBnplBanner, setShowBnplBanner] = useState(true);
   const [bnplLogoError, setBnplLogoError] = useState({ tamara: false, tabby: false });
   const dropdownRef = useRef(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const syncLanguage = () => {
+      setStorefrontLanguage(readPersistedStorefrontLanguage(initialLanguage));
+    };
+
+    const handleLanguageChange = (event) => {
+      const nextLanguage = event?.detail?.language;
+      setStorefrontLanguage(normalizeStorefrontLanguage(nextLanguage));
+    };
+
+    syncLanguage();
+    window.addEventListener(STOREFRONT_LANGUAGE_EVENT, handleLanguageChange);
+
+    return () => {
+      window.removeEventListener(STOREFRONT_LANGUAGE_EVENT, handleLanguageChange);
+    };
+  }, [initialLanguage]);
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -87,11 +102,12 @@ export default function TopBar() {
   }, []);
 
   const handleLanguageChange = (lang) => {
-    setStorefrontLanguage(lang);
+    const nextLanguage = normalizeStorefrontLanguage(lang);
+    setStorefrontLanguage(nextLanguage);
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STOREFRONT_LANGUAGE_KEY, lang);
-      document.cookie = `${STOREFRONT_LANGUAGE_COOKIE}=${lang}; path=/; max-age=31536000; SameSite=Lax`;
-      window.dispatchEvent(new CustomEvent(STOREFRONT_LANGUAGE_EVENT, { detail: { language: lang } }));
+      window.localStorage.setItem(STOREFRONT_LANGUAGE_KEY, nextLanguage);
+      document.cookie = `${STOREFRONT_LANGUAGE_COOKIE}=${nextLanguage}; path=/; max-age=31536000; SameSite=Lax`;
+      window.dispatchEvent(new CustomEvent(STOREFRONT_LANGUAGE_EVENT, { detail: { language: nextLanguage } }));
     }
   };
 

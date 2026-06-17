@@ -5,6 +5,7 @@ import Link from "next/link"
 import { ArrowRightIcon, Lock } from "lucide-react"
 import SellerNavbar from "./StoreNavbar"
 import SellerSidebar from "./StoreSidebar"
+import StoreOrderNotificationProvider from "./StoreOrderNotificationProvider"
 
 
 import axios from "axios"
@@ -188,6 +189,12 @@ const StoreLayout = ({ children }) => {
             </Link>
         </div>
     ) : isSeller ? (
+        <StoreOrderNotificationProvider
+            getToken={getToken}
+            storeId={storeInfo?._id || storeInfo?.id || null}
+            isOwner={dashboardAccess.isOwner}
+            permissions={dashboardAccess.permissions}
+        >
         <div className="flex h-screen flex-col overflow-hidden">
             <SellerNavbar storeInfo={storeInfo} />
             <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -219,6 +226,7 @@ const StoreLayout = ({ children }) => {
                 </div>
             </div>
         </div>
+        </StoreOrderNotificationProvider>
     ) : (
         <div className="min-h-screen flex flex-col items-center justify-center text-center px-6">
             <h1 className="text-2xl sm:text-4xl font-semibold text-slate-400">

@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { useDispatch } from "react-redux"
-import { fetchProducts as fetchProductsAction } from "@/lib/features/product/productSlice"
+import { fetchProducts as fetchProductsAction, STOREFRONT_CATALOG_FETCH } from "@/lib/features/product/productSlice"
 import { toast } from "react-hot-toast"
 import Loading from "@/components/Loading"
 
@@ -146,28 +146,19 @@ export default function StoreManageProducts() {
     }
 
     const toggleStock = async (productId) => {
-        try {
-            const token = await getToken()
-            const { data } = await axios.post('/api/store/stock-toggle',{ productId }, {headers: { Authorization: `Bearer ${token}` } })
-            setProducts(prevProducts => prevProducts.map(product =>  product._id === productId ? {...product, inStock: !product.inStock} : product))
-
-            toast.success(data.message)
-        } catch (error) {
-            toast.error(error?.response?.data?.error || error.message)
-        }
+        const token = await getToken()
+        const { data } = await axios.post('/api/store/stock-toggle',{ productId }, {headers: { Authorization: `Bearer ${token}` } })
+        setProducts(prevProducts => prevProducts.map(product =>  product._id === productId ? {...product, inStock: !product.inStock} : product))
+        return data.message
     }
 
     const toggleFastDelivery = async (productId) => {
-        try {
-            const token = await getToken()
-            const { data } = await axios.post('/api/store/fast-delivery-toggle', { productId }, {headers: { Authorization: `Bearer ${token}` } })
-            setProducts(prevProducts => prevProducts.map(product => 
-                product._id === productId ? {...product, fastDelivery: !product.fastDelivery} : product
-            ))
-            toast.success(data.message)
-        } catch (error) {
-            toast.error(error?.response?.data?.error || error.message)
-        }
+        const token = await getToken()
+        const { data } = await axios.post('/api/store/fast-delivery-toggle', { productId }, {headers: { Authorization: `Bearer ${token}` } })
+        setProducts(prevProducts => prevProducts.map(product => 
+            product._id === productId ? {...product, fastDelivery: !product.fastDelivery} : product
+        ))
+        return data.message
     }
 
     const handleEdit = (product) => {
@@ -283,7 +274,7 @@ export default function StoreManageProducts() {
         setShowEditModal(false)
         setEditingProduct(null)
         // Refresh global Redux product list so frontend always uses latest slug
-        dispatch(fetchProductsAction({}));
+        dispatch(fetchProductsAction(STOREFRONT_CATALOG_FETCH));
     }
 
     useEffect(() => {
@@ -421,7 +412,7 @@ export default function StoreManageProducts() {
                 productImportInputRef.current.value = ''
             }
             await fetchStoreProducts()
-            dispatch(fetchProductsAction({}))
+            dispatch(fetchProductsAction(STOREFRONT_CATALOG_FETCH))
         } catch (error) {
             toast.error(error?.response?.data?.error || error.message || 'Failed to import products')
         } finally {
@@ -499,7 +490,7 @@ export default function StoreManageProducts() {
             toast.success(data?.message || 'Selected products deleted successfully')
             setSelectedProductIds([])
             await fetchStoreProducts()
-            dispatch(fetchProductsAction({}))
+            dispatch(fetchProductsAction(STOREFRONT_CATALOG_FETCH))
         } catch (error) {
             toast.error(error?.response?.data?.error || error.message || 'Failed to delete selected products')
         } finally {
@@ -543,7 +534,7 @@ export default function StoreManageProducts() {
 
             toast.success(data?.message || 'Products updated successfully')
             await fetchStoreProducts()
-            dispatch(fetchProductsAction({}))
+            dispatch(fetchProductsAction(STOREFRONT_CATALOG_FETCH))
             closeBulkEditModal()
         } catch (error) {
             toast.error(error?.response?.data?.error || error.message || 'Failed to bulk update products')
@@ -804,7 +795,11 @@ export default function StoreManageProducts() {
                                     <input 
                                         type="checkbox" 
                                         className="sr-only peer" 
-                                        onChange={() => toast.promise(toggleFastDelivery(product._id), { loading: "Updating..." })} 
+                                        onChange={() => toast.promise(toggleFastDelivery(product._id), {
+                                            loading: 'Updating...',
+                                            success: (message) => message || 'Fast delivery updated',
+                                            error: (error) => error?.response?.data?.error || error?.message || 'Failed to update fast delivery',
+                                        })} 
                                         checked={product.fastDelivery || false} 
                                     />
                                     <div className="w-9 h-5 bg-slate-300 rounded-full peer peer-checked:bg-blue-600 transition-colors duration-200"></div>
@@ -816,7 +811,11 @@ export default function StoreManageProducts() {
                             </td>
                             <td className="px-4 py-3">
                                 <label className="relative inline-flex items-center cursor-pointer">
-                                    <input type="checkbox" className="sr-only peer" onChange={() => toast.promise(toggleStock(product._id), { loading: "Updating..." })} checked={product.inStock} />
+                                    <input type="checkbox" className="sr-only peer" onChange={() => toast.promise(toggleStock(product._id), {
+                                        loading: 'Updating...',
+                                        success: (message) => message || 'Stock updated',
+                                        error: (error) => error?.response?.data?.error || error?.message || 'Failed to update stock',
+                                    })} checked={product.inStock} />
                                     <div className="w-9 h-5 bg-slate-300 rounded-full peer peer-checked:bg-green-600 transition-colors duration-200"></div>
                                     <span className="dot absolute left-1 top-1 w-3 h-3 bg-white rounded-full transition-transform duration-200 ease-in-out peer-checked:translate-x-4"></span>
                                 </label>

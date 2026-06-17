@@ -5,6 +5,8 @@ import StoreUser from '@/models/StoreUser';
 import User from '@/models/User';
 import authSeller from '@/middlewares/authSeller';
 import { getAuth } from '@/lib/firebase-admin';
+import { resolveDashboardAccess } from '@/lib/storeAccessControl';
+import { canAccessDashboardArea } from '@/lib/storeDashboardPermissions';
 
 function buildDashboardAccessUsers(store, teamMembers = [], ownerProfile = null) {
   const users = [];
@@ -66,32 +68,42 @@ export async function GET(request) {
     }
 
     const store = await Store.findById(storeId).lean();
-    const isOwner = Boolean(store?.userId && String(store.userId) === String(userId));
+    const access = await resolveDashboardAccess(userId, decodedToken);
+    const isOwner = Boolean(access.isOwner);
 
-    if (!isOwner) {
-      return NextResponse.json({ error: 'Only the store owner can manage team access' }, { status: 403 });
-    }
-
-    // Fetch approved users
-    const users = await StoreUser.find({
+    const teamMembers = await StoreUser.find({
       storeId: storeId,
-      status: 'approved'
+      status: 'approved',
     }).lean();
 
     const ownerProfile = store?.userId
       ? await User.findById(store.userId).select('name email').lean()
       : null;
-    const dashboardAccessUsers = buildDashboardAccessUsers(store, users, ownerProfile);
+    const dashboardAccessUsers = buildDashboardAccessUsers(store, teamMembers, ownerProfile);
 
-    // Fetch pending invites
+    if (!isOwner) {
+      const canUseAbandonedCheckout = canAccessDashboardArea(
+        access.permissions,
+        'abandonedCheckout',
+        { isOwner: false }
+      );
+
+      if (!canUseAbandonedCheckout) {
+        return NextResponse.json({ error: 'You do not have permission to view team users' }, { status: 403 });
+      }
+
+      return NextResponse.json({ dashboardAccessUsers });
+    }
+
+    // Fetch pending invites (owner only)
     const pending = await StoreUser.find({
       storeId: storeId,
-      status: { $in: ['invited', 'pending'] }
+      status: { $in: ['invited', 'pending'] },
     }).lean();
 
     return NextResponse.json({
-      users: users.map(u => ({ ...u, id: u._id.toString(), _id: u._id.toString() })),
-      pending: pending.map(p => ({ ...p, id: p._id.toString(), _id: p._id.toString() })),
+      users: teamMembers.map((u) => ({ ...u, id: u._id.toString(), _id: u._id.toString() })),
+      pending: pending.map((p) => ({ ...p, id: p._id.toString(), _id: p._id.toString() })),
       dashboardAccessUsers,
     });
   } catch (error) {

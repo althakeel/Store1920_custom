@@ -23,7 +23,12 @@ import {
   STOREFRONT_LANGUAGE_KEY,
 } from '@/lib/storefrontLanguage';
 import { translateStaticText } from '@/lib/useStorefrontI18n';
-import { cleanDisplayText } from '@/lib/displayText';
+import {
+  getCategoryDisplayName as getNavCategoryDisplayName,
+  getCategoryRecordId,
+  filterParentCategories,
+  getDirectChildCategories,
+} from '@/lib/categoryNavigation';
 
 const NAVBAR_SELECTED_ADDRESS_KEY = 'navbarSelectedAddressId';
 const NAVBAR_APPEARANCE_CACHE_KEY = 'navbarAppearanceCache';
@@ -90,11 +95,9 @@ const getCategoryHref = (category) => {
   return value ? `/shop?category=${encodeURIComponent(value)}` : '/shop';
 };
 
-const getCategoryId = (category) => String(category?._id || category?.id || '').trim();
+const getCategoryId = (category) => getCategoryRecordId(category);
 
-const getCategoryParentId = (category) => String(category?.parentId || category?.parent || '').trim();
-
-const getCategoryDisplayName = (category) => cleanDisplayText(category?.name || '');
+const getCategoryDisplayName = (category) => getNavCategoryDisplayName(category);
 
 const Navbar = () => {
   const dispatch = useDispatch();
@@ -209,17 +212,10 @@ const Navbar = () => {
     return addressList.find((address) => address?._id === selectedAddressId) || addressList[0] || null;
   }, [addressList, selectedAddressId]);
 
-  const mainCategories = useMemo(() => {
-    const source = Array.isArray(categories) ? categories : [];
-
-    return source
-      .filter((item) => {
-        const name = String(item?.name || '').trim();
-        if (!name) return false;
-        return !getCategoryParentId(item);
-      })
-      .sort((left, right) => getCategoryDisplayName(left).localeCompare(getCategoryDisplayName(right)));
-  }, [categories]);
+  const mainCategories = useMemo(() => (
+    filterParentCategories(Array.isArray(categories) ? categories : [])
+      .sort((left, right) => getCategoryDisplayName(left).localeCompare(getCategoryDisplayName(right)))
+  ), [categories]);
 
   const activeCategory = useMemo(() => {
     const defaultCategory = mainCategories[0] || null;
@@ -229,29 +225,9 @@ const Navbar = () => {
     return mainCategories.find((item) => getCategoryId(item) === hoveredId) || defaultCategory;
   }, [mainCategories, hoveredCategory]);
 
-  const activeSubcategories = useMemo(() => {
-    if (!activeCategory) return [];
-
-    const activeId = getCategoryId(activeCategory);
-    if (!activeId) return [];
-
-    const nestedChildren = Array.isArray(activeCategory.children) ? activeCategory.children : [];
-    const flatChildren = (Array.isArray(categories) ? categories : []).filter(
-      (item) => getCategoryParentId(item) === activeId,
-    );
-
-    const merged = new Map();
-
-    [...nestedChildren, ...flatChildren].forEach((item) => {
-      const itemId = getCategoryId(item) || String(item?.slug || item?.name || '').trim();
-      if (!itemId || merged.has(itemId)) return;
-      merged.set(itemId, item);
-    });
-
-    return Array.from(merged.values())
-      .filter((item) => String(item?.name || '').trim())
-      .sort((left, right) => getCategoryDisplayName(left).localeCompare(getCategoryDisplayName(right)));
-  }, [activeCategory, categories]);
+  const activeSubcategories = useMemo(() => (
+    getDirectChildCategories(Array.isArray(categories) ? categories : [], activeCategory)
+  ), [activeCategory, categories]);
 
   const selectedDeliveryLabel = useMemo(() => {
     if (!firebaseUser) return t('navbar.signInToChoose');

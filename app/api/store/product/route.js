@@ -3,6 +3,8 @@ import { uploadToS3 } from '@/lib/storage';
 import connectDB from '@/lib/mongodb';
 import Product from '@/models/Product';
 import Category from '@/models/Category';
+import Store from '@/models/Store';
+import { invalidateStorefrontProductCaches } from '@/lib/cache';
 import authSeller from "@/middlewares/authSeller";
 import { buildCategoryLookup, getProductCategoryLabels } from '@/lib/categoryLookup';
 import { NextResponse } from "next/server";
@@ -342,6 +344,11 @@ export async function POST(request) {
         
         console.log('POST: Product created with categories:', product.categories);
 
+        await Store.findByIdAndUpdate(storeId, {
+            $addToSet: { featuredProductIds: String(product._id) },
+        });
+        invalidateStorefrontProductCaches();
+
         return NextResponse.json({ message: "Product added successfully", product });
     } catch (error) {
         console.error('========== ERROR IN POST /api/store/product ==========');
@@ -436,6 +443,8 @@ export async function PUT(request) {
                 { images: imagesUrl },
                 { new: true }
             ).lean();
+
+            invalidateStorefrontProductCaches();
 
             return NextResponse.json({ message: "Product updated successfully", product: updated });
         }
@@ -647,6 +656,8 @@ export async function PUT(request) {
         console.log('VERIFY PUT from DB - product.categories:', verifyUpdatedProduct.categories);
         console.log('VERIFY PUT from DB - categories length:', verifyUpdatedProduct.categories?.length);
 
+        invalidateStorefrontProductCaches();
+
         return NextResponse.json({ message: "Product updated successfully", product });
     } catch (error) {
         console.error(error);
@@ -687,6 +698,11 @@ export async function DELETE(request) {
         if (!product || product.storeId !== storeId) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
 
         await Product.findByIdAndDelete(productId);
+        await Store.findByIdAndUpdate(storeId, {
+            $pull: { featuredProductIds: productId },
+        });
+        invalidateStorefrontProductCaches();
+
         return NextResponse.json({ message: "Product deleted successfully" });
     } catch (error) {
         console.error(error);

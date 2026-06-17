@@ -2,9 +2,15 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import {
+  filterParentCategories,
+  getCategoryDisplayName,
+  getDirectChildCategories,
+  getCategoryRecordId,
+} from '@/lib/categoryNavigation';
 
 const MENU_CACHE_KEY = 'nav:menu:v1';
-const CATEGORIES_CACHE_KEY = 'nav:categories:v1';
+const CATEGORIES_CACHE_KEY = 'nav:categories:v2';
 const MENU_ENABLED_CACHE_KEY = 'nav:menu:enabled:v1';
 const ACTIONS_VISIBILITY_CACHE_KEY = 'nav:actions:visibility:v1';
 const MENU_STYLE_CACHE_KEY = 'nav:menu:style:v1';
@@ -219,25 +225,14 @@ export default function NavbarMenuBar() {
   const categoryTimer = useRef(null);
 
   const topLevelCategories = useMemo(
-    () => categories.filter((item) => !item?.parentId),
+    () => filterParentCategories(categories),
     [categories]
   );
 
-  const childrenByParent = useMemo(() => {
-    const map = new Map();
-    for (const category of categories) {
-      const parent = category?.parentId ? String(category.parentId) : '';
-      if (!parent) continue;
-      if (!map.has(parent)) map.set(parent, []);
-      map.get(parent).push(category);
-    }
-    return map;
-  }, [categories]);
-
-  const hoveredChildren = useMemo(() => {
-    if (!hoveredCategory?._id) return [];
-    return childrenByParent.get(String(hoveredCategory._id)) || [];
-  }, [hoveredCategory, childrenByParent]);
+  const hoveredChildren = useMemo(
+    () => getDirectChildCategories(categories, hoveredCategory),
+    [categories, hoveredCategory]
+  );
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -428,18 +423,18 @@ export default function NavbarMenuBar() {
                           type="button"
                           onMouseEnter={() => setHoveredCategory(category)}
                           className={`block w-full px-4 py-2.5 text-left text-sm transition ${hoveredCategory?._id === category._id ? 'font-semibold' : ''}`}
-                          style={hoveredCategory?._id === category._id
+                          style={getCategoryRecordId(hoveredCategory) === getCategoryRecordId(category)
                             ? { backgroundColor: 'var(--menu-dropdown-bg)', color: 'var(--menu-dropdown-text)' }
                             : { color: 'var(--menu-dropdown-text)' }}
                         >
-                          {category.name}
+                          {getCategoryDisplayName(category)}
                         </button>
                       ))}
                     </div>
 
                     <div className="p-4">
                       <p className="mb-2 text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--menu-dropdown-muted)' }}>
-                        {hoveredCategory?.name || 'Collections'}
+                        {getCategoryDisplayName(hoveredCategory) || 'Collections'}
                       </p>
                       <div className="grid gap-2 sm:grid-cols-2">
                         {hoveredChildren.length > 0 ? (
@@ -450,7 +445,7 @@ export default function NavbarMenuBar() {
                               className="rounded-lg border px-3 py-2 text-sm transition"
                               style={{ borderColor: 'var(--menu-dropdown-border)', color: 'var(--menu-dropdown-text)' }}
                             >
-                              {child.name}
+                              {getCategoryDisplayName(child)}
                             </Link>
                           ))
                         ) : (
