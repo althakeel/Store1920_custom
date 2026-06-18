@@ -2,20 +2,29 @@ import OpenAI from "openai";
 
 // Lazy initialize OpenAI to avoid build-time crashes when env vars are missing
 let _openai = null;
+let _openaiKey = null;
+let _openaiBaseUrl = null;
 
 export function isOpenAIConfigured() {
   return Boolean(process.env.OPENAI_API_KEY);
 }
 
 export function ensureOpenAI() {
-  if (_openai) return _openai;
-  const { OPENAI_API_KEY, OPENAI_BASE_URL } = process.env;
-  if (!OPENAI_API_KEY) {
+  const apiKey = String(process.env.OPENAI_API_KEY || '').trim();
+  const baseURL = process.env.OPENAI_BASE_URL || undefined;
+  if (!apiKey) {
     throw new Error("OpenAI is not configured");
   }
+
+  if (_openai && _openaiKey === apiKey && _openaiBaseUrl === baseURL) {
+    return _openai;
+  }
+
+  _openaiKey = apiKey;
+  _openaiBaseUrl = baseURL;
   _openai = new OpenAI({
-    apiKey: OPENAI_API_KEY,
-    baseURL: OPENAI_BASE_URL,
+    apiKey,
+    baseURL,
   });
   return _openai;
 }

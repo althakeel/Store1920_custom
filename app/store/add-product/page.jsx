@@ -447,7 +447,8 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
     const normalizeErrorMessage = (value, fallback = 'Request failed') => {
         if (!value) return fallback;
         if (typeof value === 'string') {
-            if (/429|rate limit|too many requests/i.test(value)) {
+            if (value.length > 80) return value;
+            if (/429|rate limit|too many requests|quota/i.test(value)) {
                 return fallback;
             }
             return value;
@@ -1000,11 +1001,16 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
         } catch (error) {
             const status = Number(error?.response?.status)
             const apiError = error?.response?.data?.error
+            const provider = error?.response?.data?.provider
             const fallback = status === 429
-                ? 'AI rate limit reached. Wait 30-60 seconds, then try again.'
+                ? (provider === 'openai'
+                    ? 'OpenAI quota reached. Enable billing or set PRODUCT_AI_PROVIDER=gemini with a valid GEMINI_API_KEY, then redeploy.'
+                    : provider === 'gemini'
+                        ? 'Gemini quota reached. Enable billing in Google AI Studio or add OPENAI_API_KEY and redeploy.'
+                        : 'AI quota reached. Enable billing on your AI provider and redeploy after updating API keys.')
                 : status === 400
                     ? 'Upload a product image first, then run AI autofill.'
-                    : 'Gemini AI autofill failed'
+                    : 'AI autofill failed'
             const message = normalizeErrorMessage(apiError || error?.response?.data || error?.message, fallback)
             toast.error(message)
         } finally {

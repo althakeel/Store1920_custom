@@ -7,6 +7,13 @@ import {
     formatProductAutofillPayload,
 } from '@/lib/productAiAutofill';
 import { generateProductAutofillFromImage, shouldUseGeminiForProducts } from '@/lib/geminiProductAutofill';
+import { isGeminiConfigured } from '@/configs/gemini';
+import {
+    callWithRateLimitRetry,
+    getAiErrorMessage,
+    getAiErrorStatus,
+    isAiRateLimitError,
+} from '@/lib/aiProviderErrors';
 import { NextResponse } from "next/server";
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
@@ -63,24 +70,74 @@ function normalizeBase64Input(base64Image, mimeType) {
     };
 }
 
-async function callOpenAIWithRetry(fn, maxRetries = 2) {
-    let lastError = null;
+async function callOpenAIWithRetry(fn, maxRetries = 3) {
+    return callWithRateLimitRetry(fn, { maxRetries, baseDelayMs: 2000 });
+}
 
-    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+async function runOpenAIAutofill(base64Image, mimeType, additionalContext, includeArabic, storeCategories) {
+    return main(base64Image, mimeType, additionalContext, includeArabic, storeCategories);
+}
+
+async function runGeminiAutofill(base64Image, mimeType, additionalContext, includeArabic, storeCategories) {
+    return generateProductAutofillFromImage({
+        base64Image,
+        mimeType,
+        additionalContext,
+        includeArabic,
+        storeCategories,
+    });
+}
+
+async function runProductAutofill({
+    base64Image,
+    mimeType,
+    additionalContext,
+    includeArabic,
+    storeCategories,
+}) {
+    const preferGemini = shouldUseGeminiForProducts();
+    const geminiReady = isGeminiConfigured();
+    const openaiReady = isOpenAIConfigured();
+    const allowFallback = String(process.env.PRODUCT_AI_FALLBACK || 'true').trim().toLowerCase() !== 'false';
+
+    const providers = [];
+    if (preferGemini && geminiReady) providers.push('gemini');
+    if (!preferGemini && openaiReady) providers.push('openai');
+    if (allowFallback) {
+        if (preferGemini && openaiReady && !providers.includes('openai')) providers.push('openai');
+        if (!preferGemini && geminiReady && !providers.includes('gemini')) providers.push('gemini');
+    }
+
+    if (providers.length === 0) {
+        throw Object.assign(new Error('AI is disabled (set GEMINI_API_KEY or OPENAI_API_KEY)'), { status: 503 });
+    }
+
+    const errors = [];
+
+    for (const provider of providers) {
         try {
-            return await fn();
+            const result = provider === 'gemini'
+                ? await runGeminiAutofill(base64Image, mimeType, additionalContext, includeArabic, storeCategories)
+                : await runOpenAIAutofill(base64Image, mimeType, additionalContext, includeArabic, storeCategories);
+
+            return { ...result, provider, attemptedProviders: providers };
         } catch (error) {
-            lastError = error;
-            const status = Number(error?.status || error?.response?.status || 0);
-            if (status === 429 && attempt < maxRetries) {
-                await new Promise((resolve) => setTimeout(resolve, (attempt + 1) * 2000));
-                continue;
+            errors.push({ provider, error });
+            if (!allowFallback || !isAiRateLimitError(error)) {
+                throw Object.assign(error, {
+                    provider,
+                    attemptedProviders: providers,
+                });
             }
-            throw error;
         }
     }
 
-    throw lastError || new Error('AI request failed');
+    const last = errors[errors.length - 1];
+    throw Object.assign(last?.error || new Error('AI autofill failed'), {
+        provider: last?.provider,
+        attemptedProviders: providers,
+        allRateLimited: errors.every((entry) => isAiRateLimitError(entry.error)),
+    });
 }
 
 async function main(base64Image, mimeType, additionalContext = '', includeArabic = false, storeCategories = []) {
@@ -191,8 +248,7 @@ async function main(base64Image, mimeType, additionalContext = '', includeArabic
 
 export async function POST(request) {
     try {
-        const useGemini = shouldUseGeminiForProducts();
-        if (!useGemini && !isOpenAIConfigured()) {
+        if (!isGeminiConfigured() && !isOpenAIConfigured()) {
             return NextResponse.json({ error: 'AI is disabled (set GEMINI_API_KEY or OPENAI_API_KEY)' }, { status: 503 });
         }
 
@@ -240,44 +296,30 @@ export async function POST(request) {
             );
         }
 
-        const result = useGemini
-            ? await generateProductAutofillFromImage({
-                base64Image: resolvedImage.base64Image,
-                mimeType: resolvedImage.mimeType,
-                additionalContext: additionalContext || '',
-                includeArabic: Boolean(includeArabic),
-                storeCategories,
-            })
-            : await main(
-                resolvedImage.base64Image,
-                resolvedImage.mimeType,
-                additionalContext || '',
-                Boolean(includeArabic),
-                storeCategories
-            );
-        return NextResponse.json({ ...result, provider: useGemini ? 'gemini' : 'openai' });
+        const result = await runProductAutofill({
+            base64Image: resolvedImage.base64Image,
+            mimeType: resolvedImage.mimeType,
+            additionalContext: additionalContext || '',
+            includeArabic: Boolean(includeArabic),
+            storeCategories,
+        });
+        return NextResponse.json(result);
     } catch (error) {
         console.error('[API /store/ai]', error);
-        const status = Number(error?.status || error?.response?.status || 500);
-        const safeStatus = Number.isFinite(status) && status >= 400 && status < 600 ? status : 500;
-        const fallback429Message = 'OpenAI rate limit reached. Wait 30-60 seconds, then try again.';
-        const message = String(
-            error?.error?.message ||
-            error?.response?.data?.error?.message ||
-            error?.response?.data?.error ||
-            error?.response?.data?.message ||
-            error?.message ||
-            (safeStatus === 429 ? fallback429Message : 'AI autofill failed')
-        ).trim();
+        const provider = error?.provider || (shouldUseGeminiForProducts() ? 'gemini' : 'openai');
+        const safeStatus = getAiErrorStatus(error);
+        const message = getAiErrorMessage(error, provider);
 
         return NextResponse.json(
             {
-                error: message || (safeStatus === 429 ? fallback429Message : 'AI autofill failed'),
+                error: message,
+                provider,
+                attemptedProviders: error?.attemptedProviders || [provider],
                 retryable: safeStatus === 429,
             },
             {
                 status: safeStatus,
-                headers: safeStatus === 429 ? { 'Retry-After': '30' } : undefined,
+                headers: safeStatus === 429 ? { 'Retry-After': '60' } : undefined,
             }
         );
     }

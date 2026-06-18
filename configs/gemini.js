@@ -3,18 +3,24 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 let _gemini = null;
+let _geminiKey = null;
 
 export function isGeminiConfigured() {
   return Boolean(process.env.GEMINI_API_KEY);
 }
 
 export function ensureGemini() {
-  if (_gemini) return _gemini;
-  const { GEMINI_API_KEY } = process.env;
-  if (!GEMINI_API_KEY) {
+  const apiKey = String(process.env.GEMINI_API_KEY || '').trim();
+  if (!apiKey) {
     throw new Error("Gemini is not configured");
   }
-  _gemini = new GoogleGenerativeAI(GEMINI_API_KEY);
+
+  if (_gemini && _geminiKey === apiKey) {
+    return _gemini;
+  }
+
+  _geminiKey = apiKey;
+  _gemini = new GoogleGenerativeAI(apiKey);
   return _gemini;
 }
 
