@@ -6,8 +6,9 @@ import {
     parseAutofillJson,
     formatProductAutofillPayload,
 } from '@/lib/productAiAutofill';
-import { generateProductAutofillFromImage, shouldUseGeminiForProducts } from '@/lib/geminiProductAutofill';
+import { generateProductAutofillFromImage } from '@/lib/geminiProductAutofill';
 import { isGeminiConfigured } from '@/configs/gemini';
+import { getProductAiRuntimeConfig } from '@/lib/productAiConfig';
 import {
     callWithRateLimitRetry,
     getAiErrorMessage,
@@ -95,18 +96,8 @@ async function runProductAutofill({
     includeArabic,
     storeCategories,
 }) {
-    const preferGemini = shouldUseGeminiForProducts();
-    const geminiReady = isGeminiConfigured();
-    const openaiReady = isOpenAIConfigured();
-    const allowFallback = String(process.env.PRODUCT_AI_FALLBACK || 'true').trim().toLowerCase() !== 'false';
-
-    const providers = [];
-    if (preferGemini && geminiReady) providers.push('gemini');
-    if (!preferGemini && openaiReady) providers.push('openai');
-    if (allowFallback) {
-        if (preferGemini && openaiReady && !providers.includes('openai')) providers.push('openai');
-        if (!preferGemini && geminiReady && !providers.includes('gemini')) providers.push('gemini');
-    }
+    const runtime = getProductAiRuntimeConfig();
+    const providers = runtime.activeProviders;
 
     if (providers.length === 0) {
         throw Object.assign(new Error('AI is disabled (set GEMINI_API_KEY or OPENAI_API_KEY)'), { status: 503 });
@@ -123,7 +114,7 @@ async function runProductAutofill({
             return { ...result, provider, attemptedProviders: providers };
         } catch (error) {
             errors.push({ provider, error });
-            if (!allowFallback || !isAiRateLimitError(error)) {
+            if (!runtime.fallbackEnabled || !isAiRateLimitError(error)) {
                 throw Object.assign(error, {
                     provider,
                     attemptedProviders: providers,
@@ -306,7 +297,8 @@ export async function POST(request) {
         return NextResponse.json(result);
     } catch (error) {
         console.error('[API /store/ai]', error);
-        const provider = error?.provider || (shouldUseGeminiForProducts() ? 'gemini' : 'openai');
+        const runtime = getProductAiRuntimeConfig();
+        const provider = error?.provider || runtime.activeProviders[0] || runtime.preference;
         const safeStatus = getAiErrorStatus(error);
         const message = getAiErrorMessage(error, provider);
 

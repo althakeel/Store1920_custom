@@ -1000,18 +1000,34 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
             )
         } catch (error) {
             const status = Number(error?.response?.status)
-            const apiError = error?.response?.data?.error
-            const provider = error?.response?.data?.provider
-            const fallback = status === 429
-                ? (provider === 'openai'
-                    ? 'OpenAI quota reached. Enable billing or set PRODUCT_AI_PROVIDER=gemini with a valid GEMINI_API_KEY, then redeploy.'
-                    : provider === 'gemini'
-                        ? 'Gemini quota reached. Enable billing in Google AI Studio or add OPENAI_API_KEY and redeploy.'
-                        : 'AI quota reached. Enable billing on your AI provider and redeploy after updating API keys.')
-                : status === 400
-                    ? 'Upload a product image first, then run AI autofill.'
-                    : 'AI autofill failed'
-            const message = normalizeErrorMessage(apiError || error?.response?.data || error?.message, fallback)
+            const responseData = error?.response?.data || {}
+            const apiError = typeof responseData.error === 'string' ? responseData.error.trim() : ''
+            const provider = responseData.provider
+            const attemptedProviders = Array.isArray(responseData.attemptedProviders)
+                ? responseData.attemptedProviders.join(', ')
+                : ''
+
+            let message = apiError
+            if (!message) {
+                if (status === 429) {
+                    message = provider === 'openai'
+                        ? 'OpenAI quota reached. Set PRODUCT_AI_PROVIDER=openai, enable billing, and redeploy AWS.'
+                        : provider === 'gemini'
+                            ? 'Gemini quota reached. Enable billing in Google AI Studio, or set PRODUCT_AI_PROVIDER=openai and redeploy AWS.'
+                            : 'AI quota reached. Redeploy AWS after updating API keys.'
+                } else if (status === 401) {
+                    message = 'AI API key is invalid. Update the key in AWS environment variables and redeploy.'
+                } else if (status === 400) {
+                    message = 'Upload a product image first, then run AI autofill.'
+                } else {
+                    message = 'AI autofill failed'
+                }
+            }
+
+            if (attemptedProviders) {
+                message = `${message} (tried: ${attemptedProviders})`
+            }
+
             toast.error(message)
         } finally {
             setAiLoading(false)
