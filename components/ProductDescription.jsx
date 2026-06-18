@@ -424,7 +424,7 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
                         )}
                     </div>
                     <div className="p-6">
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+                        <div className="grid grid-cols-2 items-stretch gap-3 md:grid-cols-3 lg:grid-cols-6">
                             {suggestedProducts.map((suggestedProduct) => (
                                 <ProductCard key={suggestedProduct._id} product={suggestedProduct} />
                             ))}

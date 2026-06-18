@@ -3,7 +3,7 @@ import { assets } from "@/assets/assets"
 
 import axios from "axios"
 import Image from "next/image"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { toast } from "react-hot-toast"
 import { useRouter } from "next/navigation"
 import { useEditor, EditorContent } from '@tiptap/react'
@@ -395,11 +395,11 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
         const [isSlugManuallyEdited, setIsSlugManuallyEdited] = useState(false);
         const [images, setImages] = useState({ "1": null, "2": null, "3": null, "4": null, "5": null, "6": null, "7": null, "8": null });
         const [productInfo, setProductInfo] = useState({
-            name: '', nameAr: '', slug: '', brand: '', brandAr: '', shortDescription: '', shortDescriptionAr: '', shortDescription2: '', specTableEnabled: false, specTableTitle: 'Product information', specTableColumns: ['Property', 'Value'], specTableRows: [['', '']], description: '', descriptionAr: '', AED: '', price: '', category: '', sku: '', stockQuantity: 50, colors: [], sizes: [], fastDelivery: false, freeShippingEligible: false, allowReturn: true, allowReplacement: true, reviews: [], badges: [], imageAspectRatio: '1:1', tags: [], seoTitle: '', seoDescription: '', seoKeywords: [], deliveredBy: '', soldBy: '', paymentInfo: ''
+            name: '', nameAr: '', slug: '', brand: '', brandAr: '', shortDescription: '', shortDescriptionAr: '', shortDescription2: '', specTableEnabled: false, specTableTitle: 'Product information', specTableColumns: ['Property', 'Value'], specTableRows: [['', '']], description: '', descriptionAr: '', AED: '', price: '', category: '', sku: '', stockQuantity: 50, colors: [], sizes: [], fastDelivery: false, freeShippingEligible: false, allowReturn: true, allowReplacement: true, reviews: [], badges: [], imageAspectRatio: '1:1', cardVideoPreviewEnabled: true, cardVideoPreviewDelaySec: 24, tags: [], seoTitle: '', seoDescription: '', seoKeywords: [], deliveredBy: '', soldBy: '', paymentInfo: ''
         });
         const [tagInput, setTagInput] = useState('');
         const [seoKeywordInput, setSeoKeywordInput] = useState('');
-        const [showArabic, setShowArabic] = useState(false);
+        const [showArabic, setShowArabic] = useState(true);
         const [loading, setLoading] = useState(false);
         const [reviewInput, setReviewInput] = useState({ name: '', rating: 5, comment: '', image: null });
         const aspectRatioOptions = ['1:1', '4:5', '3:4', '16:9'];
@@ -663,6 +663,8 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 reviews: product.reviews || [],
                 badges: product.attributes?.badges || [],
                 imageAspectRatio: product.imageAspectRatio || '1:1',
+                cardVideoPreviewEnabled: product.cardVideoPreviewEnabled !== false,
+                cardVideoPreviewDelaySec: Number(product.cardVideoPreviewDelaySec) || 24,
                 tags: Array.isArray(product.tags) ? product.tags : [],
                 seoTitle: product.seoTitle || '',
                 seoDescription: product.seoDescription || '',
@@ -1091,12 +1093,12 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
 
             toast.success(
                 data?.imageEnhancement?.enhancedCount
-                    ? `Imported with Gemini AI and enhanced ${data.imageEnhancement.enhancedCount} image(s). Review before saving.`
+                    ? `Imported ${imported.images?.length || 0} image(s) with Gemini AI enhancement on ${data.imageEnhancement.enhancedCount}. Review before saving.`
                     : data?.imageEnhancement?.skipped
-                        ? `Imported product details. Image enhancement was skipped — original images kept.`
+                        ? `Imported ${imported.images?.length || 0} image(s). Image enhancement was skipped — original images kept.`
                     : data?.aiProvider === 'gemini'
-                        ? `Imported product details with Gemini AI from ${data?.source || 'website'}. Review before saving.`
-                        : `Imported product details from ${data?.source || 'website'}. Review before saving.`
+                        ? `Imported ${imported.images?.length || 0} image(s) and product details with Gemini AI from ${data?.source || 'website'}. Review before saving.`
+                        : `Imported ${imported.images?.length || 0} image(s) and product details from ${data?.source || 'website'}. Review before saving.`
             );
         } catch (error) {
             const status = Number(error?.response?.status);
@@ -1121,6 +1123,23 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
         setReviewInput({ name: "", rating: 5, comment: "", image: null })
         toast.success("Review added ✅")
     }
+
+    const hasPrimaryVideoWithPoster = useMemo(() => {
+        const first = images['1']
+        if (!first) return false
+
+        const firstIsVideo = typeof first === 'string'
+            ? isVideoSource(first)
+            : first?.type === 'video' || isVideoSource(first?.preview)
+
+        if (!firstIsVideo) return false
+
+        return Object.entries(images).some(([slot, img]) => {
+            if (slot === '1' || !img) return false
+            if (typeof img === 'string') return !isVideoSource(img)
+            return img.type !== 'video' && !isVideoSource(img?.preview)
+        })
+    }, [images])
 
     const variantImageOptions = Object.entries(images)
         .filter(([, img]) => {
@@ -1697,7 +1716,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 <div className="rounded-2xl border border-slate-200 bg-slate-50/80 shadow-[0_8px_24px_rgba(15,23,42,0.06)] overflow-hidden">
                     <div className="flex items-center gap-2 px-4 py-3 bg-white border-b border-slate-200">
                         <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-100 text-blue-700 text-xs">AI</span>
-                        <h3 className="text-sm font-semibold text-slate-800 tracking-wide">Gemini AI Auto Fill</h3>
+                        <h3 className="text-sm font-semibold text-slate-800 tracking-wide">Store1920 AI Auto Fill</h3>
                     </div>
                     <div className="p-4 space-y-3">
                         <p className="text-xs text-gray-600">
@@ -1714,7 +1733,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-200"
                                 placeholder="Example: material is stainless steel, 2-year warranty, package includes charger and carry case"
                             />
-                            <p className="mt-1 text-xs text-gray-500">This helps Gemini include product-specific details you want in the final listing.</p>
+                            <p className="mt-1 text-xs text-gray-500">This helps Store1920 AI include product-specific details you want in the final listing.</p>
                         </div>
                         <button
                             type="button"
@@ -1722,7 +1741,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                             disabled={aiLoading}
                             className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-60"
                         >
-                            {aiLoading ? 'Auto filling with Gemini...' : 'Auto Fill With Gemini AI'}
+                            {aiLoading ? 'Auto filling with Store1920 AI...' : 'Auto Fill With Store1920 AI'}
                         </button>
                     </div>
                 </div>
@@ -1748,6 +1767,46 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                         ))}
                         <span className="text-xs text-gray-500">Pick how product images render on the product page.</span>
                     </div>
+                    {hasPrimaryVideoWithPoster ? (
+                        <div className="mb-3 rounded-lg border border-blue-100 bg-blue-50/70 p-3">
+                            <label className="flex items-start gap-2 text-sm text-gray-800">
+                                <input
+                                    type="checkbox"
+                                    checked={productInfo.cardVideoPreviewEnabled !== false}
+                                    onChange={(e) => setProductInfo((prev) => ({
+                                        ...prev,
+                                        cardVideoPreviewEnabled: e.target.checked,
+                                    }))}
+                                    className="mt-0.5"
+                                />
+                                <span>
+                                    <span className="font-semibold">Delay video on product cards</span>
+                                    <span className="mt-1 block text-xs text-gray-600">
+                                        Show Media 2 first on cards across the website. After the video finishes loading, wait then autoplay the video.
+                                    </span>
+                                </span>
+                            </label>
+                            {productInfo.cardVideoPreviewEnabled !== false ? (
+                                <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+                                    <label htmlFor="cardVideoPreviewDelaySec" className="font-medium text-gray-700">
+                                        Delay after video loads (seconds)
+                                    </label>
+                                    <input
+                                        id="cardVideoPreviewDelaySec"
+                                        type="number"
+                                        min={0}
+                                        max={120}
+                                        value={productInfo.cardVideoPreviewDelaySec ?? 24}
+                                        onChange={(e) => setProductInfo((prev) => ({
+                                            ...prev,
+                                            cardVideoPreviewDelaySec: Math.min(120, Math.max(0, Number(e.target.value) || 0)),
+                                        }))}
+                                        className="w-24 rounded-md border border-gray-300 px-3 py-1.5"
+                                    />
+                                </div>
+                            ) : null}
+                        </div>
+                    ) : null}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                         {Object.keys(images).map((key) => {
                             const img = images[key]

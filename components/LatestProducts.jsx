@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import axios from 'axios'
 import ProductCard from '@/components/ProductCard'
-import { HOME_SECTION_CLASS } from '@/lib/storefrontCarousel'
+import { HOME_SECTION_CLASS, PRODUCT_CARD_GRID_CLASS, PRODUCT_CARD_CELL_CLASS } from '@/lib/storefrontCarousel'
 import { useAuth } from '@/lib/useAuth'
 import { useStorefrontI18n } from '@/lib/useStorefrontI18n'
 import Title from './Title'
@@ -235,24 +235,17 @@ const BestSelling = ({
       />
 
       <div
-        className={layoutSettings.style === 'list' ? 'mt-6 grid grid-cols-1 gap-3' : 'featured-products-grid mt-6 gap-2'}
+        className={layoutSettings.style === 'list' ? 'mt-6 grid grid-cols-1 gap-3' : `featured-products-grid mt-6 ${PRODUCT_CARD_GRID_CLASS}`}
         style={layoutSettings.style === 'list' ? undefined : { '--desktop-cols': String(Math.max(1, Math.min(10, Number(layoutSettings.itemsPerRow || DEFAULT_ITEMS_PER_ROW)))) }}
       >
         {isLoading && featuredProducts.length === 0
           ? Array(visibleCount).fill(0).map((_, idx) => (
-              <div key={idx} className="animate-pulse rounded-[2px] bg-white shadow-sm">
-                <div className="h-36 w-full rounded-t-[2px] bg-gray-200 sm:h-64" />
-                <div className="p-2">
-                  <div className="mb-2 h-4 rounded bg-gray-200" />
-                  <div className="mb-3 flex items-center gap-1">
-                    {Array(5).fill(0).map((_, i) => (
-                      <div key={i} className="h-3 w-3 rounded bg-gray-200" />
-                    ))}
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="h-4 w-16 rounded bg-gray-200" />
-                    <div className="h-8 w-8 rounded-full bg-gray-200 sm:h-10 sm:w-10" />
-                  </div>
+              <div key={idx} className={`${PRODUCT_CARD_CELL_CLASS} animate-pulse overflow-hidden rounded-[2px] border border-slate-200 bg-white`}>
+                <div className="aspect-square w-full bg-gray-200" />
+                <div className="space-y-2 p-2.5">
+                  <div className="h-4 rounded bg-gray-200" />
+                  <div className="h-4 w-2/3 rounded bg-gray-200" />
+                  <div className="h-3 w-1/2 rounded bg-gray-200" />
                 </div>
               </div>
             ))
@@ -262,17 +255,6 @@ const BestSelling = ({
       </div>
 
       <style jsx>{`
-        .featured-products-grid {
-          display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-
-        @media (min-width: 640px) {
-          .featured-products-grid {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-          }
-        }
-
         @media (min-width: 768px) {
           .featured-products-grid {
             grid-template-columns: repeat(var(--desktop-cols), minmax(0, 1fr));

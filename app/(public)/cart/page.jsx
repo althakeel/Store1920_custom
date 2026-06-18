@@ -36,30 +36,7 @@ export default function Cart() {
     const [deletingKeys, setDeletingKeys] = useState({});
 
 
-    // Ensure products list is loaded for cart display
-    useEffect(() => {
-        async function fetchProductsIfNeeded() {
-            // Load more products if we don't have enough (cart items may not be in limited list)
-            if (products.length < 100) {
-                try {
-                    const { data } = await axios.get("/api/products?limit=10000");
-                    if (data.products && Array.isArray(data.products)) {
-                        dispatch({ type: "product/setProduct", payload: data.products });
-                        console.log('[Cart] Loaded', data.products.length, 'products from API');
-                    }
-                    setProductsLoaded(true);
-                } catch (e) {
-                    console.error('[Cart] Failed to load products:', e);
-                    setProductsLoaded(true);
-                }
-            } else {
-                setProductsLoaded(true);
-            }
-        }
-        fetchProductsIfNeeded();
-    }, [products.length, dispatch]);
-
-    // Fetch any cart products missing from the current product list
+    // Load only cart product IDs via batch API (never download full catalog)
     useEffect(() => {
         const normalizedIds = [...new Set(
             Object.entries(cartItems || {})
@@ -69,12 +46,20 @@ export default function Cart() {
                     return trimmed.length > 0 && trimmed !== 'undefined' && trimmed !== 'null';
                 })
         )];
-        if (normalizedIds.length === 0) return;
+
+        if (normalizedIds.length === 0) {
+            setProductsLoaded(true);
+            return undefined;
+        }
 
         const missingIds = normalizedIds.filter(
             (id) => !products?.some((p) => String(p._id) === String(id))
         );
-        if (missingIds.length === 0) return;
+
+        if (missingIds.length === 0) {
+            setProductsLoaded(true);
+            return undefined;
+        }
 
         let ignore = false;
         const loadMissingProducts = async () => {
@@ -97,6 +82,8 @@ export default function Cart() {
                 if (details || error?.message) {
                     console.warn('[Cart] Missing products fetch skipped:', details || error.message);
                 }
+            } finally {
+                if (!ignore) setProductsLoaded(true);
             }
         };
 
@@ -468,7 +455,7 @@ export default function Cart() {
                             <h2 className="text-2xl sm:text-3xl font-bold text-slate-800">Recently Ordered</h2>
                         </div>
                         <p className="text-slate-500 mb-6">Products from your recent orders</p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+                        <div className="grid grid-cols-1 items-stretch gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
                             {recentOrders.map((product) => (
                                 <ProductCard key={product._id} product={product} />
                             ))}

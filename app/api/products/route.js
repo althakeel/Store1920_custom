@@ -195,8 +195,8 @@ export async function GET(request){
 
         let products = [];
         const listProjection = slim
-            ? 'name nameAr slug price mrp AED images category categories inStock stockQuantity fastDelivery freeShippingEligible imageAspectRatio createdAt'
-            : 'name nameAr slug description descriptionAr shortDescription shortDescriptionAr brand brandAr price mrp AED images category categories sku hasVariants variants attributes fastDelivery freeShippingEligible stockQuantity imageAspectRatio createdAt';
+            ? 'name nameAr slug price mrp AED images category categories inStock stockQuantity fastDelivery freeShippingEligible imageAspectRatio cardVideoPreviewEnabled cardVideoPreviewDelaySec createdAt'
+            : 'name nameAr slug description descriptionAr shortDescription shortDescriptionAr brand brandAr price mrp AED images category categories sku hasVariants variants attributes fastDelivery freeShippingEligible stockQuantity imageAspectRatio cardVideoPreviewEnabled cardVideoPreviewDelaySec createdAt';
         try {
             products = await Product.find(matchStage)
                 .select(listProjection)
@@ -241,9 +241,9 @@ export async function GET(request){
                 : null
         }});
 
-        // FIX N+1: Batch fetch all ratings in ONE query
+        // FIX N+1: Batch fetch all ratings in ONE query (skip for slim list views — much faster shop/catalog)
         const ratingsMap = {};
-        if (products.length > 0) {
+        if (!slim && products.length > 0) {
             try {
                 const productIds = products.map(p => String(p._id));
                 const allRatings = await Rating.find({ 
@@ -264,6 +264,15 @@ export async function GET(request){
 
         // Enrich with ratings - synchronous, no async overhead
         const enrichedProducts = products.map(product => {
+            if (slim) {
+                return {
+                    ...product,
+                    label: product.discount && product.discount > 0 ? `${product.discount}% Off` : null,
+                    labelType: product.discount && product.discount > 0 ? 'offer' : null,
+                    ratingCount: 0,
+                    averageRating: 0,
+                };
+            }
             try {
                 const reviews = ratingsMap[String(product._id)] || [];
                 const ratingCount = reviews.length;

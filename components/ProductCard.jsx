@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { FaStar } from 'react-icons/fa'
@@ -14,62 +14,13 @@ import { useStorefrontI18n } from '@/lib/useStorefrontI18n'
 
 import toast from 'react-hot-toast'
 import { PLACEHOLDER_IMAGE as PLACEHOLDER } from '@/lib/mediaUrls'
-const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.ogg', '.mov', '.m4v', '.avi', '.mkv']
-
-const normalizeImages = (images) => {
-  if (Array.isArray(images)) {
-    return images.filter((img) => {
-      if (typeof img === 'string') return img.trim().length > 0
-      if (typeof img === 'object' && img !== null) {
-        return img.url || img.src || img.path || img.data || false
-      }
-      return false
-    })
-  }
-
-  if (images === null || images === undefined) return []
-
-  if (typeof images === 'object') {
-    if (images.url || images.src || images.path || images.data) return [images]
-    return []
-  }
-
-  if (typeof images === 'string') {
-    return images.trim().length > 0 ? [images] : []
-  }
-
-  return []
-}
-
-const getImageSrc = (product, index = 0) => {
-  const imagesArray = normalizeImages(product?.images)
-  if (imagesArray.length > index) {
-    const current = imagesArray[index]
-    if (typeof current === 'object' && current?.url) return current.url
-    if (typeof current === 'object' && current?.src) return current.src
-    if (typeof current === 'string' && current.trim() !== '') return current
-  }
-
-  if (index === 0 && product?.image) return product.image
-  return PLACEHOLDER
-}
-
-const getPrimaryMedia = (product) => {
-  const imagesArray = normalizeImages(product?.images)
-  if (!imagesArray.length && !product?.image) {
-    return { type: 'image', src: PLACEHOLDER }
-  }
-
-  const raw = getImageSrc(product, 0)
-  const src = (raw || '').toString().trim() || PLACEHOLDER
-  const normalized = src.toLowerCase().split('?')[0]
-  const isVideo = VIDEO_EXTENSIONS.some((ext) => normalized.endsWith(ext))
-
-  return {
-    type: isVideo ? 'video' : 'image',
-    src,
-  }
-}
+import {
+  getImageUrlAt,
+  getProductThumbnailUrl,
+  normalizeProductImages,
+  resolveCardVideoPreview,
+} from '@/lib/productMedia'
+import { PRODUCT_CARD_CELL_CLASS, PRODUCT_CARD_SHELL_CLASS } from '@/lib/storefrontCarousel'
 
 const parseAmount = (value) => {
   const num = Number(String(value ?? '').replace(/[^0-9.]/g, ''))
@@ -145,6 +96,8 @@ const ProductCard = ({
   const { t } = useStorefrontI18n()
   const cartItems = useSelector((state) => state.cart.cartItems)
   const [hovered, setHovered] = useState(false)
+  const [showCardVideo, setShowCardVideo] = useState(false)
+  const cardVideoRef = useRef(null)
   const [reviews, setReviews] = useState([])
 
   const cartEntry = cartItems[product._id]
@@ -212,17 +165,46 @@ const ProductCard = ({
     : (typeof product.ratingCount === 'number' ? product.ratingCount : 0)
 
   const fallbackName = product.name || product.title || t('common.untitledProduct')
-  const productName = fallbackName.length > 30
-    ? `${fallbackName.slice(0, 27)}...`
-    : fallbackName
+  const productName = fallbackName
 
-  const primaryImage = getImageSrc(product, 0)
-  const secondaryImage = getImageSrc(product, 1)
-  const hasSecondary = secondaryImage !== PLACEHOLDER &&
+  const primaryImage = getProductThumbnailUrl(product)
+  const secondaryImage = getImageUrlAt(product?.images, 1)
+  const cardPreview = resolveCardVideoPreview(product)
+  const hasSecondary = cardPreview.type === 'image' &&
+    secondaryImage !== PLACEHOLDER &&
     secondaryImage !== primaryImage &&
-    normalizeImages(product.images).length > 1
+    normalizeProductImages(product.images).length > 1
 
-  const media = getPrimaryMedia(product)
+  useEffect(() => {
+    setShowCardVideo(false)
+  }, [product._id, cardPreview.type, cardPreview.videoSrc])
+
+  useEffect(() => {
+    if (cardPreview.type !== 'delayed-video') return undefined
+
+    const video = cardVideoRef.current
+    if (!video) return undefined
+
+    let delayTimer
+
+    const startDelayTimer = () => {
+      delayTimer = window.setTimeout(() => {
+        setShowCardVideo(true)
+      }, cardPreview.delayMs)
+    }
+
+    if (video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
+      startDelayTimer()
+    } else {
+      video.addEventListener('canplaythrough', startDelayTimer, { once: true })
+      video.load()
+    }
+
+    return () => {
+      if (delayTimer) window.clearTimeout(delayTimer)
+      video.removeEventListener('canplaythrough', startDelayTimer)
+    }
+  }, [cardPreview.type, cardPreview.delayMs, cardPreview.videoSrc])
 
   const pushDataLayerAddToCart = () => {
     if (typeof window === 'undefined') return
@@ -333,6 +315,10 @@ const ProductCard = ({
   }
 
   const hasCarouselWidth = /flex-\[0_0|flex-shrink-0|shrink-0|w-\[calc|min-w-\[calc|basis-\[calc/.test(className)
+  const hasCustomGridWidth = /w-\[calc/.test(className)
+  const imageAspectClass = hasCarouselWidth
+    ? getAspectRatioClass(product.imageAspectRatio || product.aspectRatio)
+    : 'aspect-square'
 
   return (
     <Link
@@ -342,13 +328,40 @@ const ProductCard = ({
       onClick={onCardClick}
       onMouseEnter={hasSecondary ? () => setHovered(true) : undefined}
       onMouseLeave={hasSecondary ? () => setHovered(false) : undefined}
-      className={`group flex h-full flex-col overflow-hidden rounded-[2px] border border-slate-200/80 bg-white transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md ${hasCarouselWidth ? '' : 'w-full'} ${className}`.trim()}
+      className={`group ${PRODUCT_CARD_SHELL_CLASS} transition-colors duration-200 ${hasCarouselWidth ? 'hover:-translate-y-0.5 hover:shadow-md' : 'shadow-none hover:bg-slate-50/80'} ${hasCarouselWidth ? '' : hasCustomGridWidth ? 'min-w-0' : PRODUCT_CARD_CELL_CLASS} ${className}`.trim()}
     >
-      <div className={`relative w-full overflow-hidden bg-gradient-to-b from-white to-gray-100 ${getAspectRatioClass(product.aspectRatio)}`}>
-        {media.type === 'video' ? (
+      <div className={`relative w-full shrink-0 overflow-hidden bg-white ${imageAspectClass}`}>
+        {cardPreview.type === 'delayed-video' && !showCardVideo ? (
+          <>
+            <Image
+              src={cardPreview.imageSrc}
+              alt={productName}
+              fill
+              className="object-cover object-center"
+              sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 16vw"
+              priority={priorityImages}
+              loading={priorityImages ? undefined : 'lazy'}
+              onError={(e) => {
+                if (e.currentTarget.src !== PLACEHOLDER) {
+                  e.currentTarget.src = PLACEHOLDER
+                }
+              }}
+            />
+            <video
+              ref={cardVideoRef}
+              src={cardPreview.videoSrc}
+              className="pointer-events-none absolute h-0 w-0 opacity-0"
+              muted
+              playsInline
+              preload="auto"
+              aria-hidden="true"
+            />
+          </>
+        ) : cardPreview.type === 'video' || (cardPreview.type === 'delayed-video' && showCardVideo) ? (
           <video
-            src={media.src}
-            className="h-full w-full object-contain p-2 sm:p-3"
+            ref={cardPreview.type === 'delayed-video' ? cardVideoRef : undefined}
+            src={cardPreview.videoSrc}
+            className="absolute inset-0 h-full w-full min-h-full min-w-full object-cover object-center"
             muted
             loop
             autoPlay
@@ -361,7 +374,7 @@ const ProductCard = ({
               src={primaryImage}
               alt={productName}
               fill
-              className={`object-contain p-2 sm:p-3 ${hasSecondary ? 'transition-opacity duration-500' : ''} ${hasSecondary && hovered ? 'opacity-0' : 'opacity-100'}`}
+              className={`object-cover object-center ${hasSecondary ? 'transition-opacity duration-500' : ''} ${hasSecondary && hovered ? 'opacity-0' : 'opacity-100'}`}
               sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 16vw"
               priority={priorityImages}
               loading={priorityImages ? undefined : 'lazy'}
@@ -376,7 +389,7 @@ const ProductCard = ({
                 src={secondaryImage}
                 alt={productName}
                 fill
-                className={`absolute inset-0 object-contain p-2 sm:p-3 transition-opacity duration-500 ${hovered ? 'opacity-100' : 'opacity-0'}`}
+                className={`absolute inset-0 object-cover object-center transition-opacity duration-500 ${hovered ? 'opacity-100' : 'opacity-0'}`}
                 sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 16vw"
                 loading="lazy"
                 onError={(e) => {
@@ -392,8 +405,8 @@ const ProductCard = ({
         {renderCartControl()}
       </div>
 
-      <div className="flex flex-grow flex-col p-2.5 sm:p-3">
-        <h3 className="mb-1.5 truncate text-xs font-semibold leading-tight text-slate-900 sm:text-sm">
+      <div className="flex min-h-0 flex-1 flex-col p-2 sm:p-2.5">
+        <h3 className="mb-1.5 line-clamp-2 min-h-[2.5em] text-xs font-semibold leading-tight text-slate-900 sm:min-h-[2.75em] sm:text-sm">
           {productName}
         </h3>
 

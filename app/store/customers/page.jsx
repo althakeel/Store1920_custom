@@ -4,6 +4,8 @@ import { useAuth } from '@/lib/useAuth';
 
 export const dynamic = 'force-dynamic'
 import Loading from "@/components/Loading"
+import PageSkeleton from "@/components/PageSkeleton"
+import { readPageCache, writePageCache } from "@/lib/storePageCache"
 
 import axios from "axios"
 import { Calendar, Mail, Package, Search, ShoppingBag, TrendingUp, User, X } from "lucide-react"
@@ -26,13 +28,17 @@ export default function CustomersPage() {
     const [walletDeductAmount, setWalletDeductAmount] = useState('')
     const [viewMode, setViewMode] = useState('all') // 'all' or 'registered'
 
-    const fetchCustomers = async () => {
+    const fetchCustomers = async ({ silent = false } = {}) => {
         try {
-            const token = await getToken()
+            let token = await getToken(false)
+            if (!token) token = await getToken(true)
+            if (!silent && !readPageCache('store-customers')) setLoading(true)
+
             const { data } = await axios.get('/api/store/customers', {
                 headers: { Authorization: `Bearer ${token}` }
             })
             setCustomers(data.customers)
+            writePageCache('store-customers', { customers: data.customers })
         } catch (error) {
             toast.error(error?.response?.data?.error || error.message)
         }
@@ -123,7 +129,15 @@ export default function CustomersPage() {
     }
 
     useEffect(() => {
-        fetchCustomers()
+        const cached = readPageCache('store-customers');
+        if (cached?.customers?.length) {
+            setCustomers(cached.customers);
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchCustomers({ silent: Boolean(readPageCache('store-customers')) })
     }, [])
 
     // Filter customers based on search query
@@ -139,7 +153,7 @@ export default function CustomersPage() {
 
     const registeredCount = customers.filter(c => c.email && !c.isGuest).length;
 
-    if (loading) return <Loading />
+    if (loading && !customers.length) return <PageSkeleton rows={8} />
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 -m-8 p-8">

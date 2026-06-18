@@ -1,3 +1,4 @@
+import User from '@/models/User';
 import connectDB from '@/lib/mongodb';
 import authSeller from '@/middlewares/authSeller';
 import CustomerBehaviorEvent from '@/models/CustomerBehaviorEvent';
@@ -46,10 +47,11 @@ export async function GET(request) {
             'product_view_ping',
             'product_view_end',
             'purchase',
+            'identity_link',
           ],
         },
       })
-        .select('eventType context createdAt')
+        .select('eventType context identifier createdAt')
         .sort({ createdAt: -1 })
         .limit(5000)
         .lean(),
@@ -78,7 +80,20 @@ export async function GET(request) {
 
     const productMap = new Map(products.map((product) => [String(product._id), product]));
 
-    const analytics = buildLiveAnalytics({ events, orders, productMap });
+    const firebaseUids = Array.from(new Set(
+      events
+        .map((event) => event.identifier?.firebaseUid || event.identifier?.userId)
+        .filter(Boolean)
+        .map(String)
+    ));
+
+    const users = firebaseUids.length
+      ? await User.find({ firebaseUid: { $in: firebaseUids } }).select('firebaseUid name email').lean()
+      : [];
+
+    const userMap = new Map(users.map((user) => [String(user.firebaseUid), user]));
+
+    const analytics = buildLiveAnalytics({ events, orders, productMap, userMap });
 
     return NextResponse.json({
       updatedAt: new Date().toISOString(),

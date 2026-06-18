@@ -26,6 +26,8 @@ export const dynamic = 'force-dynamic'
 import { useEffect, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import Loading from "@/components/Loading"
+import PageSkeleton from "@/components/PageSkeleton"
+import { readPageCache, writePageCache } from "@/lib/storePageCache"
 
 import axios from "axios"
 import toast from "react-hot-toast"
@@ -637,14 +639,17 @@ export default function StoreOrders() {
         return resolvedPaid;
     };
 
-    const fetchOrders = async () => {
+    const fetchOrders = async ({ silent = false } = {}) => {
         try {
-            const token = await getToken();
+            let token = await getToken(false);
+            if (!token) token = await getToken(true);
             if (!token) {
                 toast.error("Invalid session. Please sign in again.");
                 setLoading(false);
                 return;
             }
+            if (!silent && !readPageCache('store-orders')) setLoading(true);
+
             const { data } = await axios.get('/api/store/orders', {headers: { Authorization: `Bearer ${token}` }});
             console.log('[ORDERS DEBUG] Raw orders data:', data.orders);
             
@@ -691,6 +696,7 @@ export default function StoreOrders() {
             }
 
             setOrders(syncedOrders);
+            writePageCache('store-orders', { orders: syncedOrders, fetchedAt: Date.now() });
             setSelectedOrderIds((prev) => prev.filter((id) => syncedOrders.some((order) => String(order._id) === id)));
         } catch (error) {
             toast.error(error?.response?.data?.error || error.message);
@@ -700,13 +706,21 @@ export default function StoreOrders() {
     };
 
     useEffect(() => {
+        const cached = readPageCache('store-orders');
+        if (cached?.orders?.length) {
+            setOrders(cached.orders);
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
         if (authLoading) return; // Wait for auth to load
         if (!user) {
             toast.error("You must be signed in as a seller to view orders.");
             setLoading(false);
             return;
         }
-        fetchOrders();
+        fetchOrders({ silent: Boolean(readPageCache('store-orders')) });
         // eslint-disable-next-line
     }, [authLoading, user]);
 
@@ -1254,7 +1268,7 @@ export default function StoreOrders() {
     };
 
 
-    if (authLoading || loading) return <Loading />;
+    if (authLoading || (loading && !orders.length)) return <PageSkeleton rows={8} />;
 
     return (
         <>

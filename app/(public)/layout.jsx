@@ -2,41 +2,50 @@
 'use client'
 import MobileBottomNav from "@/components/MobileBottomNav";
 import GuestOrderLinker from "@/components/GuestOrderLinker";
-import UtmTracker from "@/components/UtmTracker";
-import AdsAttribution from "@/components/AdsAttribution";
-import CustomerSessionTracker from "@/components/CustomerSessionTracker";
-import { useDispatch, useSelector } from "react-redux";
-import { useEffect, Suspense } from "react";
+import dynamic from "next/dynamic";
+import { useEffect, Suspense, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { fetchProducts } from "@/lib/features/product/productSlice";
+
+const UtmTracker = dynamic(() => import("@/components/UtmTracker"), { ssr: false });
+const AdsAttribution = dynamic(() => import("@/components/AdsAttribution"), { ssr: false });
+const CustomerSessionTracker = dynamic(() => import("@/components/CustomerSessionTracker"), { ssr: false });
+const HeatmapClickTracker = dynamic(() => import("@/components/HeatmapClickTracker"), { ssr: false });
+
+function DeferredTrackers() {
+    const [ready, setReady] = useState(false);
+
+    useEffect(() => {
+        const start = () => setReady(true);
+        if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+            const id = window.requestIdleCallback(start, { timeout: 2500 });
+            return () => window.cancelIdleCallback(id);
+        }
+        const timer = setTimeout(start, 1500);
+        return () => clearTimeout(timer);
+    }, []);
+
+    if (!ready) return null;
+
+    return (
+        <>
+            <UtmTracker />
+            <AdsAttribution />
+            <CustomerSessionTracker />
+            <HeatmapClickTracker />
+        </>
+    );
+}
 
 function PublicLayoutContent({ children }) {
-    const dispatch = useDispatch();
-    const { cartItems } = useSelector((state) => state.cart);
     const pathname = usePathname();
-    const searchParams = useSearchParams();
     const isHomePage = pathname === '/';
     const isCheckout = pathname === '/checkout';
     const isCartPage = pathname === '/cart';
-    const isShopPage = pathname === '/shop';
-
-    useEffect(() => { 
-        // Homepage and shop load their own product data; avoid overwriting shop catalog in Redux.
-        if (isHomePage || isShopPage) return undefined;
-
-        const timer = setTimeout(() => {
-            dispatch(fetchProducts({ limit: 100 }));
-        }, 100);
-        return () => clearTimeout(timer);
-    }, [dispatch, isHomePage, isShopPage]);
 
     return (
         <div className={`flex flex-col ${isCartPage ? '' : 'min-h-screen'}`}>
             <GuestOrderLinker />
-            <UtmTracker />
-            <AdsAttribution />
-            <CustomerSessionTracker />
-            {/* <Banner />/ */}
+            <DeferredTrackers />
             <main className={`flex-1 ${isHomePage ? 'pb-8' : 'pb-20'} lg:pb-0`}>{children}</main>
             {!isHomePage && !isCheckout && <MobileBottomNav />}
         </div>

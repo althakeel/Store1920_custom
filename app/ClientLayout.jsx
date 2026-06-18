@@ -1,14 +1,40 @@
 "use client";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import dynamic from "next/dynamic";
 import ReduxProvider from "@/lib/ReduxProvider";
 import Navbar from "@/components/Navbar";
 import TopBar from "@/components/TopBar";
 import Footer from "@/components/Footer";
 import SupportBar from "@/components/SupportBar";
-import SpinWheelWidget from "@/components/SpinWheelWidget";
-import GiveawayCartManager from "@/components/GiveawayCartManager";
 import DynamicMetaTags from "@/components/DynamicMetaTags";
 import { Toaster } from "react-hot-toast";
+
+const SpinWheelWidget = dynamic(() => import("@/components/SpinWheelWidget"), { ssr: false });
+const GiveawayCartManager = dynamic(() => import("@/components/GiveawayCartManager"), { ssr: false });
+
+function DeferredWidgets() {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    const start = () => setReady(true);
+    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+      const id = window.requestIdleCallback(start, { timeout: 3000 });
+      return () => window.cancelIdleCallback(id);
+    }
+    const timer = setTimeout(start, 2000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (!ready) return null;
+
+  return (
+    <>
+      <GiveawayCartManager />
+      <SpinWheelWidget />
+    </>
+  );
+}
 
 const STOREFRONT_HIDDEN_PREFIXES = ["/store", "/admin"];
 
@@ -34,11 +60,10 @@ export default function ClientLayout({ children, initialStorefrontLanguage = 'en
       )}
       <Toaster />
       <DynamicMetaTags />
-      <GiveawayCartManager />
       {children}
       {!hideStorefrontChrome && (
         <>
-          <SpinWheelWidget />
+          <DeferredWidgets />
           <SupportBar />
           <Footer />
         </>

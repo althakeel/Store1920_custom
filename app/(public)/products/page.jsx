@@ -12,7 +12,7 @@ function ProductsContent() {
 
     // Always fetch latest products on mount
     useEffect(() => {
-        dispatch(fetchProducts({}))
+        dispatch(fetchProducts({ limit: 200, slim: true }))
     }, [dispatch])
     const searchParams = useSearchParams()
     const categoryParam = searchParams.get('category')
@@ -342,7 +342,7 @@ function ProductsContent() {
                     {/* Products Grid */}
                     <div className="flex-1">
                         {filteredProducts.length > 0 && (
-                            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+                            <div className="grid grid-cols-2 items-stretch gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
                                 {filteredProducts.map((product) => (
                                     <ProductCard key={product._id || product.id || product.slug} product={product} />
                                 ))}

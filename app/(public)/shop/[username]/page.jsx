@@ -65,7 +65,7 @@ export default function StoreShop() {
             {/* Products */}
             <div className="max-w-[1400px] mx-auto px-4 sm:px-6 mb-40">
                 <h1 className="text-2xl mt-12">Shop <span className="text-slate-800 font-medium">Products</span></h1>
-                <div className="mt-5 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 mx-auto">
+                <div className="mt-5 grid grid-cols-2 items-stretch gap-3 md:grid-cols-3 lg:grid-cols-6 mx-auto">
                     {products.map((product) => <ProductCard key={product.id} product={product} />)}
                 </div>
             </div>

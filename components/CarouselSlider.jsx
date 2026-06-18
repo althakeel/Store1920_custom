@@ -6,6 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Heart, ChevronRight } from "lucide-react";
 import { useStorefrontMarket } from "@/lib/useStorefrontMarket";
+import { getProductThumbnailUrl } from '@/lib/productMedia';
 import Banner from '../assets/common/bann.jpg'
 
 export default function CarouselSlider() {
@@ -275,7 +276,7 @@ export default function CarouselSlider() {
               ))
             ) : products.length > 0 ? (
               products.map((product) => {
-                const imageSrc = product.images?.[0]?.url || product.images?.[0] || "/placeholder.png";
+                const imageSrc = getProductThumbnailUrl(product, { fallback: '/placeholder.png' });
                 const convertedPrice = convertPrice(Number(product.price) || 0);
                 return (
                   <Link

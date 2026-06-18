@@ -119,17 +119,6 @@ export default function SettingsPage() {
   const [inviteSending, setInviteSending] = useState(false);
   const [inviteLink, setInviteLink] = useState("");
   const [invitePermissions, setInvitePermissions] = useState(getDefaultPermissions());
-  const [createLoginOpen, setCreateLoginOpen] = useState(false);
-  const [creatingLogin, setCreatingLogin] = useState(false);
-  const [createLoginStatus, setCreateLoginStatus] = useState("");
-  const [newTeamUser, setNewTeamUser] = useState({
-    name: "",
-    username: "",
-    email: "",
-    password: "",
-    confirmPassword: "",
-    role: "member",
-  });
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -543,76 +532,6 @@ export default function SettingsPage() {
     }
   };
 
-  const handleCreateTeamLogin = async () => {
-    setCreateLoginStatus("");
-    setCreatingLogin(true);
-
-    if (!newTeamUser.name.trim() || !newTeamUser.username.trim() || !newTeamUser.email.trim()) {
-      setCreateLoginStatus("Name, username, and email are required.");
-      setCreatingLogin(false);
-      return;
-    }
-
-    const normalizedUsername = newTeamUser.username.trim().toLowerCase();
-    if (normalizedUsername.length < 3 || normalizedUsername.length > 30) {
-      setCreateLoginStatus("Username must be between 3 and 30 characters.");
-      setCreatingLogin(false);
-      return;
-    }
-
-    if (!/^[a-z0-9._-]+$/.test(normalizedUsername)) {
-      setCreateLoginStatus("Username can only use letters, numbers, dots, underscores, and hyphens.");
-      setCreatingLogin(false);
-      return;
-    }
-
-    if (!newTeamUser.password || newTeamUser.password.length < 6) {
-      setCreateLoginStatus("Password must be at least 6 characters.");
-      setCreatingLogin(false);
-      return;
-    }
-
-    if (newTeamUser.password !== newTeamUser.confirmPassword) {
-      setCreateLoginStatus("Passwords do not match.");
-      setCreatingLogin(false);
-      return;
-    }
-
-    try {
-      const token = await getToken();
-      const response = await axios.post(
-        "/api/store/users/create",
-        {
-          name: newTeamUser.name,
-          username: newTeamUser.username,
-          email: newTeamUser.email,
-          password: newTeamUser.password,
-          role: newTeamUser.role,
-          permissions: invitePermissions,
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
-      setCreateLoginStatus(
-        `${response.data.message} Share login at /store/login with username "${response.data.user?.username || newTeamUser.username}" or email "${newTeamUser.email}".`
-      );
-      toast.success("Team login created");
-      setNewTeamUser({
-        name: "",
-        username: "",
-        email: "",
-        password: "",
-        confirmPassword: "",
-        role: "member",
-      });
-      await fetchTeamMembers();
-    } catch (err) {
-      setCreateLoginStatus(err?.response?.data?.error || err.message);
-    } finally {
-      setCreatingLogin(false);
-    }
-  };
-
   const renderSmtpBlock = (title, subtitle, value, setValue, accent) => (
     <div className={`rounded-xl border p-4 ${accent}`}>
       <h4 className="text-sm font-semibold text-slate-900">{title}</h4>
@@ -812,13 +731,12 @@ export default function SettingsPage() {
     <div className="space-y-5">
       <SettingsCard
         title="Default access for new members"
-        description="Applied to email invites and new username logins."
+        description="Applied to email invites."
       >
         <PermissionPicker value={invitePermissions} onChange={setInvitePermissions} compact />
       </SettingsCard>
 
-      <div className="grid gap-5 xl:grid-cols-2">
-        <SettingsCard title="Invite by email" description="Send a link to join with Google or email.">
+      <SettingsCard title="Invite by email" description="Send a link to join with Google or email.">
           <div className="space-y-3">
             <Field label="Team member email">
               <input
@@ -866,52 +784,6 @@ export default function SettingsPage() {
             ) : null}
           </div>
         </SettingsCard>
-
-        <SettingsCard title="Create username login" description="For staff signing in at /store/login.">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-sm text-slate-500">Set a username and password for dashboard access.</p>
-            <button
-              type="button"
-              onClick={() => {
-                setCreateLoginOpen((open) => !open);
-                setCreateLoginStatus("");
-              }}
-              className="shrink-0 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
-            >
-              {createLoginOpen ? "Close" : "Open form"}
-            </button>
-          </div>
-
-          {createLoginOpen ? (
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              <input type="text" value={newTeamUser.name} onChange={(e) => setNewTeamUser((prev) => ({ ...prev, name: e.target.value }))} className={`${inputClass} md:col-span-2`} placeholder="Full name" />
-              <input type="text" value={newTeamUser.username} onChange={(e) => setNewTeamUser((prev) => ({ ...prev, username: e.target.value.toLowerCase() }))} className={inputClass} placeholder="Username" autoComplete="off" />
-              <input type="email" value={newTeamUser.email} onChange={(e) => setNewTeamUser((prev) => ({ ...prev, email: e.target.value }))} className={inputClass} placeholder="Email" />
-              <select value={newTeamUser.role} onChange={(e) => setNewTeamUser((prev) => ({ ...prev, role: e.target.value }))} className={inputClass}>
-                <option value="member">Member</option>
-                <option value="admin">Admin</option>
-              </select>
-              <input type="password" value={newTeamUser.password} onChange={(e) => setNewTeamUser((prev) => ({ ...prev, password: e.target.value }))} className={inputClass} placeholder="Password (min 6 chars)" minLength={6} />
-              <input type="password" value={newTeamUser.confirmPassword} onChange={(e) => setNewTeamUser((prev) => ({ ...prev, confirmPassword: e.target.value }))} className={inputClass} placeholder="Confirm password" minLength={6} />
-              <div className="space-y-2 md:col-span-2">
-                <button
-                  type="button"
-                  onClick={handleCreateTeamLogin}
-                  disabled={creatingLogin}
-                  className="w-full rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
-                >
-                  {creatingLogin ? "Creating..." : "Create login"}
-                </button>
-                {createLoginStatus ? (
-                  <p className={`rounded-xl px-3 py-2 text-sm ${createLoginStatus.toLowerCase().includes("share login") ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-700"}`}>
-                    {createLoginStatus}
-                  </p>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
-        </SettingsCard>
-      </div>
 
       <SettingsCard title="Team members" description="Edit what each invited user can see in the sidebar.">
         {loadingTeam ? (

@@ -2,15 +2,12 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
+import { getProductThumbnailUrl } from '@/lib/productMedia'
+import { PRODUCT_CARD_GRID_CLASS_4, PRODUCT_CARD_CELL_CLASS } from '@/lib/storefrontCarousel'
 
 const FALLBACK_IMAGE = 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'
 
-const getProductImage = (product) => {
-  const firstImage = Array.isArray(product?.images) ? product.images[0] : product?.images
-  if (typeof firstImage === 'string' && firstImage.trim()) return firstImage
-  if (firstImage && typeof firstImage === 'object') return firstImage.url || firstImage.src || FALLBACK_IMAGE
-  return FALLBACK_IMAGE
-}
+const getProductImage = (product) => getProductThumbnailUrl(product, { fallback: FALLBACK_IMAGE })
 
 const getProductPrice = (product) => {
   const value = Number(product?.price ?? 0)
@@ -110,9 +107,9 @@ export default function NotFound() {
           </div>
 
           {loading ? (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+            <div className={PRODUCT_CARD_GRID_CLASS_4}>
               {[...Array(8)].map((_, i) => (
-                <div key={i} className="overflow-hidden rounded-2xl border border-slate-100 bg-white">
+                <div key={i} className={`${PRODUCT_CARD_CELL_CLASS} overflow-hidden rounded-2xl border border-slate-100 bg-white`}>
                   <div className="aspect-square animate-pulse bg-slate-100" />
                   <div className="space-y-2 p-3">
                     <div className="h-4 w-4/5 animate-pulse rounded bg-slate-100" />
@@ -122,7 +119,7 @@ export default function NotFound() {
               ))}
             </div>
           ) : products.length > 0 ? (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+            <div className={PRODUCT_CARD_GRID_CLASS_4}>
               {products.map((product, index) => {
                 const href = `/product/${product.slug || product._id}`
                 const price = getProductPrice(product)
@@ -131,7 +128,7 @@ export default function NotFound() {
                   <Link
                     key={product._id || product.slug}
                     href={href}
-                    className="group block overflow-hidden rounded-2xl border border-[#e3e8f4] bg-white transition duration-300 hover:-translate-y-1 hover:shadow-[0_18px_35px_rgba(14,42,110,0.12)]"
+                    className={`${PRODUCT_CARD_CELL_CLASS} group block h-full overflow-hidden rounded-2xl border border-[#e3e8f4] bg-white transition duration-300 hover:-translate-y-1 hover:shadow-[0_18px_35px_rgba(14,42,110,0.12)]`}
                     style={{ animation: `riseIn 420ms ease ${index * 55}ms both` }}
                   >
                     <div className="relative aspect-square overflow-hidden bg-[linear-gradient(180deg,#f6f8ff_0%,#edf1fb_100%)]">

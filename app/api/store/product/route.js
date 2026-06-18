@@ -163,6 +163,11 @@ export async function POST(request) {
         const fastDelivery = String(formData.get("fastDelivery") || "false").toLowerCase() === "true";
         const freeShippingEligible = String(formData.get("freeShippingEligible") || "false").toLowerCase() === "true";
         const imageAspectRatio = formData.get("imageAspectRatio") || "1:1";
+        const cardVideoPreviewEnabled = String(formData.get("cardVideoPreviewEnabled") || "true").toLowerCase() === "true";
+        const cardVideoPreviewDelaySec = Math.min(
+            120,
+            Math.max(0, Number(formData.get("cardVideoPreviewDelaySec") || 24) || 24)
+        );
         const tags = parseCsvOrJsonList(formData.get("tags"));
         const seoKeywords = parseCsvOrJsonList(formData.get("seoKeywords"));
         const seoTitle = (formData.get("seoTitle") || '').toString().trim();
@@ -320,6 +325,8 @@ export async function POST(request) {
             fastDelivery,
             freeShippingEligible,
             imageAspectRatio,
+            cardVideoPreviewEnabled,
+            cardVideoPreviewDelaySec,
             tags,
             seoTitle,
             seoDescription,
@@ -484,6 +491,8 @@ export async function PUT(request) {
         const fastDelivery = String(formData.get("fastDelivery") || "").toLowerCase() === "true";
         const freeShippingEligible = String(formData.get("freeShippingEligible") || "").toLowerCase() === "true";
         const imageAspectRatioRaw = formData.get("imageAspectRatio");
+        const cardVideoPreviewEnabledRaw = formData.get("cardVideoPreviewEnabled");
+        const cardVideoPreviewDelaySecRaw = formData.get("cardVideoPreviewDelaySec");
         const tags = parseCsvOrJsonList(formData.get("tags"));
         const seoKeywords = parseCsvOrJsonList(formData.get("seoKeywords"));
         const seoTitle = (formData.get("seoTitle") || '').toString().trim();
@@ -567,6 +576,12 @@ export async function PUT(request) {
         }
 
         const imageAspectRatio = imageAspectRatioRaw || product.imageAspectRatio || "1:1";
+        const cardVideoPreviewEnabled = cardVideoPreviewEnabledRaw !== null && cardVideoPreviewEnabledRaw !== undefined
+            ? String(cardVideoPreviewEnabledRaw).toLowerCase() === 'true'
+            : (product.cardVideoPreviewEnabled !== false);
+        const cardVideoPreviewDelaySec = cardVideoPreviewDelaySecRaw !== null && cardVideoPreviewDelaySecRaw !== undefined
+            ? Math.min(120, Math.max(0, Number(cardVideoPreviewDelaySecRaw) || 24))
+            : (Number(product.cardVideoPreviewDelaySec) || 24);
 
         // Parse categories - support both single category (backward compat) and multiple
         let categories = product.categories || [];
@@ -620,6 +635,8 @@ export async function PUT(request) {
             fastDelivery,
             freeShippingEligible,
             imageAspectRatio,
+            cardVideoPreviewEnabled,
+            cardVideoPreviewDelaySec,
             tags,
             seoTitle,
             seoDescription,

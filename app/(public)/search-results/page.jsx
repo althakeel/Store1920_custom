@@ -6,6 +6,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { ArrowLeft, PackageIcon } from 'lucide-react';
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
+import { PRODUCT_CARD_GRID_CLASS_1_2_3_6, PRODUCT_CARD_CELL_CLASS } from '@/lib/storefrontCarousel';
 
 function SearchResultsInner() {
   const searchParams = useSearchParams();
@@ -190,12 +191,12 @@ function SearchResultsInner() {
             <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
               <p className="text-gray-700 font-semibold">Recommended products</p>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-2">
+            <div className={PRODUCT_CARD_GRID_CLASS_1_2_3_6}>
               {recommendedProducts.map((product) => (
                 <Link
                   key={product._id}
                   href={`/product/${product.slug}`}
-                  className="group bg-white rounded-[2px] shadow-sm hover:shadow-lg transition overflow-hidden"
+                  className={`${PRODUCT_CARD_CELL_CLASS} group h-full bg-white rounded-[2px] shadow-sm hover:shadow-lg transition overflow-hidden`}
                 >
                   <div className="relative h-48 bg-gray-100 overflow-hidden">
                     {product.image ? (
@@ -247,12 +248,12 @@ function SearchResultsInner() {
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-2">
+            <div className={PRODUCT_CARD_GRID_CLASS_1_2_3_6}>
               {products.map((product) => (
                 <Link
                   key={product._id}
                   href={`/product/${product.slug}`}
-                  className="group bg-white rounded-[2px] shadow-sm hover:shadow-lg transition overflow-hidden"
+                  className={`${PRODUCT_CARD_CELL_CLASS} group h-full bg-white rounded-[2px] shadow-sm hover:shadow-lg transition overflow-hidden`}
                 >
                   {/* Product Image */}
                   <div className="relative h-48 bg-gray-100 overflow-hidden">
@@ -312,12 +313,12 @@ function SearchResultsInner() {
                     Recommended similar products
                   </p>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-2">
+                <div className={PRODUCT_CARD_GRID_CLASS_1_2_3_6}>
                   {similarProducts.map((product) => (
                     <Link
                       key={product._id}
                       href={`/product/${product.slug}`}
-                      className="group bg-white rounded-[2px] shadow-sm hover:shadow-lg transition overflow-hidden"
+                      className={`${PRODUCT_CARD_CELL_CLASS} group h-full bg-white rounded-[2px] shadow-sm hover:shadow-lg transition overflow-hidden`}
                     >
                       <div className="relative h-48 bg-gray-100 overflow-hidden">
                         {product.image ? (

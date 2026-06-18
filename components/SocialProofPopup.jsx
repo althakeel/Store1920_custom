@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { X } from 'lucide-react'
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket'
+import { getProductThumbnailUrl } from '@/lib/productMedia'
 
 const SocialProofPopup = () => {
   const [visible, setVisible] = useState(false)
@@ -135,9 +136,9 @@ const SocialProofPopup = () => {
           <div className="flex gap-3 p-3 hover:bg-slate-50 transition cursor-pointer">
             {/* Product Image */}
             <div className="relative w-16 h-16 flex-shrink-0 bg-slate-100 rounded-lg overflow-hidden">
-              {currentProduct.images?.[0] ? (
+              {getProductThumbnailUrl(currentProduct, { fallback: '' }) ? (
                 <img
-                  src={currentProduct.images[0]}
+                  src={getProductThumbnailUrl(currentProduct)}
                   alt={currentProduct.name}
                   className="w-full h-full object-cover"
                 />

@@ -18,13 +18,11 @@ const getQty = (entry) => {
   return entry?.quantity || 0
 }
 
+import { getProductThumbnailUrl } from '@/lib/productMedia'
+
 const getImageSrc = (product) => {
   if (!product) return '/placeholder.png'
-  const first = Array.isArray(product.images) ? product.images[0] : null
-  if (typeof first === 'string' && first) return first
-  if (first?.url) return first.url
-  if (first?.src) return first.src
-  return product.image || '/placeholder.png'
+  return getProductThumbnailUrl(product, { fallback: '/placeholder.png' })
 }
 
 export default function CartQuickSidebar() {

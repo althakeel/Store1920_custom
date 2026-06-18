@@ -1,6 +1,5 @@
 "use client"
-import ProductDescription from "@/components/ProductDescription";
-import ProductDetails from "@/components/ProductDetails";
+import dynamic from "next/dynamic";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useSelector } from "react-redux";
@@ -9,6 +8,12 @@ import { auth } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { useStorefrontI18n } from "@/lib/useStorefrontI18n";
 import { localizeRecord } from "@/lib/storefrontLanguage";
+import { PRODUCT_CARD_CELL_CLASS, PRODUCT_CARD_FLEX_GRID_CLASS } from '@/lib/storefrontCarousel';
+
+const ProductDetails = dynamic(() => import("@/components/ProductDetails"), {
+    ssr: false,
+    loading: () => <ProductDetailsSkeleton />,
+});
 
 // Skeleton Loader Components
 const ProductDetailsSkeleton = () => (
@@ -115,9 +120,9 @@ const ProductDetailsSkeleton = () => (
 const RelatedProductsSkeleton = () => (
     <div className="mt-12 mb-16">
         <div className="h-8 bg-slate-200 rounded w-56 mb-6 animate-pulse"></div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+        <div className={PRODUCT_CARD_FLEX_GRID_CLASS}>
             {[1, 2, 3, 4, 5].map(i => (
-                <div key={i} className="animate-pulse">
+                <div key={i} className={`animate-pulse ${PRODUCT_CARD_CELL_CLASS}`}>
                     <div className="bg-slate-200 rounded-[2px] h-48 mb-3"></div>
                     <div className="h-4 bg-slate-200 rounded w-3/4 mb-2"></div>
                     <div className="h-4 bg-slate-200 rounded w-1/2"></div>
@@ -189,7 +194,7 @@ export default function ProductBySlug() {
 
         for (const categoryName of currentCategories) {
             try {
-                const { data } = await axios.get(`/api/products?category=${encodeURIComponent(categoryName)}&limit=12`);
+                const { data } = await axios.get(`/api/products?category=${encodeURIComponent(categoryName)}&limit=12&slim=true`);
                 const matches = Array.isArray(data?.products)
                     ? data.products
                         .filter((candidate) => candidate?.slug !== currentProduct.slug && candidate?.inStock)
@@ -206,7 +211,7 @@ export default function ProductBySlug() {
         }
 
         try {
-            const { data } = await axios.get('/api/products?limit=12');
+            const { data } = await axios.get('/api/products?limit=12&slim=true');
             return Array.isArray(data?.products)
                 ? data.products
                     .filter((candidate) => candidate?.slug !== currentProduct.slug && candidate?.inStock)
@@ -223,27 +228,31 @@ export default function ProductBySlug() {
         try {
             let found = products.find((product) => product.slug === slug);
             found = localizeProductFields(found);
-            
-            // Refetch only when product is missing OR it is a variant product with incomplete variant data
-            const needsFresh = !found || (found?.hasVariants && (!Array.isArray(found.variants) || found.variants.length === 0));
-            
-            if (needsFresh) {
-                const response = await axios.get(
+
+            const response = await axios.get(
+                `/api/products/by-slug?slug=${encodeURIComponent(slug)}&lang=${language}`,
+                { validateStatus: (status) => status === 200 || status === 404 }
+            );
+
+            if (response.status === 200) {
+                found = localizeProductFields(response.data.product) || found || null;
+            } else if (!found) {
+                found = null;
+            }
+
+            const needsVariantRefresh = found?.hasVariants && (!Array.isArray(found.variants) || found.variants.length === 0);
+            if (needsVariantRefresh && response.status !== 200) {
+                const retry = await axios.get(
                     `/api/products/by-slug?slug=${encodeURIComponent(slug)}&lang=${language}`,
                     { validateStatus: (status) => status === 200 || status === 404 }
                 );
-
-                if (response.status === 200) {
-                    found = localizeProductFields(response.data.product) || found || null;
-                    console.log('🔍 FETCHED PRODUCT SPECS:', { specTableEnabled: found?.attributes?.specTableEnabled, specRows: found?.attributes?.specRows });
-                } else if (response.status === 404) {
-                    found = found || null;
+                if (retry.status === 200) {
+                    found = localizeProductFields(retry.data.product) || found;
                 }
             }
             
             setProduct(found);
             if (found) {
-                console.log('🔍 PRODUCT ATTRIBUTES:', { attributes: found?.attributes });
                 const localRecommendations = buildLocalRecommendations(found, products);
                 if (localRecommendations.length > 0) {
                     setRecommendedProducts(localRecommendations);

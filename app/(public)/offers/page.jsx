@@ -86,7 +86,7 @@ export default function OffersPage() {
                 🔥 Massive Savings!
               </div>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+            <div className="grid grid-cols-2 items-stretch gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
               {offerProducts.map((product) => (
                 <ProductCard key={product._id || product.id} product={product} />
               ))}

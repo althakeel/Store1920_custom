@@ -12,6 +12,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { addToCart, removeFromCart, deleteItemFromCart, setCartItemQuantity, uploadCart } from "@/lib/features/cart/cartSlice";
 import MobileProductActions from "./MobileProductActions";
 import ProductCard from "./ProductCard";
+import ProductCarousel from "./ProductCarousel";
 import ProductDescription from "./ProductDescription";
 import ProductReviewsSection from "./ProductReviewsSection";
 import { useAuth } from '@/lib/useAuth';
@@ -19,6 +20,12 @@ import { trackMetaEvent } from "@/lib/metaPixelClient";
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
 import { useStorefrontI18n } from '@/lib/useStorefrontI18n';
 import { trackCustomerEvent } from '@/lib/trackingClient';
+import {
+  buildProductMediaGallery,
+  findMediaIndexBySrc,
+} from '@/lib/productMedia';
+
+const PLACEHOLDER_IMAGE = 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png';
 
 const sanitizeDisplayText = (value) => String(value ?? '')
   .replace(/\u00C2\u00A0/g, ' ')
@@ -86,8 +93,10 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   // Assume product loading state from redux if available
   const loading = useSelector(state => state.product?.status === 'loading');
   const { market, convertPrice } = useStorefrontMarket();
-  const { t, isArabic } = useStorefrontI18n();
+  const { t, isArabic, language } = useStorefrontI18n();
   const currency = market.currency;
+  const formatMoney = (amount) => `${currency} ${Number(amount || 0).toFixed(2)}`;
+
   const renderSplitPrice = (amount, options = {}) => {
     const {
       currencyClass = 'text-[14px] font-medium',
@@ -99,11 +108,11 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     const [mainPart, decimalPart] = Number(amount || 0).toFixed(2).split('.');
 
     return (
-      <span className={wrapperClass}>
-        <span className={`${currencyClass} mr-1 self-start mt-1.5`}>{currency}</span>
+      <bdi dir="ltr" className={wrapperClass}>
+        <span className={`${currencyClass} me-1 self-start mt-1.5`}>{currency}</span>
         <span className={mainClass}>{mainPart}</span>
         <span className={`${decimalClass} self-start mt-1`}>{decimalPart}</span>
-      </span>
+      </bdi>
     );
   };
 
@@ -121,8 +130,10 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     }
   });
   const [timeNow, setTimeNow] = useState(() => new Date());
-  const imagesArray = normalizeImages(product.images).map(getImageSrc).filter(Boolean);
-  const [mainImage, setMainImage] = useState(imagesArray?.[0]);
+  const mediaGallery = useMemo(() => buildProductMediaGallery(product?.images), [product?.images]);
+  const [activeMediaIndex, setActiveMediaIndex] = useState(0);
+  const activeMedia = mediaGallery[activeMediaIndex] || mediaGallery[0] || null;
+  const mainImage = activeMedia?.type === 'image' ? activeMedia.src : (activeMedia?.poster || null);
   const mobileCarouselRef = useRef(null);
   const mobileThumbnailsRef = useRef(null);
   const mobileCarouselScrollRaf = useRef(null);
@@ -177,16 +188,35 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     startDate.setDate(startDate.getDate() + minDays);
     endDate.setDate(endDate.getDate() + Math.max(minDays, maxDays));
 
-    const startDay = startDate.toLocaleDateString('en-GB', { day: 'numeric' });
-    const endDay = endDate.toLocaleDateString('en-GB', { day: 'numeric' });
-    const startMonth = startDate.toLocaleDateString('en-GB', { month: 'short' });
-    const endMonth = endDate.toLocaleDateString('en-GB', { month: 'short' });
+    const locale = language === 'ar' ? 'ar-AE' : 'en-GB';
+    const startDay = startDate.toLocaleDateString(locale, { day: 'numeric' });
+    const endDay = endDate.toLocaleDateString(locale, { day: 'numeric' });
+    const startMonth = startDate.toLocaleDateString(locale, { month: 'short' });
+    const endMonth = endDate.toLocaleDateString(locale, { month: 'short' });
 
     if (startMonth === endMonth) {
-      return `${startDay}-${endDay} ${endMonth}`;
+      return `${startDay}-${endDay} ${startMonth}`;
     }
     return `${startDay} ${startMonth} - ${endDay} ${endMonth}`;
-  }, [productPageInfo.deliveryMinDays, productPageInfo.deliveryMaxDays, timeNow]);
+  }, [productPageInfo.deliveryMinDays, productPageInfo.deliveryMaxDays, timeNow, language]);
+
+  const buyboxCopy = useMemo(() => {
+    if (isArabic) {
+      return {
+        returnsText: t('product.freeReturns'),
+        vatText: t('product.vatIncluded'),
+        deliveryPrefix: t('product.freeDelivery'),
+        deliverySuffix: t('product.firstOrderDelivery'),
+      };
+    }
+
+    return {
+      returnsText: productPageInfo.returnsText || t('product.freeReturns'),
+      vatText: productPageInfo.vatText || t('product.vatIncluded'),
+      deliveryPrefix: productPageInfo.deliveryPrefix || t('product.freeDelivery'),
+      deliverySuffix: productPageInfo.deliverySuffix || t('product.firstOrderDelivery'),
+    };
+  }, [isArabic, productPageInfo, t]);
 
   const badgeStyleMap = useMemo(() => {
     const configuredBadges = Array.isArray(productPageInfo?.badgeSettings?.badges) && productPageInfo.badgeSettings.badges.length
@@ -214,14 +244,15 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     const diffMs = target.getTime() - timeNow.getTime();
     const hours = Math.floor(diffMs / (1000 * 60 * 60));
     const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-    return `${hours} hrs ${mins} mins`;
-  }, [productPageInfo.cutoffHour, productPageInfo.cutoffMinute, timeNow]);
+    return t('product.durationHoursMins', { hours, mins });
+  }, [productPageInfo.cutoffHour, productPageInfo.cutoffMinute, timeNow, t]);
 
   const cutoffDisplayText = useMemo(() => {
     const d = new Date(timeNow);
     d.setHours(Number(productPageInfo.cutoffHour || 0), Number(productPageInfo.cutoffMinute || 0), 0, 0);
-    return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-  }, [productPageInfo.cutoffHour, productPageInfo.cutoffMinute, timeNow]);
+    const locale = language === 'ar' ? 'ar-AE' : 'en-US';
+    return d.toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit', hour12: true });
+  }, [productPageInfo.cutoffHour, productPageInfo.cutoffMinute, timeNow, language]);
 
   // Fetch all categories once to resolve IDs → {name, parentId}
   useEffect(() => {
@@ -502,6 +533,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     : 0;
   const convertedEffPrice = convertPrice(effPrice);
   const convertedEffAED = convertPrice(effAED);
+  const installmentAmount = (Number(convertedEffPrice || 0) / 4).toFixed(2);
   const tabbyPromoSelector = `#tabbyPromoProduct-${String(product?._id || product?.id || 'default')}`;
   const tabbyPublicKey = process.env.NEXT_PUBLIC_TABBY_PUBLIC_KEY || '';
   const tabbyMerchantCode = process.env.NEXT_PUBLIC_TABBY_MERCHANT_CODE || process.env.TABBY_MERCHANT_CODE || 'Store1920';
@@ -518,7 +550,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       try {
         new window.TabbyPromo({
           selector: tabbyPromoSelector,
-          currency: 'AED',
+          currency: currency || 'AED',
           price,
           lang: isArabic ? 'ar' : 'en',
           source: 'product',
@@ -541,7 +573,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     script.async = true;
     script.onload = initTabbyPromo;
     document.body.appendChild(script);
-  }, [tabbyPromoSelector, convertedEffPrice, isArabic, tabbyPublicKey, tabbyMerchantCode]);
+  }, [tabbyPromoSelector, convertedEffPrice, isArabic, tabbyPublicKey, tabbyMerchantCode, currency]);
 
   const deliveredByText = String(
     product?.attributes?.deliveredBy ??
@@ -595,13 +627,13 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
   useEffect(() => {
     if (!selectedVariantImage) return;
-    const idx = imagesArray.indexOf(selectedVariantImage);
+    const idx = findMediaIndexBySrc(mediaGallery, selectedVariantImage);
     if (idx >= 0) {
       goToMobileImage(idx, false);
       return;
     }
-    setMainImage(selectedVariantImage);
-  }, [selectedVariantImage, imagesArray]);
+    setActiveMediaIndex(0);
+  }, [selectedVariantImage, mediaGallery]);
 
   // Helper to check if color has any size in stock
   const isColorAvailable = (color) => {
@@ -689,7 +721,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   };
 
   const renderZoomPanel = () => {
-    if (!showZoom || !mainImage || !zoomPortalReady || isRtlLayout()) return null;
+    if (!showZoom || !mainImage || activeMedia?.type === 'video' || !zoomPortalReady || isRtlLayout()) return null;
 
     const panelSize = zoomPanelPos.panelSize || Math.min(Math.max(zoomPanelPos.height, 360), 520);
 
@@ -749,18 +781,14 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   })();
 
   const activeImageIndex = useMemo(() => {
-    if (!mainImage || !imagesArray.length) return 0;
-    const idx = imagesArray.indexOf(mainImage);
-    return idx >= 0 ? idx : 0;
-  }, [imagesArray, mainImage]);
+    if (!mediaGallery.length) return 0;
+    return activeMediaIndex;
+  }, [mediaGallery.length, activeMediaIndex]);
 
   const goToMobileImage = (index, smooth = true) => {
-    if (!imagesArray.length) return;
-    const safeIndex = Math.max(0, Math.min(index, imagesArray.length - 1));
-    const nextImage = imagesArray[safeIndex];
-    if (nextImage && nextImage !== mainImage) {
-      setMainImage(nextImage);
-    }
+    if (!mediaGallery.length) return;
+    const safeIndex = Math.max(0, Math.min(index, mediaGallery.length - 1));
+    setActiveMediaIndex(safeIndex);
     const carousel = mobileCarouselRef.current;
     if (carousel) {
       carousel.scrollTo({
@@ -776,18 +804,15 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     }
     mobileCarouselScrollRaf.current = requestAnimationFrame(() => {
       const carousel = mobileCarouselRef.current;
-      if (!carousel || !imagesArray.length) return;
+      if (!carousel || !mediaGallery.length) return;
       const index = Math.round(carousel.scrollLeft / carousel.clientWidth);
-      const safeIndex = Math.max(0, Math.min(index, imagesArray.length - 1));
-      const nextImage = imagesArray[safeIndex];
-      if (nextImage && nextImage !== mainImage) {
-        setMainImage(nextImage);
-      }
+      const safeIndex = Math.max(0, Math.min(index, mediaGallery.length - 1));
+      setActiveMediaIndex(safeIndex);
     });
   };
 
   useEffect(() => {
-    setMainImage(imagesArray?.[0] || null);
+    setActiveMediaIndex(0);
     const carousel = mobileCarouselRef.current;
     if (carousel) {
       carousel.scrollLeft = 0;
@@ -1290,22 +1315,29 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
           <div className="space-y-3 lg:space-y-4 lg:min-w-0 lg:sticky lg:top-24 lg:self-start relative z-20">
             <div className="hidden lg:flex gap-3 items-start">
               <div className="flex flex-col gap-1.5 w-[56px] xl:w-[64px] flex-shrink-0 overflow-y-auto max-h-[720px] scrollbar-hide">
-                {imagesArray?.map((image, index) => (
+                {mediaGallery.map((item, index) => (
                   <button
-                    key={index}
-                    onClick={() => setMainImage(image)}
-                    className={`w-[52px] h-[52px] xl:w-[60px] xl:h-[60px] border-2 rounded overflow-hidden transition-all bg-white flex-shrink-0 cursor-pointer ${
-                      mainImage === image ? 'border-orange-500' : 'border-gray-200 hover:border-gray-300'
+                    key={`${item.src}-${index}`}
+                    onClick={() => setActiveMediaIndex(index)}
+                    className={`relative w-[52px] h-[52px] xl:w-[60px] xl:h-[60px] border-2 rounded overflow-hidden transition-all bg-white flex-shrink-0 cursor-pointer ${
+                      activeMediaIndex === index ? 'border-orange-500' : 'border-gray-200 hover:border-gray-300'
                     }`}
                   >
                     <Image
-                      src={getImageSrc(image) || 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'}
+                      src={item.poster || PLACEHOLDER_IMAGE}
                       alt={`${safeProductName} ${index + 1}`}
                       width={60}
                       height={60}
                       className="object-cover w-full h-full"
-                      onError={(e) => { e.currentTarget.src = 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'; }}
+                      onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE; }}
                     />
+                    {item.type === 'video' && (
+                      <span className="absolute inset-0 flex items-center justify-center bg-black/25">
+                        <svg className="w-5 h-5 text-white drop-shadow" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M8 5v14l11-7z" />
+                        </svg>
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>
@@ -1406,25 +1438,37 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
                 <div
                   ref={imageContainerRef}
-                  className="overflow-hidden rounded w-full h-full relative cursor-crosshair"
+                  className={`overflow-hidden rounded w-full h-full relative ${activeMedia?.type === 'video' ? '' : 'cursor-crosshair'}`}
                   onMouseEnter={(e) => {
+                    if (activeMedia?.type === 'video') return;
                     setShowZoom(true);
                     const rect = imageContainerRef.current?.getBoundingClientRect();
                     if (rect) setZoomPanelPos(computeZoomPanelPosition(rect));
                   }}
                   onMouseLeave={() => setShowZoom(false)}
-                  onMouseMove={handleImageMouseMove}
+                  onMouseMove={activeMedia?.type === 'video' ? undefined : handleImageMouseMove}
                 >
-                  <Image
-                    src={mainImage || 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'}
-                    alt={safeProductName}
-                    fill
-                    sizes="(max-width: 1024px) 100vw, 520px"
-                    className="object-contain bg-white pointer-events-none"
-                    priority
-                    onError={(e) => { e.currentTarget.src = 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'; }}
-                  />
-                  {showZoom && isRtlLayout() && (
+                  {activeMedia?.type === 'video' ? (
+                    <video
+                      key={activeMedia.src}
+                      src={activeMedia.src}
+                      poster={activeMedia.poster || PLACEHOLDER_IMAGE}
+                      controls
+                      playsInline
+                      className="w-full h-full object-contain bg-white"
+                    />
+                  ) : (
+                    <Image
+                      src={mainImage || PLACEHOLDER_IMAGE}
+                      alt={safeProductName}
+                      fill
+                      sizes="(max-width: 1024px) 100vw, 520px"
+                      className="object-contain bg-white pointer-events-none"
+                      priority
+                      onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE; }}
+                    />
+                  )}
+                  {showZoom && activeMedia?.type !== 'video' && isRtlLayout() && (
                     <div
                       className="absolute z-20 pointer-events-none border-2 border-orange-400 rounded-md shadow-lg overflow-hidden"
                       style={{
@@ -1479,37 +1523,56 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   </button>
                 </div>
 
-                {imagesArray.length > 1 ? (
+                {mediaGallery.length > 1 ? (
                   <div
                     ref={mobileCarouselRef}
                     onScroll={handleMobileCarouselScroll}
                     className="absolute inset-0 flex overflow-x-auto snap-x snap-mandatory scroll-smooth scrollbar-hide touch-pan-x"
                   >
-                    {imagesArray.map((image, index) => (
+                    {mediaGallery.map((item, index) => (
                       <div
-                        key={`${image}-${index}`}
+                        key={`${item.src}-${index}`}
                         className="relative h-full w-full flex-shrink-0 snap-center snap-always"
                       >
-                        <Image
-                          src={image || 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'}
-                          alt={`${safeProductName} ${index + 1}`}
-                          fill
-                          className="object-cover"
-                          priority={index === 0}
-                          draggable={false}
-                          onError={(e) => { e.currentTarget.src = 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'; }}
-                        />
+                        {item.type === 'video' ? (
+                          <video
+                            src={item.src}
+                            poster={item.poster || PLACEHOLDER_IMAGE}
+                            controls
+                            playsInline
+                            className="absolute inset-0 h-full w-full object-cover"
+                          />
+                        ) : (
+                          <Image
+                            src={item.src || PLACEHOLDER_IMAGE}
+                            alt={`${safeProductName} ${index + 1}`}
+                            fill
+                            className="object-cover"
+                            priority={index === 0}
+                            draggable={false}
+                            onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE; }}
+                          />
+                        )}
                       </div>
                     ))}
                   </div>
+                ) : activeMedia?.type === 'video' ? (
+                  <video
+                    key={activeMedia.src}
+                    src={activeMedia.src}
+                    poster={activeMedia.poster || PLACEHOLDER_IMAGE}
+                    controls
+                    playsInline
+                    className="absolute inset-0 h-full w-full object-cover"
+                  />
                 ) : (
                   <Image
-                    src={mainImage || 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'}
+                    src={mainImage || PLACEHOLDER_IMAGE}
                     alt={safeProductName}
                     fill
                     className="object-cover"
                     priority
-                    onError={(e) => { e.currentTarget.src = 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'; }}
+                    onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE; }}
                   />
                 )}
               </div>
@@ -1520,25 +1583,32 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
               ref={mobileThumbnailsRef}
               className="lg:hidden -mx-4 sm:mx-0 px-4 sm:px-0 flex gap-2 overflow-x-auto pb-2 scrollbar-hide scroll-smooth"
             >
-              {imagesArray?.map((image, index) => (
+              {mediaGallery.map((item, index) => (
                 <button
-                  key={`${image}-${index}-thumb`}
+                  key={`${item.src}-${index}-thumb`}
                   type="button"
                   onClick={() => goToMobileImage(index)}
-                  className={`flex-shrink-0 w-14 h-14 border-2 rounded overflow-hidden transition-all duration-200 bg-white cursor-pointer ${
+                  className={`relative flex-shrink-0 w-14 h-14 border-2 rounded overflow-hidden transition-all duration-200 bg-white cursor-pointer ${
                     activeImageIndex === index
                       ? 'border-orange-500 ring-1 ring-orange-200'
                       : 'border-gray-200 opacity-80 hover:opacity-100'
                   }`}
                 >
                   <Image
-                    src={getImageSrc(image) || 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'}
+                    src={item.poster || PLACEHOLDER_IMAGE}
                     alt={`${safeProductName} ${index + 1}`}
                     width={56}
                     height={56}
                     className="object-cover w-full h-full"
-                    onError={(e) => { e.currentTarget.src = 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'; }}
+                    onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE; }}
                   />
+                  {item.type === 'video' && (
+                    <span className="absolute inset-0 flex items-center justify-center bg-black/25">
+                      <svg className="w-4 h-4 text-white drop-shadow" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
@@ -1547,11 +1617,11 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
           {/* MIDDLE: Product details */}
           <div className="min-w-0 relative z-0">
-            <div className="hidden lg:block bg-white space-y-4">
+            <div className="hidden lg:block bg-white space-y-4" dir={isArabic ? 'rtl' : 'ltr'}>
               <div>
                 <h1 className="text-[38px] leading-[1.2] font-medium text-gray-900">{safeProductName}</h1>
                 <a href={`/shop/${product.store?.username || ''}`} className="mt-1 inline-block text-sm text-[#007185] hover:underline">
-                  Visit the {product.store?.name || safeDisplaySellerName} Store
+                  {t('product.visitStore', { store: product.store?.name || safeDisplaySellerName })}
                 </a>
               </div>
 
@@ -1576,7 +1646,12 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                     ))}
                   </div>
                   <span className="text-[#007185] font-medium">
-                    {reviewCount > 0 ? `(${reviewCount} ${reviewCount === 1 ? 'rating' : 'ratings'})` : '(No ratings yet)'}
+                    {reviewCount > 0
+                      ? t('product.ratingsCount', {
+                          count: reviewCount,
+                          label: reviewCount === 1 ? t('product.ratingSingular') : t('product.ratingPlural'),
+                        })
+                      : t('product.noRatingsYet')}
                   </span>
                 </div>
 
@@ -1594,9 +1669,16 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                             />
                           ))}
                         </span>
-                        <span className="font-bold text-lg">{Number(averageRating).toFixed(1)} out of 5 stars</span>
+                        <span className="font-bold text-lg">
+                          {t('product.outOf5Stars', { rating: Number(averageRating).toFixed(1) })}
+                        </span>
                       </div>
-                      <p className="text-sm text-gray-600">{reviewCount} global {reviewCount === 1 ? 'rating' : 'ratings'}</p>
+                      <p className="text-sm text-gray-600">
+                        {t('product.globalRatings', {
+                          count: reviewCount,
+                          label: reviewCount === 1 ? t('product.ratingSingular') : t('product.ratingPlural'),
+                        })}
+                      </p>
                     </div>
 
                     <div className="space-y-2 mb-4 border-t border-gray-100 pt-4">
@@ -1605,7 +1687,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                         const percentage = reviewCount > 0 ? Math.round((count / reviewCount) * 100) : 0;
                         return (
                           <div key={stars} className="flex items-center gap-2 text-sm">
-                            <span className="w-10 text-gray-600 text-right">{stars} star</span>
+                            <span className="w-10 text-gray-600 text-right">{t('product.starLabel', { count: stars })}</span>
                             <div className="flex-1 h-2 bg-gray-200 rounded overflow-hidden">
                               <div
                                 className="h-full bg-amber-500 transition-all"
@@ -1623,7 +1705,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                       onClick={() => document.getElementById('product-reviews')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
                       className="w-full text-center text-sm text-[#007185] hover:text-blue-600 font-medium py-2 border-t border-gray-100"
                     >
-                      See customer reviews ›
+                      {t('product.seeCustomerReviews')}
                     </button>
                   </div>
                 )}
@@ -1651,7 +1733,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 </div>
               )}
 
-              <div className="mt-2 flex items-center gap-3">
+              <div className="mt-2 flex flex-wrap items-end gap-3">
                 <div className="text-slate-900">
                   {renderSplitPrice(convertedEffPrice, {
                     currencyClass: 'text-[13px] font-medium text-slate-900',
@@ -1661,33 +1743,45 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   })}
                 </div>
                 {discountPercent > 0 && (
-                  <div className="text-sm text-gray-500 line-through">{market.currency} {Number(convertedEffAED).toFixed(2)}</div>
+                  <bdi dir="ltr" className="text-sm text-gray-500 line-through whitespace-nowrap">
+                    {formatMoney(convertedEffAED)}
+                  </bdi>
                 )}
                 {discountPercent > 0 && (
-                  <div className="text-sm text-green-600 font-semibold">{discountPercent}% off</div>
+                  <span className="text-sm text-green-600 font-semibold whitespace-nowrap">
+                    {t('common.offPercent', { discount: discountPercent })}
+                  </span>
                 )}
               </div>
 
               {/* Pay-later — center column, below price */}
-              <div className="flex flex-col items-start gap-1 mt-2">
+              <div className="flex flex-col items-start gap-2 mt-2" dir={isArabic ? 'rtl' : 'ltr'}>
                 <button
                   type="button"
                   onClick={() => setShowPayLaterModal(true)}
-                  className="inline-flex max-w-full flex-wrap items-center gap-2 text-[13px] text-gray-500 transition hover:text-gray-700"
+                  className="inline-flex max-w-full flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-gray-500 transition hover:text-gray-700 text-start"
                 >
-                  <span>{t('product.installments', { amount: `${currency}${(Number(convertedEffPrice || 0) / 4).toFixed(2)}` })}</span>
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 26" className="h-[22px] w-auto" aria-label="Tabby">
+                  <span>{t('product.installmentsLead')}</span>
+                  <bdi dir="ltr" className="font-medium text-gray-700 whitespace-nowrap">
+                    {formatMoney(installmentAmount)}
+                  </bdi>
+                  <span>{t('product.installmentsWith')}</span>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 26" className="h-[22px] w-auto shrink-0" aria-label="Tabby">
                     <rect width="72" height="26" rx="6" fill="#3DBEA3"/>
                     <text x="36" y="17.5" textAnchor="middle" fill="white" fontSize="12" fontWeight="bold" fontFamily="Arial,sans-serif" letterSpacing="1">tabby</text>
                   </svg>
-                  <span className="text-gray-400">or</span>
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 84 26" className="h-[22px] w-auto" aria-label="Tamara">
+                  <span className="text-gray-400">{t('common.or')}</span>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 84 26" className="h-[22px] w-auto shrink-0" aria-label="Tamara">
                     <defs><linearGradient id="tg-center" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor="#3D1DBF"/><stop offset="100%" stopColor="#0FB49A"/></linearGradient></defs>
                     <rect width="84" height="26" rx="13" fill="url(#tg-center)"/>
                     <text x="42" y="17.5" textAnchor="middle" fill="white" fontSize="12" fontWeight="bold" fontFamily="Arial,sans-serif" letterSpacing="0.3">tamara</text>
                   </svg>
                 </button>
-                <div id={`tabbyPromoProduct-${String(product?._id || product?.id || 'default')}`} className="product-tabby-promo flex w-full justify-start text-left" />
+                <div
+                  id={`tabbyPromoProduct-${String(product?._id || product?.id || 'default')}`}
+                  className="product-tabby-promo w-full"
+                  dir="ltr"
+                />
               </div>
 
               <ProductDescription
@@ -1776,7 +1870,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                       </div>
 
                       <div className="p-5 overflow-y-auto max-h-[60vh]">
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                           {allFbtCards.map((card) => (
                             <label key={card._id} className={`relative rounded-[2px] border p-3 cursor-pointer transition ${card.checked ? 'border-gray-300 bg-white' : 'border-gray-200 bg-gray-50/40 opacity-80'}`}>
                               <input
@@ -1821,7 +1915,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
           </div>
 
           {/* RIGHT: Product Info (buy box, meta) */}
-          <div className="bg-white rounded-lg p-3 lg:p-4 space-y-3 lg:sticky lg:top-24 lg:self-start border border-gray-200 relative z-0">
+          <div className="bg-white rounded-lg p-3 lg:p-4 space-y-3 lg:sticky lg:top-24 lg:self-start border border-gray-200 relative z-0" dir={isArabic ? 'rtl' : 'ltr'}>
 
             {/* Special Offer - Countdown Timer */}
             {offerData?.countdownTimer && (
@@ -1928,7 +2022,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   {t('common.outOfStock')}
                 </div>
               )}
-              <div className="flex items-end gap-1 flex-wrap">
+              <div className="flex flex-wrap items-end gap-2">
                 <span className={`${isSpecialOffer ? 'text-green-600' : 'text-gray-900'}`}>
                   {renderSplitPrice(convertedEffPrice, {
                     currencyClass: `text-[15px] font-medium ${isSpecialOffer ? 'text-green-600' : 'text-gray-900'}`,
@@ -1939,8 +2033,14 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 </span>
 
                 {effAED > effPrice && (
+                  <bdi dir="ltr" className="text-sm text-gray-500 line-through whitespace-nowrap pb-1">
+                    {formatMoney(convertedEffAED)}
+                  </bdi>
+                )}
+
+                {effAED > effPrice && (
                   <span className="inline-flex items-center border border-orange-400 bg-orange-50 text-orange-500 text-[12px] font-medium px-2 py-0.5 rounded-sm leading-none whitespace-nowrap">
-                    {`${t('common.offPercent', { discount: discountPercent })} ${t('product.limitedTime')}`}
+                    {t('common.offPercent', { discount: discountPercent })} {t('product.limitedTime')}
                   </span>
                 )}
 
@@ -1952,15 +2052,26 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
               </div>
 
             {/* Delivery & Returns (buybox info) */}
-            <div className="text-sm text-gray-600 space-y-1 pb-3 border-b border-gray-200">
-              <div className="flex items-center gap-2">
-                <span className="font-medium text-gray-800">{productPageInfo.returnsText}</span>
-                <span className="text-gray-400">•</span>
-                <span>{productPageInfo.vatText}</span>
+            <div
+              className="space-y-2 pb-3 border-b border-gray-200 text-sm leading-relaxed"
+              dir={isArabic ? 'rtl' : 'ltr'}
+            >
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="font-medium text-gray-800">{buyboxCopy.returnsText}</span>
+                <span className="text-gray-400" aria-hidden="true">•</span>
+                <span className="text-gray-700">{buyboxCopy.vatText}</span>
               </div>
-              <div className="text-sm text-gray-700">
-                <strong>{productPageInfo.deliveryPrefix}</strong> {deliveryRangeText} {productPageInfo.deliverySuffix} <span className="text-gray-500">Order before {cutoffDisplayText}. Order within {orderWithinText}</span>
-              </div>
+              <p className="text-gray-700">
+                {t('product.deliveryLine', {
+                  prefix: buyboxCopy.deliveryPrefix,
+                  dates: deliveryRangeText,
+                  suffix: buyboxCopy.deliverySuffix,
+                })}
+              </p>
+              <p className="text-gray-500">
+                {t('product.orderBefore', { time: cutoffDisplayText })}{' '}
+                {t('product.orderWithin', { duration: orderWithinText })}
+              </p>
             </div>
 
               </div>
@@ -1969,11 +2080,10 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
             {isSelectionInStock && !addedToCart && (
               <div
                 className="flex w-full items-center gap-3 pt-2"
-                dir="ltr"
-                style={isArabic ? { justifyContent: 'flex-end' } : undefined}
+                dir={isArabic ? 'rtl' : 'ltr'}
               >
                 <label className="text-sm font-semibold text-gray-900 leading-none whitespace-nowrap">
-                  {isArabic ? 'الكمية:' : 'Quantity:'}
+                  {t('product.quantityLabel')}
                 </label>
                 <select
                   value={quantity}
@@ -1981,7 +2091,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                     const newQty = Number(e.target.value) || 1;
                     setQuantity(newQty);
                   }}
-                  dir="ltr"
+                  dir={isArabic ? 'rtl' : 'ltr'}
                   className="h-11 flex-1 w-full rounded-[2px] border border-gray-300 bg-white px-3 text-base text-gray-900 font-medium cursor-pointer transition hover:border-gray-400 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-100"
                 >
                   {Array.from({ length: Math.max(1, maxOrderQty) }).map((_, i) => {
@@ -1993,7 +2103,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
             )}
 
             {/* Action Buttons */}
-            <div className="pt-2 space-y-3" dir="ltr">
+            <div className="pt-2 space-y-3" dir={isArabic ? 'rtl' : 'ltr'}>
               {!addedToCart ? (
                 <div className="space-y-3">
                   <button
@@ -2017,7 +2127,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                       !isSelectionInStock ? 'bg-gray-300 text-gray-600 cursor-not-allowed' : 'bg-orange-500 text-white hover:bg-orange-600'
                     }`}
                   >
-                    {isArabic ? 'اشترِ الآن' : 'Buy Now'}
+                    {t('common.buyNow')}
                   </button>
                 </div>
               ) : (
@@ -2027,9 +2137,10 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                       <Check size={14} strokeWidth={3} />
                     </span>
                     <p className="text-sm font-semibold text-green-900">
-                      {isArabic
-                        ? `تمت الإضافة · ${cartQty} ${cartQty === 1 ? 'عنصر' : 'عناصر'} في السلة`
-                        : `Added to cart · ${cartQty} ${cartQty === 1 ? 'item' : 'items'}`}
+                      {t('product.addedToCartSummary', {
+                        count: cartQty,
+                        items: cartQty === 1 ? t('product.itemSingular') : t('product.itemPlural'),
+                      })}
                     </p>
                   </div>
 
@@ -2055,7 +2166,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
                       <div className="flex min-w-[88px] flex-col items-center justify-center border-r border-gray-200 bg-gray-50 px-4">
                         <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
-                          {isArabic ? 'الكمية' : 'Qty'}
+                          {t('product.qty')}
                         </span>
                         <span className="text-lg font-bold leading-none text-gray-900">{cartQty}</span>
                       </div>
@@ -2093,14 +2204,14 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                       onClick={() => router.push('/cart')}
                       className="h-11 rounded-md border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-800 transition hover:bg-gray-50"
                     >
-                      {isArabic ? 'عرض السلة' : 'View cart'}
+                      {t('product.viewCart')}
                     </button>
                     <button
                       type="button"
                       onClick={() => router.push('/checkout')}
                       className="h-11 rounded-md bg-orange-500 px-4 text-sm font-bold text-white transition hover:bg-orange-600"
                     >
-                      {isArabic ? 'إتمام الشراء' : 'Checkout'}
+                      {t('cart.checkout')}
                     </button>
                   </div>
                 </div>
@@ -2205,7 +2316,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 }`}
               >
                 <HeartIcon size={16} fill={isInWishlist ? 'currentColor' : 'none'} />
-                {isInWishlist ? (isArabic ? 'تم الحفظ' : 'Saved') : (isArabic ? 'حفظ' : 'Save')}
+                {isInWishlist ? t('common.saved') : t('common.save')}
               </button>
             </div>
           </div>
@@ -2243,11 +2354,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-6">
-              {relatedProducts.map((relatedProduct) => (
-                <ProductCard key={relatedProduct._id} product={relatedProduct} />
-              ))}
-            </div>
+            <ProductCarousel products={relatedProducts} priorityCount={6} showArrows />
           </div>
         </div>
       )}
@@ -2285,9 +2392,9 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
             />
           </div>
           <div>
-            <p className="font-semibold text-gray-900">{isArabic ? 'تمت الإضافة إلى السلة!' : 'Added to cart!'}</p>
+            <p className="font-semibold text-gray-900">{t('product.addedToCartToast')}</p>
             <a href="/cart" className="text-sm text-orange-500 hover:underline">
-              {isArabic ? 'عرض السلة' : 'View Cart'}
+              {t('product.viewCart')}
             </a>
           </div>
         </div>
@@ -2434,15 +2541,16 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
           scrollbar-color: #d1d5db transparent;
         }
         :global(.product-tabby-promo) {
-          text-align: center;
+          text-align: start;
         }
         :global(.product-tabby-promo > *) {
-          margin-left: auto !important;
-          margin-right: auto !important;
+          margin-inline-start: 0 !important;
+          margin-inline-end: auto !important;
         }
         :global(.product-tabby-promo iframe) {
-          margin-left: auto !important;
-          margin-right: auto !important;
+          margin-inline-start: 0 !important;
+          margin-inline-end: auto !important;
+          max-width: 100%;
         }
         .product-page-grid {
           display: grid;

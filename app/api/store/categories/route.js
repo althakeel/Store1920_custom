@@ -6,15 +6,28 @@ import Category from '@/models/Category';
 import { localizeRecord, resolveStorefrontLanguage } from '@/lib/storefrontLanguage';
 import { cleanDisplayText, sanitizeCategoryFields, sanitizeCategoryTree } from '@/lib/displayText';
 import { buildCategoryLookup, getProductCategoryLabels } from '@/lib/categoryLookup';
-import { deleteCacheKey } from '@/lib/cache';
+import { deleteCacheKey, getCachedData, setCachedData } from '@/lib/cache';
 
 const CATEGORY_TREE_CACHE_KEY = 'public:categories:tree:v2';
 
 // GET - Fetch all categories with their children
 export async function GET(req) {
     try {
-        await connectDB();
         const language = resolveStorefrontLanguage(req);
+        const cacheKey = `${CATEGORY_TREE_CACHE_KEY}:${language}`;
+        const cached = getCachedData(cacheKey);
+        if (cached) {
+            const isDev = process.env.NODE_ENV !== 'production';
+            return NextResponse.json(cached, {
+                status: 200,
+                headers: {
+                    'Cache-Control': isDev ? 'no-store' : 'public, s-maxage=300, stale-while-revalidate=900',
+                    'X-Cache': 'HIT',
+                },
+            });
+        }
+
+        await connectDB();
 
         // Get all categories
         const categories = await Category.find({}).sort({ name: 1 }).lean();
@@ -32,10 +45,21 @@ export async function GET(req) {
 
         const lookup = buildCategoryLookup(categories);
 
-        return NextResponse.json({
+        const payload = {
             categories: sanitizeCategoryTree(categoriesWithChildren),
             lookup,
-        }, { status: 200 });
+        };
+
+        setCachedData(cacheKey, payload, 300);
+
+        const isDev = process.env.NODE_ENV !== 'production';
+        return NextResponse.json(payload, {
+            status: 200,
+            headers: {
+                'Cache-Control': isDev ? 'no-store' : 'public, s-maxage=300, stale-while-revalidate=900',
+                'X-Cache': 'MISS',
+            },
+        });
     } catch (error) {
         console.error("Error fetching categories:", error);
         return NextResponse.json({ error: "Failed to fetch categories", details: error.message }, { status: 500 });

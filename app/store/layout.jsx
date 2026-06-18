@@ -1,12 +1,40 @@
 'use client'
 import StoreLayout from "@/components/store/StoreLayout";
 import StoreLanguageScope from "@/components/store/StoreLanguageScope";
+import dynamic from "next/dynamic";
 
 import { useEffect, useState } from "react"
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/useAuth"
 import { getAuthErrorMessage, signInWithGooglePopup } from "@/lib/firebaseAuthActions";
 import Link from "next/link";
+
+// Client-only skeleton — static fallback must match SSR output to avoid hydration errors
+const StoreShellSkeleton = dynamic(
+    () => import("@/components/store/StoreShellSkeleton"),
+    {
+        ssr: false,
+        loading: () => <StoreBootstrapFallback />,
+    }
+);
+
+function StoreBootstrapFallback() {
+    return (
+        <div
+            className="flex h-screen flex-col overflow-hidden bg-slate-50"
+            aria-busy="true"
+            aria-label="Loading store dashboard"
+        />
+    );
+}
+
+function StoreLoadingShell() {
+    return (
+        <StoreLanguageScope>
+            <StoreShellSkeleton />
+        </StoreLanguageScope>
+    );
+}
 
 const PUBLIC_STORE_PATHS = ['/store/login', '/store/invite/accept'];
 
@@ -26,12 +54,12 @@ export default function RootAdminLayout({ children }) {
         setMounted(true)
     }, [])
 
-    if (!mounted || loading) {
-        return (
-            <StoreLanguageScope>
-                {null}
-            </StoreLanguageScope>
-        );
+    if (!mounted) {
+        return <StoreLoadingShell />;
+    }
+
+    if (loading) {
+        return <StoreLoadingShell />;
     }
 
     if (isPublicStorePath(pathname)) {

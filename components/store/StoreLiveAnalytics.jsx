@@ -15,8 +15,9 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { Activity, Eye, Package, Radio, ShoppingBag, Users } from 'lucide-react';
+import { Activity, Eye, Package, Radio, ShoppingBag, UserCheck, Users } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 function LiveDot() {
   return (
@@ -59,60 +60,326 @@ function LiveTooltip({ active, payload, label }) {
   );
 }
 
+function shortProductName(name, max = 26) {
+  const text = String(name || 'Product');
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1)}…`;
+}
+
+function OpenProductsChartTooltip({ active, payload, onViewerClick }) {
+  if (!active || !payload?.length) return null;
+  const item = payload[0]?.payload;
+  if (!item) return null;
+
+  return (
+    <div className="max-w-xs rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-lg">
+      <p className="font-semibold leading-snug text-slate-900">{item.fullName || item.name}</p>
+      <p className="mt-1 text-violet-700">
+        <strong>{item.views}</strong> viewer{item.views === 1 ? '' : 's'} right now
+      </p>
+      {item.viewerList?.length ? (
+        <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Viewers</p>
+          {item.viewerList.map((viewer) => {
+            const isGuest = viewer.visitorType !== 'logged_in';
+            return (
+              <button
+                key={viewer.sessionId}
+                type="button"
+                onClick={() => onViewerClick?.(viewer)}
+                className={`block w-full rounded-md px-2 py-1 text-left transition hover:bg-slate-50 ${
+                  isGuest ? 'text-slate-700' : 'text-violet-800'
+                }`}
+              >
+                {isGuest ? 'Guest: ' : 'Customer: '}
+                {viewer.label || (isGuest ? 'Guest' : 'Customer')}
+                <span className="ml-1 text-[10px] text-slate-400">· click for tracking</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function OpenProductsBarChart({ products = [], onViewerClick }) {
+  const chartData = products.map((product) => ({
+    ...product,
+    shortName: shortProductName(product.name),
+    fullName: product.name,
+    views: product.viewers || product.viewerList?.length || 0,
+  }));
+
+  const maxViews = Math.max(1, ...chartData.map((row) => row.views));
+
+  const chartHeight = Math.min(180, Math.max(88, chartData.length * 34));
+
+  return (
+    <div className="shrink-0 rounded-lg border border-violet-100 bg-white px-1 py-1" style={{ height: chartHeight }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={chartData} layout="vertical" margin={{ left: 4, right: 12, top: 4, bottom: 0 }}>
+          <CartesianGrid stroke="#E2E8F0" horizontal={false} />
+          <XAxis
+            type="number"
+            allowDecimals={false}
+            domain={[0, Math.max(maxViews, 2)]}
+            tick={{ fontSize: 10, fill: '#64748B' }}
+          />
+          <YAxis
+            type="category"
+            dataKey="shortName"
+            width={108}
+            tick={{ fontSize: 10, fill: '#475569' }}
+          />
+          <Tooltip
+            content={<OpenProductsChartTooltip onViewerClick={onViewerClick} />}
+            cursor={{ fill: 'rgba(139, 92, 246, 0.08)' }}
+          />
+          <Bar dataKey="views" name="Viewers" fill="#8B5CF6" radius={[0, 4, 4, 0]} maxBarSize={14} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function OpenProductsEmptyState() {
+  return (
+    <div className="flex h-[240px] flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white px-6 text-center">
+      <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-violet-50 text-violet-400">
+        <Eye size={22} />
+      </div>
+      <p className="text-sm font-medium text-slate-700">No one is viewing a product right now</p>
+      <p className="mt-1 max-w-xs text-xs leading-relaxed text-slate-500">
+        When a customer opens a product page on your store, they appear here within a few seconds.
+      </p>
+    </div>
+  );
+}
+
+function ViewerChip({ viewer, onClick }) {
+  const isGuest = viewer.visitorType !== 'logged_in';
+  const Icon = isGuest ? Users : UserCheck;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onClick(viewer)}
+      title={isGuest ? 'View guest tracking' : 'View customer details & tracking'}
+      className={`inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition hover:shadow-sm ${
+        isGuest
+          ? 'border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 hover:bg-slate-100'
+          : 'border-violet-200 bg-violet-50 text-violet-800 hover:border-violet-300 hover:bg-violet-100'
+      }`}
+    >
+      <Icon size={12} className="shrink-0" />
+      <span className="truncate">{viewer.label || (isGuest ? 'Guest' : 'Customer')}</span>
+    </button>
+  );
+}
+
+function OpenProductsLivePanel({ products = [], onViewerClick, isStale = false }) {
+  if (!products.length) return <OpenProductsEmptyState />;
+
+  return (
+    <div className="flex max-h-[340px] flex-col gap-2 overflow-hidden">
+      {isStale ? (
+        <p className="shrink-0 rounded-lg border border-amber-100 bg-amber-50 px-3 py-1.5 text-[11px] text-amber-800">
+          Last known viewers — refreshing…
+        </p>
+      ) : null}
+
+      <OpenProductsBarChart products={products} onViewerClick={onViewerClick} />
+
+      <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto rounded-xl border border-violet-100 bg-white p-2">
+        {products.map((product) => (
+          <li
+            key={product.mapKey || product.productId || product.slug || product.name}
+            className="rounded-lg border border-slate-100 bg-slate-50/80 p-3"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <p className="min-w-0 text-sm font-semibold text-slate-900" title={product.name}>
+                {product.name}
+              </p>
+              <span className="shrink-0 rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-semibold text-violet-700">
+                {product.viewers || product.viewerList?.length || 0} viewing
+              </span>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {(product.viewerList || []).map((viewer) => (
+                <ViewerChip
+                  key={viewer.sessionId}
+                  viewer={viewer}
+                  onClick={onViewerClick}
+                />
+              ))}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+const LIVE_POLL_MS = 12000;
+
+function smoothLiveCount(previous, incoming, { hasActivity = false, graceMs = 20000, lastActiveAt = 0 } = {}) {
+  const next = Number(incoming || 0);
+  if (next > 0) return next;
+  if (hasActivity) return Math.max(previous, 1);
+  if (previous > 0 && Date.now() - lastActiveAt < graceMs) return previous;
+  return 0;
+}
+
 export default function StoreLiveAnalytics({ getToken, currency = 'AED' }) {
+  const router = useRouter();
   const [data, setData] = useState(null);
+  const [displayProducts, setDisplayProducts] = useState([]);
+  const [productsStale, setProductsStale] = useState(false);
+  const [displayActiveVisitors, setDisplayActiveVisitors] = useState(0);
+  const [displayLiveNow, setDisplayLiveNow] = useState({
+    visitorsLast5Min: 0,
+    ordersLast5Min: 0,
+    productsOpenNow: 0,
+    productViewersNow: 0,
+  });
   const [initialLoading, setInitialLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [lastUpdated, setLastUpdated] = useState(null);
-  const controllerRef = useRef(null);
   const hasDataRef = useRef(false);
+  const fetchGenerationRef = useRef(0);
+  const lastProductsAtRef = useRef(0);
+  const lastActiveAtRef = useRef(0);
+  const displayActiveRef = useRef(0);
+  const displayLiveNowRef = useRef(displayLiveNow);
 
   const fetchLive = useCallback(async (isInitial = false) => {
-    controllerRef.current?.abort();
-    const controller = new AbortController();
-    controllerRef.current = controller;
+    const generation = ++fetchGenerationRef.current;
 
     try {
       if (isInitial && !hasDataRef.current) setInitialLoading(true);
-      else if (hasDataRef.current) setRefreshing(true);
       setError('');
       const token = await getToken();
       const { data: payload } = await axios.get('/api/store/dashboard/live', {
         headers: { Authorization: `Bearer ${token}` },
-        signal: controller.signal,
         timeout: 15000,
       });
+      if (generation !== fetchGenerationRef.current) return;
+
       setData(payload);
       hasDataRef.current = true;
       setLastUpdated(new Date());
     } catch (err) {
-      if (axios.isCancel(err) || err?.code === 'ERR_CANCELED') return;
+      if (generation !== fetchGenerationRef.current) return;
       if (!hasDataRef.current) setError('Could not load live analytics');
     } finally {
-      if (controllerRef.current === controller) {
-        controllerRef.current = null;
+      if (generation === fetchGenerationRef.current) {
         setInitialLoading(false);
-        setRefreshing(false);
       }
     }
   }, [getToken]);
 
   useEffect(() => {
     fetchLive(true);
-    const interval = setInterval(() => fetchLive(false), 5000);
+    const interval = setInterval(() => fetchLive(false), LIVE_POLL_MS);
     return () => {
       clearInterval(interval);
-      controllerRef.current?.abort();
+      fetchGenerationRef.current += 1;
     };
   }, [fetchLive]);
 
-  const activeVisitors = data?.activeVisitors ?? 0;
-  const liveNow = data?.liveNow || {};
+  const staleDisplayMs = data?.staleDisplayMs || 20000;
+
+  useEffect(() => {
+    const incoming = data?.activeOpenProducts || data?.topProducts || [];
+    if (incoming.length > 0) {
+      setDisplayProducts(incoming);
+      setProductsStale(false);
+      lastProductsAtRef.current = Date.now();
+      return;
+    }
+
+    if (displayProducts.length > 0 && Date.now() - lastProductsAtRef.current < staleDisplayMs) {
+      setProductsStale(true);
+      return;
+    }
+
+    setDisplayProducts([]);
+    setProductsStale(false);
+  }, [data, staleDisplayMs, displayProducts.length]);
+
+  useEffect(() => {
+    if (!data) return;
+
+    const liveNow = data.liveNow || {};
+    const hasOpenProducts = (data.activeOpenProducts || data.topProducts || []).length > 0;
+    const hasProductViewers = Number(liveNow.productViewersNow || 0) > 0;
+    const hasActivity = hasOpenProducts || hasProductViewers;
+
+    const nextActive = smoothLiveCount(displayActiveRef.current, data.activeVisitors, {
+      hasActivity,
+      graceMs: staleDisplayMs,
+      lastActiveAt: lastActiveAtRef.current,
+    });
+
+    if (nextActive > 0) lastActiveAtRef.current = Date.now();
+    else if (hasActivity) lastActiveAtRef.current = Date.now();
+
+    displayActiveRef.current = nextActive;
+    setDisplayActiveVisitors(nextActive);
+
+    const nextLiveNow = {
+      visitorsLast5Min: Number(liveNow.visitorsLast5Min || 0),
+      ordersLast5Min: Number(liveNow.ordersLast5Min || 0),
+      productsOpenNow: hasOpenProducts
+        ? Math.max(Number(liveNow.productsOpenNow || 0), displayProducts.length)
+        : smoothLiveCount(
+            Number(displayLiveNowRef.current.productsOpenNow || 0),
+            Number(liveNow.productsOpenNow || 0),
+            {
+              hasActivity: displayProducts.length > 0,
+              graceMs: staleDisplayMs,
+              lastActiveAt: lastProductsAtRef.current,
+            }
+          ),
+      productViewersNow: hasProductViewers
+        ? Math.max(Number(liveNow.productViewersNow || 0), Number(displayLiveNowRef.current.productViewersNow || 0))
+        : smoothLiveCount(
+            Number(displayLiveNowRef.current.productViewersNow || 0),
+            Number(liveNow.productViewersNow || 0),
+            {
+              hasActivity: displayProducts.length > 0,
+              graceMs: staleDisplayMs,
+              lastActiveAt: lastProductsAtRef.current,
+            }
+          ),
+    };
+
+    displayLiveNowRef.current = nextLiveNow;
+    setDisplayLiveNow(nextLiveNow);
+  }, [data, displayProducts.length, staleDisplayMs]);
+
+  const handleViewerClick = useCallback((viewer) => {
+    if (!viewer?.visitorKey) return;
+    const params = new URLSearchParams({
+      visitor: viewer.visitorKey,
+      range: 'today',
+    });
+    router.push(`/store/customer-tracking?${params.toString()}`);
+  }, [router]);
+
   const timeline = data?.timeline || [];
-  const topProducts = data?.topProducts || [];
   const recentOrders = data?.recentOrders || [];
-  const recentProductViews = data?.recentProductViews || [];
+  const recentProductViews = displayProducts.length
+    ? displayProducts.map((item) => ({
+        productId: item.productId,
+        name: item.name,
+        slug: item.slug,
+        viewers: item.viewers,
+        viewerList: item.viewerList,
+        timeAgo: productsStale ? 'Just left' : 'Open now',
+      }))
+    : (data?.recentProductViews || []);
 
   return (
     <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -121,22 +388,19 @@ export default function StoreLiveAnalytics({ getToken, currency = 'AED' }) {
           <LiveDot />
           <div>
             <h2 className="text-base font-semibold">Live store activity</h2>
-            <p className="text-xs text-slate-300">Updates every 5 seconds · last 60 minutes</p>
+            <p className="text-xs text-slate-300">Live counts · updates quietly in the background</p>
           </div>
         </div>
         <div className="flex items-center gap-3 text-sm">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1">
             <Users size={14} />
-            <strong>{activeVisitors}</strong> active now
+            <strong>{displayActiveVisitors}</strong> active now
           </span>
-          {refreshing ? (
-            <span className="text-xs text-slate-400">Updating…</span>
-          ) : null}
-          {lastUpdated && (
+          {lastUpdated ? (
             <span className="text-xs text-slate-400">
-              Updated {lastUpdated.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              Live · {lastUpdated.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
             </span>
-          )}
+          ) : null}
           <Link
             href="/store/customer-tracking"
             className="rounded-md bg-white/10 px-3 py-1 text-xs hover:bg-white/20"
@@ -156,9 +420,9 @@ export default function StoreLiveAnalytics({ getToken, currency = 'AED' }) {
       ) : (
         <div className="space-y-5 p-5">
           <div className="grid gap-3 sm:grid-cols-3">
-            <StatChip label="Visitors (5 min)" value={liveNow.visitorsLast5Min ?? 0} icon={Users} tone="blue" />
-            <StatChip label="Orders (5 min)" value={liveNow.ordersLast5Min ?? 0} icon={ShoppingBag} tone="green" />
-            <StatChip label="Products open now" value={liveNow.productsOpenNow ?? 0} icon={Eye} tone="violet" />
+            <StatChip label="Visitors (5 min)" value={displayLiveNow.visitorsLast5Min ?? 0} icon={Users} tone="blue" />
+            <StatChip label="Orders (5 min)" value={displayLiveNow.ordersLast5Min ?? 0} icon={ShoppingBag} tone="green" />
+            <StatChip label="Products open now" value={displayLiveNow.productsOpenNow ?? 0} icon={Eye} tone="violet" />
           </div>
 
           <div className="grid gap-5 lg:grid-cols-2">
@@ -189,29 +453,15 @@ export default function StoreLiveAnalytics({ getToken, currency = 'AED' }) {
 
             <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-4">
               <h3 className="text-sm font-semibold text-slate-900">Products open right now</h3>
-              <p className="text-xs text-slate-500">Only products customers are viewing at this moment</p>
-              <div className="mt-3 h-[240px]">
-                {topProducts.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={topProducts} layout="vertical" margin={{ left: 4, right: 16 }}>
-                      <CartesianGrid stroke="#E2E8F0" horizontal={false} />
-                      <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} />
-                      <YAxis
-                        type="category"
-                        dataKey="name"
-                        width={100}
-                        tick={{ fontSize: 10 }}
-                        tickFormatter={(v) => (String(v).length > 14 ? `${String(v).slice(0, 14)}…` : v)}
-                      />
-                      <Tooltip formatter={(v) => [`${v} viewer${v === 1 ? '' : 's'}`, 'Open now']} />
-                      <Bar dataKey="views" name="Viewers" fill="#8B5CF6" radius={[0, 4, 4, 0]} maxBarSize={18} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex h-full items-center justify-center text-sm text-slate-500">
-                    No products are open right now. When a customer opens a product page, it appears here.
-                  </div>
-                )}
+              <p className="text-xs text-slate-500">
+                Chart = quick overview · list below shows names · hover bar or click a viewer for tracking
+              </p>
+              <div className="mt-3">
+                <OpenProductsLivePanel
+                  products={displayProducts}
+                  onViewerClick={handleViewerClick}
+                  isStale={productsStale}
+                />
               </div>
             </div>
           </div>
@@ -252,11 +502,24 @@ export default function StoreLiveAnalytics({ getToken, currency = 'AED' }) {
               {recentProductViews.length > 0 ? (
                 <ul className="max-h-[220px] space-y-2 overflow-y-auto">
                   {recentProductViews.map((view, index) => (
-                    <li key={`${view.productId || view.name}-${index}`} className="flex items-center justify-between rounded-lg bg-violet-50/80 px-3 py-2 text-sm">
-                      <p className="truncate font-medium text-slate-900">{view.name}</p>
-                      <span className="ml-2 shrink-0 text-xs font-medium text-violet-700">
-                        {view.viewers || 1} open · {view.timeAgo}
-                      </span>
+                    <li key={`${view.productId || view.name}-${index}`} className="rounded-lg bg-violet-50/80 px-3 py-2 text-sm">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="truncate font-medium text-slate-900">{view.name}</p>
+                        <span className="ml-2 shrink-0 text-xs font-medium text-violet-700">
+                          {view.viewers || 1} open · {view.timeAgo}
+                        </span>
+                      </div>
+                      {view.viewerList?.length ? (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {view.viewerList.map((viewer) => (
+                            <ViewerChip
+                              key={viewer.sessionId}
+                              viewer={viewer}
+                              onClick={handleViewerClick}
+                            />
+                          ))}
+                        </div>
+                      ) : null}
                     </li>
                   ))}
                 </ul>

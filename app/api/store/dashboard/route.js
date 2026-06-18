@@ -29,25 +29,25 @@ export async function GET(request) {
       }
 
       await dbConnect();
-      // Get all orders for seller
-      const orders = await Order.find({ storeId }).lean();
 
-      // Get all products with ratings for seller
-      const products = await Product.find({ storeId }).lean();
+      const productIdsPromise = Product.find({ storeId }).select('_id').lean();
+
+      const [orders, totalProducts, abandonedCarts, productIds] = await Promise.all([
+        Order.find({ storeId }).select('status total createdAt userId').lean(),
+        Product.countDocuments({ storeId }),
+        AbandonedCart.countDocuments({
+          storeId,
+          status: { $ne: 'converted' },
+        }),
+        productIdsPromise,
+      ]);
 
       const ratings = await Rating.find({
-         productId: { $in: products.map(product => product._id.toString()) }
-      }).lean();
+        productId: { $in: productIds.map((product) => product._id.toString()) },
+      }).select('rating productId').lean();
 
-      // Get unique customers who have ordered from this store
-      const uniqueCustomerIds = [...new Set(orders.map(order => order.userId))];
+      const uniqueCustomerIds = [...new Set(orders.map((order) => order.userId).filter(Boolean))];
       const totalCustomers = uniqueCustomerIds.length;
-
-      // Get abandoned carts for this store
-      const abandonedCarts = await AbandonedCart.countDocuments({
-        storeId,
-        status: { $ne: 'converted' },
-      });
 
       const totalEarnings = orders.reduce((acc, order) => acc + (order.total || 0), 0);
       const totalOrders = orders.length;
@@ -191,7 +191,7 @@ export async function GET(request) {
          ratings,
          totalOrders,
          totalEarnings: Math.round(totalEarnings),
-         totalProducts: products.length,
+         totalProducts,
          totalCustomers,
          abandonedCarts,
          analytics: {

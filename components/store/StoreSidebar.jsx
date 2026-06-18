@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation"
 
-import { HomeIcon, LayoutListIcon, SquarePenIcon, SquarePlusIcon, StarIcon, FolderIcon, TicketIcon, TruckIcon, RefreshCw, User as UserIcon, Users as UsersIcon, MessageSquare, Sparkles, BellIcon, MailIcon, Image as ImageIcon, ShoppingCart, Wallet, BarChart3, Target, Gift, Palette, CircleDashed, PackagePlus, Activity, Layers, LineChart, Warehouse } from "lucide-react"
+import { HomeIcon, LayoutListIcon, SquarePenIcon, SquarePlusIcon, StarIcon, FolderIcon, TicketIcon, TruckIcon, RefreshCw, User as UserIcon, Users as UsersIcon, MessageSquare, Sparkles, BellIcon, MailIcon, Image as ImageIcon, ShoppingCart, Wallet, BarChart3, Target, Gift, Palette, CircleDashed, PackagePlus, Activity, Layers, LineChart, Warehouse, MousePointerClick, ShieldAlert, Zap } from "lucide-react"
 
 import Link from "next/link"
 
@@ -65,6 +65,16 @@ const StoreSidebar = ({ storeInfo, isOwner = false, permissions = {} }) => {
         { name: 'Customer Tracking', href: '/store/customer-tracking', icon: Activity },
 
         { name: 'Marketing Analytics', href: '/store/marketing-analytics', icon: LineChart },
+
+        { name: 'Heatmap', href: '/store/heatmap', icon: MousePointerClick },
+
+        { name: 'Cohort Tracking', href: '/store/cohorts', icon: UsersIcon },
+
+        { name: 'Churn Scores', href: '/store/churn-scores', icon: ShieldAlert },
+
+        { name: 'RFM Scores', href: '/store/rfm-scores', icon: BarChart3 },
+
+        { name: 'Behavioral Triggers', href: '/store/behavioral-triggers', icon: Zap },
 
         { name: 'Marketing Stack', href: '/store/marketing-stack', icon: Layers },
 
@@ -153,6 +163,16 @@ const StoreSidebar = ({ storeInfo, isOwner = false, permissions = {} }) => {
                 '/store/customer-tracking',
 
                 '/store/marketing-analytics',
+
+                '/store/heatmap',
+
+                '/store/cohorts',
+
+                '/store/churn-scores',
+
+                '/store/rfm-scores',
+
+                '/store/behavioral-triggers',
 
                 '/store/marketing-stack',
 

@@ -309,15 +309,16 @@ function ConvertModal({
 
   if (successCart) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-        <div className="w-full max-w-md rounded-xl bg-white shadow-xl">
-          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+      <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-4">
+        <div className="flex min-h-full items-center justify-center">
+          <div className="flex w-full max-w-md max-h-[min(90vh,calc(100dvh-2rem))] flex-col rounded-xl bg-white shadow-xl">
+          <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
             <h3 className="text-base font-semibold text-slate-900">Cart converted</h3>
             <button type="button" onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100">
               <X size={18} />
             </button>
           </div>
-          <div className="space-y-4 px-4 py-4">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
             <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800">
               <p className="font-semibold">Conversion saved successfully.</p>
               <p className="mt-1">
@@ -346,7 +347,7 @@ function ConvertModal({
               />
             ) : null}
           </div>
-          <div className="flex justify-end border-t border-slate-100 px-4 py-3">
+          <div className="flex shrink-0 justify-end border-t border-slate-100 px-4 py-3">
             <button
               type="button"
               onClick={onClose}
@@ -355,22 +356,24 @@ function ConvertModal({
               Done
             </button>
           </div>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-md rounded-xl bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-4">
+      <div className="flex min-h-full items-center justify-center">
+        <div className="flex w-full max-w-md max-h-[min(90vh,calc(100dvh-2rem))] flex-col rounded-xl bg-white shadow-xl">
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
           <h3 className="text-base font-semibold text-slate-900">Convert abandoned cart</h3>
           <button type="button" onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100">
             <X size={18} />
           </button>
         </div>
 
-        <div className="space-y-4 px-4 py-4">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
           <p className="text-sm text-slate-600">
             Mark <span className="font-medium text-slate-900">{getCustomerLabel(cart)}</span> as converted.
             This moves the cart to the Converted tab.
@@ -631,7 +634,7 @@ function ConvertModal({
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-slate-100 px-4 py-3">
+        <div className="flex shrink-0 justify-end gap-2 border-t border-slate-100 px-4 py-3">
           <button
             type="button"
             onClick={onClose}
@@ -648,6 +651,7 @@ function ConvertModal({
           >
             {saving ? 'Saving...' : 'Mark as converted'}
           </button>
+        </div>
         </div>
       </div>
     </div>

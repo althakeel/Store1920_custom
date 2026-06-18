@@ -29,7 +29,7 @@ function TopDealsSkeleton() {
       {[...Array(6)].map((_, index) => (
         <div
           key={`top-deals-skeleton-${index}`}
-          className="animate-pulse overflow-hidden rounded-[2px] border border-gray-100 bg-white"
+          className="animate-pulse overflow-hidden rounded-none border-0 bg-white"
         >
           <div className="aspect-square w-full bg-gray-100" />
           <div className="space-y-2 p-3">

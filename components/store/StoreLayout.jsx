@@ -1,12 +1,10 @@
 'use client'
 import { useEffect, useMemo, useRef, useState } from "react"
-import Loading from "../Loading"
+import dynamic from "next/dynamic"
 import Link from "next/link"
 import { ArrowRightIcon, Lock } from "lucide-react"
 import SellerNavbar from "./StoreNavbar"
-import SellerSidebar from "./StoreSidebar"
 import StoreOrderNotificationProvider from "./StoreOrderNotificationProvider"
-
 
 import axios from "axios"
 import { useAuth } from "@/lib/useAuth";
@@ -19,6 +17,20 @@ import {
     getPermissionLabel,
 } from "@/lib/storeDashboardPermissions";
 import { readSellerCache, writeSellerCache } from "@/lib/storeDashboardCache";
+
+const SellerSidebar = dynamic(() => import("./StoreSidebar"), {
+    ssr: false,
+    loading: () => <aside className="hidden w-56 shrink-0 border-r border-slate-200 bg-slate-50 lg:block xl:w-64" />,
+});
+
+const StoreShellSkeleton = dynamic(() => import("./StoreShellSkeleton"), {
+    ssr: false,
+    loading: () => (
+        <div className="flex h-screen flex-col overflow-hidden bg-slate-50" aria-busy="true" aria-label="Loading store dashboard" />
+    ),
+});
+
+const ACCESS_REFRESH_MS = 5 * 60 * 1000;
 
 const StoreLayout = ({ children }) => {
 
@@ -37,6 +49,8 @@ const StoreLayout = ({ children }) => {
         canManageTeamAccess: false,
     });
     const sellerCacheHydratedRef = useRef(false);
+    const lastAccessFetchRef = useRef(0);
+    const [hasCachedSeller, setHasCachedSeller] = useState(false);
 
     const fetchIsSeller = async (retryCount = 0, { silent = false } = {}) => {
         if (!user) {
@@ -50,7 +64,8 @@ const StoreLayout = ({ children }) => {
         }
         setAccessIssue(null);
         try {
-            const token = await getToken(true);
+            let token = await getToken(false);
+            if (!token) token = await getToken(true);
             if (!token) {
                 setAccessIssue({
                     type: 'missing-token',
@@ -76,6 +91,8 @@ const StoreLayout = ({ children }) => {
                 storeInfo: data.storeInfo,
                 dashboardAccess: nextAccess,
             });
+            setHasCachedSeller(true);
+            lastAccessFetchRef.current = Date.now();
             if (!data.isSeller) {
                 setAccessIssue({
                     type: data.reason || 'not-seller',
@@ -121,6 +138,7 @@ const StoreLayout = ({ children }) => {
         sellerCacheHydratedRef.current = true;
         const cached = readSellerCache();
         if (!cached) return;
+        setHasCachedSeller(true);
         setIsSeller(Boolean(cached.isSeller));
         setStoreInfo(cached.storeInfo || null);
         setDashboardAccess(cached.dashboardAccess || {
@@ -140,12 +158,20 @@ const StoreLayout = ({ children }) => {
 
     useEffect(() => {
         const refreshAccess = () => {
-            if (user) fetchIsSeller(0, { silent: true });
+            if (!user) return;
+            if (Date.now() - lastAccessFetchRef.current < ACCESS_REFRESH_MS) return;
+            fetchIsSeller(0, { silent: true });
         };
 
-        window.addEventListener('focus', refreshAccess);
-        return () => window.removeEventListener('focus', refreshAccess);
+        const onVisibility = () => {
+            if (document.visibilityState === 'visible') refreshAccess();
+        };
+
+        document.addEventListener('visibilitychange', onVisibility);
+        return () => document.removeEventListener('visibilitychange', onVisibility);
     }, [user]);
+
+    const showAuthShell = (loading || sellerLoading) && !hasCachedSeller && !(isSeller && storeInfo);
 
     const canViewCurrentPage = useMemo(
         () => canAccessStorePath(pathname, dashboardAccess.permissions, { isOwner: dashboardAccess.isOwner }),
@@ -175,8 +201,8 @@ const StoreLayout = ({ children }) => {
     const blockedPermissionId = getPermissionIdForHref(pathname);
     const blockedPageLabel = getPermissionLabel(blockedPermissionId);
 
-    return (loading || sellerLoading) ? (
-        <Loading />
+    return showAuthShell ? (
+        <StoreShellSkeleton />
     ) : !user ? (
         <div className="min-h-screen flex flex-col items-center justify-center text-center px-6">
             <h1 className="text-2xl sm:text-4xl font-semibold text-slate-400">Authentication Required</h1>

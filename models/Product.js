@@ -37,6 +37,8 @@ const ProductSchema = new mongoose.Schema({
   allowReturn: { type: Boolean, default: true },
   allowReplacement: { type: Boolean, default: true },
   imageAspectRatio: { type: String, default: '1:1' },
+  cardVideoPreviewEnabled: { type: Boolean, default: true },
+  cardVideoPreviewDelaySec: { type: Number, default: 24 },
   storeId: String,
   tags: { type: [String], default: [] },
   seoTitle: { type: String, default: '' },

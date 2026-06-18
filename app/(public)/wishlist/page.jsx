@@ -15,6 +15,7 @@ import { useDispatch } from "react-redux";
 import { addToCart } from "@/lib/features/cart/cartSlice";
 import { useStorefrontMarket } from "@/lib/useStorefrontMarket";
 import PageTitle from "@/components/PageTitle";
+import { PRODUCT_CARD_CELL_CLASS, PRODUCT_CARD_GRID_CLASS } from "@/lib/storefrontCarousel";
 
 const PLACEHOLDER_IMAGE = "/placeholder.png";
 
@@ -269,7 +270,7 @@ function WishlistAuthed() {
                 </button>
               </div>
 
-              <div className="grid gap-2 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
+              <div className={PRODUCT_CARD_GRID_CLASS}>
                 {wishlist.map((item) => {
                   const product = getProduct(item);
                   if (!product) return null;
@@ -284,7 +285,7 @@ function WishlistAuthed() {
                   return (
                     <div
                       key={product._pid}
-                      className={`group bg-white rounded-[2px] border-2 transition-all hover:shadow-lg relative overflow-hidden ${
+                      className={`${PRODUCT_CARD_CELL_CLASS} group bg-white rounded-[2px] border-2 transition-all hover:shadow-lg relative overflow-hidden ${
                         isSelected ? 'border-orange-500 shadow-lg' : 'border-gray-200 hover:border-orange-200'
                       }`}
                     >

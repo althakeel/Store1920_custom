@@ -3,7 +3,7 @@
 import { Search, ShoppingCart, Menu, X, HeartIcon, StarIcon, ArrowLeft, LogOut, User, MapPin, Package } from "lucide-react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { auth } from '../lib/firebase';
 import { getAuth } from "firebase/auth";
@@ -29,13 +29,33 @@ import {
   filterParentCategories,
   getDirectChildCategories,
 } from '@/lib/categoryNavigation';
+import { getProductThumbnailUrl } from '@/lib/productMedia';
 
 const NAVBAR_SELECTED_ADDRESS_KEY = 'navbarSelectedAddressId';
 const NAVBAR_APPEARANCE_CACHE_KEY = 'navbarAppearanceCache';
 const DEFAULT_CATEGORY_IMAGE = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1' y1='0' y2='1'%3E%3Cstop stop-color='%23f8fafc'/%3E%3Cstop offset='1' stop-color='%23e2e8f0'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='120' height='120' rx='60' fill='url(%23g)'/%3E%3Ccircle cx='60' cy='48' r='20' fill='%23cbd5e1'/%3E%3Cpath d='M28 92c8-15 23-24 32-24s24 9 32 24' fill='%23cbd5e1'/%3E%3C/svg%3E";
 
-const DEFAULT_NAVBAR_APPEARANCE = { logoUrl: '', logoWidth: 120, logoHeight: 40, backgroundColor: '#8f3404' };
+const DEFAULT_STORE_LOGO = '/default-store-logo.png';
+const STOREFRONT_BRAND_NAME = 'store1920';
+const DEFAULT_NAVBAR_APPEARANCE = {
+  logoUrl: DEFAULT_STORE_LOGO,
+  logoWidth: 120,
+  logoHeight: 40,
+  backgroundColor: '#8f3404',
+};
 const NAVBAR_CONTAINER_CLASS = 'mx-auto w-full max-w-[1400px] px-4 sm:px-6';
+
+const resolveNavbarLogoSrc = (logoUrl) => {
+  const trimmed = String(logoUrl || '').trim();
+  return trimmed || DEFAULT_STORE_LOGO;
+};
+
+const normalizeNavbarAppearance = (appearance = {}) => ({
+  logoUrl: resolveNavbarLogoSrc(appearance.logoUrl),
+  logoWidth: Number(appearance.logoWidth) > 0 ? Number(appearance.logoWidth) : 120,
+  logoHeight: Number(appearance.logoHeight) > 0 ? Number(appearance.logoHeight) : 40,
+  backgroundColor: appearance.backgroundColor || '#8f3404',
+});
 
 const readCachedNavbarAppearance = () => {
   if (typeof window === 'undefined') return DEFAULT_NAVBAR_APPEARANCE;
@@ -43,7 +63,9 @@ const readCachedNavbarAppearance = () => {
     const raw = window.localStorage.getItem(NAVBAR_APPEARANCE_CACHE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed.logoUrl === 'string') return parsed;
+      if (parsed && typeof parsed === 'object') {
+        return normalizeNavbarAppearance({ ...DEFAULT_NAVBAR_APPEARANCE, ...parsed });
+      }
     }
   } catch {
     // Ignore storage read failures.
@@ -194,8 +216,8 @@ const Navbar = () => {
     ? 'text-white/95 hover:bg-white/15'
     : 'text-gray-900 hover:bg-gray-100';
   const navbarTextColor = getContrastColor(navbarAppearance.backgroundColor);
-  const navbarLogoSrc = navbarAppearance.logoUrl && navbarAppearance.logoUrl.trim() ? navbarAppearance.logoUrl : null;
-  const mobileLogoSrc = navbarAppearance.logoUrl && navbarAppearance.logoUrl.trim() ? navbarAppearance.logoUrl : null;
+  const navbarLogoSrc = resolveNavbarLogoSrc(navbarAppearance.logoUrl);
+  const mobileLogoSrc = navbarLogoSrc;
 
   useEffect(() => {
     if (!navbarAppearanceLoading) {
@@ -331,16 +353,17 @@ const Navbar = () => {
     return () => window.removeEventListener('navActionsVisibilityUpdated', handleVisibilityUpdate);
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (typeof window === 'undefined') return;
 
     try {
       const cached = window.localStorage.getItem(NAVBAR_APPEARANCE_CACHE_KEY);
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (parsed && typeof parsed.logoUrl === 'string') {
-          setNavbarAppearance(parsed);
-            window.dispatchEvent(new CustomEvent('navbarAppearanceUpdated', { detail: parsed }));
+        if (parsed && typeof parsed === 'object') {
+          const normalized = normalizeNavbarAppearance({ ...DEFAULT_NAVBAR_APPEARANCE, ...parsed });
+          setNavbarAppearance(normalized);
+          window.dispatchEvent(new CustomEvent('navbarAppearanceUpdated', { detail: normalized }));
         }
       }
     } catch {
@@ -353,11 +376,7 @@ const Navbar = () => {
 
     const fetchNavbarAppearance = async () => {
       try {
-        // Add timestamp to bypass any caching
-        const cacheBuster = `?t=${Date.now()}`;
-
-        const response = await fetch('/api/store/navbar-menu' + cacheBuster, {
-          cache: 'no-store',
+        const response = await fetch('/api/store/navbar-menu', {
           // Always use public storefront navbar appearance.
           // Passing auth headers can switch to user-scoped settings and clear the logo.
           headers: {},
@@ -375,12 +394,12 @@ const Navbar = () => {
           backgroundColor: data.backgroundColor 
         });
         
-        const nextAppearance = {
-           logoUrl: data.logoUrl || '',
-           logoWidth: data.logoWidth ?? 120,
-           logoHeight: data.logoHeight ?? 40,
-           backgroundColor: data.backgroundColor || '#8f3404',
-        };
+        const nextAppearance = normalizeNavbarAppearance({
+          logoUrl: data.logoUrl || DEFAULT_STORE_LOGO,
+          logoWidth: data.logoWidth ?? 120,
+          logoHeight: data.logoHeight ?? 40,
+          backgroundColor: data.backgroundColor || '#8f3404',
+        });
         
         setNavbarAppearance(nextAppearance);
         try {
@@ -424,14 +443,12 @@ const Navbar = () => {
         return;
       }
       
-      setNavbarAppearance((prev) => {
-        return {
-          logoUrl: hasValidLogoUrl ? detail.logoUrl : prev.logoUrl,
-          logoWidth: (typeof detail.logoWidth === 'number' && detail.logoWidth > 0) ? detail.logoWidth : prev.logoWidth,
-          logoHeight: (typeof detail.logoHeight === 'number' && detail.logoHeight > 0) ? detail.logoHeight : prev.logoHeight,
-          backgroundColor: hasValidBgColor ? detail.backgroundColor : prev.backgroundColor,
-        };
-      });
+      setNavbarAppearance((prev) => normalizeNavbarAppearance({
+        logoUrl: hasValidLogoUrl ? detail.logoUrl : prev.logoUrl,
+        logoWidth: (typeof detail.logoWidth === 'number' && detail.logoWidth > 0) ? detail.logoWidth : prev.logoWidth,
+        logoHeight: (typeof detail.logoHeight === 'number' && detail.logoHeight > 0) ? detail.logoHeight : prev.logoHeight,
+        backgroundColor: hasValidBgColor ? detail.backgroundColor : prev.backgroundColor,
+      }));
       setNavbarAppearanceLoading(false);
     };
 
@@ -1167,19 +1184,15 @@ const Navbar = () => {
               onClick={handleLogoNavigation}
               className="flex flex-shrink-0 items-center"
             >
-              {mobileLogoSrc ? (
-                <Image
-                  src={mobileLogoSrc}
-                  alt="Store Logo"
-                  width={navbarAppearance.logoWidth}
-                  height={navbarAppearance.logoHeight}
-                  className="h-7 w-auto object-contain"
-                  style={{ maxHeight: '32px', maxWidth: mobileNavbarUsesBrandColor ? '110px' : '88px' }}
-                  priority
-                />
-              ) : (
-                <span className={`text-[30px] font-black tracking-tight ${mobileNavbarUsesBrandColor ? 'text-white' : 'text-gray-900'}`}>Jomla</span>
-              )}
+              <Image
+                src={mobileLogoSrc}
+                alt={`${STOREFRONT_BRAND_NAME} logo`}
+                width={navbarAppearance.logoWidth}
+                height={navbarAppearance.logoHeight}
+                className="h-7 w-auto object-contain"
+                style={{ maxHeight: '32px', maxWidth: mobileNavbarUsesBrandColor ? '110px' : '88px' }}
+                priority
+              />
             </Link>
           ) : null}
 
@@ -1269,9 +1282,9 @@ const Navbar = () => {
                         }}
                       >
                         <div className="relative h-9 w-9 overflow-hidden rounded-lg bg-gray-100">
-                          {product.image || product.images?.[0] ? (
+                          {getProductThumbnailUrl(product, { fallback: '' }) ? (
                             <Image
-                              src={product.image || product.images?.[0]}
+                              src={getProductThumbnailUrl(product)}
                               alt={product.name || 'Product'}
                               fill
                               sizes="36px"
@@ -1359,9 +1372,9 @@ const Navbar = () => {
                     }}
                   >
                     <div className="relative h-9 w-9 overflow-hidden rounded-lg bg-gray-100">
-                      {product.image || product.images?.[0] ? (
+                      {getProductThumbnailUrl(product, { fallback: '' }) ? (
                         <Image
-                          src={product.image || product.images?.[0]}
+                          src={getProductThumbnailUrl(product)}
                           alt={product.name || 'Product'}
                           fill
                           sizes="36px"
@@ -1409,23 +1422,21 @@ const Navbar = () => {
             )}
             
             {/* Logo */}
-            {navbarLogoSrc && (
-              <Link
-                href="/"
-                onClick={handleLogoNavigation}
-                className="flex items-center gap-2 flex-shrink-0"
-              >
-                <Image
-                  src={navbarLogoSrc}
-                  alt="Store Logo"
-                  width={navbarAppearance.logoWidth}
-                  height={navbarAppearance.logoHeight}
-                  className="w-auto object-contain flex-shrink-0"
-                  style={{ maxHeight: '50px', maxWidth: '250px' }}
-                  priority
-                />
-              </Link>
-            )}
+            <Link
+              href="/"
+              onClick={handleLogoNavigation}
+              className="flex items-center gap-2 flex-shrink-0"
+            >
+              <Image
+                src={navbarLogoSrc}
+                alt={`${STOREFRONT_BRAND_NAME} logo`}
+                width={navbarAppearance.logoWidth}
+                height={navbarAppearance.logoHeight}
+                className="w-auto object-contain flex-shrink-0"
+                style={{ maxHeight: '50px', maxWidth: '250px' }}
+                priority
+              />
+            </Link>
 
             <button
               type="button"
@@ -1662,18 +1673,14 @@ const Navbar = () => {
               {/* Header with Logo and Close Button */}
               <div className="flex items-center justify-between border-b border-gray-200 pb-4">
                 <button type="button" onClick={handleLogoNavigation} className="flex min-w-0 max-w-[130px] items-center overflow-hidden">
-                  {mobileLogoSrc || navbarLogoSrc ? (
-                    <Image
-                      src={mobileLogoSrc || navbarLogoSrc}
-                      alt="Store Logo"
-                      width={navbarAppearance.logoWidth || 120}
-                      height={navbarAppearance.logoHeight || 40}
-                      className="h-8 w-auto max-w-[120px] object-contain"
-                      style={{ maxHeight: '32px', maxWidth: '120px' }}
-                    />
-                  ) : (
-                    <span className="text-lg font-semibold text-gray-900">Store</span>
-                  )}
+                  <Image
+                    src={mobileLogoSrc || navbarLogoSrc}
+                    alt={`${STOREFRONT_BRAND_NAME} logo`}
+                    width={navbarAppearance.logoWidth || 120}
+                    height={navbarAppearance.logoHeight || 40}
+                    className="h-8 w-auto max-w-[120px] object-contain"
+                    style={{ maxHeight: '32px', maxWidth: '120px' }}
+                  />
                 </button>
                 <button onClick={() => setMobileMenuOpen(false)} className="p-1 hover:bg-gray-100 rounded-full transition">
                   <X size={24} className="text-gray-600" />

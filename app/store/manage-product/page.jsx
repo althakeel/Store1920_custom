@@ -18,6 +18,7 @@ import {
     getProductCategoryLabels,
     resolveCategoryName,
 } from '@/lib/categoryLookup'
+import { getProductThumbnailUrl } from '@/lib/productMedia'
 
 const MAX_VISIBLE_TAGS = 3
 const MAX_VISIBLE_CATEGORIES = 2
@@ -74,6 +75,10 @@ export default function StoreManageProducts() {
         if (src.startsWith('/')) return src
         return ''
     }
+
+    const getProductListImageSrc = (product) => getRenderableImageSrc(
+        getProductThumbnailUrl(product, { fallback: '' })
+    )
 
     const [loading, setLoading] = useState(true)
     const [products, setProducts] = useState([])
@@ -730,12 +735,12 @@ export default function StoreManageProducts() {
                             </td>
                             <td className="px-4 py-3">
                                 <div className="flex gap-2 items-center max-w-xs">
-                                    {getRenderableImageSrc(product.images?.[0]) ? (
+                                    {getProductListImageSrc(product) ? (
                                         <img
                                             width={40}
                                             height={40}
                                             className='h-10 w-10 rounded border border-slate-200 bg-white object-cover p-1 shadow flex-shrink-0'
-                                            src={getRenderableImageSrc(product.images?.[0])}
+                                            src={getProductListImageSrc(product)}
                                             alt={product.name || 'Product image'}
                                             loading="lazy"
                                             referrerPolicy="no-referrer"
@@ -752,7 +757,7 @@ export default function StoreManageProducts() {
                                             N/A
                                         </div>
                                     )}
-                                    {getRenderableImageSrc(product.images?.[0]) ? (
+                                    {getProductListImageSrc(product) ? (
                                         <div className="hidden h-10 w-10 flex-shrink-0 items-center justify-center rounded border border-dashed border-slate-300 bg-slate-50 text-[10px] font-medium text-slate-400">
                                             N/A
                                         </div>

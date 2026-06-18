@@ -137,7 +137,10 @@ export async function GET(req) {
         backgroundColor: settings?.backgroundColor || '#8f3404',
         items: settings?.items || [],
       },
-      { status: 200, headers: { 'Cache-Control': 'no-store' } }
+      {
+        status: 200,
+        headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600' },
+      }
     );
   } catch (error) {
     console.error('[API GET /store/navbar-menu] error:', error);

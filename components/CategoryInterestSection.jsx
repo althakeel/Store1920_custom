@@ -1,7 +1,6 @@
 'use client';
 
 import { useMemo, useState, useEffect } from 'react';
-import { useSelector } from 'react-redux';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import ProductCard from '@/components/ProductCard';
 import {
@@ -14,8 +13,8 @@ import { cleanDisplayText } from '@/lib/displayText';
 import { useHorizontalCarouselDrag } from '@/lib/useHorizontalCarouselDrag';
 
 const MAX_CATEGORIES = 10;
-const MAX_PRODUCTS = 20;
-const INITIAL_ROWS = 5;
+const MAX_PRODUCTS = 60;
+const CATALOG_FETCH_LIMIT = 200;
 
 function getColumnsForWidth(width) {
   if (width >= 1024) return 6;
@@ -67,46 +66,54 @@ function getProductCategoryCandidates(product) {
 }
 
 const normalizeImages = (images) => {
-  // Handle array
   if (Array.isArray(images)) {
-    return images.filter(img => {
-      // Accept strings with content
-      if (typeof img === 'string') return img.trim().length > 0
-      // Accept objects with url/src
+    return images.filter((img) => {
+      if (typeof img === 'string') return img.trim().length > 0;
       if (typeof img === 'object' && img !== null) {
-        return img.url || img.src || img.path || img.data || false
+        return img.url || img.src || img.path || img.data || false;
       }
-      return false
-    })
+      return false;
+    });
   }
-  
-  // Handle null/undefined
-  if (images === null || images === undefined) return []
-  
-  // Handle object - only if it has image data properties
+
+  if (images === null || images === undefined) return [];
+
   if (typeof images === 'object') {
     if (images.url || images.src || images.path || images.data) {
-      return [images]
+      return [images];
     }
-    return [] // Empty object has no valid image data
+    return [];
   }
-  
-  // Handle string
+
   if (typeof images === 'string') {
-    return images.trim().length > 0 ? [images] : []
+    return images.trim().length > 0 ? [images] : [];
   }
-  
-  return []
+
+  return [];
 };
 
+function isRenderableProduct(product) {
+  if (!product || typeof product !== 'object') return false;
+  if (!product.name || !product.slug) return false;
+  return normalizeImages(product.images).length > 0;
+}
+
+function sortByLatest(products) {
+  return [...products].sort((left, right) => {
+    const leftTime = new Date(left?.createdAt || 0).getTime();
+    const rightTime = new Date(right?.createdAt || 0).getTime();
+    return rightTime - leftTime;
+  });
+}
+
 export default function CategoryInterestSection() {
-  const products = useSelector((state) => state.product.list || []);
   const [apiCategories, setApiCategories] = useState([]);
   const [sectionEnabled, setSectionEnabled] = useState(true);
   const [manualRecommendedIds, setManualRecommendedIds] = useState([]);
   const [manualRecommendedProducts, setManualRecommendedProducts] = useState([]);
+  const [catalogProducts, setCatalogProducts] = useState([]);
+  const [catalogLoading, setCatalogLoading] = useState(true);
   const [columnsPerRow, setColumnsPerRow] = useState(6);
-  const [visibleCount, setVisibleCount] = useState(INITIAL_ROWS * 6);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
 
@@ -121,8 +128,6 @@ export default function CategoryInterestSection() {
     trackStyle,
   } = useHorizontalCarouselDrag();
 
-  const initialVisibleCount = columnsPerRow * INITIAL_ROWS;
-
   useEffect(() => {
     const updateColumns = () => {
       setColumnsPerRow(getColumnsForWidth(window.innerWidth));
@@ -133,22 +138,27 @@ export default function CategoryInterestSection() {
     return () => window.removeEventListener('resize', updateColumns);
   }, []);
 
+  const latestProducts = useMemo(
+    () => sortByLatest(catalogProducts.filter(isRenderableProduct)).slice(0, MAX_PRODUCTS),
+    [catalogProducts]
+  );
+
   const fallbackManualProducts = useMemo(() => {
     if (!Array.isArray(manualRecommendedIds) || manualRecommendedIds.length === 0) return [];
 
     const productMap = new Map(
-      products.map((product) => [String(product?._id || product?.id || ''), product])
+      catalogProducts.map((product) => [String(product?._id || product?.id || ''), product])
     );
 
     return manualRecommendedIds
       .map((id) => productMap.get(String(id || '').trim()))
-      .filter(Boolean);
-  }, [manualRecommendedIds, products]);
+      .filter(isRenderableProduct);
+  }, [manualRecommendedIds, catalogProducts]);
 
   const categoryBuckets = useMemo(() => {
     const bucket = new Map();
 
-    products.forEach((product) => {
+    catalogProducts.forEach((product) => {
       const rawCategory =
         product?.category?.name ||
         product?.categoryName ||
@@ -171,9 +181,41 @@ export default function CategoryInterestSection() {
         id: null,
         slug: null,
       }));
-  }, [products]);
+  }, [catalogProducts]);
 
   const [selectedCategoryKey, setSelectedCategoryKey] = useState('recommended');
+
+  useEffect(() => {
+    let isActive = true;
+
+    const fetchCatalog = async () => {
+      try {
+        const response = await fetch(`/api/products?limit=${CATALOG_FETCH_LIMIT}&slim=true`);
+        if (!response.ok || !isActive) return;
+
+        const data = await response.json();
+        if (!isActive) return;
+
+        const products = Array.isArray(data?.products)
+          ? data.products
+          : Array.isArray(data)
+            ? data
+            : [];
+
+        setCatalogProducts(products.filter(isRenderableProduct));
+      } catch {
+        if (isActive) setCatalogProducts([]);
+      } finally {
+        if (isActive) setCatalogLoading(false);
+      }
+    };
+
+    fetchCatalog();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
   useEffect(() => {
     let isActive = true;
@@ -215,8 +257,7 @@ export default function CategoryInterestSection() {
 
     const fetchExploreInterestsSettings = async () => {
       try {
-        // Always use the public endpoint — it reads the same Store document the save writes to.
-        const response = await fetch('/api/store/explore-interests/public', { cache: 'no-store' }).catch(() => null);
+        const response = await fetch('/api/store/explore-interests/public').catch(() => null);
         if (!response?.ok || !isActive) return;
 
         const data = await response.json();
@@ -225,11 +266,11 @@ export default function CategoryInterestSection() {
         const ids = Array.isArray(data?.productIds)
           ? data.productIds.map((id) => String(id || '').trim()).filter(Boolean)
           : [];
-        console.log('[ExploreInterests] API:', data?._storeId, 'productIds:', ids.length, ids.slice(0, 3));
+
         setSectionEnabled(typeof data?.enabled === 'boolean' ? data.enabled : true);
         setManualRecommendedIds(ids);
       } catch {
-        // Keep section enabled with empty recommended on failure.
+        // Keep section enabled with latest-products fallback on failure.
       }
     };
 
@@ -274,7 +315,7 @@ export default function CategoryInterestSection() {
         const response = await fetch('/api/products/batch', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ productIds: manualRecommendedIds }),
+          body: JSON.stringify({ productIds: manualRecommendedIds.slice(0, MAX_PRODUCTS) }),
         });
 
         if (!response.ok) {
@@ -285,13 +326,10 @@ export default function CategoryInterestSection() {
         const data = await response.json();
         if (!isActive) return;
 
-        const normalized = Array.isArray(data?.products) 
-          ? data.products.filter(p => {
-              if (!p || !p.name || !p.slug) return false;
-              if (p.quantity !== undefined && typeof p.quantity === 'number' && !p.images) return false;
-              return true;
-            })
+        const normalized = Array.isArray(data?.products)
+          ? data.products.filter(isRenderableProduct)
           : [];
+
         setManualRecommendedProducts(normalized);
       } catch {
         if (isActive) setManualRecommendedProducts([]);
@@ -324,23 +362,21 @@ export default function CategoryInterestSection() {
   }, [categoriesToRender, selectedCategoryKey]);
 
   const displayedProducts = useMemo(() => {
-    if (!Array.isArray(products) || products.length === 0) {
-      if (!selectedCategoryOption || selectedCategoryOption.key === 'recommended') {
+    if (!selectedCategoryOption || selectedCategoryOption.key === 'recommended') {
+      if (manualRecommendedProducts.length > 0) {
         return manualRecommendedProducts.slice(0, MAX_PRODUCTS);
       }
-      return [];
-    }
-
-    if (!selectedCategoryOption || selectedCategoryOption.key === 'recommended') {
-      if (manualRecommendedProducts.length > 0) return manualRecommendedProducts;
-      return fallbackManualProducts;
+      if (fallbackManualProducts.length > 0) {
+        return fallbackManualProducts.slice(0, MAX_PRODUCTS);
+      }
+      return latestProducts;
     }
 
     const selectedLabel = normalizeToken(selectedCategoryOption.label);
     const selectedId = normalizeToken(selectedCategoryOption.id);
     const selectedSlug = normalizeToken(selectedCategoryOption.slug);
 
-    return products
+    return catalogProducts
       .filter((product) => {
         const candidates = getProductCategoryCandidates(product);
         if (candidates.length === 0) return false;
@@ -352,11 +388,13 @@ export default function CategoryInterestSection() {
         return false;
       })
       .slice(0, MAX_PRODUCTS);
-  }, [products, selectedCategoryOption, manualRecommendedProducts, fallbackManualProducts]);
-
-  useEffect(() => {
-    setVisibleCount(initialVisibleCount);
-  }, [selectedCategoryKey, initialVisibleCount]);
+  }, [
+    catalogProducts,
+    selectedCategoryOption,
+    manualRecommendedProducts,
+    fallbackManualProducts,
+    latestProducts,
+  ]);
 
   useEffect(() => {
     const container = scrollRef.current;
@@ -377,27 +415,11 @@ export default function CategoryInterestSection() {
     };
   }, [categoriesToRender, scrollRef]);
 
-  const paginatedProducts = useMemo(() => {
-    return displayedProducts.slice(0, visibleCount);
-  }, [displayedProducts, visibleCount]);
-
-  const hasMoreProducts = displayedProducts.length > initialVisibleCount
-    && visibleCount < displayedProducts.length;
-
   if (!sectionEnabled) {
     return null;
   }
 
-  const safePaginatedProducts = paginatedProducts.filter((product) => {
-    if (!product || typeof product !== 'object') return false;
-    if (!product.name || !product.slug) return false;
-    if (normalizeImages(product.images).length === 0) return false;
-    if (product.hasOwnProperty('quantity') && product.hasOwnProperty('price') && product.hasOwnProperty('variantOptions')) {
-      return false;
-    }
-    if (typeof product.quantity === 'number') return false;
-    return true;
-  });
+  const productSkeletonCount = columnsPerRow;
 
   return (
     <section className={HOME_SECTION_CLASS}>
@@ -406,12 +428,12 @@ export default function CategoryInterestSection() {
           <h2 className={HOME_SECTION_BLOCK_HEADING_CLASS}>Explore your interests</h2>
         </div>
 
-        <div className="relative mb-5">
+        <div className="relative mb-5 flex items-center gap-2">
           {canScrollLeft ? (
             <button
               type="button"
               onClick={scrollLeft}
-              className="absolute left-0 top-1/2 z-10 flex -translate-y-1/2 rounded-full border border-gray-200 bg-white p-1.5 shadow-md transition hover:bg-gray-50"
+              className="flex shrink-0 rounded-full border border-gray-200 bg-white p-1.5 shadow-md transition hover:bg-gray-50"
               aria-label="Scroll categories left"
             >
               <ChevronLeft size={18} className="text-gray-800" />
@@ -427,9 +449,7 @@ export default function CategoryInterestSection() {
             onPointerUp={endDragging}
             onPointerLeave={endDragging}
             onPointerCancel={endDragging}
-            className={`flex items-center gap-2.5 overflow-x-auto scrollbar-hide overscroll-x-contain scroll-smooth py-1 ${
-              canScrollLeft ? 'pl-10' : 'pl-1'
-            } ${canScrollRight ? 'pr-10' : 'pr-1'} ${
+            className={`min-w-0 flex-1 snap-x snap-mandatory items-center gap-2.5 overflow-x-auto overscroll-x-contain scroll-smooth py-1 scrollbar-hide flex ${
               isDragging ? 'cursor-grabbing select-none' : 'cursor-grab'
             }`}
             style={trackStyle}
@@ -444,7 +464,7 @@ export default function CategoryInterestSection() {
                   role="tab"
                   aria-selected={isActive}
                   onClick={() => setSelectedCategoryKey(category.key)}
-                  className={`relative z-[1] shrink-0 whitespace-nowrap rounded-xl border px-4 py-2.5 text-sm font-semibold leading-none shadow-sm transition-all duration-200 active:scale-[0.98] ${
+                  className={`relative z-[1] shrink-0 snap-start whitespace-nowrap rounded-xl border px-4 py-2.5 text-sm font-semibold leading-none shadow-sm transition-all duration-200 active:scale-[0.98] ${
                     isActive
                       ? 'border-gray-900 bg-gray-900 text-white shadow-md'
                       : 'border-gray-300 bg-gray-50 text-gray-800 hover:border-gray-400 hover:bg-white'
@@ -460,7 +480,7 @@ export default function CategoryInterestSection() {
             <button
               type="button"
               onClick={scrollRight}
-              className="absolute right-0 top-1/2 z-10 flex -translate-y-1/2 rounded-full border border-gray-200 bg-white p-1.5 shadow-md transition hover:bg-gray-50"
+              className="flex shrink-0 rounded-full border border-gray-200 bg-white p-1.5 shadow-md transition hover:bg-gray-50"
               aria-label="Scroll categories right"
             >
               <ChevronRight size={18} className="text-gray-800" />
@@ -468,26 +488,31 @@ export default function CategoryInterestSection() {
           ) : null}
         </div>
 
-        {displayedProducts.length > 0 ? (
-          <>
-            <div className={HOME_PRODUCT_GRID_CLASS}>
-              {safePaginatedProducts.map((product) => (
-                <ProductCard key={product._id || product.id} product={product} />
-              ))}
-            </div>
-
-            {hasMoreProducts && (
-              <div className="mt-5 flex justify-center">
-                <button
-                  type="button"
-                  onClick={() => setVisibleCount(displayedProducts.length)}
-                  className="rounded-full border border-slate-300 px-6 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
-                >
-                  Show more
-                </button>
+        {catalogLoading && displayedProducts.length === 0 ? (
+          <div className={HOME_PRODUCT_GRID_CLASS}>
+            {Array.from({ length: productSkeletonCount }).map((_, index) => (
+              <div
+                key={`interest-skeleton-${index}`}
+                className="h-full w-full min-w-0 overflow-hidden rounded-[2px] border border-gray-100 bg-white animate-pulse"
+              >
+                <div className="aspect-square w-full bg-gray-100" />
+                <div className="space-y-2 p-3">
+                  <div className="h-3 w-4/5 rounded bg-gray-100" />
+                  <div className="h-4 w-1/2 rounded bg-gray-100" />
+                </div>
               </div>
-            )}
-          </>
+            ))}
+          </div>
+        ) : displayedProducts.length > 0 ? (
+          <div className={HOME_PRODUCT_GRID_CLASS}>
+            {displayedProducts.map((product, index) => (
+              <ProductCard
+                key={product._id || product.id || product.slug}
+                product={product}
+                priorityImages={index < 6}
+              />
+            ))}
+          </div>
         ) : (
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">
             No products found in this category.

@@ -1,3 +1,5 @@
+import { PRODUCT_CARD_CELL_CLASS, PRODUCT_CARD_GRID_CLASS } from '@/lib/storefrontCarousel';
+
 export default function HomeLoading() {
   return (
     <div className="animate-pulse pb-8">
@@ -7,9 +9,9 @@ export default function HomeLoading() {
           <div className="hidden h-[420px] rounded bg-slate-100 lg:block" />
           <div className="h-[220px] rounded bg-slate-100" />
         </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-6">
+        <div className={PRODUCT_CARD_GRID_CLASS}>
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="aspect-square rounded bg-slate-100" />
+            <div key={i} className={`aspect-square rounded bg-slate-100 ${PRODUCT_CARD_CELL_CLASS}`} />
           ))}
         </div>
       </div>

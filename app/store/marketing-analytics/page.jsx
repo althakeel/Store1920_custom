@@ -62,6 +62,25 @@ export default function MarketingAnalyticsPage() {
         </div>
       </div>
 
+      <div className="flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+        <span className="w-full text-[10px] font-semibold uppercase tracking-wide text-slate-500 sm:w-auto sm:py-2">Customer intelligence</span>
+        {[
+          ['RFM Scores', '/store/rfm-scores'],
+          ['Cohort Tracking', '/store/cohorts'],
+          ['Churn Scores', '/store/churn-scores'],
+          ['Behavioral Triggers', '/store/behavioral-triggers'],
+          ['Heatmap', '/store/heatmap'],
+        ].map(([label, href]) => (
+          <Link
+            key={href}
+            href={href}
+            className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 sm:text-sm"
+          >
+            {label}
+          </Link>
+        ))}
+      </div>
+
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-7">
         {[
           ['Sessions', summary.sessions],

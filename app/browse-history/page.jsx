@@ -107,7 +107,7 @@ export default function BrowseHistoryPage() {
             <p className="text-sm text-gray-600 mb-4">
               Showing {history.length} recently viewed {history.length === 1 ? 'product' : 'products'}
             </p>
-            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 items-stretch gap-3 sm:grid-cols-3 lg:grid-cols-4">
               {history.map((item) => (
                 <ProductCard key={item._id} product={item.product} />
               ))}

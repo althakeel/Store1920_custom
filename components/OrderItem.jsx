@@ -9,6 +9,7 @@ import { downloadInvoice, printInvoice } from "@/lib/generateInvoice";
 import Link from "next/link";
 import axios from "axios";
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
+import { getProductThumbnailUrl } from '@/lib/productMedia';
 
 const OrderItem = ({ order: initialOrder }) => {
 
@@ -136,9 +137,9 @@ const OrderItem = ({ order: initialOrder }) => {
                                     return (
                                         <div key={idx} className="relative">
                                             <div className="w-16 h-16 bg-slate-100 rounded-lg overflow-hidden border border-slate-200">
-                                                {product.images?.[0] ? (
+                                                {getProductThumbnailUrl(product, { fallback: '' }) ? (
                                                     <Image
-                                                        src={product.images[0]}
+                                                        src={getProductThumbnailUrl(product)}
                                                         alt={product.name}
                                                         width={64}
                                                         height={64}
@@ -178,9 +179,9 @@ const OrderItem = ({ order: initialOrder }) => {
                                     return (
                                         <div key={idx} className="flex items-start gap-4 pb-4 border-b border-slate-100 last:border-0">
                                             <div className="w-24 h-24 bg-slate-100 rounded-lg overflow-hidden flex-shrink-0 border border-slate-200">
-                                                {product.images?.[0] ? (
+                                                {getProductThumbnailUrl(product, { fallback: '' }) ? (
                                                     <Image
-                                                        src={product.images[0]}
+                                                        src={getProductThumbnailUrl(product)}
                                                         alt={product.name}
                                                         width={96}
                                                         height={96}

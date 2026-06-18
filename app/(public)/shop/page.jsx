@@ -8,7 +8,7 @@ import { SlidersHorizontal, X } from 'lucide-react'
 import ShopPagination from '@/components/ShopPagination'
 
 const PRODUCTS_PER_PAGE = 100;
-const SHOP_CATALOG_URL = '/api/products?all=true&includeOutOfStock=true';
+const SHOP_CATALOG_URL = '/api/products?all=true&slim=true&includeOutOfStock=true';
 
 function ShopContent() {
     const searchParams = useSearchParams();
@@ -81,7 +81,7 @@ function ShopContent() {
 
         if (categoryParam) {
             setCategoryLoading(true);
-            fetch(`/api/products?category=${encodeURIComponent(categoryParam)}&all=true&includeOutOfStock=true`)
+            fetch(`/api/products?category=${encodeURIComponent(categoryParam)}&all=true&slim=true&includeOutOfStock=true`)
                 .then((res) => res.json())
                 .then((data) => {
                     if (!isActive) return;
@@ -651,7 +651,7 @@ function ShopContent() {
                                     </div>
                                 ) : (
                                     <>
-                                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
+                                        <div className="grid grid-cols-2 items-stretch gap-3 md:grid-cols-3 lg:grid-cols-5">
                                             {paginatedProducts.map((product) => (
                                                 <ProductCard key={product._id || product.id} product={product} />
                                             ))}

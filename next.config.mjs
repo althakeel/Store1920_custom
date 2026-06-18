@@ -4,6 +4,17 @@ const domains = ['store1920-images.s3.ap-south-1.amazonaws.com', 'ik.imagekit.io
 if (!domains.includes('placehold.co')) domains.push('placehold.co');
 // Allow Flixcart CDN for category images
 if (!domains.includes('rukminim2.flixcart.com')) domains.push('rukminim2.flixcart.com');
+// Amazon product image CDNs (imported / scraped catalog images)
+[
+    'm.media-amazon.com',
+    'images-na.ssl-images-amazon.com',
+    'images-eu.ssl-images-amazon.com',
+    'images-fe.ssl-images-amazon.com',
+    'ecx.images-amazon.com',
+    'images.amazon.com',
+].forEach((host) => {
+    if (!domains.includes(host)) domains.push(host);
+});
 try {
     if (process.env.AWS_S3_PUBLIC_URL) {
         const u = new URL(process.env.AWS_S3_PUBLIC_URL);
@@ -30,13 +41,13 @@ if (!domains.includes('lh3.googleusercontent.com')) domains.push('lh3.googleuser
 
 const nextConfig = {
     images: {
-        unoptimized: true,
+        unoptimized: false,
         domains,
         // Allow the same hosts via remotePatterns for fine-grained control
         remotePatterns: [
             ...domains.map((host) => ({ protocol: 'https', hostname: host, pathname: '/:path*' })),
-            { protocol: 'https', hostname: '**', pathname: '/:path*' },
-            { protocol: 'http', hostname: '**', pathname: '/:path*' },
+            { protocol: 'https', hostname: '*.media-amazon.com', pathname: '/:path*' },
+            { protocol: 'https', hostname: '*.ssl-images-amazon.com', pathname: '/:path*' },
         ],
         formats: ['image/avif', 'image/webp'],
         deviceSizes: [320, 420, 640, 768, 1024, 1280, 1536, 1920],
@@ -52,6 +63,16 @@ const nextConfig = {
         },
         // Avoid truncated JSON when saving large category menus through middleware
         middlewareClientMaxBodySize: '50mb',
+        optimizePackageImports: [
+            'lucide-react',
+            'react-icons',
+            'date-fns',
+            'recharts',
+            '@tiptap/react',
+            '@tiptap/starter-kit',
+            'firebase/auth',
+            'react-redux',
+        ],
     },
     serverExternalPackages: ['mongoose', 'firebase-admin'],
 
@@ -128,6 +149,42 @@ const nextConfig = {
                         key: 'Cache-Control',
                         value: 'private, no-cache, no-store, must-revalidate'
                     }
+                ],
+            },
+            {
+                source: '/',
+                headers: [
+                    {
+                        key: 'Cache-Control',
+                        value: 'public, s-maxage=60, stale-while-revalidate=300',
+                    },
+                ],
+            },
+            {
+                source: '/product/:slug*',
+                headers: [
+                    {
+                        key: 'Cache-Control',
+                        value: 'public, s-maxage=120, stale-while-revalidate=600',
+                    },
+                ],
+            },
+            {
+                source: '/shop',
+                headers: [
+                    {
+                        key: 'Cache-Control',
+                        value: 'public, s-maxage=120, stale-while-revalidate=600',
+                    },
+                ],
+            },
+            {
+                source: '/categories',
+                headers: [
+                    {
+                        key: 'Cache-Control',
+                        value: 'public, s-maxage=300, stale-while-revalidate=900',
+                    },
                 ],
             },
             {

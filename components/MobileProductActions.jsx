@@ -1,6 +1,7 @@
 'use client'
 
 import { Plus, ShoppingCart } from 'lucide-react'
+import { useStorefrontI18n } from '@/lib/useStorefrontI18n'
 
 export default function MobileProductActions({ 
   onOrderNow, 
@@ -11,10 +12,17 @@ export default function MobileProductActions({
   isOutOfStock = false,
   isOrdering = false
 }) {
+  const { t, isArabic } = useStorefrontI18n()
+
+  const orderLabel = isOutOfStock
+    ? t('common.outOfStock')
+    : isOrdering
+      ? t('common.processing')
+      : t('common.orderNow')
+
   return (
-    <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white shadow-2xl z-50 safe-area-bottom" dir="ltr">
+    <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white shadow-2xl z-50 safe-area-bottom" dir={isArabic ? 'rtl' : 'ltr'}>
       <div className="flex items-center gap-3 px-4 py-3">
-        {/* Order Now Button */}
         <button
           onClick={onOrderNow}
           disabled={isOutOfStock || isOrdering}
@@ -24,17 +32,17 @@ export default function MobileProductActions({
               : 'bg-red-500 active:bg-red-600'
           }`}
         >
-          <span className="text-base">{isOutOfStock ? 'Out of Stock' : isOrdering ? 'Processing...' : 'Order Now'}</span>
+          <span className="text-base">{orderLabel}</span>
           {!isOutOfStock && !isOrdering && <Plus size={20} strokeWidth={3} />}
           {isOrdering && <span className="w-4 h-4 border-2 border-white/70 border-t-white rounded-full animate-spin" />}
         </button>
 
-        {/* Add to Cart Button - Hidden when out of stock */}
         {!isOutOfStock && (
           <button
             onClick={onAddToCart}
             className="relative flex items-center justify-center w-16 h-12 rounded-lg transition-all shadow-md"
             style={{ backgroundColor: cartCount > 0 ? '#262626' : '#DC013C' }}
+            aria-label={t('common.addToCart')}
           >
             <ShoppingCart size={24} className="text-white" strokeWidth={2.5} />
             {cartCount > 0 && (

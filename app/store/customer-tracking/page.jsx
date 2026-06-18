@@ -628,6 +628,18 @@ export default function CustomerTrackingPage() {
     fetchTrackingData();
   }, [range, visitorPage]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const visitor = params.get('visitor');
+    if (visitor) {
+      setModalVisitorKey(visitor);
+      if (params.get('range')) {
+        setRange(params.get('range'));
+      }
+    }
+  }, []);
+
   const fetchTrackingData = async () => {
     try {
       setLoading(true);

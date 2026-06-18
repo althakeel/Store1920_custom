@@ -24,6 +24,7 @@ import {
   Watch,
 } from 'lucide-react'
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket'
+import { getProductThumbnailUrl } from '@/lib/productMedia'
 
 function getCategoryHref(category) {
   if (category?.slug) return `/shop?category=${encodeURIComponent(category.slug)}`
@@ -38,8 +39,7 @@ function getProductHref(product) {
 }
 
 function getProductImage(product) {
-  if (Array.isArray(product?.images) && product.images[0]) return product.images[0]
-  return ''
+  return getProductThumbnailUrl(product, { fallback: '' })
 }
 
 function isIconImageUrl(value) {
