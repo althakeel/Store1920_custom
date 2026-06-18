@@ -5,6 +5,7 @@ import Link from "next/link"
 import { ArrowRightIcon, Lock } from "lucide-react"
 import SellerNavbar from "./StoreNavbar"
 import StoreOrderNotificationProvider from "./StoreOrderNotificationProvider"
+import StoreShellSkeleton from "./StoreShellSkeleton"
 
 import axios from "axios"
 import { useAuth } from "@/lib/useAuth";
@@ -21,13 +22,6 @@ import { readSellerCache, writeSellerCache } from "@/lib/storeDashboardCache";
 const SellerSidebar = dynamic(() => import("./StoreSidebar"), {
     ssr: false,
     loading: () => <aside className="hidden w-56 shrink-0 border-r border-slate-200 bg-slate-50 lg:block xl:w-64" />,
-});
-
-const StoreShellSkeleton = dynamic(() => import("./StoreShellSkeleton"), {
-    ssr: false,
-    loading: () => (
-        <div className="flex h-screen flex-col overflow-hidden bg-slate-50" aria-busy="true" aria-label="Loading store dashboard" />
-    ),
 });
 
 const ACCESS_REFRESH_MS = 5 * 60 * 1000;
