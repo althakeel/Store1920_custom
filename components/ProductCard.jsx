@@ -97,6 +97,7 @@ const ProductCard = ({
   const cartItems = useSelector((state) => state.cart.cartItems)
   const [hovered, setHovered] = useState(false)
   const [showCardVideo, setShowCardVideo] = useState(false)
+  const [isCartHydrated, setIsCartHydrated] = useState(false)
   const cardVideoRef = useRef(null)
   const [reviews, setReviews] = useState([])
 
@@ -107,6 +108,10 @@ const ProductCard = ({
     if (typeof cartEntry === 'object' && typeof cartEntry.quantity === 'number') return cartEntry.quantity
     return 0
   })()
+
+  useEffect(() => {
+    setIsCartHydrated(true)
+  }, [])
 
   useEffect(() => {
     if (Number(product.averageRating) > 0 || Number(product.ratingCount) > 0) {
@@ -249,7 +254,7 @@ const ProductCard = ({
       )
     }
 
-    if (itemQuantity > 0) {
+    if (isCartHydrated && itemQuantity > 0) {
       return (
         <>
           <div
@@ -414,8 +419,8 @@ const ProductCard = ({
           {(priceNum > 0 || AEDNum > 0) ? (
             <div className="mb-1 flex flex-wrap items-center gap-1">
               {priceNum > 0 ? (
-                <p className="inline-flex items-center gap-1.5 text-base font-extrabold leading-none text-slate-950 sm:text-lg">
-                  <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">
+                <p className="inline-flex items-center gap-1.5 text-base font-medium leading-none text-slate-950 sm:text-lg">
+                  <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-600">
                     {market.currency}
                   </span>
                   <span>{convertedPrice.toFixed(0)}</span>

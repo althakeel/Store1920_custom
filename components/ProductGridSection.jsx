@@ -11,7 +11,9 @@ function SkeletonCard() {
   );
 }
 
-const PLACEHOLDER_IMG = "/default-store-logo.png";
+import { STORE1920_LOGO_PATH } from '@/lib/brandLogo';
+
+const PLACEHOLDER_IMG = STORE1920_LOGO_PATH;
 
 // products: [{ image, name, label, labelType }]
 export default function ProductGridSection({ title, products = [], viewAllPath = "#" }) {

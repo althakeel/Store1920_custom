@@ -49,7 +49,7 @@ export default function StoreShippingSettings() {
         const token = await getToken();
         const [shippingRes, productsRes] = await Promise.all([
           axios.get('/api/shipping', { headers: token ? { Authorization: `Bearer ${token}` } : {} }),
-          axios.get('/api/store/product')
+          axios.get('/api/store/product', { headers: token ? { Authorization: `Bearer ${token}` } : {} }),
         ]);
         if (shippingRes.data?.setting) {
           setForm({
@@ -85,8 +85,8 @@ export default function StoreShippingSettings() {
           setAllProducts(productsRes.data.products)
           setSelectedFreeProducts(
             productsRes.data.products
-              .filter(p => p.freeShippingEligible)
-              .map(p => p._id)
+              .filter((p) => p.freeShippingEligible)
+              .map((p) => String(p._id))
           )
         }
       } catch (e) {
@@ -99,16 +99,39 @@ export default function StoreShippingSettings() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const toggleFreeShippingProduct = (productId) => {
+    const id = String(productId);
+    setSelectedFreeProducts((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
   const onSave = async () => {
     try {
       setSaving(true)
-      console.log('Saving form with maxCODAmount:', form.maxCODAmount, 'Full form:', form)
+      const hasFreeShippingProducts = selectedFreeProducts.length > 0;
+      const payload = {
+        ...form,
+        enableProductSpecificFreeShipping: hasFreeShippingProducts || form.enableProductSpecificFreeShipping,
+      };
+      console.log('Saving form with maxCODAmount:', payload.maxCODAmount, 'Full form:', payload)
       const token = await getToken()
-      const response = await axios.put('/api/shipping', form, { headers: { Authorization: `Bearer ${token}` } })
+      const response = await axios.put('/api/shipping', payload, { headers: { Authorization: `Bearer ${token}` } })
       console.log('Server response:', response.data)
-      // Save free shipping products
-      await axios.put('/api/store/products/free-shipping', { productIds: selectedFreeProducts }, { headers: { Authorization: `Bearer ${token}` } })
-      toast.success('Shipping settings saved')
+      await axios.put(
+        '/api/store/products/free-shipping',
+        { productIds: selectedFreeProducts },
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      setForm((prev) => ({
+        ...prev,
+        enableProductSpecificFreeShipping: hasFreeShippingProducts || prev.enableProductSpecificFreeShipping,
+      }));
+      toast.success(
+        hasFreeShippingProducts
+          ? `Shipping settings saved — ${selectedFreeProducts.length} product(s) get free shipping`
+          : 'Shipping settings saved'
+      )
     } catch (e) {
       console.error('Save error:', e?.response?.data || e.message)
       toast.error(e?.response?.data?.error || e.message)
@@ -255,6 +278,89 @@ export default function StoreShippingSettings() {
               )}
             </div>
 
+            {/* Product-specific free shipping */}
+            {form.shippingType !== 'FREE' && (
+              <div className='bg-white p-6 rounded-xl border border-slate-200'>
+                <h2 className='text-xl font-semibold text-slate-800 mb-1 flex items-center gap-2'>
+                  <PackageIcon size={20} /> Free Shipping by Product
+                </h2>
+                <p className='text-sm text-slate-500 mb-4'>
+                  Select products that should always ship free. If the cart contains any of these products, shipping is waived for that order.
+                </p>
+
+                {selectedFreeProducts.length > 0 && (
+                  <div className='flex flex-wrap gap-2 mb-4'>
+                    {selectedFreeProducts.map((id) => {
+                      const p = allProducts.find((x) => String(x._id) === id)
+                      if (!p) return null
+                      return (
+                        <span key={id} className='flex items-center gap-1.5 bg-emerald-50 text-emerald-800 text-xs font-medium px-2.5 py-1 rounded-full border border-emerald-200'>
+                          {p.name}
+                          <button
+                            type='button'
+                            onClick={() => toggleFreeShippingProduct(id)}
+                            className='hover:text-emerald-600'
+                            aria-label={`Remove ${p.name}`}
+                          >
+                            <XIcon size={12} />
+                          </button>
+                        </span>
+                      )
+                    })}
+                  </div>
+                )}
+
+                <div className='relative mb-2'>
+                  <SearchIcon size={14} className='absolute left-3 top-1/2 -translate-y-1/2 text-slate-400' />
+                  <input
+                    type='text'
+                    value={productSearch}
+                    onChange={(e) => setProductSearch(e.target.value)}
+                    placeholder='Search products to add free shipping...'
+                    className='w-full border border-slate-300 rounded-lg px-3 py-2.5 pl-8 text-sm'
+                  />
+                </div>
+
+                <div className='max-h-72 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100'>
+                  {allProducts
+                    .filter((p) => p.name?.toLowerCase().includes(productSearch.toLowerCase()))
+                    .map((p) => {
+                      const id = String(p._id)
+                      const checked = selectedFreeProducts.includes(id)
+                      const thumb = Array.isArray(p.images) && p.images[0] ? p.images[0] : null
+                      return (
+                        <label
+                          key={id}
+                          className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-slate-50 ${checked ? 'bg-emerald-50/70' : ''}`}
+                        >
+                          <input
+                            type='checkbox'
+                            checked={checked}
+                            onChange={() => toggleFreeShippingProduct(id)}
+                            className='accent-emerald-600'
+                          />
+                          {thumb ? (
+                            <img src={thumb} alt='' className='h-9 w-9 rounded object-cover border border-slate-200' />
+                          ) : (
+                            <div className='h-9 w-9 rounded bg-slate-100 border border-slate-200' />
+                          )}
+                          <span className='text-sm text-slate-700 flex-1 min-w-0 truncate'>{p.name}</span>
+                          {checked ? (
+                            <span className='text-xs text-emerald-700 font-semibold shrink-0'>Free shipping</span>
+                          ) : null}
+                        </label>
+                      )
+                    })}
+                  {allProducts.filter((p) => p.name?.toLowerCase().includes(productSearch.toLowerCase())).length === 0 && (
+                    <p className='text-sm text-slate-400 text-center py-6'>No products found</p>
+                  )}
+                </div>
+                <p className='text-xs text-slate-500 mt-3'>
+                  {selectedFreeProducts.length} product(s) selected — customers pay no delivery fee when these are in the cart.
+                </p>
+              </div>
+            )}
+
             {/* Free Shipping Threshold */}
             {form.shippingType !== 'FREE' && (
               <div className='bg-white p-6 rounded-xl border border-slate-200'>
@@ -269,85 +375,8 @@ export default function StoreShippingSettings() {
                       onChange={(e) => setForm(s => ({ ...s, freeShippingMin: Number(e.target.value) }))}
                       className='w-48 border border-slate-300 rounded px-3 py-2' />
                   </div>
-                  <p className='text-xs text-slate-500 mt-2'>Orders at or above this amount get free shipping</p>
+                  <p className='text-xs text-slate-500 mt-2'>Orders at or above this amount get free shipping (applies to all products)</p>
                 </div>
-                <label className='mt-4 flex items-start gap-3 cursor-pointer'>
-                  <input
-                    type='checkbox'
-                    checked={form.enableProductSpecificFreeShipping}
-                    onChange={(e) => setForm((s) => ({ ...s, enableProductSpecificFreeShipping: e.target.checked }))}
-                    className='mt-1 w-5 h-5 accent-slate-700'
-                  />
-                  <div>
-                    <span className='text-sm font-medium text-slate-700'>Enable product-specific free shipping</span>
-                    <p className='text-xs text-slate-500 mt-1'>When enabled, any product marked for free shipping will make the order shipping free for that product selection.</p>
-                  </div>
-                </label>
-
-                {form.enableProductSpecificFreeShipping && (
-                  <div className='mt-5 border border-slate-200 rounded-lg p-4'>
-                    <h3 className='text-sm font-semibold text-slate-700 mb-3'>Select Free Shipping Products</h3>
-
-                    {/* Selected tags */}
-                    {selectedFreeProducts.length > 0 && (
-                      <div className='flex flex-wrap gap-2 mb-3'>
-                        {selectedFreeProducts.map(id => {
-                          const p = allProducts.find(x => x._id === id)
-                          if (!p) return null
-                          return (
-                            <span key={id} className='flex items-center gap-1 bg-teal-100 text-teal-800 text-xs font-medium px-2.5 py-1 rounded-full'>
-                              {p.name}
-                              <button type='button' onClick={() => setSelectedFreeProducts(prev => prev.filter(i => i !== id))} className='ml-1 hover:text-teal-600'>
-                                <XIcon size={12} />
-                              </button>
-                            </span>
-                          )
-                        })}
-                      </div>
-                    )}
-
-                    {/* Search box */}
-                    <div className='relative mb-2'>
-                      <SearchIcon size={14} className='absolute left-3 top-1/2 -translate-y-1/2 text-slate-400' />
-                      <input
-                        type='text'
-                        value={productSearch}
-                        onChange={e => setProductSearch(e.target.value)}
-                        placeholder='Search products...'
-                        className='w-full border border-slate-300 rounded px-3 py-2 pl-8 text-sm'
-                      />
-                    </div>
-
-                    {/* Product list */}
-                    <div className='max-h-60 overflow-y-auto border border-slate-200 rounded divide-y divide-slate-100'>
-                      {allProducts
-                        .filter(p => p.name?.toLowerCase().includes(productSearch.toLowerCase()))
-                        .map(p => {
-                          const checked = selectedFreeProducts.includes(p._id)
-                          return (
-                            <label key={p._id} className={`flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-slate-50 ${checked ? 'bg-teal-50' : ''}`}>
-                              <input
-                                type='checkbox'
-                                checked={checked}
-                                onChange={() => {
-                                  setSelectedFreeProducts(prev =>
-                                    checked ? prev.filter(i => i !== p._id) : [...prev, p._id]
-                                  )
-                                }}
-                                className='accent-teal-600'
-                              />
-                              <span className='text-sm text-slate-700 flex-1'>{p.name}</span>
-                              {checked && <span className='text-xs text-teal-600 font-medium'>Free Ship</span>}
-                            </label>
-                          )
-                        })}
-                      {allProducts.filter(p => p.name?.toLowerCase().includes(productSearch.toLowerCase())).length === 0 && (
-                        <p className='text-sm text-slate-400 text-center py-4'>No products found</p>
-                      )}
-                    </div>
-                    <p className='text-xs text-slate-500 mt-2'>{selectedFreeProducts.length} product(s) selected for free shipping</p>
-                  </div>
-                )}
               </div>
             )}
 

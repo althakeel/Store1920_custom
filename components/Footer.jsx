@@ -2,13 +2,14 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useState } from "react";
-import Logo from "../assets/logo/logo.png";
+import Logo from "@/assets/logo/Store1920.png";
 import { useStorefrontI18n } from '@/lib/useStorefrontI18n';
+import { HOME_SECTION_INNER_CLASS } from '@/lib/storefrontCarousel';
 
 const NAVBAR_APPEARANCE_CACHE_KEY = 'navbarAppearanceCacheV1';
 
 const Footer = () => {
-    const { t } = useStorefrontI18n();
+    const { t, isArabic } = useStorefrontI18n();
 
     const [footerLogo, setFooterLogo] = useState({
         logoUrl: '',
@@ -141,21 +142,21 @@ const Footer = () => {
     const appDownloadLinks = [
         {
             icon: GooglePlayIcon,
-            title: 'Get it on',
-            platform: 'Google Play',
+            title: t('footer.getItOn'),
+            platform: t('footer.googlePlay'),
             href: 'https://play.google.com/store',
         },
         {
             icon: AppleIcon,
-            title: 'Download on the',
-            platform: 'App Store',
+            title: t('footer.downloadOnThe'),
+            platform: t('footer.appStore'),
             href: 'https://www.apple.com/app-store/',
         },
     ];
 
     return (
-        <footer className="bg-black text-slate-200 border-t border-slate-800 pt-0 lg:pt-12">
-            <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
+        <footer className="bg-black text-slate-200 border-t border-slate-800 pt-0 lg:pt-12" dir={isArabic ? 'rtl' : 'ltr'}>
+            <div className={HOME_SECTION_INNER_CLASS}>
                 {/* Main Footer Content */}
                 <div className="py-2 grid grid-cols-2 gap-2 md:grid-cols-2 lg:grid-cols-6 md:gap-4 lg:gap-6">
                     {/* Brand Section - Takes 2 columns on large screens */}
@@ -228,7 +229,7 @@ const Footer = () => {
 
                 {/* Bottom Bar - Normal flow, always at bottom of footer */}
                 <div className="border-t border-slate-800 py-8 mt-4 w-full flex flex-col items-center justify-end">
-                    <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 w-full max-w-[1340px] px-4">
+                    <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 w-full">
                         <div className="flex items-center justify-center lg:justify-start gap-3">
                             {socialIcons.map((item, i) => (
                                 <Link 
@@ -243,7 +244,7 @@ const Footer = () => {
                             ))}
                         </div>
                         <p className="text-sm text-slate-500 text-center">
-                            © {new Date().getFullYear()} Al Thakeel General Trading LLC. All rights reserved.
+                            {t('footer.copyright', { year: new Date().getFullYear() })}
                         </p>
 
                     </div>

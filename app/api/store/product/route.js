@@ -7,6 +7,11 @@ import Store from '@/models/Store';
 import { invalidateStorefrontProductCaches } from '@/lib/cache';
 import authSeller from "@/middlewares/authSeller";
 import { buildCategoryLookup, getProductCategoryLabels } from '@/lib/categoryLookup';
+import {
+  fetchPickerPage,
+  fetchPickerProductIds,
+  fetchPickerProductsByIds,
+} from '@/lib/storeProductPicker';
 import { NextResponse } from "next/server";
 import { getAuth } from '@/lib/firebase-admin';
 
@@ -376,22 +381,94 @@ export async function GET(request) {
     try {
         await connectDB();
 
-        const products = await Product.find({}).sort({ createdAt: -1 }).lean();
-        const categoryLookup = buildCategoryLookup(
-            await Category.find({}).select('_id name nameAr slug legacySourceId parentId').lean()
-        );
-        const enrichedProducts = products.map((product) => ({
-            ...product,
-            categoryNames: getProductCategoryLabels(product, categoryLookup),
-        }));
+        const authHeader = request.headers.get('authorization');
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        const idToken = authHeader.split('Bearer ')[1];
+        let decodedToken;
+        try {
+            decodedToken = await getAuth().verifyIdToken(idToken);
+        } catch {
+            return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
+        }
+
+        const storeId = await authSeller(decodedToken.uid);
+        if (!storeId) {
+            return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
+        }
+
+        const { searchParams } = new URL(request.url);
+        const slim = searchParams.get('slim') === 'true';
+        const picker = searchParams.get('picker') === 'true';
+        const idsOnly = searchParams.get('idsOnly') === 'true';
+        const pageParam = searchParams.get('page');
+        const isPaginated = pageParam !== null && pageParam !== '';
+        const search = String(searchParams.get('search') || '').trim();
+
+        const idsParam = String(searchParams.get('ids') || '').trim();
+        if (idsParam) {
+            const ids = idsParam.split(',').map((id) => id.trim()).filter(Boolean).slice(0, 20);
+            const products = await fetchPickerProductsByIds(Product, storeId, ids);
+            return NextResponse.json(
+                { products },
+                { headers: { 'Cache-Control': 'private, no-cache, no-store, must-revalidate' } }
+            );
+        }
+
+        if (idsOnly) {
+            const { productIds, total } = await fetchPickerProductIds(Product, storeId, search);
+            return NextResponse.json(
+                { productIds, total },
+                { headers: { 'Cache-Control': 'private, no-cache, no-store, must-revalidate' } }
+            );
+        }
+
+        if (isPaginated) {
+            const page = Math.max(1, Number.parseInt(pageParam || '1', 10) || 1);
+            const limit = Math.min(48, Math.max(1, Number.parseInt(searchParams.get('limit') || '24', 10) || 24));
+            const sort = searchParams.get('sort') || 'newest';
+            const pickerResult = await fetchPickerPage(Product, { storeId, page, limit, search, sort });
+
+            return NextResponse.json(
+                pickerResult,
+                { headers: { 'Cache-Control': 'private, no-cache, no-store, must-revalidate' } }
+            );
+        }
+
+        const STORE_PRODUCT_LIST_SELECT =
+            '_id name slug sku price AED mrp images category categories inStock stockQuantity fastDelivery freeShippingEligible createdAt updatedAt tags hasVariants imageAspectRatio';
+
+        const [products, categories] = await Promise.all([
+            Product.find({ storeId })
+                .select(slim ? '_id name slug sku price AED images category inStock createdAt' : STORE_PRODUCT_LIST_SELECT)
+                .sort({ createdAt: -1 })
+                .lean(),
+            picker
+                ? Promise.resolve([])
+                : Category.find({}).select('_id name nameAr slug legacySourceId parentId').lean(),
+        ]);
+
+        const enrichedProducts = picker
+            ? products
+            : products.map((product) => ({
+                ...product,
+                categoryNames: getProductCategoryLabels(product, buildCategoryLookup(categories)),
+            }));
+
+        const responsePayload = picker
+            ? { products: enrichedProducts }
+            : {
+                products: enrichedProducts,
+                categoryLookup: buildCategoryLookup(categories),
+            };
 
         return NextResponse.json(
-            { products: enrichedProducts, categoryLookup },
+            responsePayload,
             {
                 headers: {
-                    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-                    Pragma: 'no-cache',
-                    Expires: '0',
+                    'Cache-Control': 'private, no-cache, no-store, must-revalidate',
                 },
             }
         );

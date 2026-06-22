@@ -31,16 +31,23 @@ export async function PUT(request) {
             return NextResponse.json({ error: 'productIds must be an array' }, { status: 400 });
         }
 
-        // Clear all, then set selected
-        await Product.updateMany({}, { $set: { freeShippingEligible: false } });
-        if (productIds.length > 0) {
+        const normalizedIds = productIds
+            .map((id) => String(id || '').trim())
+            .filter(Boolean);
+
+        // Clear free shipping only for this store's products, then set selected
+        await Product.updateMany(
+            { storeId: String(storeId) },
+            { $set: { freeShippingEligible: false } }
+        );
+        if (normalizedIds.length > 0) {
             await Product.updateMany(
-                { _id: { $in: productIds } },
+                { storeId: String(storeId), _id: { $in: normalizedIds } },
                 { $set: { freeShippingEligible: true } }
             );
         }
 
-        return NextResponse.json({ success: true, updated: productIds.length });
+        return NextResponse.json({ success: true, updated: normalizedIds.length });
     } catch (error) {
         console.error('Free shipping batch update error:', error);
         return NextResponse.json({ error: error.message }, { status: 500 });

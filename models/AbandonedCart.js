@@ -31,6 +31,7 @@ const AbandonedCartSchema = new mongoose.Schema({
   conversionEmailSent: { type: Boolean, default: false },
   conversionEmailSentAt: { type: Date, default: null },
   conversionEmailError: { type: String, default: null },
+  linkedOrderId: { type: String, default: null, index: true },
 }, { timestamps: true });
 
 // Indexes for query performance

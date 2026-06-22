@@ -221,7 +221,7 @@ function SearchResultsInner() {
                     )}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className="text-lg font-bold text-blue-600">{formatPrice(product.price)}</span>
+                        <span className="text-lg font-medium text-blue-600">{formatPrice(product.price)}</span>
                         {product.AED > product.price && (
                           <span className="text-sm text-gray-400 line-through">{formatPrice(product.AED)}</span>
                         )}
@@ -284,7 +284,7 @@ function SearchResultsInner() {
                     {/* Pricing */}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className="text-lg font-bold text-blue-600">{formatPrice(product.price)}</span>
+                        <span className="text-lg font-medium text-blue-600">{formatPrice(product.price)}</span>
                         {product.AED > product.price && (
                           <span className="text-sm text-gray-400 line-through">{formatPrice(product.AED)}</span>
                         )}
@@ -343,7 +343,7 @@ function SearchResultsInner() {
                         )}
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <span className="text-lg font-bold text-blue-600">{formatPrice(product.price)}</span>
+                            <span className="text-lg font-medium text-blue-600">{formatPrice(product.price)}</span>
                             {product.AED > product.price && (
                               <span className="text-sm text-gray-400 line-through">{formatPrice(product.AED)}</span>
                             )}

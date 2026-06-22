@@ -8,6 +8,7 @@ import bannerStyles from './ShopShowcaseSectionBanners.module.css'
 import productGridStyles from './ShopShowcaseSectionProducts.module.css'
 import ShowcaseProductBanners from './ShowcaseProductBanners'
 import { HOME_SECTION_CLASS } from '@/lib/storefrontCarousel'
+import { TABBY_LOGO_SRC } from '@/lib/bnplAssets'
 import {
   Baby,
   Bike,
@@ -54,7 +55,7 @@ function getOriginalImageUrl(value) {
   return raw.replace(/\/tr:[^/]+\//i, '/')
 }
 
-const DEFAULT_FLYOUT_IMAGE = '/assets/payments/tabby_logo.png'
+const DEFAULT_FLYOUT_IMAGE = TABBY_LOGO_SRC
 
 function ShopShowcaseSkeleton() {
   return (

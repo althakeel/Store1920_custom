@@ -13,6 +13,7 @@ import { clearCart, fetchCart } from '@/lib/features/cart/cartSlice';
 import { addAddress } from '@/lib/features/address/addressSlice';
 import countryList from 'react-select-country-list';
 import { countryCodes } from '@/assets/countryCodes';
+import { STORE1920_LOGO_PATH } from '@/lib/brandLogo';
 import { useAuth } from '@/lib/useAuth';
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
 const PrepaidUpsellModal = dynamic(() => import('@/components/PrepaidUpsellModal'), { ssr: false });
@@ -353,7 +354,7 @@ const OrderSummary = ({ totalPrice, items }) => {
                 currency: 'AED',
                 name: 'Store1920',
                 description: 'Prepaid Payment (5% OFF)',
-                image: '/logo.png',
+                image: STORE1920_LOGO_PATH,
                 handler: async function (response) {
                     try {
                         const verifyRes = await fetch('/api/razorpay/verify', {

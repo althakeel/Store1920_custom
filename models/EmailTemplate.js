@@ -15,4 +15,7 @@ const EmailTemplateSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 }, { timestamps: true })
 
+EmailTemplateSchema.index({ storeId: 1, templateType: 1 });
+EmailTemplateSchema.index({ storeId: 1, updatedAt: -1 });
+
 export default mongoose.models.EmailTemplate || mongoose.model('EmailTemplate', EmailTemplateSchema)

@@ -56,19 +56,34 @@ export async function GET(request) {
     
     console.log(`Search for keyword: ${keyword}`);
 
-    const selectFields = '_id name slug images price mrp AED category tags inStock';
+    const selectFields = '_id name slug images price mrp AED category tags inStock sku brand';
 
-    // Strategy 1: Full-text search using MongoDB text index (fastest)
-    let products = await Product.find(
-      { $text: { $search: keyword }, inStock: true },
-      { score: { $meta: 'textScore' } }
-    )
+    // Strategy 1: SKU or exact partial match (fast path for inventory lookups)
+    let products = await Product.find({
+      $or: [
+        { sku: { $regex: keyword, $options: 'i' } },
+        { name: { $regex: keyword, $options: 'i' } },
+        { brand: { $regex: keyword, $options: 'i' } },
+      ],
+      inStock: true,
+    })
       .select(selectFields)
-      .sort({ score: { $meta: 'textScore' } })
       .limit(limit)
       .lean();
 
-    // Strategy 2: Regex name match (handles partial words not caught by text index)
+    // Strategy 2: Full-text search using MongoDB text index (fastest for multi-word queries)
+    if (products.length === 0) {
+      products = await Product.find(
+        { $text: { $search: keyword }, inStock: true },
+        { score: { $meta: 'textScore' } }
+      )
+        .select(selectFields)
+        .sort({ score: { $meta: 'textScore' } })
+        .limit(limit)
+        .lean();
+    }
+
+    // Strategy 3: Regex name match (handles partial words not caught by text index)
     if (products.length === 0) {
       products = await Product.find({
         name: { $regex: keyword, $options: 'i' },
@@ -79,12 +94,14 @@ export async function GET(request) {
         .lean();
     }
 
-    // Strategy 3: Broad partial match across key fields
+    // Strategy 4: Broad partial match across key fields
     if (products.length === 0) {
       const partialRegex = new RegExp(keyword, 'i');
       products = await Product.find({
         $or: [
           { name: partialRegex },
+          { sku: partialRegex },
+          { brand: partialRegex },
           { category: partialRegex },
           { tags: partialRegex },
           { shortDescription: partialRegex },
@@ -96,7 +113,7 @@ export async function GET(request) {
         .lean();
     }
 
-    // Strategy 4: Prefix match (last resort before fallback)
+    // Strategy 5: Prefix match (last resort before fallback)
     if (products.length === 0 && keyword.length > 2) {
       const prefixRegex = new RegExp(`^${keyword.substring(0, 3)}`, 'i');
       products = await Product.find({
@@ -108,7 +125,7 @@ export async function GET(request) {
         .lean();
     }
 
-    // Strategy 5: Fallback to latest products
+    // Strategy 6: Fallback to latest products
     if (products.length === 0) {
       products = await Product.find({ inStock: true })
         .select(selectFields)
@@ -125,7 +142,10 @@ export async function GET(request) {
         _id: p._id,
         slug: p.slug,
         name: p.name,
+        sku: p.sku || '',
+        brand: p.brand || '',
         image: p.images?.[0] || '',
+        images: p.images || [],
         price: p.price,
         AED: p.AED,
         category: p.category

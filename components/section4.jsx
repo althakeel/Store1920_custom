@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react'
 import ProductCarousel from '@/components/ProductCarousel'
-import { CAROUSEL_PRODUCT_CARD_CLASS, HOME_SECTION_CLASS } from '@/lib/storefrontCarousel'
+import { CAROUSEL_PRODUCT_CARD_CLASS, HOME_SECTION_CLASS, HOME_SECTION_GRID_INNER_CLASS } from '@/lib/storefrontCarousel'
 import BannerSlider from '@/components/BannerSlider'
 
 const Section4 = ({ sections, loading = false }) => {
@@ -10,10 +10,10 @@ const Section4 = ({ sections, loading = false }) => {
 
   if (loading) {
     return (
-      <div className={`${HOME_SECTION_CLASS} px-0 sm:px-6`}>
-        <div className="mx-auto max-w-[1400px] space-y-6 sm:space-y-8">
+      <div className={HOME_SECTION_CLASS}>
+        <div className={`${HOME_SECTION_GRID_INNER_CLASS} space-y-6 sm:space-y-8`}>
           {Array.from({ length: 2 }).map((_, index) => (
-            <div key={`section4-skeleton-${index}`} className="w-full">
+            <div key={`section4-skeleton-${index}`} className="w-full min-w-0">
               <div className="mb-4 h-7 w-48 animate-pulse rounded bg-gray-100" />
               <SkeletonLoader />
             </div>
@@ -26,13 +26,13 @@ const Section4 = ({ sections, loading = false }) => {
   if (!sections || sections.length === 0) return null
 
   return (
-    <div className={`${HOME_SECTION_CLASS} px-0 sm:px-6`}>
-      <div className="mx-auto max-w-[1400px] space-y-6 sm:space-y-8">
+    <div className={HOME_SECTION_CLASS}>
+      <div className={`${HOME_SECTION_GRID_INNER_CLASS} space-y-6 sm:space-y-8`}>
         {sections.map((section, sectionIdx) => (
           <React.Fragment key={section._id || sectionIdx}>
             <HorizontalSlider section={section} />
             {sectionIdx === bannerInsertAfterIndex && (
-              <BannerSlider className="mt-0 mb-0 px-0 sm:px-0" />
+              <BannerSlider className="mt-0 mb-0 !mx-0 !max-w-none !px-0" />
             )}
           </React.Fragment>
         ))}
@@ -114,7 +114,7 @@ const HorizontalSlider = ({ section }) => {
 
   return (
     <div className="w-full min-w-0">
-      <div className="mb-4 px-3 sm:mb-5 sm:px-0">
+      <div className="mb-4 sm:mb-5">
         <h2 className="text-xl font-bold text-gray-900 sm:text-2xl">
           {section.title || section.category}
         </h2>

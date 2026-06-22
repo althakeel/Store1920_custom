@@ -19,6 +19,7 @@ export default function AdminDashboard() {
         stores: 0,
         customers: 0,
         allOrders: [],
+        ordersChartData: [],
     });
     const [firebaseUser, setFirebaseUser] = useState(null);
     const [isAdmin, setIsAdmin] = useState(false);
@@ -114,7 +115,7 @@ export default function AdminDashboard() {
                 }
             </div>
             {/* Area Chart */}
-            <OrdersAreaChart allOrders={dashboardData.allOrders} />
+            <OrdersAreaChart chartData={dashboardData.ordersChartData} />
             {/* Contact Us Messages Section */}
             <div className="mt-12">
                 <ContactMessagesAdmin />

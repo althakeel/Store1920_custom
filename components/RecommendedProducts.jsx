@@ -7,6 +7,7 @@ import axios from 'axios';
 import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
 import ProductCarousel from '@/components/ProductCarousel';
+import { HomeProductCarouselSkeleton } from '@/components/home/HomeSectionSkeletons';
 import {
   HOME_SECTION_CAROUSEL_INNER_CLASS,
   HOME_SECTION_CLASS,
@@ -25,6 +26,8 @@ export default function RecommendedProducts() {
   const [isNewCustomer, setIsNewCustomer] = useState(true);
   const [manualRecommendedIds, setManualRecommendedIds] = useState([]);
   const [manualRecommendedProducts, setManualRecommendedProducts] = useState([]);
+  const [settingsLoading, setSettingsLoading] = useState(true);
+  const [batchLoading, setBatchLoading] = useState(false);
 
   const fallbackManualProducts = useMemo(() => {
     if (!Array.isArray(manualRecommendedIds) || manualRecommendedIds.length === 0) {
@@ -76,6 +79,10 @@ export default function RecommendedProducts() {
         if (isMounted) {
           setManualRecommendedIds([]);
         }
+      } finally {
+        if (isMounted) {
+          setSettingsLoading(false);
+        }
       }
     };
 
@@ -92,9 +99,11 @@ export default function RecommendedProducts() {
     const fetchManualProducts = async () => {
       if (!Array.isArray(manualRecommendedIds) || manualRecommendedIds.length === 0) {
         setManualRecommendedProducts([]);
+        setBatchLoading(false);
         return;
       }
 
+      setBatchLoading(true);
       try {
         const response = await axios.post('/api/products/batch', {
           productIds: manualRecommendedIds,
@@ -107,6 +116,10 @@ export default function RecommendedProducts() {
       } catch {
         if (isMounted) {
           setManualRecommendedProducts([]);
+        }
+      } finally {
+        if (isMounted) {
+          setBatchLoading(false);
         }
       }
     };
@@ -216,6 +229,11 @@ export default function RecommendedProducts() {
 
   const productsToRender = manualRecommendedProducts.length > 0 ? manualRecommendedProducts : fallbackManualProducts;
   const hasManualRecommendations = productsToRender.length > 0;
+  const isLoading = settingsLoading || batchLoading;
+
+  if (isLoading) {
+    return <HomeProductCarouselSkeleton count={6} />;
+  }
 
   if (!hasManualRecommendations || productsToRender.length === 0) {
     return null;

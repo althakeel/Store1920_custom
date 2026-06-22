@@ -7,6 +7,7 @@ import axios from 'axios';
 import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
 import ProductCard from '@/components/ProductCard';
+import { HomeProductGridSkeleton } from '@/components/home/HomeSectionSkeletons';
 import {
   HOME_PRODUCT_GRID_CLASS,
   HOME_SECTION_CLASS,
@@ -156,29 +157,7 @@ export default function RecentSearchProducts() {
 
   // Show skeleton while loading
   if (loading) {
-    return (
-      <section className={HOME_SECTION_CLASS}>
-        <div className={HOME_SECTION_GRID_INNER_CLASS}>
-          <div className={HOME_SECTION_HEADER_CLASS}>
-            <div>
-              <div className="h-4 w-24 bg-gray-200 rounded animate-pulse mb-2"></div>
-              <div className="h-6 w-48 bg-gray-200 rounded animate-pulse mb-2"></div>
-              <div className="h-4 w-64 bg-gray-200 rounded animate-pulse"></div>
-            </div>
-          </div>
-          <div className={`${HOME_PRODUCT_GRID_CLASS} overflow-hidden`}>
-            {[...Array(5)].map((_, i) => (
-              <div key={i} className="w-[calc((100%_-_0.5rem)/2)] shrink-0 bg-white border border-gray-200 rounded-[2px] p-3 animate-pulse sm:w-[calc((100%_-_1rem)/3)] md:w-[calc((100%_-_1.5rem)/4)] lg:w-[calc((100%_-_2.5rem)/6)]">
-                <div className="w-full aspect-square bg-gray-200 rounded mb-3"></div>
-                <div className="h-4 bg-gray-200 rounded mb-2"></div>
-                <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-                <div className="h-5 bg-gray-200 rounded w-1/2"></div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-    );
+    return <HomeProductGridSkeleton count={5} />;
   }
 
   // Don't show if customer is new

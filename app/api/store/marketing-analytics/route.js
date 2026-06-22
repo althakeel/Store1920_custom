@@ -96,20 +96,25 @@ export async function GET(request) {
     const startDate = getStartDate(range);
     const storeIdString = String(storeId);
 
-    const events = await CustomerBehaviorEvent.find({
-      storeId: storeIdString,
-      createdAt: { $gte: startDate },
-    })
-      .select('eventType context.productId context.metadata context.pagePath context.sessionId createdAt')
-      .lean();
-
-    const orders = await Order.find({
-      storeId: storeIdString,
-      createdAt: { $gte: startDate },
-      status: { $ne: 'CANCELLED' },
-    })
-      .select('total orderItems createdAt trackingContext')
-      .lean();
+    const [events, orders] = await Promise.all([
+      CustomerBehaviorEvent.find({
+        storeId: storeIdString,
+        createdAt: { $gte: startDate },
+      })
+        .select('eventType context.productId context.metadata context.pagePath context.sessionId createdAt')
+        .sort({ createdAt: -1 })
+        .limit(10000)
+        .lean(),
+      Order.find({
+        storeId: storeIdString,
+        createdAt: { $gte: startDate },
+        status: { $ne: 'CANCELLED' },
+      })
+        .select('total orderItems createdAt trackingContext')
+        .sort({ createdAt: -1 })
+        .limit(1000)
+        .lean(),
+    ]);
 
     const funnelCounts = {};
     FUNNEL_STEPS.forEach((step) => {

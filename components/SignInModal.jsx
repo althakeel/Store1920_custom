@@ -119,18 +119,33 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '' }
     return null;
   };
 
-  const trackLoginLocation = async (token) => {
+  const trackLoginLocation = (token) => {
+    const pageUrl = typeof window !== 'undefined' ? window.location.pathname : '/';
+    axios.post('/api/users/track-location', { pageUrl }, {
+      headers: { Authorization: `Bearer ${token}` },
+    }).catch(() => {});
+  };
+
+  const runPostAuthTasks = async (user, { isNewUser = false, emailOverride = '', nameOverride = '' } = {}) => {
     try {
-      const pageUrl = typeof window !== 'undefined' ? window.location.pathname : '/';
-      await axios.post('/api/users/track-location', {
-        pageUrl
+      const token = await user.getIdToken();
+      trackLoginLocation(token);
+
+      if (isNewUser) {
+        axios.post('/api/wallet/bonus', {}, {
+          headers: { Authorization: `Bearer ${token}` },
+        }).catch(() => {});
+      }
+
+      const emailEndpoint = isNewUser ? '/api/send-welcome-email' : '/api/send-login-email';
+      axios.post(emailEndpoint, {
+        email: emailOverride || user.email,
+        name: nameOverride || user.displayName || 'Customer',
       }, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
-    } catch (error) {
-      // Non-blocking
+        headers: { Authorization: `Bearer ${token}` },
+      }).catch(() => {});
+    } catch {
+      // Non-blocking background work.
     }
   };
 
@@ -140,46 +155,22 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '' }
     try {
       const result = await signInWithGooglePopup();
       const isNewUser = result.user.metadata.creationTime === result.user.metadata.lastSignInTime;
-      
-      // Check if welcome bonus was claimed from top bar
+
       const bonusClaimed = localStorage.getItem('welcomeBonusClaimed');
       if (bonusClaimed === 'true') {
-        // Mark user as eligible for free shipping on first order
         localStorage.setItem('freeShippingEligible', 'true');
         localStorage.removeItem('welcomeBonusClaimed');
       }
-      
-      // Send appropriate email based on whether user is new or returning
-      try {
-        const token = await result.user.getIdToken();
-        await trackLoginLocation(token);
-        if (isNewUser) {
-          await axios.post('/api/wallet/bonus', {}, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-        }
-        const emailEndpoint = isNewUser ? '/api/send-welcome-email' : '/api/send-login-email';
-        axios.post(emailEndpoint, {
-          email: result.user.email,
-          name: result.user.displayName
-        }, {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        }).catch(() => {
-          // Silently fail
-        });
-      } catch (emailError) {
-        // Failed to send email (non-critical)
-      }
-      
+
       onClose();
+      void runPostAuthTasks(result.user, { isNewUser });
     } catch (err) {
       console.error('Google sign-in error:', err);
       const errorMessage = getAuthErrorMessage(err, 'Google sign-in failed. Please try again.');
       setError(errorMessage);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleSubmit = async (e) => {
@@ -263,66 +254,32 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '' }
           await updateProfile(userCredential.user, { displayName: name });
         }
 
-        try {
-          const token = await userCredential.user.getIdToken();
-          await trackLoginLocation(token);
-          await axios.post('/api/wallet/bonus', {}, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-        } catch (err) {
-          // Wallet bonus failed
-        }
-        
-        // Check if welcome bonus was claimed from top bar
         const bonusClaimed = localStorage.getItem('welcomeBonusClaimed');
         if (bonusClaimed === 'true') {
-          // Mark user as eligible for free shipping on first order
           localStorage.setItem('freeShippingEligible', 'true');
           localStorage.removeItem('welcomeBonusClaimed');
         }
-        
-        // Send welcome email for new registrations
-        try {
-          const token = await userCredential.user.getIdToken();
-          await axios.post('/api/send-welcome-email', {
-            email: email,
-            name: name
-          }, {
-            headers: {
-              Authorization: `Bearer ${token}`
-            }
-          });
-        } catch (emailError) {
-          console.error('Failed to send welcome email:', emailError);
-          // Don't fail the signup if email fails
-        }
+
+        onClose();
+        void runPostAuthTasks(userCredential.user, {
+          isNewUser: true,
+          emailOverride: email,
+          nameOverride: name,
+        });
       } else {
         const userCredential = await signInWithEmailAndPassword(auth, email, password);
-        
-        // Send login notification email in background
-        try {
-          const token = await userCredential.user.getIdToken();
-          await trackLoginLocation(token);
-          axios.post('/api/send-login-email', {
-            email: email,
-            name: userCredential.user.displayName || name || 'Customer'
-          }, {
-            headers: {
-              Authorization: `Bearer ${token}`
-            }
-          }).catch(() => {
-            // Silently fail - don't block login
-          });
-        } catch (emailError) {
-          // Failed to send login email (non-critical)
-        }
+        onClose();
+        void runPostAuthTasks(userCredential.user, {
+          emailOverride: email,
+          nameOverride: userCredential.user.displayName || name || 'Customer',
+        });
       }
-      onClose();
     } catch (err) {
       const errorMessage = getAuthErrorMessage(err, 'Sign in failed. Please try again.');
       setError(errorMessage);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (

@@ -7,10 +7,63 @@ import authSeller from "@/middlewares/authSeller";
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/firebase-admin";
 
-// Next.js API route handler for GET
+const STATUS_LABELS = {
+  ORDER_PLACED: 'Placed',
+  PROCESSING: 'Processing',
+  WAITING_FOR_PICKUP: 'Waiting for pickup',
+  PICKUP_REQUESTED: 'Pickup requested',
+  PICKED_UP: 'Picked up',
+  WAREHOUSE_RECEIVED: 'Warehouse received',
+  SHIPPED: 'Shipped',
+  OUT_FOR_DELIVERY: 'Out for delivery',
+  DELIVERED: 'Delivered',
+  CANCELLED: 'Cancelled',
+  PAYMENT_FAILED: 'Payment failed',
+  RETURNED: 'Returned',
+  RETURN_INITIATED: 'Return initiated',
+  RETURN_APPROVED: 'Return approved',
+};
+
+function getStatusBucket(status = '') {
+  const normalized = String(status || '').toUpperCase();
+
+  if (normalized === 'DELIVERED') return 'delivered';
+  if (['RETURNED', 'RETURN_INITIATED', 'RETURN_APPROVED'].includes(normalized)) return 'returned';
+  if (
+    ['SHIPPED', 'OUT_FOR_DELIVERY', 'PICKED_UP', 'PICKUP_REQUESTED', 'WAITING_FOR_PICKUP', 'WAREHOUSE_RECEIVED', 'IN_TRANSIT'].includes(normalized)
+  ) {
+    return 'shipping';
+  }
+  if (['CANCELLED', 'PAYMENT_FAILED'].includes(normalized)) return 'cancelled';
+  return 'processing';
+}
+
+function buildTrendMaps(days, today) {
+  const trendMap = {};
+  const statusTrendMap = {};
+
+  for (let i = days - 1; i >= 0; i -= 1) {
+    const date = new Date(today);
+    date.setDate(date.getDate() - i);
+    const key = date.toISOString().split('T')[0];
+    trendMap[key] = { date: key, orders: 0, revenue: 0 };
+    statusTrendMap[key] = {
+      date: key,
+      label: date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
+      total: 0,
+      processing: 0,
+      shipping: 0,
+      delivered: 0,
+      returned: 0,
+      cancelled: 0,
+    };
+  }
+
+  return { trendMap, statusTrendMap };
+}
+
 export async function GET(request) {
    try {
-      // Firebase Auth: Extract token from Authorization header
       const authHeader = request.headers.get('authorization');
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
          return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -19,7 +72,7 @@ export async function GET(request) {
       let decodedToken;
       try {
          decodedToken = await getAuth().verifyIdToken(idToken);
-      } catch (e) {
+      } catch {
          return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
       }
       const userId = decodedToken.uid;
@@ -30,116 +83,92 @@ export async function GET(request) {
 
       await dbConnect();
 
-      const productIdsPromise = Product.find({ storeId }).select('_id').lean();
+      const days = 30;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const trendStart = new Date(today);
+      trendStart.setDate(trendStart.getDate() - (days - 1));
+      const weekAgo = new Date(today);
+      weekAgo.setDate(weekAgo.getDate() - 6);
 
-      const [orders, totalProducts, abandonedCarts, productIds] = await Promise.all([
-        Order.find({ storeId }).select('status total createdAt userId').lean(),
+      const productIdStrings = (await Product.distinct('_id', { storeId })).map((id) => String(id));
+
+      const [
+        orderTotals,
+        statusBreakdownRows,
+        trendRows,
+        weekTotalsRows,
+        totalProducts,
+        abandonedCarts,
+        totalCustomers,
+        ratingStats,
+      ] = await Promise.all([
+        Order.aggregate([
+          { $match: { storeId } },
+          {
+            $group: {
+              _id: null,
+              totalOrders: { $sum: 1 },
+              totalEarnings: { $sum: { $ifNull: ['$total', 0] } },
+            },
+          },
+        ]),
+        Order.aggregate([
+          { $match: { storeId } },
+          { $group: { _id: '$status', count: { $sum: 1 } } },
+        ]),
+        Order.aggregate([
+          { $match: { storeId, createdAt: { $gte: trendStart } } },
+          {
+            $group: {
+              _id: {
+                date: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+                status: '$status',
+              },
+              orders: { $sum: 1 },
+              revenue: { $sum: { $ifNull: ['$total', 0] } },
+            },
+          },
+        ]),
+        Order.aggregate([
+          { $match: { storeId, createdAt: { $gte: weekAgo } } },
+          {
+            $group: {
+              _id: null,
+              orders: { $sum: 1 },
+              revenue: { $sum: { $ifNull: ['$total', 0] } },
+            },
+          },
+        ]),
         Product.countDocuments({ storeId }),
         AbandonedCart.countDocuments({
           storeId,
           status: { $ne: 'converted' },
         }),
-        productIdsPromise,
+        Order.distinct('userId', {
+          storeId,
+          userId: { $exists: true, $nin: [null, ''] },
+        }),
+        productIdStrings.length
+          ? Rating.aggregate([
+              { $match: { productId: { $in: productIdStrings } } },
+              {
+                $group: {
+                  _id: { $round: [{ $ifNull: ['$rating', 0] }, 0] },
+                  count: { $sum: 1 },
+                  sum: { $sum: { $ifNull: ['$rating', 0] } },
+                },
+              },
+            ])
+          : Promise.resolve([]),
       ]);
 
-      const ratings = await Rating.find({
-        productId: { $in: productIds.map((product) => product._id.toString()) },
-      }).select('rating productId').lean();
-
-      const uniqueCustomerIds = [...new Set(orders.map((order) => order.userId).filter(Boolean))];
-      const totalCustomers = uniqueCustomerIds.length;
-
-      const totalEarnings = orders.reduce((acc, order) => acc + (order.total || 0), 0);
-      const totalOrders = orders.length;
+      const totals = orderTotals[0] || { totalOrders: 0, totalEarnings: 0 };
+      const totalOrders = totals.totalOrders || 0;
+      const totalEarnings = totals.totalEarnings || 0;
       const avgOrderValue = totalOrders > 0 ? Math.round(totalEarnings / totalOrders) : 0;
 
-      const days = 30;
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const trendMap = {};
-
-      for (let i = days - 1; i >= 0; i -= 1) {
-        const date = new Date(today);
-        date.setDate(date.getDate() - i);
-        const key = date.toISOString().split('T')[0];
-        trendMap[key] = { date: key, orders: 0, revenue: 0 };
-      }
-
-      const weekAgo = new Date(today);
-      weekAgo.setDate(weekAgo.getDate() - 6);
-
-      let ordersThisWeek = 0;
-      let revenueThisWeek = 0;
-
-      orders.forEach((order) => {
-        const createdAt = new Date(order.createdAt || 0);
-        const dateKey = createdAt.toISOString().split('T')[0];
-
-        if (trendMap[dateKey]) {
-          trendMap[dateKey].orders += 1;
-          trendMap[dateKey].revenue += order.total || 0;
-        }
-
-        if (createdAt >= weekAgo) {
-          ordersThisWeek += 1;
-          revenueThisWeek += order.total || 0;
-        }
-      });
-
-      const ordersTrend = Object.values(trendMap).map((entry) => ({
-        ...entry,
-        revenue: Math.round(entry.revenue),
-        label: new Date(entry.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
-      }));
-
-      const statusLabels = {
-        ORDER_PLACED: 'Placed',
-        PROCESSING: 'Processing',
-        WAITING_FOR_PICKUP: 'Waiting for pickup',
-        PICKUP_REQUESTED: 'Pickup requested',
-        PICKED_UP: 'Picked up',
-        WAREHOUSE_RECEIVED: 'Warehouse received',
-        SHIPPED: 'Shipped',
-        OUT_FOR_DELIVERY: 'Out for delivery',
-        DELIVERED: 'Delivered',
-        CANCELLED: 'Cancelled',
-        PAYMENT_FAILED: 'Payment failed',
-        RETURNED: 'Returned',
-        RETURN_INITIATED: 'Return initiated',
-        RETURN_APPROVED: 'Return approved',
-      };
-
-      const getStatusBucket = (status = '') => {
-        const normalized = String(status || '').toUpperCase();
-
-        if (normalized === 'DELIVERED') return 'delivered';
-        if (['RETURNED', 'RETURN_INITIATED', 'RETURN_APPROVED'].includes(normalized)) return 'returned';
-        if (
-          ['SHIPPED', 'OUT_FOR_DELIVERY', 'PICKED_UP', 'PICKUP_REQUESTED', 'WAITING_FOR_PICKUP', 'WAREHOUSE_RECEIVED', 'IN_TRANSIT'].includes(normalized)
-        ) {
-          return 'shipping';
-        }
-        if (['CANCELLED', 'PAYMENT_FAILED'].includes(normalized)) return 'cancelled';
-        return 'processing';
-      };
-
-      const statusTrendMap = {};
-
-      for (let i = days - 1; i >= 0; i -= 1) {
-        const date = new Date(today);
-        date.setDate(date.getDate() - i);
-        const key = date.toISOString().split('T')[0];
-        statusTrendMap[key] = {
-          date: key,
-          label: date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
-          total: 0,
-          processing: 0,
-          shipping: 0,
-          delivered: 0,
-          returned: 0,
-          cancelled: 0,
-        };
-      }
+      const { trendMap, statusTrendMap } = buildTrendMaps(days, today);
 
       const statusTotals = {
         total: totalOrders,
@@ -150,49 +179,64 @@ export async function GET(request) {
         cancelled: 0,
       };
 
-      orders.forEach((order) => {
-        const bucket = getStatusBucket(order.status);
-        statusTotals[bucket] += 1;
-
-        const createdAt = new Date(order.createdAt || 0);
-        const dateKey = createdAt.toISOString().split('T')[0];
-        if (!statusTrendMap[dateKey]) return;
-
-        statusTrendMap[dateKey][bucket] += 1;
-        statusTrendMap[dateKey].total += 1;
+      trendRows.forEach((row) => {
+        const dateKey = row._id?.date;
+        const bucket = getStatusBucket(row._id?.status);
+        if (trendMap[dateKey]) {
+          trendMap[dateKey].orders += row.orders || 0;
+          trendMap[dateKey].revenue += row.revenue || 0;
+        }
+        if (statusTrendMap[dateKey]) {
+          statusTrendMap[dateKey][bucket] += row.orders || 0;
+          statusTrendMap[dateKey].total += row.orders || 0;
+        }
       });
+
+      statusBreakdownRows.forEach((row) => {
+        const bucket = getStatusBucket(row._id);
+        statusTotals[bucket] += row.count;
+      });
+
+      const weekTotals = weekTotalsRows[0] || { orders: 0, revenue: 0 };
+      const ordersThisWeek = weekTotals.orders || 0;
+      const revenueThisWeek = weekTotals.revenue || 0;
+
+      const ordersTrend = Object.values(trendMap).map((entry) => ({
+        ...entry,
+        revenue: Math.round(entry.revenue),
+        label: new Date(entry.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
+      }));
 
       const ordersStatusTrend = Object.values(statusTrendMap);
 
-      const statusCounts = {};
-      orders.forEach((order) => {
-        const status = order.status || 'UNKNOWN';
-        statusCounts[status] = (statusCounts[status] || 0) + 1;
-      });
-
-      const orderStatusBreakdown = Object.entries(statusCounts)
-        .map(([status, count]) => ({
+      const orderStatusBreakdown = statusBreakdownRows
+        .map(({ _id: status, count }) => ({
           status,
-          label: statusLabels[status] || status.replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c) => c.toUpperCase()),
+          label: STATUS_LABELS[status] || status.replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c) => c.toUpperCase()),
           count,
         }))
         .sort((a, b) => b.count - a.count);
 
+      const ratingCountMap = new Map(
+        ratingStats.map((row) => [Number(row._id), row.count])
+      );
+      const ratingSum = ratingStats.reduce((sum, row) => sum + Number(row.sum || 0), 0);
+      const ratingCount = ratingStats.reduce((sum, row) => sum + Number(row.count || 0), 0);
+
       const ratingBreakdown = [1, 2, 3, 4, 5].map((star) => ({
         star: `${star}★`,
-        count: ratings.filter((rating) => Math.round(Number(rating.rating || 0)) === star).length,
+        count: ratingCountMap.get(star) || 0,
       }));
 
-      const avgRating = ratings.length
-        ? Number((ratings.reduce((sum, rating) => sum + Number(rating.rating || 0), 0) / ratings.length).toFixed(1))
+      const avgRating = ratingCount
+        ? Number((ratingSum / ratingCount).toFixed(1))
         : 0;
 
       const dashboardData = {
-         ratings,
          totalOrders,
          totalEarnings: Math.round(totalEarnings),
          totalProducts,
-         totalCustomers,
+         totalCustomers: totalCustomers.length,
          abandonedCarts,
          analytics: {
            ordersTrend,
@@ -207,7 +251,14 @@ export async function GET(request) {
          },
       };
 
-      return NextResponse.json({ dashboardData });
+      return NextResponse.json(
+        { dashboardData },
+        {
+          headers: {
+            'Cache-Control': 'private, max-age=30, stale-while-revalidate=60',
+          },
+        }
+      );
    } catch (error) {
       console.error(error);
       return NextResponse.json({ error: error.code || error.message }, { status: 400 });

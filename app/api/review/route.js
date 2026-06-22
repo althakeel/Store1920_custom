@@ -106,8 +106,6 @@ export async function POST(request) {
 // GET: Fetch reviews for a product
 export async function GET(request) {
     try {
-        await connectDB();
-        
         const { searchParams } = new URL(request.url);
         const productId = searchParams.get('productId');
 
@@ -115,35 +113,63 @@ export async function GET(request) {
             return Response.json({ error: "Product ID required" }, { status: 400 });
         }
 
-        // Only show approved reviews to customers
-        const reviews = await Rating.find({ 
-            productId,
-            approved: true 
+        const { getCachedData, setCachedData } = await import('@/lib/cache');
+        const cacheKey = `reviews:product:${productId}`;
+        const cached = getCachedData(cacheKey);
+        if (cached) {
+            const isDev = process.env.NODE_ENV !== 'production';
+            return Response.json(cached, {
+                headers: {
+                    'Cache-Control': isDev ? 'no-store' : 'public, s-maxage=120, stale-while-revalidate=300',
+                    'X-Cache': 'HIT',
+                },
+            });
+        }
+
+        await connectDB();
+
+        const reviews = await Rating.find({
+            productId: String(productId),
+            approved: true,
         })
-        .sort({ createdAt: -1 })
-        .lean();
+            .sort({ createdAt: -1 })
+            .limit(30)
+            .select('rating review images videos customerName customerEmail userId orderId helpfulCount createdAt')
+            .lean();
 
-        // Enrich reviews with user data
-        const enrichedReviews = await Promise.all(
-            reviews.map(async (review) => {
-                let userData = null;
-                // Try to populate if userId is a valid ObjectId
-                if (typeof review.userId === 'string' && review.userId.match(/^[a-fA-F0-9]{24}$/)) {
-                    userData = await User.findById(review.userId).select('_id name image email').lean();
-                }
-                // If no userData found, use customerName from review
-                return {
-                    ...review,
-                    user: userData || { 
-                        name: review.customerName || 'Guest', 
-                        email: review.customerEmail,
-                        image: '/placeholder-avatar.png'
-                    }
-                };
-            })
-        );
+        const userIds = [
+            ...new Set(
+                reviews
+                    .map((review) => String(review.userId || '').trim())
+                    .filter((id) => /^[a-fA-F0-9]{24}$/.test(id))
+            ),
+        ];
 
-        return Response.json({ reviews: enrichedReviews });
+        const users = userIds.length
+            ? await User.find({ _id: { $in: userIds } }).select('_id name image email').lean()
+            : [];
+
+        const userMap = new Map(users.map((user) => [String(user._id), user]));
+
+        const enrichedReviews = reviews.map((review) => ({
+            ...review,
+            user: userMap.get(String(review.userId)) || {
+                name: review.customerName || 'Guest',
+                email: review.customerEmail,
+                image: '/placeholder-avatar.png',
+            },
+        }));
+
+        const payload = { reviews: enrichedReviews };
+        setCachedData(cacheKey, payload, 120);
+
+        const isDev = process.env.NODE_ENV !== 'production';
+        return Response.json(payload, {
+            headers: {
+                'Cache-Control': isDev ? 'no-store' : 'public, s-maxage=120, stale-while-revalidate=300',
+                'X-Cache': 'MISS',
+            },
+        });
 
     } catch (error) {
         console.error('Fetch reviews error:', error);

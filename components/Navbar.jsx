@@ -10,7 +10,6 @@ import { getAuth } from "firebase/auth";
 import Image from 'next/image';
 import axios from "axios";
 import toast from "react-hot-toast";
-import Truck from '../assets/delivery.png';
 import WalletIcon from '../assets/common/wallet.svg';
 import SignInModal from './SignInModal';
 import AddressModal from './AddressModal';
@@ -18,9 +17,10 @@ import NavbarMenuBar from './NavbarMenuBar';
 import { clearCart, fetchCart, uploadCart } from '@/lib/features/cart/cartSlice';
 import { fetchAddress } from '@/lib/features/address/addressSlice';
 import {
-  STOREFRONT_LANGUAGE_COOKIE,
   STOREFRONT_LANGUAGE_EVENT,
   STOREFRONT_LANGUAGE_KEY,
+  persistStorefrontLanguage,
+  readPersistedStorefrontLanguage,
 } from '@/lib/storefrontLanguage';
 import { translateStaticText } from '@/lib/useStorefrontI18n';
 import {
@@ -35,7 +35,9 @@ const NAVBAR_SELECTED_ADDRESS_KEY = 'navbarSelectedAddressId';
 const NAVBAR_APPEARANCE_CACHE_KEY = 'navbarAppearanceCache';
 const DEFAULT_CATEGORY_IMAGE = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1' y1='0' y2='1'%3E%3Cstop stop-color='%23f8fafc'/%3E%3Cstop offset='1' stop-color='%23e2e8f0'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='120' height='120' rx='60' fill='url(%23g)'/%3E%3Ccircle cx='60' cy='48' r='20' fill='%23cbd5e1'/%3E%3Cpath d='M28 92c8-15 23-24 32-24s24 9 32 24' fill='%23cbd5e1'/%3E%3C/svg%3E";
 
-const DEFAULT_STORE_LOGO = '/default-store-logo.png';
+import { STORE1920_LOGO_PATH } from '@/lib/brandLogo';
+
+const DEFAULT_STORE_LOGO = STORE1920_LOGO_PATH;
 const STOREFRONT_BRAND_NAME = 'store1920';
 const DEFAULT_NAVBAR_APPEARANCE = {
   logoUrl: DEFAULT_STORE_LOGO,
@@ -71,30 +73,6 @@ const readCachedNavbarAppearance = () => {
     // Ignore storage read failures.
   }
   return DEFAULT_NAVBAR_APPEARANCE;
-};
-
-const readPersistedLanguage = () => {
-  if (typeof window === 'undefined') return 'en';
-
-  try {
-    const savedLanguage = window.localStorage.getItem(STOREFRONT_LANGUAGE_KEY);
-    if (savedLanguage === 'ar' || savedLanguage === 'en') {
-      return savedLanguage;
-    }
-  } catch {
-    // Ignore storage read failures.
-  }
-
-  const cookieMatch = document.cookie.match(new RegExp(`(?:^|; )${STOREFRONT_LANGUAGE_COOKIE}=([^;]+)`));
-  if (cookieMatch?.[1] === 'ar' || cookieMatch?.[1] === 'en') {
-    return cookieMatch[1];
-  }
-
-  const browserLanguages = Array.isArray(window.navigator?.languages) && window.navigator.languages.length > 0
-    ? window.navigator.languages
-    : [window.navigator?.language || ''];
-  const prefersArabic = browserLanguages.some((entry) => /^ar(?:-|$)/i.test(String(entry || '')));
-  return prefersArabic ? 'ar' : 'en';
 };
 
 const getContrastColor = (hexColor) => {
@@ -152,7 +130,6 @@ const Navbar = () => {
     wishlist: true,
     cart: true,
   });
-  const products = useSelector((state) => state.product.list);
   const [signInOpen, setSignInOpen] = useState(false);
   const [signInMode, setSignInMode] = useState('login');
   const [firebaseUser, setFirebaseUser] = useState(undefined);
@@ -160,6 +137,9 @@ const Navbar = () => {
   const [signOutContext, setSignOutContext] = useState('desktop');
   const [walletCoins, setWalletCoins] = useState(0);
   const [searchFocused, setSearchFocused] = useState(false);
+  const [searchSuggestionResults, setSearchSuggestionResults] = useState([]);
+  const [searchSuggestionsLoading, setSearchSuggestionsLoading] = useState(false);
+  const searchDebounceRef = useRef(null);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const mobileSearchInputRef = useRef(null);
   const [showAddressModal, setShowAddressModal] = useState(false);
@@ -279,7 +259,7 @@ const Navbar = () => {
     if (typeof window === 'undefined') return;
 
     const readLanguage = () => {
-      setStorefrontLanguage(readPersistedLanguage());
+      setStorefrontLanguage(readPersistedStorefrontLanguage());
       setLanguageHydrated(true);
     };
 
@@ -308,19 +288,7 @@ const Navbar = () => {
     if (typeof document === 'undefined') return;
     if (!languageHydrated) return;
 
-    const isArabic = storefrontLanguage === 'ar';
-    document.documentElement.setAttribute('lang', isArabic ? 'ar' : 'en');
-    document.documentElement.setAttribute('dir', isArabic ? 'rtl' : 'ltr');
-
-    try {
-      window.localStorage.setItem(STOREFRONT_LANGUAGE_KEY, storefrontLanguage);
-      document.cookie = `${STOREFRONT_LANGUAGE_COOKIE}=${isArabic ? 'ar' : 'en'}; path=/; max-age=31536000; SameSite=Lax`;
-      window.dispatchEvent(new CustomEvent(STOREFRONT_LANGUAGE_EVENT, {
-        detail: { language: storefrontLanguage },
-      }));
-    } catch {
-      // Ignore storage write failures.
-    }
+    persistStorefrontLanguage(storefrontLanguage, { dispatchEvent: false });
   }, [storefrontLanguage, languageHydrated]);
 
   useEffect(() => {
@@ -927,18 +895,109 @@ const Navbar = () => {
     router.push(`/shop?search=${encodeURIComponent(query)}`);
   };
 
-  const searchSuggestions = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query || !Array.isArray(products)) return [];
-    return products
-      .filter((product) => {
-        const name = (product?.name || '').toLowerCase();
-        const brand = (product?.brand || product?.brandName || '').toLowerCase();
-        const sku = (product?.sku || '').toLowerCase();
-        return name.includes(query) || brand.includes(query) || sku.includes(query);
-      })
-      .slice(0, 6);
-  }, [search, products]);
+  useEffect(() => {
+    const query = search.trim();
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+    }
+
+    if (query.length < 2) {
+      setSearchSuggestionResults([]);
+      setSearchSuggestionsLoading(false);
+      return undefined;
+    }
+
+    searchDebounceRef.current = setTimeout(async () => {
+      setSearchSuggestionsLoading(true);
+      try {
+        const { data } = await axios.get('/api/search-products', {
+          params: { keyword: query, limit: 8 },
+        });
+        setSearchSuggestionResults(Array.isArray(data?.products) ? data.products : []);
+      } catch {
+        setSearchSuggestionResults([]);
+      } finally {
+        setSearchSuggestionsLoading(false);
+      }
+    }, 280);
+
+    return () => {
+      if (searchDebounceRef.current) {
+        clearTimeout(searchDebounceRef.current);
+      }
+    };
+  }, [search]);
+
+  const searchSuggestions = searchSuggestionResults;
+
+  const renderSearchSuggestionsDropdown = (wrapperClassName, onSelect) => {
+    const query = search.trim();
+    if (!searchFocused || query.length < 2) return null;
+
+    if (searchSuggestionsLoading) {
+      return (
+        <div className={wrapperClassName}>
+          <div className="px-4 py-3 text-sm text-gray-500">Searching...</div>
+        </div>
+      );
+    }
+
+    if (!searchSuggestions.length) {
+      return (
+        <div className={wrapperClassName}>
+          <div className="px-4 py-3 text-sm text-gray-500">No products found</div>
+        </div>
+      );
+    }
+
+    return (
+      <div className={wrapperClassName}>
+        {searchSuggestions.map((product) => (
+          <Link
+            key={product._id || product.slug}
+            href={`/product/${product.slug || product._id}`}
+            className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-slate-50"
+            onClick={() => {
+              setSearchFocused(false);
+              onSelect?.();
+            }}
+          >
+            <div className="relative h-9 w-9 overflow-hidden rounded-lg bg-gray-100">
+              {getProductThumbnailUrl(product, { fallback: '' }) ? (
+                <Image
+                  src={getProductThumbnailUrl(product)}
+                  alt={product.name || 'Product'}
+                  fill
+                  sizes="36px"
+                  className="object-cover"
+                />
+              ) : null}
+            </div>
+            <div className="min-w-0">
+              <span className="block truncate font-medium">{product.name}</span>
+              <span className="truncate text-xs text-gray-500">
+                {[product.brand, product.sku ? `SKU: ${product.sku}` : ''].filter(Boolean).join(' · ')}
+              </span>
+            </div>
+          </Link>
+        ))}
+        <button
+          type="button"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => {
+            const queryValue = search.trim();
+            if (!queryValue) return;
+            setSearchFocused(false);
+            onSelect?.();
+            router.push(`/shop?search=${encodeURIComponent(queryValue)}`);
+          }}
+          className="w-full border-t border-slate-100 px-4 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
+        >
+          View all results for &quot;{query}&quot;
+        </button>
+      </div>
+    );
+  };
 
   const handleCartClick = (e) => {
     e.preventDefault();
@@ -1270,37 +1329,8 @@ const Navbar = () => {
                   </button>
                 </div>
 
-                {searchFocused && searchSuggestions.length > 0 && (
-                  <div className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
-                    {searchSuggestions.map((product) => (
-                      <Link
-                        key={product._id || product.slug}
-                        href={`/product/${product.slug || product._id}`}
-                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-slate-50"
-                        onClick={() => {
-                          setSearchFocused(false);
-                        }}
-                      >
-                        <div className="relative h-9 w-9 overflow-hidden rounded-lg bg-gray-100">
-                          {getProductThumbnailUrl(product, { fallback: '' }) ? (
-                            <Image
-                              src={getProductThumbnailUrl(product)}
-                              alt={product.name || 'Product'}
-                              fill
-                              sizes="36px"
-                              className="object-cover"
-                            />
-                          ) : null}
-                        </div>
-                        <div className="min-w-0">
-                          <span className="block truncate font-medium">{product.name}</span>
-                          {product.brand && (
-                            <span className="truncate text-xs text-gray-500">{product.brand}</span>
-                          )}
-                        </div>
-                      </Link>
-                    ))}
-                  </div>
+                {renderSearchSuggestionsDropdown(
+                  'absolute left-0 right-0 top-full z-50 mt-2 max-h-80 overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-xl',
                 )}
               </form>
 
@@ -1359,38 +1389,9 @@ const Navbar = () => {
               </button>
             </div>
 
-            {searchFocused && searchSuggestions.length > 0 && (
-              <div className="absolute left-3 right-3 top-full z-50 mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
-                {searchSuggestions.map((product) => (
-                  <Link
-                    key={product._id || product.slug}
-                    href={`/product/${product.slug || product._id}`}
-                    className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-slate-50"
-                    onClick={() => {
-                      setSearchFocused(false);
-                      setMobileSearchOpen(false);
-                    }}
-                  >
-                    <div className="relative h-9 w-9 overflow-hidden rounded-lg bg-gray-100">
-                      {getProductThumbnailUrl(product, { fallback: '' }) ? (
-                        <Image
-                          src={getProductThumbnailUrl(product)}
-                          alt={product.name || 'Product'}
-                          fill
-                          sizes="36px"
-                          className="object-cover"
-                        />
-                      ) : null}
-                    </div>
-                    <div className="min-w-0">
-                      <span className="block truncate font-medium">{product.name}</span>
-                      {product.brand && (
-                        <span className="truncate text-xs text-gray-500">{product.brand}</span>
-                      )}
-                    </div>
-                  </Link>
-                ))}
-              </div>
+            {renderSearchSuggestionsDropdown(
+              'absolute left-3 right-3 top-full z-50 mt-2 max-h-80 overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-xl',
+              () => setMobileSearchOpen(false),
             )}
           </form>
         </div>
@@ -1398,19 +1399,19 @@ const Navbar = () => {
       </nav>
 
       {/* Original Full Navbar (Desktop only) */}
-      <div className="relative z-50 hidden lg:block">
+      <div className="relative z-50 hidden overflow-visible lg:block">
       <nav
-        className="border-b text-white shadow-[0_12px_28px_rgba(15,23,42,0.08)]"
+        className="overflow-visible border-b text-white shadow-[0_12px_28px_rgba(15,23,42,0.08)]"
         style={{
           backgroundColor: navbarAppearance.backgroundColor,
           borderColor: 'rgba(15, 23, 42, 0.18)',
         }}
       >
       <div className={NAVBAR_CONTAINER_CLASS}>
-        <div className="flex items-center py-2.5 transition-all gap-4">
+        <div className="flex items-center justify-between gap-4 overflow-visible py-2.5 lg:grid lg:grid-cols-[1fr_minmax(0,590px)_1fr] lg:items-center">
 
           {/* Left Side - Hamburger (Mobile) + Logo */}
-          <div className="flex items-center gap-3 shrink-0 min-w-0">
+          <div className="flex items-center gap-3 shrink-0 min-w-0 lg:justify-self-start">
             {/* Hamburger Menu - Mobile Only on Home Page */}
             {isHomePage && (
               <button 
@@ -1454,71 +1455,55 @@ const Navbar = () => {
             </button>
           </div>
 
-          <div className="hidden lg:flex flex-1 items-center justify-center px-2">
-            <div className="relative flex w-full max-w-[760px] items-center gap-3">
-              <Link
-                href="/fast-delivery"
-                className="shipxpress-pill group shrink-0"
-                aria-label="ShipXpress"
-              >
-                <span className="shipxpress-badge">
-                  <span className="shipxpress-badge-icon" aria-hidden="true">📍</span>
-                  <span className="shipxpress-badge-dot" />
-                  {storefrontLanguage === 'ar' ? 'خلال يومين' : 'Within 2 days'}
-                </span>
-                <span className="shipxpress-main">
-                  <span className="shipxpress-truck-wrap" aria-hidden="true">
-                    <Image src={Truck} alt="Truck" width={16} height={16} className="shipxpress-truck" />
-                  </span>
-                  <span className="shipxpress-text">ShipXpress</span>
-                </span>
-              </Link>
-              <div className="relative flex-1 max-w-[590px]">
-            <form onSubmit={handleSearch} className="flex-1">
+          <div className="relative hidden w-full lg:block lg:justify-self-center">
+            <form onSubmit={handleSearch} className="w-full">
               <div
-                className="flex h-[44px] items-center w-full overflow-hidden rounded-2xl border px-3 shadow-sm"
+                className="flex h-[44px] w-full items-center overflow-hidden rounded-2xl border px-3 shadow-sm"
                 style={{
                   borderColor: 'rgba(255,255,255,0.92)',
                   backgroundColor: '#ffffff',
                 }}
               >
-              <div
-                className="relative mr-3 flex h-full items-center"
-                onMouseEnter={openCategoriesDropdown}
-                onMouseLeave={closeCategoriesDropdown}
-              >
-                <button
-                  type="button"
-                  className="group inline-flex h-[34px] items-center gap-1.5 rounded-xl px-2 text-[13px] font-medium text-slate-700 transition hover:bg-slate-50"
+                <div
+                  className="flex shrink-0 items-center"
+                  onMouseEnter={openCategoriesDropdown}
+                  onMouseLeave={closeCategoriesDropdown}
                 >
-                  <span>Categories</span>
-                  <span className="text-[11px] text-slate-400 transition group-hover:translate-y-[1px]">▾</span>
+                  <button
+                    type="button"
+                    className="group inline-flex items-center gap-1.5 rounded-xl px-2 py-1 text-[13px] font-medium leading-none text-slate-700 transition hover:bg-slate-50"
+                  >
+                    <span>Categories</span>
+                    <span className="text-[11px] text-slate-400 transition group-hover:translate-y-[1px]">▾</span>
+                  </button>
+                  <span className="mx-2 h-5 w-px shrink-0 bg-slate-200" />
+                </div>
+                <input
+                  type="text"
+                  placeholder={searchPlaceholder || t('navbar.searchFragrances')}
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  onFocus={() => setSearchFocused(true)}
+                  onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
+                  className="min-w-0 flex-1 bg-transparent text-[14px] leading-none text-slate-800 outline-none placeholder:text-slate-400"
+                />
+                <button
+                  type="submit"
+                  className="ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition hover:bg-slate-100"
+                  style={{ color: navbarAppearance.backgroundColor }}
+                  aria-label="Search"
+                >
+                  <Search size={15} />
                 </button>
-                <span className="ml-2 h-5 w-px bg-slate-200" />
               </div>
-              <input
-                type="text"
-                placeholder={searchPlaceholder || t('navbar.searchFragrances')}
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full bg-transparent pr-2 text-[14px] text-slate-800 outline-none placeholder:text-slate-400"
-              />
-              <button
-                type="submit"
-                className="flex h-8 w-8 items-center justify-center rounded-full transition hover:bg-slate-100"
-                style={{ color: navbarAppearance.backgroundColor }}
-                aria-label="Search"
-              >
-                <Search size={15} />
-              </button>
-            </div>
             </form>
-              </div>
-            </div>
+            {renderSearchSuggestionsDropdown(
+              'absolute left-0 right-0 top-full z-[60] mt-2 max-h-80 overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-xl',
+            )}
           </div>
 
           {/* Right Side - Support + Icons */}
-          <div className="hidden lg:flex ml-auto items-center gap-1.5 flex-shrink-0 text-[12px] text-white">
+          <div className="hidden lg:flex items-center justify-end gap-1.5 flex-shrink-0 text-[12px] text-white lg:justify-self-end">
             {firebaseUser ? (
               <div className="flex items-center gap-2">
               <div
@@ -1967,96 +1952,6 @@ const Navbar = () => {
       )}
         </>
       )}
-      <style jsx global>{`
-        .shipxpress-pill {
-          position: relative;
-          display: inline-flex;
-          flex-direction: column;
-          min-width: 126px;
-          border-radius: 9999px;
-          background: linear-gradient(180deg, #c76206 0%, #8a3f02 100%);
-          border: 1px solid rgba(255, 255, 255, 0.24);
-          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
-          padding: 9px 10px 7px;
-          text-decoration: none;
-        }
-
-        .shipxpress-badge {
-          position: absolute;
-          top: -9px;
-          left: 50%;
-          transform: translateX(-50%);
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-          white-space: nowrap;
-          border-radius: 9999px;
-          background: linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%);
-          color: #fffef7;
-          font-size: 9px;
-          line-height: 1;
-          font-weight: 800;
-          padding: 3px 7px;
-          border: 1px solid rgba(255, 255, 255, 0.28);
-          box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
-          animation: shipxpressBadgePulse 2.2s ease-in-out infinite;
-        }
-
-        .shipxpress-badge-icon {
-          font-size: 9px;
-        }
-
-        .shipxpress-badge-dot {
-          width: 5px;
-          height: 5px;
-          border-radius: 9999px;
-          background: #fff;
-          opacity: 0.9;
-        }
-
-        .shipxpress-main {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 6px;
-          color: #fff;
-          font-size: 18px;
-          line-height: 1;
-          font-weight: 800;
-          letter-spacing: 0.01em;
-        }
-
-        .shipxpress-truck-wrap {
-          position: relative;
-          width: 18px;
-          height: 18px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          overflow: visible;
-        }
-
-        .shipxpress-truck {
-          animation: shipxpressTruckMove 1.2s ease-in-out infinite;
-          will-change: transform;
-        }
-
-        .shipxpress-pill:hover .shipxpress-truck,
-        .shipxpress-pill:focus-visible .shipxpress-truck {
-          animation-duration: 0.8s;
-        }
-
-        @keyframes shipxpressTruckMove {
-          0% { transform: translateX(-2px); }
-          50% { transform: translateX(2px); }
-          100% { transform: translateX(-2px); }
-        }
-
-        @keyframes shipxpressBadgePulse {
-          0%, 100% { transform: translateX(-50%) scale(1); }
-          50% { transform: translateX(-50%) scale(1.04); }
-        }
-      `}</style>
     </>
   );
 };

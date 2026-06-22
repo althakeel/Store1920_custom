@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Product from '@/models/Product';
+import { getCachedData, setCachedData } from '@/lib/cache';
 import { localizeRecord, resolveStorefrontLanguage } from '@/lib/storefrontLanguage';
 
 const MAX_FBT_PRODUCTS = 10;
@@ -25,10 +26,7 @@ const hasPositiveStock = (p) => {
 // GET /api/products/[id]/fbt - Fetch frequently bought together products
 export async function GET(request, { params }) {
   try {
-    await dbConnect();
     const language = resolveStorefrontLanguage(request);
-    
-    // Handle async params in Next.js 15
     const resolvedParams = await params;
     const { id } = resolvedParams;
 
@@ -36,26 +34,44 @@ export async function GET(request, { params }) {
       return NextResponse.json({ error: 'Product ID is required' }, { status: 400 });
     }
 
-    const product = await Product.findById(id).select('enableFBT fbtProductIds fbtBundlePrice fbtBundleDiscount');
+    const cacheKey = `product:fbt:${id}:${language}`;
+    const cached = getCachedData(cacheKey);
+    if (cached) {
+      const isDev = process.env.NODE_ENV !== 'production';
+      return NextResponse.json(cached, {
+        headers: {
+          'Cache-Control': isDev ? 'no-store' : 'public, s-maxage=300, stale-while-revalidate=600',
+          'X-Cache': 'HIT',
+        },
+      });
+    }
+
+    await dbConnect();
+
+    const product = await Product.findById(id)
+      .select('enableFBT fbtProductIds fbtBundlePrice fbtBundleDiscount')
+      .lean();
     
     if (!product) {
       return NextResponse.json({ error: 'Product not found' }, { status: 404 });
     }
 
-    // If FBT is not enabled or no products selected, return empty
     if (!product.enableFBT || !product.fbtProductIds || product.fbtProductIds.length === 0) {
-      return NextResponse.json({ 
-        enableFBT: false, 
-        products: [], 
+      const emptyPayload = {
+        enableFBT: false,
+        products: [],
         bundlePrice: 0,
-        bundleDiscount: 0 
-      });
+        bundleDiscount: 0,
+      };
+      setCachedData(cacheKey, emptyPayload, 300);
+      return NextResponse.json(emptyPayload);
     }
 
-    // Fetch the FBT products and filter out invalid references
     const rawFbtProducts = await Product.find({
-      _id: { $in: product.fbtProductIds }
-    }).select('name nameAr price images slug hasVariants variants inStock stockQuantity');
+      _id: { $in: product.fbtProductIds },
+    })
+      .select('name nameAr price images slug hasVariants variants inStock stockQuantity')
+      .lean();
 
     const byId = new Map(rawFbtProducts.map((p) => [String(p._id), p]));
     const fbtProducts = product.fbtProductIds
@@ -64,11 +80,21 @@ export async function GET(request, { params }) {
       .filter((p) => isValidNumber(p.price) && Number(p.price) >= 0)
       .filter((p) => hasPositiveStock(p));
 
-    return NextResponse.json({
+    const payload = {
       enableFBT: product.enableFBT && fbtProducts.length > 0,
-      products: fbtProducts.map((fbtProduct) => localizeRecord(fbtProduct.toObject ? fbtProduct.toObject() : fbtProduct, language, ['name'])),
+      products: fbtProducts.map((fbtProduct) => localizeRecord(fbtProduct, language, ['name'])),
       bundlePrice: product.fbtBundlePrice,
-      bundleDiscount: product.fbtBundleDiscount || 0
+      bundleDiscount: product.fbtBundleDiscount || 0,
+    };
+
+    setCachedData(cacheKey, payload, 300);
+
+    const isDev = process.env.NODE_ENV !== 'production';
+    return NextResponse.json(payload, {
+      headers: {
+        'Cache-Control': isDev ? 'no-store' : 'public, s-maxage=300, stale-while-revalidate=600',
+        'X-Cache': 'MISS',
+      },
     });
   } catch (error) {
     console.error('Error fetching FBT products:', error.message, error.stack);

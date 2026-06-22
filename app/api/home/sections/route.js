@@ -3,59 +3,76 @@ import HomeSection from "@/models/HomeSection";
 import Product from "@/models/Product";
 import { NextResponse } from "next/server";
 
+const PRODUCT_SELECT = '_id name price mrp AED images inStock';
+
+function mapSectionProducts(productIds, productMap) {
+  return (productIds || [])
+    .map((id) => productMap.get(String(id)))
+    .filter(Boolean)
+    .map((product) => ({
+      ...product,
+      id: product._id.toString(),
+      image: product.images?.[0] || null,
+      offLabel:
+        product.AED && product.AED > product.price
+          ? `Min. ${Math.max(0, Math.round(((product.AED - product.price) / product.AED) * 100))}% Off`
+          : null,
+    }));
+}
+
 // GET /api/home/sections
 // Returns active homepage selections with product details and optional slides
 export async function GET() {
   try {
-    // If database env is missing (build/preview), return empty payload gracefully
     if (!process.env.MONGODB_URI) {
       return NextResponse.json({ sections: [] });
     }
+
     await dbConnect();
-    const selections = await HomeSection.find({ isActive: true }).sort({ sortOrder: 1 }).lean();
+    const selections = await HomeSection.find({ isActive: true })
+      .select('section title subtitle slides layout bannerCtaText bannerCtaLink productIds')
+      .sort({ sortOrder: 1 })
+      .lean();
 
-    // Map each selection to include product data in the provided order
-    const payload = await Promise.all(
-      selections.map(async (sel) => {
-        let products = [];
-        if (sel.productIds?.length) {
-          const found = await Product.find({
-            _id: { $in: sel.productIds }
-          }).select('_id name price mrp AED images inStock').lean();
-          // Preserve order based on productIds
-          const byId = new Map(found.map((p) => [p._id.toString(), p]));
-          products = sel.productIds
-            .map((id) => byId.get(id))
-            .filter(Boolean)
-            .map((p) => ({
-              ...p,
-              id: p._id.toString(),
-              image: p.images?.[0] || null,
-              offLabel:
-                p.AED && p.AED > p.price
-                  ? `Min. ${Math.max(0, Math.round(((p.AED - p.price) / p.AED) * 100))}% Off`
-                  : null,
-            }));
-        }
+    const allProductIds = [
+      ...new Set(
+        selections
+          .flatMap((selection) => (Array.isArray(selection.productIds) ? selection.productIds : []))
+          .map((id) => String(id || '').trim())
+          .filter(Boolean)
+      ),
+    ];
 
-        return {
-          id: sel._id.toString(),
-          key: sel.section,
-          title: sel.title,
-          subtitle: sel.subtitle,
-          slides: sel.slides || [],
-          layout: sel.layout,
-          bannerCtaText: sel.bannerCtaText,
-          bannerCtaLink: sel.bannerCtaLink,
-          products,
-        };
-      })
+    const products = allProductIds.length
+      ? await Product.find({ _id: { $in: allProductIds } }).select(PRODUCT_SELECT).lean()
+      : [];
+
+    const productMap = new Map(products.map((product) => [String(product._id), product]));
+
+    const payload = selections.map((selection) => ({
+      id: selection._id.toString(),
+      key: selection.section,
+      title: selection.title,
+      subtitle: selection.subtitle,
+      slides: selection.slides || [],
+      layout: selection.layout,
+      bannerCtaText: selection.bannerCtaText,
+      bannerCtaLink: selection.bannerCtaLink,
+      products: mapSectionProducts(selection.productIds, productMap),
+    }));
+
+    return NextResponse.json(
+      { sections: payload },
+      {
+        headers: {
+          'Cache-Control': process.env.NODE_ENV === 'production'
+            ? 'public, s-maxage=120, stale-while-revalidate=300'
+            : 'no-store',
+        },
+      }
     );
-
-    return NextResponse.json({ sections: payload });
   } catch (error) {
     console.error("/api/home/sections error", error);
-    // Degrade gracefully for homepage; avoid noisy 500 in client console
     return NextResponse.json({ sections: [] });
   }
 }

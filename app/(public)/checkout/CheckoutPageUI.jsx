@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { Check, Truck, Zap } from "lucide-react";
 import axios from "axios";
 import { countryCodes } from "@/assets/countryCodes";
 import { indiaStatesAndDistricts } from "@/assets/indiaStatesAndDistricts";
@@ -16,10 +17,14 @@ import dynamic from "next/dynamic";
 import Script from "next/script";
 import Link from "next/link";
 import Image from "next/image";
+import BnplLogo from "@/components/BnplLogo";
 import { useStorefrontI18n } from "@/lib/useStorefrontI18n";
 import { useStorefrontMarket } from "@/lib/useStorefrontMarket";
 import { trackCustomerEvent, withOrderTrackingFields } from '@/lib/trackingClient';
 import { getCartEntryProductId, getCartEntryQuantity, isFreeGiftEntry } from "@/lib/freeGiftUtils";
+import { STORE1920_LOGO_PATH } from "@/lib/brandLogo";
+import { UAE_EMIRATES, getUaeAreasForEmirate, isUaeCountry } from "@/lib/uaeEmirateAreas";
+import SearchableSelect from "@/components/SearchableSelect";
 import Creditimage1 from '../../../assets/creditcards/19 - Copy.webp';
 import Creditimage2 from '../../../assets/creditcards/16 - Copy.webp';
 import Creditimage3 from '../../../assets/creditcards/20.webp';
@@ -28,6 +33,11 @@ import Creditimage4 from '../../../assets/creditcards/11.webp';
 const SignInModal = dynamic(() => import("@/components/SignInModal"), { ssr: false });
 const AddressModal = dynamic(() => import("@/components/AddressModal"), { ssr: false });
 const PrepaidUpsellModal = dynamic(() => import("@/components/PrepaidUpsellModal"), { ssr: false });
+
+function formatDeliveryDays(value, fallback = '2-5') {
+  const raw = String(value || fallback).replace(/\s*days?/gi, '').trim();
+  return raw ? `${raw} days` : `${fallback} days`;
+}
 
 export default function CheckoutPage() {
   const { user, loading: authLoading, getToken } = useAuth();
@@ -58,18 +68,8 @@ export default function CheckoutPage() {
     alternatePhoneCode: '+971',
   });
 
-  // For India state/district dropdowns
-  const keralaDistricts = indiaStatesAndDistricts.find(s => s.state === 'Kerala')?.districts || [];
-  const uaeEmirates = [
-    'Abu Dhabi',
-    'Dubai',
-    'Sharjah',
-    'Ajman',
-    'Umm Al Quwain',
-    'Ras Al Khaimah',
-    'Fujairah',
-  ];
-  const [districts, setDistricts] = useState(keralaDistricts);
+  // For India / UAE state-area dropdowns
+  const [districts, setDistricts] = useState(() => getUaeAreasForEmirate('Dubai'));
   const [placingOrder, setPlacingOrder] = useState(false);
   const [payingNow, setPayingNow] = useState(false);
   const [showPrepaidModal, setShowPrepaidModal] = useState(false);
@@ -570,7 +570,24 @@ export default function CheckoutPage() {
   
   const total = totalAfterCoupon + effectiveShipping;
   const totalAfterWallet = total;
+  const cartItemCount = cartArray.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+  const hasFreeShippingProduct = cartArray.some((item) => Boolean(item?.freeShippingEligible));
+  const summaryDeliveryDays = shippingMethod === 'express'
+    ? formatDeliveryDays(shippingSetting?.expressEstimatedDays, '1-2')
+    : formatDeliveryDays(shippingSetting?.estimatedDays, '2-5');
+  const summaryDeliveryLabel = shippingMethod === 'express'
+    ? t('checkout.expressDelivery')
+    : t('checkout.standardDelivery');
+  const totalSavings = couponDiscount + shippingDiscount;
   const needsPaymentSelection = totalAfterWallet > 0;
+  const paymentMethodSummary = (() => {
+    if (form.payment === 'cod') return t('checkout.cashOnDelivery');
+    if (form.payment === 'card') return t('checkout.creditDebitCard');
+    if (form.payment === 'wallet') return t('checkout.walletBalance');
+    if (form.payment === 'tamara') return 'Tamara';
+    if (form.payment === 'tabby') return 'Tabby';
+    return t('checkout.paymentMethods');
+  })();
   const maxCODAmount = shippingSetting?.maxCODAmount || 0;
   const hasPersonalizedOfferItem = Object.values(cartItems || {}).some(
     (entry) => typeof entry === 'object' && !!entry?.offerToken
@@ -597,6 +614,36 @@ export default function CheckoutPage() {
   const isPaymentMissing = needsPaymentSelection && !form.payment;
   const isInvalidPaymentSelection = form.payment === 'cod' && isCODDisabledForOrder;
   const isPlaceOrderDisabled = placingOrder || isPaymentMissing || isInvalidPaymentSelection;
+  const isGuestAddressReady = !!(
+    form.name &&
+    form.phone &&
+    form.city &&
+    form.state &&
+    form.street &&
+    (!isUaeCountry(form.country) || form.district)
+  );
+  const placeOrderButtonActiveColors = 'bg-red-600 hover:bg-red-700';
+  const placeOrderButtonColors = isPlaceOrderDisabled
+    ? 'bg-gray-400 cursor-not-allowed opacity-75'
+    : placeOrderButtonActiveColors;
+  const mobilePlaceOrderDisabled = (!form.addressId && !isGuestAddressReady) || isPlaceOrderDisabled;
+  const mobilePlaceOrderButtonColors = mobilePlaceOrderDisabled
+    ? 'bg-gray-400 cursor-not-allowed opacity-75'
+    : placeOrderButtonActiveColors;
+  const renderPayByMethodLabel = (methodKey) => (
+    <span className="font-normal">
+      {t('checkout.payBy')}{' '}
+      <span className="font-bold">{t(`checkout.method${methodKey}`)}</span>
+    </span>
+  );
+  const renderPlaceOrderButtonContent = () => {
+    if (form.payment === 'tamara') return renderPayByMethodLabel('Tamara');
+    if (form.payment === 'tabby') return renderPayByMethodLabel('Tabby');
+    if (form.payment === 'cod') return renderPayByMethodLabel('Cod');
+    if (form.payment === 'card') return renderPayByMethodLabel('Card');
+    if (form.payment === 'wallet') return renderPayByMethodLabel('Wallet');
+    return needsPaymentSelection ? t('checkout.selectPayment') : t('checkout.placeOrder');
+  };
   const selectedAddressForView = form.addressId ? addressList.find((a) => a._id === form.addressId) : null;
   const shouldShowPhoneRequired =
     !!user &&
@@ -737,16 +784,26 @@ export default function CheckoutPage() {
     }
   }, [authLoading, cartItems, router, placingOrder, showPrepaidModal]);
 
+  const checkoutSelectClass =
+    'w-full rounded border border-gray-200 bg-white px-4 py-2 text-left text-slate-900 outline-none transition focus:border-gray-400';
+
+  const handleStateSelect = (value) => {
+    if (isUaeCountry(form.country)) {
+      setDistricts(getUaeAreasForEmirate(value));
+    } else {
+      const stateObj = indiaStatesAndDistricts.find((s) => s.state === value);
+      setDistricts(stateObj ? stateObj.districts : []);
+    }
+    setForm((f) => ({ ...f, state: value, district: '' }));
+  };
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     if (name === 'state') {
-      // Update districts when state changes
-      const stateObj = indiaStatesAndDistricts.find(s => s.state === value);
-      setDistricts(stateObj ? stateObj.districts : []);
-      setForm(f => ({ ...f, state: value, district: '' }));
+      handleStateSelect(value);
     } else if (name === 'country') {
       setForm(f => ({ ...f, country: value, state: '', district: '', alternatePhoneCode: f.alternatePhoneCode || f.phoneCode }));
-      if (value !== 'India') setDistricts([]);
+      setDistricts([]);
     } else if (name === 'payment') {
       setForm(f => ({ ...f, [name]: value }));
     } else if (name === 'pincode') {
@@ -815,7 +872,7 @@ export default function CheckoutPage() {
         currency: "AED",
         name: "store1920",
         description: "Order Payment",
-        image: "/logo.png",
+        image: STORE1920_LOGO_PATH,
         handler: async function (response) {
           try {
             // Verify payment on backend AND create order
@@ -1507,7 +1564,7 @@ export default function CheckoutPage() {
         currency: 'AED',
         name: 'store1920',
         description: 'Prepaid Payment (5% OFF)',
-        image: '/logo.png',
+        image: STORE1920_LOGO_PATH,
         handler: async function (response) {
           try {
             const verifyRes = await fetch('/api/razorpay/verify', {
@@ -1587,8 +1644,6 @@ export default function CheckoutPage() {
       </div>
     );
   }
-
-  const isGuestAddressReady = !!(form.name && form.phone && form.city && form.state && form.street);
 
   if (showPrepaidModal || navigatingToSuccess) {
     // If we just placed a COD order, show the prepaid upsell modal even though cart is empty
@@ -1719,90 +1774,108 @@ export default function CheckoutPage() {
             </div>
             {/* Shipping Method Section */}
             <div className="mb-6">
-              <h2 className="text-xl font-bold mb-4 text-gray-900">{t('checkout.deliveryMethod')}</h2>
-              <div className="space-y-2">
-                <label className={`block border rounded-lg p-4 cursor-pointer transition-all ${
-                  shippingMethod === 'standard' 
-                    ? 'border-green-500 bg-green-50 shadow-sm' 
-                    : 'border-gray-200 bg-white'
-                }`}>
-                  <div className="flex items-start gap-3">
-                    <input
-                      type="radio"
-                      name="shippingMethod"
-                      value="standard"
-                      checked={shippingMethod === 'standard'}
-                      onChange={(e) => setShippingMethod(e.target.value)}
-                      className="mt-1 w-5 h-5 cursor-pointer flex-shrink-0"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-base">📦</span>
-                        <div>
-                          <div className="font-medium text-sm text-gray-900">{t('checkout.standardDelivery')}</div>
-                          <div className="text-xs text-gray-600">{shippingSetting?.estimatedDays || '2-5'} </div>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <div className="font-bold text-lg text-green-600">
-                        {(() => {
-                          const baseShip = calculateShipping({ 
-                            cartItems: cartArray, 
-                            shippingSetting,
-                            paymentMethod: form.payment === 'cod' ? 'COD' : 'CARD',
-                            shippingState: form.state
-                          });
-                          return baseShip === 0 ? 'Free' : formatMoney(baseShip);
-                        })()}
-                      </div>
-                    </div>
-                  </div>
-                </label>
+              <h2 className="mb-1 text-xl font-bold text-gray-900">{t('checkout.deliveryMethod')}</h2>
+              <p className="mb-4 text-sm text-slate-500">Choose how fast you want your order delivered.</p>
+              <div className="space-y-3">
+                {(() => {
+                  const baseShip = calculateShipping({
+                    cartItems: cartArray,
+                    shippingSetting,
+                    paymentMethod: form.payment === 'cod' ? 'COD' : 'CARD',
+                    shippingState: form.state,
+                  });
+                  const standardDays = formatDeliveryDays(shippingSetting?.estimatedDays, '2-5');
+                  const isStandardSelected = shippingMethod === 'standard';
 
-                {/* Express Shipping Option - Only show if enabled */}
-                {shippingSetting?.enableExpressShipping && String(form.state || '').trim().toLowerCase() === 'kerala' && (
-                  <label className={`block border rounded-lg p-4 cursor-pointer transition-all ${
-                    shippingMethod === 'express' 
-                      ? 'border-blue-500 bg-blue-50 shadow-sm' 
-                      : 'border-gray-200 bg-white'
-                  }`}>
-                    <div className="flex items-start gap-3">
-                      <input
-                        type="radio"
-                        name="shippingMethod"
-                        value="express"
-                        checked={shippingMethod === 'express'}
-                        onChange={(e) => setShippingMethod(e.target.value)}
-                        className="mt-1 w-5 h-5 cursor-pointer flex-shrink-0"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-base">⚡</span>
-                          <div>
-                            <div className="font-medium text-sm text-gray-900">Express delivery mode</div>
-                            <div className="text-xs text-gray-600">{shippingSetting?.expressEstimatedDays || '1-2'} days</div>
-                          </div>
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => setShippingMethod('standard')}
+                      className={`w-full rounded-xl border-2 p-4 text-left transition-colors ${
+                        isStandardSelected
+                          ? 'border-emerald-300 bg-white'
+                          : 'border-slate-200 bg-white hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+                          <Truck className="h-5 w-5" strokeWidth={2} />
                         </div>
-                        <div className="text-xs text-blue-600 ml-7">+{formatMoney(shippingSetting?.expressShippingFee || 0)} extra</div>
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        <div className="font-bold text-lg text-blue-600">
-                          {(() => {
-                            const baseShip = calculateShipping({ 
-                              cartItems: cartArray, 
-                              shippingSetting,
-                              paymentMethod: form.payment === 'cod' ? 'COD' : 'CARD',
-                              shippingState: form.state
-                            });
-                            const expressTotal = baseShip + Number(shippingSetting.expressShippingFee || 0);
-                            return formatMoney(expressTotal);
-                          })()}
+
+                        <div className="min-w-0 flex-1">
+                          <span className="font-semibold text-slate-900">{t('checkout.standardDelivery')}</span>
+                          <p className="mt-0.5 text-sm text-slate-500">
+                            {t('checkout.deliveredIn', { days: standardDays })}
+                          </p>
+                        </div>
+
+                        <div className="flex shrink-0 items-center gap-3">
+                          <span className={`text-sm font-semibold ${
+                            baseShip === 0 ? 'text-emerald-600' : 'text-slate-900'
+                          }`}>
+                            {baseShip === 0 ? t('cart.free') : formatMoney(baseShip)}
+                          </span>
+                          <span className={`flex h-5 w-5 items-center justify-center rounded-full border-2 ${
+                            isStandardSelected ? 'border-emerald-400 bg-emerald-400' : 'border-slate-300 bg-white'
+                          }`}>
+                            {isStandardSelected ? <Check className="h-3 w-3 text-white" strokeWidth={3} /> : null}
+                          </span>
                         </div>
                       </div>
-                    </div>
-                  </label>
-                )}
+                    </button>
+                  );
+                })()}
+
+                {shippingSetting?.enableExpressShipping && String(form.state || '').trim().toLowerCase() === 'kerala' && (() => {
+                  const baseShip = calculateShipping({
+                    cartItems: cartArray,
+                    shippingSetting,
+                    paymentMethod: form.payment === 'cod' ? 'COD' : 'CARD',
+                    shippingState: form.state,
+                  });
+                  const expressTotal = baseShip + Number(shippingSetting.expressShippingFee || 0);
+                  const expressDays = formatDeliveryDays(shippingSetting?.expressEstimatedDays, '1-2');
+                  const isExpressSelected = shippingMethod === 'express';
+
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => setShippingMethod('express')}
+                      className={`w-full rounded-xl border-2 p-4 text-left transition-colors ${
+                        isExpressSelected
+                          ? 'border-emerald-300 bg-white'
+                          : 'border-slate-200 bg-white hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+                          <Zap className="h-5 w-5" strokeWidth={2} />
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <span className="font-semibold text-slate-900">{t('checkout.expressDelivery')}</span>
+                          <p className="mt-0.5 text-sm text-slate-500">
+                            {t('checkout.expressDeliveredIn', { days: expressDays })}
+                          </p>
+                          <p className="mt-0.5 text-xs text-slate-500">
+                            {t('checkout.expressExtra', { amount: formatMoney(shippingSetting?.expressShippingFee || 0) })}
+                          </p>
+                        </div>
+
+                        <div className="flex shrink-0 items-center gap-3">
+                          <span className="text-sm font-semibold text-slate-900">
+                            {formatMoney(expressTotal)}
+                          </span>
+                          <span className={`flex h-5 w-5 items-center justify-center rounded-full border-2 ${
+                            isExpressSelected ? 'border-emerald-400 bg-emerald-400' : 'border-slate-300 bg-white'
+                          }`}>
+                            {isExpressSelected ? <Check className="h-3 w-3 text-white" strokeWidth={3} /> : null}
+                          </span>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })()}
               </div>
               
               {/* State-wise charge note */}
@@ -2110,21 +2183,33 @@ export default function CheckoutPage() {
                     onChange={handleChange}
                     required
                   />
-                  {/* District dropdown (for India) */}
-                  {form.country === 'India' && (
+                  {/* Area/District dropdown (UAE + India) */}
+                  {((form.country === 'India' || isUaeCountry(form.country)) && form.state) && (
+                    isUaeCountry(form.country) ? (
+                      <SearchableSelect
+                        value={form.district}
+                        onChange={(value) => setForm((f) => ({ ...f, district: value }))}
+                        options={districts}
+                        placeholder="Select Area"
+                        searchPlaceholder="Search area..."
+                        emptyMessage="No areas found"
+                        required
+                        triggerClassName={checkoutSelectClass}
+                      />
+                    ) : (
                     <select
                       className="border border-gray-200 bg-white rounded px-4 py-2 focus:border-gray-400"
                       name="district"
                       value={form.district}
                       onChange={handleChange}
-                      required={!!form.state}
-                      disabled={!form.state}
+                      required
                     >
                       <option value="">Select District</option>
                       {districts.map((d) => (
                         <option key={d} value={d}>{d}</option>
                       ))}
                     </select>
+                    )
                   )}
                   {/* Full Address Line (street) */}
                   <input
@@ -2138,31 +2223,25 @@ export default function CheckoutPage() {
                   />
                   {/* State/Emirate */}
                   {form.country === 'India' ? (
-                    <select
-                      className="border border-gray-200 bg-white rounded px-4 py-2 focus:border-gray-400"
-                      name="state"
+                    <SearchableSelect
                       value={form.state}
-                      onChange={handleChange}
+                      onChange={handleStateSelect}
+                      options={indiaStatesAndDistricts.map((s) => s.state)}
+                      placeholder="Select State"
+                      searchPlaceholder="Search state..."
                       required
-                    >
-                      <option value="">Select State</option>
-                      {indiaStatesAndDistricts.map((s) => (
-                        <option key={s.state} value={s.state}>{s.state}</option>
-                      ))}
-                    </select>
+                      triggerClassName={checkoutSelectClass}
+                    />
                   ) : form.country === 'United Arab Emirates' ? (
-                    <select
-                      className="border border-gray-200 bg-white rounded px-4 py-2 focus:border-gray-400"
-                      name="state"
+                    <SearchableSelect
                       value={form.state}
-                      onChange={handleChange}
+                      onChange={handleStateSelect}
+                      options={UAE_EMIRATES}
+                      placeholder="Select Emirate"
+                      searchPlaceholder="Search emirate..."
                       required
-                    >
-                      <option value="">Select Emirate</option>
-                      {uaeEmirates.map((emirate) => (
-                        <option key={emirate} value={emirate}>{emirate}</option>
-                      ))}
-                    </select>
+                      triggerClassName={checkoutSelectClass}
+                    />
                   ) : (
                     <input
                       className="border border-gray-200 bg-white rounded px-4 py-2 focus:border-gray-400"
@@ -2279,17 +2358,7 @@ export default function CheckoutPage() {
                           className="w-5 h-5 flex-shrink-0"
                           style={{accentColor:'#f075a3'}}
                         />
-                        {/* Official Tamara logo */}
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src="https://cdn.tamara.co/assets/svg/tamara-logo-badge-en.svg"
-                          alt="Tamara"
-                          width={72}
-                          height={24}
-                          className="flex-shrink-0"
-                          onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='inline'; }}
-                        />
-                        <span className="hidden text-sm font-bold text-white bg-[#f075a3] px-2 py-0.5 rounded">tamara</span>
+                        <BnplLogo provider="tamara" size="checkout" />
                         <span className="text-sm font-semibold text-gray-900">Split in up to 4 payments</span>
                         <span className="ml-0.5 w-4 h-4 rounded-full border border-gray-400 text-gray-400 text-[10px] flex items-center justify-center flex-shrink-0" title="Pay in 4 equal interest-free instalments">?</span>
                       </div>
@@ -2332,11 +2401,7 @@ export default function CheckoutPage() {
                           className="w-5 h-5 flex-shrink-0"
                           style={{accentColor:'#3DBEA3'}}
                         />
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 26" style={{width:72,height:24,flexShrink:0}} aria-label="Tabby">
-                          <rect width="72" height="26" rx="6" fill="#3DBEA3"/>
-                          <text x="36" y="17.5" textAnchor="middle" fill="white" fontSize="12" fontWeight="bold" fontFamily="Arial,sans-serif" letterSpacing="1">tabby</text>
-                        </svg>
+                        <BnplLogo provider="tabby" size="checkout" />
                         <span className="text-sm font-semibold text-gray-900">Split in up to 4 payments</span>
                         <span className="ml-0.5 w-4 h-4 rounded-full border border-gray-400 text-gray-400 text-[10px] flex items-center justify-center flex-shrink-0" title="Pay in 4 equal interest-free instalments">?</span>
                       </div>
@@ -2382,76 +2447,114 @@ export default function CheckoutPage() {
           </div>
         </div>
         {/* Right column: discount input, order summary and place order button */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8 h-fit flex flex-col justify-between">
-          {/* Price Breakdown */}
-          <hr className="my-3" />
-          <div className="space-y-2 mb-4 pb-4 border-b border-gray-200">
-            <div className="flex justify-between text-sm text-gray-900">
-              <span>{t('checkout.items')}</span>
-              <span>{formatMoney(subtotal)}</span>
+        <div className="bg-white rounded-xl shadow-sm border-2 border-slate-200 p-6 md:p-8 h-fit flex flex-col">
+          <div className="mb-4 pb-4 border-b border-slate-100">
+            <h2 className="text-lg font-bold text-slate-900">{t('checkout.orderSummary')}</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              {t('checkout.itemCount', { count: cartItemCount })} · {formatMoney(subtotal)}
+            </p>
+          </div>
+
+          {/* Price breakdown */}
+          <div className="mb-4 space-y-3 border-b border-emerald-100 pb-4">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-slate-600">{t('checkout.subtotal')}</span>
+              <span className="font-medium text-slate-900">{formatMoney(subtotal)}</span>
             </div>
-            <div className="flex justify-between text-sm text-gray-900">
-              <span>{t('checkout.shippingHandling')}</span>
-              <span>{formatMoney(effectiveShipping > 0 ? effectiveShipping : 0)}</span>
-            </div>
-            {isFreeShippingCouponApplied && shippingDiscount > 0 && (
-              <div className="flex justify-between text-sm text-emerald-600 font-semibold">
-                <span>{t('checkout.freeShippingCoupon')} ({appliedCoupon.code})</span>
-                <span>-{formatMoney(shippingDiscount)}</span>
+
+            {appliedCoupon && couponDiscount > 0 && (
+              <div className="flex items-center justify-between text-sm text-blue-700">
+                <span>{t('checkout.couponDiscount')} ({appliedCoupon.code})</span>
+                <span className="font-semibold">-{formatMoney(couponDiscount)}</span>
               </div>
             )}
-            {appliedCoupon && couponDiscount > 0 && (
-              <div className="flex justify-between text-sm text-blue-600 font-semibold">
-                <span>{t('checkout.couponDiscount')} ({appliedCoupon.code})</span>
-                <span>-{formatMoney(couponDiscount)}</span>
+
+            <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2.5">
+              <div className="flex items-start justify-between gap-3 text-sm">
+                <div className="min-w-0">
+                  <p className="font-medium text-slate-900">{t('checkout.shippingHandling')}</p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {summaryDeliveryLabel} · {t('checkout.deliveredInDays', { days: summaryDeliveryDays })}
+                  </p>
+                  {hasFreeShippingProduct && effectiveShipping === 0 && !isFreeShippingCouponApplied ? (
+                    <p className="mt-1 text-xs text-emerald-700">{t('checkout.productFreeShippingNote')}</p>
+                  ) : null}
+                </div>
+                <div className="shrink-0 text-right">
+                  {isFreeShippingCouponApplied && shipping > 0 ? (
+                    <>
+                      <span className="block text-xs text-slate-400 line-through">{formatMoney(shipping)}</span>
+                      <span className="font-semibold text-emerald-600">{t('cart.free')}</span>
+                    </>
+                  ) : (
+                    <span className={`font-semibold ${effectiveShipping === 0 ? 'text-emerald-600' : 'text-slate-900'}`}>
+                      {effectiveShipping === 0 ? t('cart.free') : formatMoney(effectiveShipping)}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {isFreeShippingCouponApplied && shippingDiscount > 0 && (
+              <div className="flex items-center justify-between text-sm text-emerald-700">
+                <span>{t('checkout.freeShippingCoupon')} ({appliedCoupon.code})</span>
+                <span className="font-semibold">-{formatMoney(shippingDiscount)}</span>
               </div>
             )}
           </div>
-          
-          <hr className="my-3" />
-          
-          {/* Coupon Discount Display */}
+
           {appliedCoupon && (couponDiscount > 0 || isFreeShippingCouponApplied) && (
-            <div className="space-y-2 mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+            <div className="mb-4 space-y-2 rounded-lg border border-emerald-200 bg-emerald-50/60 p-3">
               <div className="flex justify-between text-sm">
-                <span className="text-gray-700">{t('checkout.couponApplied')}</span>
-                <span className="font-semibold text-gray-900">{appliedCoupon.code}</span>
+                <span className="text-slate-700">{t('checkout.couponApplied')}</span>
+                <span className="font-semibold text-slate-900">{appliedCoupon.code}</span>
               </div>
-              {isFreeShippingCouponApplied && shippingDiscount > 0 && (
+              {totalSavings > 0 && (
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-700">{t('checkout.freeShipping')}</span>
-                  <span className="font-semibold text-emerald-600">-{formatMoney(shippingDiscount)}</span>
-                </div>
-              )}
-              {couponDiscount > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-700">{appliedCoupon.title}</span>
-                  <span className="font-semibold text-green-600">-{formatMoney(couponDiscount)}</span>
+                  <span className="text-slate-700">{t('checkout.youSave')}</span>
+                  <span className="font-semibold text-emerald-700">{formatMoney(totalSavings)}</span>
                 </div>
               )}
               <button
+                type="button"
                 onClick={() => {
                   setAppliedCoupon(null);
                   setCoupon('');
                 }}
-                className="text-xs text-red-600 hover:text-red-700 font-semibold"
+                className="text-xs font-semibold text-red-600 hover:text-red-700"
               >
                 {t('checkout.removeCoupon')}
               </button>
             </div>
           )}
-          
-          {/* Final Total */}
-          <div className="mb-4 pb-4 border-b border-gray-200">
-            <div className="flex justify-between font-bold text-lg text-gray-900">
-              <span>{t('checkout.totalToPay')}</span>
-              <span>{formatMoney(totalAfterWallet)}</span>
+
+          <div className="mb-1 rounded-lg border border-emerald-200 bg-white px-3 py-3">
+            <div className="flex items-center justify-between">
+              <span className="text-base font-bold text-slate-900">{t('checkout.totalToPay')}</span>
+              <span className="text-xl font-bold text-slate-900">{formatMoney(totalAfterWallet)}</span>
             </div>
+            <p className="mt-1 text-xs text-slate-500">{t('checkout.inclVat')}</p>
+            {needsPaymentSelection ? (
+              <p className="mt-2 flex items-center gap-2 text-xs text-slate-600">
+                <span>{t('checkout.payWith')}:</span>
+                {form.payment === 'tamara' ? (
+                  <span className="text-slate-800">{renderPayByMethodLabel('Tamara')}</span>
+                ) : form.payment === 'tabby' ? (
+                  <span className="text-slate-800">{renderPayByMethodLabel('Tabby')}</span>
+                ) : form.payment === 'cod' ? (
+                  <span className="text-slate-800">{renderPayByMethodLabel('Cod')}</span>
+                ) : form.payment === 'card' ? (
+                  <span className="text-slate-800">{renderPayByMethodLabel('Card')}</span>
+                ) : (
+                  <span className="font-medium text-slate-800">{paymentMethodSummary}</span>
+                )}
+              </p>
+            ) : null}
           </div>
           <button
             type="submit"
             form="checkout-form"
-            className={`hidden md:block relative w-full text-white font-bold py-3 rounded text-lg transition shadow-md hover:shadow-lg ${isPlaceOrderDisabled ? 'bg-gray-400 cursor-not-allowed opacity-75' : 'bg-red-600 hover:bg-red-700'} ${placingOrder ? 'animate-bounce' : ''}`}
+            className={`mt-4 hidden md:flex relative w-full items-center justify-center text-white py-3.5 rounded-lg text-base transition shadow-md hover:shadow-lg ${placeOrderButtonColors} ${placingOrder ? 'animate-bounce' : ''}`}
             disabled={isPlaceOrderDisabled}
             aria-busy={placingOrder}
           >
@@ -2464,7 +2567,7 @@ export default function CheckoutPage() {
                 {t('checkout.placingOrder')}
               </span>
             ) : (
-              t('checkout.placeOrder')
+              renderPlaceOrderButtonContent()
             )}
             {placingOrder && (
               <span className="absolute left-0 top-0 h-full w-full overflow-hidden rounded opacity-20">
@@ -2474,7 +2577,7 @@ export default function CheckoutPage() {
           </button>
           
           {/* Safe & Secure Checkout */}
-          <div className="mt-6 pt-6 border-t border-gray-200">
+          <div className="mt-6 border-t border-slate-200 pt-6">
             <div className="flex items-center gap-2 mb-4">
               <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
@@ -2509,14 +2612,14 @@ export default function CheckoutPage() {
               </div>
             </div>
             
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3 mb-4">
               <div className="flex items-start gap-2">
-                <svg className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                <svg className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
                 </svg>
                 <div>
-                  <p className="text-sm font-semibold text-blue-900">{t('checkout.protectPayment')}</p>
-                  <p className="text-xs text-blue-700 mt-1">{t('checkout.protectPaymentDesc')}</p>
+                  <p className="text-sm font-semibold text-emerald-900">{t('checkout.protectPayment')}</p>
+                  <p className="text-xs text-emerald-800 mt-1">{t('checkout.protectPaymentDesc')}</p>
                 </div>
               </div>
             </div>
@@ -2547,17 +2650,7 @@ export default function CheckoutPage() {
           <button
             type="submit"
             form="checkout-form"
-            className={`relative w-full text-white font-bold py-4 rounded-lg text-base transition shadow-md hover:shadow-lg flex items-center justify-between px-6 ${
-              (!form.addressId && !isGuestAddressReady) || isPlaceOrderDisabled 
-                ? 'bg-gray-400 cursor-not-allowed opacity-75' 
-                : form.payment === 'cod' 
-                  ? 'bg-green-600 hover:bg-green-700' 
-                  : form.payment === 'card'
-                    ? 'bg-blue-600 hover:bg-blue-700'
-                    : form.payment === 'wallet'
-                      ? 'bg-green-600 hover:bg-green-700'
-                    : 'bg-red-600 hover:bg-red-700'
-            } ${placingOrder ? 'animate-bounce' : ''}`}
+            className={`relative w-full text-white py-4 rounded-lg text-base transition shadow-md hover:shadow-lg flex items-center justify-between px-6 ${mobilePlaceOrderButtonColors} ${placingOrder ? 'animate-bounce' : ''}`}
             disabled={(!form.addressId && !isGuestAddressReady) || isPlaceOrderDisabled}
             aria-busy={placingOrder}
           >
@@ -2571,7 +2664,9 @@ export default function CheckoutPage() {
                 Placing...
               </span>
             ) : (
-              <span className="text-base uppercase tracking-wide">Place Order</span>
+              <span className="flex items-center justify-end min-w-0">
+                {renderPlaceOrderButtonContent()}
+              </span>
             )}
             {placingOrder && (
               <span className="absolute left-0 top-0 h-full w-full overflow-hidden rounded opacity-20">

@@ -5,21 +5,62 @@ import { useAuth } from '@/lib/useAuth';
 export const dynamic = 'force-dynamic'
 import Loading from "@/components/Loading"
 import PageSkeleton from "@/components/PageSkeleton"
-import { readPageCache, writePageCache } from "@/lib/storePageCache"
-
+import { isValidCustomerImage } from "@/lib/storeCustomersApi"
 import axios from "axios"
 import { Calendar, Mail, Package, Search, ShoppingBag, TrendingUp, User, X } from "lucide-react"
 import Image from "next/image"
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import toast from "react-hot-toast"
 
+function CustomerAvatar({ customer, size = 56, ringClassName = 'ring-2 ring-slate-100 group-hover:ring-blue-500 transition-all' }) {
+    const [failed, setFailed] = useState(false)
+    const name = customer?.name || 'Customer'
+    const showImage = !customer?.isGuest && isValidCustomerImage(customer?.image) && !failed
+
+    if (showImage) {
+        return (
+            <Image
+                src={customer.image}
+                alt={name}
+                width={size}
+                height={size}
+                className={`rounded-full object-cover ${ringClassName}`}
+                style={{ width: size, height: size }}
+                onError={() => setFailed(true)}
+            />
+        )
+    }
+
+    return (
+        <div
+            className={`rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold ${ringClassName}`}
+            style={{ width: size, height: size, fontSize: Math.max(14, Math.round(size * 0.36)) }}
+        >
+            {name.charAt(0).toUpperCase() || 'U'}
+        </div>
+    )
+}
 
 export default function CustomersPage() {
     const { getToken } = useAuth()
     const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || 'AED'
 
     const [loading, setLoading] = useState(true)
+    const [listLoading, setListLoading] = useState(false)
     const [customers, setCustomers] = useState([])
+    const [stats, setStats] = useState({
+        totalCustomers: 0,
+        registeredCount: 0,
+        filteredTotal: 0,
+    })
+    const [pagination, setPagination] = useState({
+        page: 1,
+        limit: 20,
+        total: 0,
+        totalPages: 1,
+    })
+    const [debouncedSearch, setDebouncedSearch] = useState('')
+    const hasLoadedRef = useRef(false)
     const [selectedCustomer, setSelectedCustomer] = useState(null)
     const [customerDetails, setCustomerDetails] = useState(null)
     const [detailsLoading, setDetailsLoading] = useState(false)
@@ -28,22 +69,37 @@ export default function CustomersPage() {
     const [walletDeductAmount, setWalletDeductAmount] = useState('')
     const [viewMode, setViewMode] = useState('all') // 'all' or 'registered'
 
-    const fetchCustomers = async ({ silent = false } = {}) => {
+    const fetchCustomers = useCallback(async (page = 1, { initial = false } = {}) => {
         try {
             let token = await getToken(false)
             if (!token) token = await getToken(true)
-            if (!silent && !readPageCache('store-customers')) setLoading(true)
+            if (initial) setLoading(true)
+            else setListLoading(true)
 
             const { data } = await axios.get('/api/store/customers', {
+                params: {
+                    page,
+                    limit: 20,
+                    search: debouncedSearch || undefined,
+                    view: viewMode,
+                },
                 headers: { Authorization: `Bearer ${token}` }
             })
-            setCustomers(data.customers)
-            writePageCache('store-customers', { customers: data.customers })
+            setCustomers(data.customers || [])
+            setStats(data.stats || {})
+            setPagination(data.pagination || {
+                page,
+                limit: 20,
+                total: 0,
+                totalPages: 1,
+            })
         } catch (error) {
             toast.error(error?.response?.data?.error || error.message)
+        } finally {
+            setLoading(false)
+            setListLoading(false)
         }
-        setLoading(false)
-    }
+    }, [debouncedSearch, getToken, viewMode])
 
     const fetchCustomerDetails = async (customerId) => {
         setDetailsLoading(true)
@@ -129,29 +185,29 @@ export default function CustomersPage() {
     }
 
     useEffect(() => {
-        const cached = readPageCache('store-customers');
-        if (cached?.customers?.length) {
-            setCustomers(cached.customers);
-            setLoading(false);
-        }
-    }, []);
+        const timer = window.setTimeout(() => {
+            setDebouncedSearch(searchQuery.trim())
+            setPagination((current) => ({ ...current, page: 1 }))
+        }, 300)
+        return () => window.clearTimeout(timer)
+    }, [searchQuery])
 
     useEffect(() => {
-        fetchCustomers({ silent: Boolean(readPageCache('store-customers')) })
-    }, [])
+        fetchCustomers(pagination.page, { initial: !hasLoadedRef.current })
+        hasLoadedRef.current = true
+    }, [debouncedSearch, viewMode, pagination.page, fetchCustomers])
 
-    // Filter customers based on search query
-    const filteredCustomers = customers.filter(customer => {
-        const matchesSearch = customer.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            customer.email?.toLowerCase().includes(searchQuery.toLowerCase());
-        
-        if (viewMode === 'registered') {
-            return matchesSearch && customer.email && !customer.isGuest;
+    const paginationWindowEnd = Math.min(pagination.totalPages, Math.max(1, pagination.page - 2) + 4)
+    const visiblePageNumbers = useMemo(() => {
+        const pages = []
+        for (let page = Math.max(1, paginationWindowEnd - 4); page <= paginationWindowEnd; page += 1) {
+            pages.push(page)
         }
-        return matchesSearch;
-    });
+        return pages
+    }, [pagination.page, pagination.totalPages, paginationWindowEnd])
 
-    const registeredCount = customers.filter(c => c.email && !c.isGuest).length;
+    const showingFrom = pagination.total === 0 ? 0 : (pagination.page - 1) * pagination.limit + 1
+    const showingTo = Math.min(pagination.page * pagination.limit, pagination.total)
 
     if (loading && !customers.length) return <PageSkeleton rows={8} />
 
@@ -168,7 +224,10 @@ export default function CustomersPage() {
                         {/* Toggle Buttons */}
                         <div className="flex bg-white rounded-xl shadow-sm border border-slate-200 p-1">
                             <button
-                                onClick={() => setViewMode('all')}
+                                onClick={() => {
+                                    setViewMode('all')
+                                    setPagination((current) => ({ ...current, page: 1 }))
+                                }}
                                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                                     viewMode === 'all'
                                         ? 'bg-blue-600 text-white shadow-sm'
@@ -178,7 +237,10 @@ export default function CustomersPage() {
                                 All Customers
                             </button>
                             <button
-                                onClick={() => setViewMode('registered')}
+                                onClick={() => {
+                                    setViewMode('registered')
+                                    setPagination((current) => ({ ...current, page: 1 }))
+                                }}
                                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                                     viewMode === 'registered'
                                         ? 'bg-blue-600 text-white shadow-sm'
@@ -192,7 +254,7 @@ export default function CustomersPage() {
                         {/* Count Badge */}
                         <div className="bg-white rounded-xl shadow-sm border border-slate-200 px-6 py-4">
                             <p className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                                {viewMode === 'all' ? customers.length : registeredCount}
+                                {viewMode === 'all' ? stats.totalCustomers : stats.registeredCount}
                             </p>
                             <p className="text-xs text-slate-500 mt-1">
                                 {viewMode === 'all' ? 'Total Customers' : 'Registered'}
@@ -211,21 +273,34 @@ export default function CustomersPage() {
                         onChange={(e) => setSearchQuery(e.target.value)}
                         className="w-full pl-12 pr-4 py-3.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm transition-all"
                     />
+                    <p className="mt-2 text-xs text-slate-500">
+                        Showing {showingFrom}-{showingTo} of {pagination.total} customers
+                    </p>
                 </div>
             </div>
 
+            {listLoading ? (
+                <div className="mb-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
+                    Updating customer list...
+                </div>
+            ) : null}
+
             {/* Customers Grid */}
-            {filteredCustomers.length === 0 ? (
+            {customers.length === 0 ? (
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-16 text-center">
                     <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
                         <User size={40} className="text-slate-400" />
                     </div>
-                    <h3 className="text-xl font-semibold text-slate-900 mb-2">No customers yet</h3>
-                    <p className="text-slate-500">Your customers will appear here once they place their first order</p>
+                    <h3 className="text-xl font-semibold text-slate-900 mb-2">No customers found</h3>
+                    <p className="text-slate-500">
+                        {searchQuery
+                            ? `Nothing matches "${searchQuery}". Try another search term.`
+                            : 'Your customers will appear here once they place their first order'}
+                    </p>
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-                    {filteredCustomers.map((customer) => (
+                    {customers.map((customer) => (
                         <div
                             key={customer._id || customer.id}
                             onClick={() => handleCustomerClick(customer)}
@@ -234,19 +309,7 @@ export default function CustomersPage() {
                             {/* Customer Header */}
                             <div className="flex items-center gap-4 mb-4">
                                 <div className="relative">
-                                    {customer.image && customer.image !== '/placeholder.png' ? (
-                                        <Image
-                                            src={customer.image}
-                                            alt={customer.name}
-                                            width={56}
-                                            height={56}
-                                            className="rounded-full object-cover ring-2 ring-slate-100 group-hover:ring-blue-500 transition-all"
-                                        />
-                                    ) : (
-                                        <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-xl font-bold ring-2 ring-slate-100 group-hover:ring-blue-500 transition-all">
-                                            {customer.name?.charAt(0).toUpperCase() || 'U'}
-                                        </div>
-                                    )}
+                                    <CustomerAvatar customer={customer} size={56} />
                                     {!customer.isGuest && (
                                         <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white" title="Registered Account"></div>
                                     )}
@@ -290,32 +353,32 @@ export default function CustomersPage() {
                             </div>
 
                             {/* Recent Orders Preview */}
-                            {customer.orders && customer.orders.length > 0 && (
+                            {customer.latestOrder ? (
                                 <div className="mb-3 p-3 bg-slate-50 rounded-lg">
                                     <p className="text-xs font-semibold text-slate-700 mb-2">Recent Order</p>
                                     <div className="flex items-center justify-between">
                                         <div className="flex-1 min-w-0">
                                             <p className="text-xs text-slate-600 truncate">
-                                                Order #{(customer.orders[0].id || customer.orders[0]._id || '').toString().slice(-8).toUpperCase()}
+                                                Order #{(customer.latestOrder.id || '').toString().slice(-8).toUpperCase()}
                                             </p>
                                             <p className="text-xs text-slate-500 mt-0.5">
-                                                {new Date(customer.orders[0].createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                                {new Date(customer.latestOrder.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                                             </p>
                                         </div>
                                         <div className="text-right">
-                                            <p className="text-sm font-bold text-slate-900">{currency}{Math.round(customer.orders[0].total)}</p>
+                                            <p className="text-sm font-bold text-slate-900">{currency}{Math.round(customer.latestOrder.total)}</p>
                                             <span className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full mt-1 ${
-                                                customer.orders[0].status === 'DELIVERED' ? 'bg-green-100 text-green-700' :
-                                                customer.orders[0].status === 'SHIPPED' ? 'bg-blue-100 text-blue-700' :
-                                                customer.orders[0].status === 'ORDER_PLACED' ? 'bg-yellow-100 text-yellow-700' :
+                                                customer.latestOrder.status === 'DELIVERED' ? 'bg-green-100 text-green-700' :
+                                                customer.latestOrder.status === 'SHIPPED' ? 'bg-blue-100 text-blue-700' :
+                                                customer.latestOrder.status === 'ORDER_PLACED' ? 'bg-yellow-100 text-yellow-700' :
                                                 'bg-slate-100 text-slate-700'
                                             }`}>
-                                                {customer.orders[0].status}
+                                                {customer.latestOrder.status}
                                             </span>
                                         </div>
                                     </div>
                                 </div>
-                            )}
+                            ) : null}
 
                             {/* Footer */}
                             <div className="pt-3 border-t border-slate-100">
@@ -329,10 +392,60 @@ export default function CustomersPage() {
                 </div>
             )}
 
+            {pagination.totalPages > 1 ? (
+                <div className="mt-6 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm text-slate-500">
+                        Page {pagination.page} of {pagination.totalPages}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <button
+                            type="button"
+                            disabled={pagination.page <= 1 || listLoading}
+                            onClick={() => setPagination((current) => ({ ...current, page: current.page - 1 }))}
+                            className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            Previous
+                        </button>
+                        {visiblePageNumbers.map((pageNumber) => (
+                            <button
+                                key={pageNumber}
+                                type="button"
+                                disabled={listLoading}
+                                onClick={() => setPagination((current) => ({ ...current, page: pageNumber }))}
+                                className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
+                                    pagination.page === pageNumber
+                                        ? 'bg-slate-900 text-white'
+                                        : 'border border-slate-200 text-slate-700 hover:bg-slate-50'
+                                }`}
+                            >
+                                {pageNumber}
+                            </button>
+                        ))}
+                        <button
+                            type="button"
+                            disabled={pagination.page >= pagination.totalPages || listLoading}
+                            onClick={() => setPagination((current) => ({ ...current, page: current.page + 1 }))}
+                            className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            Next
+                        </button>
+                    </div>
+                </div>
+            ) : null}
+
             {/* Customer Details Modal */}
             {selectedCustomer && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-                    <div className="bg-white rounded-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden shadow-2xl animate-in slide-in-from-bottom-4 duration-300">
+                <div
+                    className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200"
+                    onClick={closeDetails}
+                    role="presentation"
+                >
+                    <div
+                        className="bg-white rounded-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden shadow-2xl animate-in slide-in-from-bottom-4 duration-300"
+                        onClick={(event) => event.stopPropagation()}
+                        role="dialog"
+                        aria-modal="true"
+                    >
                         {/* Modal Header */}
                         <div className="relative bg-gradient-to-r from-blue-600 to-purple-600 p-8 text-white">
                             <button
@@ -344,20 +457,14 @@ export default function CustomersPage() {
                             
                             <div className="flex items-center gap-4">
                                 <div className="relative">
-                                    {selectedCustomer.image && selectedCustomer.image !== '/placeholder.png' ? (
-                                        <Image
-                                            src={selectedCustomer.image}
-                                            alt={selectedCustomer.name}
-                                            width={80}
-                                            height={80}
-                                            className="rounded-full object-cover ring-4 ring-white/30"
-                                        />
-                                    ) : (
-                                        <div className="w-20 h-20 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center text-white text-3xl font-bold ring-4 ring-white/30">
-                                            {selectedCustomer.name?.charAt(0).toUpperCase() || 'U'}
-                                        </div>
-                                    )}
-                                    <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-green-400 rounded-full border-4 border-white"></div>
+                                    <CustomerAvatar
+                                        customer={selectedCustomer}
+                                        size={80}
+                                        ringClassName="ring-4 ring-white/30"
+                                    />
+                                    {!selectedCustomer.isGuest ? (
+                                        <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-green-400 rounded-full border-4 border-white"></div>
+                                    ) : null}
                                 </div>
                                 <div>
                                     <h2 className="text-2xl font-bold mb-1">

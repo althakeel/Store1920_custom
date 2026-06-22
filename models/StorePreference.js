@@ -157,6 +157,8 @@ const StorePreferenceSchema = new mongoose.Schema(
   { timestamps: true }
 )
 
+StorePreferenceSchema.index({ updatedAt: -1 })
+
 const StorePreferenceModel = mongoose.models.StorePreference || mongoose.model('StorePreference', StorePreferenceSchema)
 
 const missingShopShowcasePaths = {}

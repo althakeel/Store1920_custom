@@ -3,9 +3,11 @@ import { NextResponse } from "next/server";
 import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import Product from '@/models/Product';
-import User from '@/models/User';
 import Address from '@/models/Address';
 import { fetchNormalizedDelhiveryTracking } from '@/lib/delhivery';
+import AbandonedCart from '@/models/AbandonedCart';
+import { attachConversionToOrders } from '@/lib/storeOrderInsights';
+import { batchPopulateOrderUsers } from '@/lib/storeOrderUsers';
 
 // Debug log helper
 function debugLog(...args) {
@@ -63,7 +65,7 @@ export async function GET(request){
         await connectDB();
 
         const { searchParams } = new URL(request.url);
-        const includeDelhivery = searchParams.get('withDelhivery') !== 'false';
+        const includeDelhivery = searchParams.get('withDelhivery') === 'true';
         
         // Firebase Auth: Extract token from Authorization header
         const authHeader = request.headers.get('authorization');
@@ -91,47 +93,24 @@ export async function GET(request){
             return NextResponse.json({ error: 'not authorized' }, { status: 401 })
         }
 
-        const orders = await Order.find({ storeId })
-            .populate('addressId')
-            .populate({
-                path: 'orderItems.productId',
-                model: 'Product'
-            })
-            .sort({ createdAt: -1 })
-            .lean();
+        const [orders, convertedCarts] = await Promise.all([
+            Order.find({ storeId })
+                .populate('addressId')
+                .populate({
+                    path: 'orderItems.productId',
+                    model: 'Product',
+                    select: 'name slug images sku',
+                })
+                .sort({ createdAt: -1 })
+                .lean(),
+            AbandonedCart.find({ storeId, status: 'converted' })
+                .select('_id userId email phone status convertedAt convertedBy convertedByName convertedCartTotal cartTotal conversionNote conversionDiscountType conversionDiscountValue conversionPaymentMethod linkedOrderId')
+                .lean(),
+        ]);
         
         debugLog('orders found:', orders.length);
         
-        // Manually populate userId since it's a String-type _id
-        for (let order of orders) {
-            if (order.userId && !order.isGuest) {
-                const user = await User.findById(order.userId).lean();
-                if (user && (user.name || user.email)) {
-                    // User has data in database
-                    order.userId = user;
-                    debugLog('User populated from DB for order:', order._id, 'User:', { name: user.name, email: user.email });
-                } else {
-                    // User exists but has no data, or doesn't exist - try Firebase
-                    debugLog('User missing data in DB, fetching from Firebase for:', order.userId);
-                    try {
-                        const firebaseUser = await getAuth().getUser(order.userId);
-                        const userData = {
-                            _id: order.userId,
-                            name: firebaseUser.displayName || '',
-                            email: firebaseUser.email || '',
-                            image: firebaseUser.photoURL || ''
-                        };
-                        order.userId = userData;
-                        // Update database with Firebase data
-                        await User.findByIdAndUpdate(userData._id, userData, { upsert: true });
-                        debugLog('User synced from Firebase:', userData);
-                    } catch (fbError) {
-                        debugLog('Firebase user fetch failed:', fbError.message);
-                        order.userId = user || { _id: order.userId, name: 'Unknown', email: '' };
-                    }
-                }
-            }
-        }
+        await batchPopulateOrderUsers(orders, { getAuth });
         
         if (orders.length > 0) {
             debugLog('First order after population:', {
@@ -143,18 +122,22 @@ export async function GET(request){
             });
         }
 
-        let enrichedOrders = orders;
+        let enrichedOrders = attachConversionToOrders(orders, convertedCarts);
+
         if (includeDelhivery) {
             const shouldFetchDelhivery = (order) => {
                 const trackingId = order.trackingId || order.awb || order.airwayBillNo;
                 const courier = (order.courier || '').toLowerCase();
-                // Only stop fetching once an order is fully delivered or returned.
                 const isTerminal = ['DELIVERED', 'RETURNED'].includes(order.status);
                 return Boolean(trackingId) && (courier.includes('delhivery') || !order.trackingUrl) && !isTerminal;
             };
 
-            enrichedOrders = await Promise.all(orders.map(async (order) => {
-                if (!shouldFetchDelhivery(order)) return order;
+            const MAX_DELHIVERY_ENRICH = 20;
+            let delhiveryEnriched = 0;
+
+            enrichedOrders = await Promise.all(enrichedOrders.map(async (order) => {
+                if (!shouldFetchDelhivery(order) || delhiveryEnriched >= MAX_DELHIVERY_ENRICH) return order;
+                delhiveryEnriched += 1;
                 const trackingId = order.trackingId || order.awb || order.airwayBillNo;
                 try {
                     const normalized = await fetchNormalizedDelhiveryTracking(trackingId);

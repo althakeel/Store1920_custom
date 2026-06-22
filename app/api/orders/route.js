@@ -15,6 +15,7 @@ import PersonalizedOffer from '@/models/PersonalizedOffer';
 import StorePreference from '@/models/StorePreference';
 import FreeGiftCampaign from '@/models/FreeGiftCampaign';
 import { sendOrderConfirmationEmail, sendGuestAccountCreationEmail } from '@/lib/email';
+import { sendOrderCreatedWhatsApp } from '@/lib/whatsapp/orderNotifications';
 import { allocateShortOrderNumber } from '@/lib/orderNumber';
 import { fetchNormalizedDelhiveryTracking } from '@/lib/delhivery';
 import { createTamaraSession } from '@/lib/tamara';
@@ -760,36 +761,63 @@ export async function POST(request) {
                 console.error('Error sending order confirmation email:', emailError);
                 // Don't fail the order if email fails
             }
-            // Decrement stock for each item in this store order (atomic)
-            for (const item of sellerItems) {
-                try {
-                    const requestedQty = Number(item.quantity) || 0;
-                    if (requestedQty > 0) {
-                        // Decrement product-level stock
-                        const updated = await Product.findByIdAndUpdate(
-                            item.id,
-                            { $inc: { stockQuantity: -requestedQty } },
-                            { new: true }
-                        );
-                        if (updated) {
-                            // Update inStock flag based on remaining quantity
-                            const stillInStock = (typeof updated.stockQuantity === 'number' ? updated.stockQuantity : 0) > 0;
-                            if (updated.inStock !== stillInStock) {
-                                await Product.findByIdAndUpdate(item.id, { $set: { inStock: stillInStock } });
-                            }
-                        }
 
-                        // Optional: decrement variant stock when options provided
-                        if (item.variantOptions && item.variantOptions.color && item.variantOptions.size) {
-                            await Product.updateOne(
-                                { _id: item.id, 'variants.options.color': item.variantOptions.color, 'variants.options.size': item.variantOptions.size },
-                                { $inc: { 'variants.$.stock': -requestedQty } }
-                            );
-                        }
-                    }
+            try {
+                const whatsappResult = await sendOrderCreatedWhatsApp(populatedOrder || order, paymentMethod);
+                console.log('[orders] WhatsApp confirmation result:', whatsappResult);
+            } catch (whatsappError) {
+                console.error('Error sending order confirmation WhatsApp:', whatsappError);
+            }
+            // Decrement stock for each item in this store order (batched)
+            const stockUpdates = sellerItems
+                .map((item) => ({
+                    id: item.id,
+                    qty: Number(item.quantity) || 0,
+                    variantOptions: item.variantOptions,
+                }))
+                .filter((item) => item.qty > 0 && item.id);
+
+            if (stockUpdates.length > 0) {
+                try {
+                    await Product.bulkWrite(
+                        stockUpdates.map(({ id, qty }) => ({
+                            updateOne: {
+                                filter: { _id: id },
+                                update: [
+                                    {
+                                        $set: {
+                                            stockQuantity: {
+                                                $max: [0, { $subtract: [{ $ifNull: ['$stockQuantity', 0] }, qty] }],
+                                            },
+                                        },
+                                    },
+                                    {
+                                        $set: {
+                                            inStock: { $gt: ['$stockQuantity', 0] },
+                                        },
+                                    },
+                                ],
+                            },
+                        })),
+                        { ordered: false }
+                    );
+
+                    await Promise.all(
+                        stockUpdates
+                            .filter(({ variantOptions }) => variantOptions?.color && variantOptions?.size)
+                            .map(({ id, qty, variantOptions }) =>
+                                Product.updateOne(
+                                    {
+                                        _id: id,
+                                        'variants.options.color': variantOptions.color,
+                                        'variants.options.size': variantOptions.size,
+                                    },
+                                    { $inc: { 'variants.$.stock': -qty } }
+                                )
+                            )
+                    );
                 } catch (stockErr) {
-                    console.error('Stock decrement error for product', item.id, stockErr);
-                    // Do not fail the order if stock decrement fails, but log it
+                    console.error('Stock decrement batch error:', stockErr);
                 }
             }
         }

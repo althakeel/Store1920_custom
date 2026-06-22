@@ -223,7 +223,7 @@ const StoreLayout = ({ children }) => {
                     isOwner={dashboardAccess.isOwner}
                     permissions={dashboardAccess.permissions}
                 />
-                <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 lg:p-5">
+                <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-3 sm:p-4 lg:p-5">
                     {canViewCurrentPage ? children : (
                         <div className="flex min-h-[320px] flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white px-6 py-10 text-center">
                             <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">

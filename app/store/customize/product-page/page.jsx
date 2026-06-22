@@ -23,7 +23,7 @@ const DEFAULT_FORM = {
   cutoffHour: 23,
   cutoffMinute: 0,
   deliveryMinDays: 2,
-  deliveryMaxDays: 5,
+  deliveryMaxDays: 3,
   badgeSettings: {
     badges: DEFAULT_BADGES
   }

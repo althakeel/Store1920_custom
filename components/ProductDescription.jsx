@@ -41,23 +41,27 @@ function stripEmbeddedSpecTable(html = '') {
 }
 
 // Updated design - Noon.com style v2
-const ProductDescription = ({ product, reviews = [], loadingReviews = false, onReviewAdded, showSuggestedProducts = true, showMainDescription = true, showOverviewSections = true }) => {
+const ProductDescription = ({ product, reviews = [], loadingReviews = false, onReviewAdded, showSuggestedProducts = true, showMainDescription = true, showOverviewSections = true, compactMobile = false }) => {
 
     const router = useRouter()
-    const { isArabic } = useStorefrontI18n()
+    const { t, isArabic } = useStorefrontI18n()
     const { isInWishlist, loading: wishlistLoading, toggleWishlist } = useProductWishlist(product)
     const [showReportModal, setShowReportModal] = useState(false)
     const [reportReason, setReportReason] = useState('incorrect-information')
     const [reportDetails, setReportDetails] = useState('')
 
     const handleSave = async () => {
-        const result = await toggleWishlist()
+        if (wishlistLoading) return;
+
+        const result = await toggleWishlist();
         if (result === 'added') {
-            toast.success('Saved to your wishlist')
+            toast.success('Saved to your wishlist');
         } else if (result === 'removed') {
-            toast.success('Removed from your wishlist')
+            toast.success('Removed from your wishlist');
         } else if (result === 'error') {
-            toast.error('Could not update wishlist. Please try again.')
+            toast.error('Could not update wishlist. Please try again.');
+        } else {
+            toast.error('Unable to save this product right now.');
         }
     }
 
@@ -79,12 +83,16 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
             reportDetails.trim() ? `Details: ${reportDetails.trim()}` : '',
         ].filter(Boolean).join('\n')
 
-        const params = new URLSearchParams({
-            subject: 'Product report',
-            message,
-        })
+        if (typeof window !== 'undefined') {
+            sessionStorage.setItem('productReportDraft', JSON.stringify({
+                subject: 'Product report',
+                message,
+            }))
+        }
+
         setShowReportModal(false)
-        router.push(`/contact-us?${params.toString()}`)
+        setReportDetails('')
+        router.push('/contact-us?source=product-report')
     }
 
     // Use reviews and loadingReviews from props only
@@ -231,20 +239,27 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
     }
 
     const descriptionHasTable = /<table[\s>]/i.test(normalizedDescription)
-    const specTableColumns = Array.isArray(product?.specTableColumns) && product.specTableColumns.length > 0
-        ? product.specTableColumns
-        : (Array.isArray(product?.attributes?.specTableColumns) && product.attributes.specTableColumns.length > 0
-            ? product.attributes.specTableColumns
-            : ['Property', 'Value'])
-    const specTableRows = Array.isArray(product?.specTableRows)
-        ? product.specTableRows
+    const specTableColumns = (() => {
+        const englishColumns = Array.isArray(product?.specTableColumns) && product.specTableColumns.length > 0
+            ? product.specTableColumns
+            : (Array.isArray(product?.attributes?.specTableColumns) && product.attributes.specTableColumns.length > 0
+                ? product.attributes.specTableColumns
+                : ['Property', 'Value'])
+        const arabicColumns = Array.isArray(product?.attributes?.specTableColumnsAr) && product.attributes.specTableColumnsAr.length > 0
+            ? product.attributes.specTableColumnsAr
+            : ['الخاصية', 'القيمة']
+        return isArabic ? arabicColumns : englishColumns
+    })()
+    const specTableRows = (() => {
+        const englishRows = Array.isArray(product?.specTableRows)
+            ? product.specTableRows
+            : (Array.isArray(product?.attributes?.specRows) ? product.attributes.specRows : [])
+        const arabicRows = Array.isArray(product?.attributes?.specRowsAr) ? product.attributes.specRowsAr : []
+        const sourceRows = isArabic && arabicRows.length > 0 ? arabicRows : englishRows
+        return sourceRows
             .filter((row) => Array.isArray(row) && row.some((cell) => String(cell || '').trim().length > 0))
             .map((row) => Array.from({ length: specTableColumns.length }, (_, idx) => String(row[idx] || '').trim()))
-        : (Array.isArray(product?.attributes?.specRows)
-            ? product.attributes.specRows
-                .filter((row) => Array.isArray(row) && row.some((cell) => String(cell || '').trim().length > 0))
-                .map((row) => Array.from({ length: specTableColumns.length }, (_, idx) => String(row[idx] || '').trim()))
-            : [])
+    })()
     const hasStructuredSpecData = Boolean(
         (product?.specTableEnabled ?? product?.attributes?.specTableEnabled) && specTableRows.length > 0
     )
@@ -256,8 +271,12 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
     const descriptionPlainTextForCollapse = descriptionForDisplay.replace(/<[^>]*>/g, '').trim()
     const shouldCollapseDescription = descriptionPlainTextForCollapse.length > 280
     const normalizedShortDescription2 = useMemo(
-        () => sanitizeProductRichHtml(product?.shortDescription2 || product?.attributes?.shortDescription2 || ''),
-        [product?.shortDescription2, product?.attributes?.shortDescription2]
+        () => sanitizeProductRichHtml(
+            isArabic
+                ? (product?.attributes?.shortDescription2Ar || product?.shortDescription2Ar || product?.shortDescription2 || product?.attributes?.shortDescription2 || '')
+                : (product?.shortDescription2 || product?.attributes?.shortDescription2 || '')
+        ),
+        [isArabic, product?.shortDescription2, product?.attributes?.shortDescription2, product?.attributes?.shortDescription2Ar, product?.shortDescription2Ar]
     )
     const aboutPlainText = normalizedShortDescription2.replace(/<[^>]*>/g, '').trim()
     const hasShortDescription2 = aboutPlainText.length > 0
@@ -294,11 +313,46 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
     // Remove fetchReviews and handleReviewAdded, use parent handler
 
     return (
-        <div className="mt-3 flex flex-col gap-2 sm:gap-3">
+        <div className={compactMobile ? 'flex flex-col' : 'mt-3 flex flex-col gap-2 sm:gap-3'} dir={isArabic ? 'rtl' : 'ltr'}>
+
+            {showOverviewSections && hasShortDescription2 && !compactMobile && (
+                <div className="order-1 bg-white border-t border-gray-200 pt-4 sm:pt-5">
+                    <h2 className="text-[30px] leading-none font-semibold text-gray-900 mb-3">{t('product.aboutThisItem')}</h2>
+                    <div className="relative">
+                        <div
+                        className={`${PRODUCT_RICH_CONTENT_CLASS} text-[16px] leading-7
+                        ${shouldCollapseAbout && !isAboutExpanded ? 'overflow-hidden [display:-webkit-box] [-webkit-line-clamp:4] [-webkit-box-orient:vertical]' : ''}`}
+                        dir={isArabic ? 'rtl' : 'ltr'}
+                        dangerouslySetInnerHTML={{ __html: normalizedShortDescription2 }}
+                        />
+
+                        {shouldCollapseAbout && !isAboutExpanded && (
+                            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-white to-transparent" />
+                        )}
+                    </div>
+
+                    {shouldCollapseAbout && (
+                        <div className="mt-2">
+                            <button
+                                onClick={() => setIsAboutExpanded((prev) => !prev)}
+                                className="text-[12px] text-gray-600 hover:text-gray-900 hover:underline"
+                            >
+                                {isAboutExpanded ? t('product.viewLess') : t('common.viewMore')}
+                            </button>
+                        </div>
+                    )}
+                </div>
+            )}
 
             {showOverviewSections && showSpecTable && (
-                <div className="order-1 bg-white border-t border-gray-300 pt-4 sm:pt-5">
-                    <h3 className="text-[28px] leading-none font-semibold text-gray-900 mb-3">{product?.attributes?.specTableTitle || 'Product information'}</h3>
+                <div className={`order-2 bg-white ${compactMobile ? 'border-t border-gray-100 px-4 py-3' : 'border-t border-gray-300 pt-4 sm:pt-5'}`}>
+                    <h3 className={`${compactMobile ? 'text-[15px] font-bold mb-2' : 'text-[28px] leading-none font-semibold mb-3'} text-gray-900`}>
+                        {(
+                            isArabic
+                                ? (product?.attributes?.specTableTitleAr || product?.specTableTitleAr)
+                                : (product?.attributes?.specTableTitle || product?.specTableTitle)
+                        ) || t('product.productInformation')}
+                    </h3>
                     <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
                         <table className="w-full border-collapse table-fixed">
                             <tbody>
@@ -330,39 +384,10 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
                 </div>
             )}
 
-            {showOverviewSections && hasShortDescription2 && (
-                <div className="order-1 bg-white border-t border-gray-200 pt-4 sm:pt-5">
-                    <h2 className="text-[30px] leading-none font-semibold text-gray-900 mb-3">About this item</h2>
-                    <div className="relative">
-                        <div
-                        className={`${PRODUCT_RICH_CONTENT_CLASS} text-[16px] leading-7
-                        ${shouldCollapseAbout && !isAboutExpanded ? 'overflow-hidden [display:-webkit-box] [-webkit-line-clamp:4] [-webkit-box-orient:vertical]' : ''}`}
-                        dir={isArabic ? 'rtl' : 'ltr'}
-                        dangerouslySetInnerHTML={{ __html: normalizedShortDescription2 }}
-                        />
-
-                        {shouldCollapseAbout && !isAboutExpanded && (
-                            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-white to-transparent" />
-                        )}
-                    </div>
-
-                    {shouldCollapseAbout && (
-                        <div className="mt-2">
-                            <button
-                                onClick={() => setIsAboutExpanded((prev) => !prev)}
-                                className="text-[12px] text-gray-600 hover:text-gray-900 hover:underline"
-                            >
-                                {isAboutExpanded ? 'View less' : 'View more'}
-                            </button>
-                        </div>
-                    )}
-                </div>
-            )}
-
             {showMainDescription && (
-                <div className="order-2 bg-white border-t border-gray-200 pt-4">
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                        <h2 className="text-[18px] font-semibold leading-none text-gray-900">Product details</h2>
+                <div className={`${compactMobile ? 'order-1' : 'order-3'} bg-white ${compactMobile ? 'px-4 py-3' : 'border-t border-gray-200 pt-4'}`} dir={isArabic ? 'rtl' : 'ltr'}>
+                    <div className={`${compactMobile ? 'mb-2' : 'mb-3'} flex items-center justify-between gap-3`}>
+                        <h2 className={`${compactMobile ? 'text-[15px] font-bold' : 'text-[18px] font-semibold'} leading-none text-gray-900`}>{t('product.productDetails')}</h2>
                         <div className="flex shrink-0 items-center gap-2 text-[13px] text-gray-800">
                             <button
                                 type="button"
@@ -370,7 +395,7 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
                                 disabled={wishlistLoading}
                                 className={`hover:underline disabled:opacity-60 ${isInWishlist ? 'text-red-600 font-medium' : ''}`}
                             >
-                                {isInWishlist ? 'Saved' : 'Save'}
+                                {isInWishlist ? t('common.saved') : t('common.save')}
                             </button>
                             <span className="text-gray-400">|</span>
                             <button
@@ -378,7 +403,7 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
                                 onClick={() => setShowReportModal(true)}
                                 className="hover:underline"
                             >
-                                Report this item
+                                {t('product.reportItem')}
                             </button>
                         </div>
                     </div>
@@ -396,12 +421,12 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
                     </div>
 
                     {shouldCollapseDescription && (
-                        <div className="mt-3 text-center">
+                        <div className={`${compactMobile ? 'mt-2' : 'mt-3'} text-center`}>
                             <button
                                 onClick={() => setIsDescriptionExpanded((prev) => !prev)}
                                 className="inline-flex items-center gap-1 text-[13px] text-gray-800 hover:text-gray-900"
                             >
-                                {isDescriptionExpanded ? 'See less' : 'See more'}
+                                {isDescriptionExpanded ? t('product.seeLess') : t('product.seeMore')}
                                 {isDescriptionExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                             </button>
                         </div>
@@ -411,15 +436,15 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
 
             {/* Suggested Products Section */}
             {showSuggestedProducts && suggestedProducts.length > 0 && (
-                <div className="order-3 bg-white border-0 md:border md:border-gray-200 mt-6">
+                <div className="order-4 bg-white border-0 md:border md:border-gray-200 mt-6">
                     <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-                        <h2 className="text-xl font-bold text-gray-900">You May Also Like</h2>
+                        <h2 className="text-xl font-bold text-gray-900">{t('product.youMayAlsoLike')}</h2>
                         {product.category && (
                             <Link 
                                 href={`/shop?category=${product.category}`}
                                 className="text-sm text-orange-500 hover:text-orange-600 font-medium flex items-center gap-1"
                             >
-                                View All <ArrowRight size={16} />
+                                {t('product.viewAllLink')} <ArrowRight size={16} className={isArabic ? 'rotate-180' : ''} />
                             </Link>
                         )}
                     </div>
@@ -506,7 +531,7 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
                 <div className="fixed inset-0 z-[70] bg-black/45 flex items-center justify-center p-4" onClick={() => setShowAllReviewsModal(false)}>
                     <div className="w-full max-w-3xl max-h-[85vh] overflow-hidden rounded-xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
-                            <h3 className="text-lg font-semibold text-gray-900">All Reviews ({reviews.length})</h3>
+                            <h3 className="text-lg font-semibold text-gray-900">{t('reviews.allReviewsTitle', { count: reviews.length })}</h3>
                             <button
                                 onClick={() => setShowAllReviewsModal(false)}
                                 className="h-8 w-8 rounded-full text-gray-500 hover:bg-gray-100 hover:text-gray-700"
@@ -524,10 +549,10 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
             )}
 
             {showReportModal && (
-                <div className="fixed inset-0 z-[70] bg-black/45 flex items-center justify-center p-4" onClick={() => setShowReportModal(false)}>
+                <div className="fixed inset-0 z-[200] bg-black/45 flex items-center justify-center p-4" onClick={() => setShowReportModal(false)}>
                     <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-lg font-semibold text-gray-900">Report this item</h3>
+                            <h3 className="text-lg font-semibold text-gray-900">{t('product.reportItem')}</h3>
                             <button
                                 type="button"
                                 onClick={() => setShowReportModal(false)}

@@ -1,16 +1,15 @@
 'use client'
 
-import { Plus, ShoppingCart } from 'lucide-react'
+import { ShoppingCart } from 'lucide-react'
 import { useStorefrontI18n } from '@/lib/useStorefrontI18n'
 
-export default function MobileProductActions({ 
-  onOrderNow, 
+export default function MobileProductActions({
+  onOrderNow,
   onAddToCart,
-  effPrice,
-  currency,
-  cartCount,
   isOutOfStock = false,
-  isOrdering = false
+  isOrdering = false,
+  quantity = 1,
+  formatQuantity = (value) => String(value),
 }) {
   const { t, isArabic } = useStorefrontI18n()
 
@@ -20,38 +19,46 @@ export default function MobileProductActions({
       ? t('common.processing')
       : t('common.orderNow')
 
+  const showQuantityBadge = !isOutOfStock && quantity > 1
+
   return (
-    <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white shadow-2xl z-50 safe-area-bottom" dir={isArabic ? 'rtl' : 'ltr'}>
-      <div className="flex items-center gap-3 px-4 py-3">
+    <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-slate-200 bg-white shadow-[0_-4px_24px_rgba(15,23,42,0.08)] safe-area-bottom" dir={isArabic ? 'rtl' : 'ltr'}>
+      <div className="flex items-center gap-2.5 px-3 py-3" dir="ltr">
+        {!isOutOfStock ? (
+          <button
+            type="button"
+            onClick={onAddToCart}
+            disabled={isOrdering}
+            className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-800 transition active:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label={t('common.addToCart')}
+          >
+            <ShoppingCart className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
+            {showQuantityBadge ? (
+              <span className="absolute -right-1.5 -top-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#E52721] px-1 text-[10px] font-bold leading-none text-white shadow-sm">
+                {formatQuantity(quantity)}
+              </span>
+            ) : null}
+          </button>
+        ) : null}
+
         <button
           onClick={onOrderNow}
           disabled={isOutOfStock || isOrdering}
-          className={`flex-1 flex items-center justify-center gap-2 h-12 rounded-lg font-bold text-white transition-all shadow-md ${
+          className={`flex h-12 flex-1 items-center justify-center rounded-lg text-base font-bold text-white transition-all ${
             (isOutOfStock || isOrdering)
-              ? 'bg-gray-400 cursor-not-allowed opacity-70' 
-              : 'bg-red-500 active:bg-red-600'
+              ? 'cursor-not-allowed bg-gray-400 opacity-70'
+              : 'bg-[#E52D27] active:bg-[#CC261F]'
           }`}
         >
-          <span className="text-base">{orderLabel}</span>
-          {!isOutOfStock && !isOrdering && <Plus size={20} strokeWidth={3} />}
-          {isOrdering && <span className="w-4 h-4 border-2 border-white/70 border-t-white rounded-full animate-spin" />}
+          {isOrdering ? (
+            <span className="inline-flex items-center gap-2">
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/70 border-t-white" />
+              {orderLabel}
+            </span>
+          ) : (
+            orderLabel
+          )}
         </button>
-
-        {!isOutOfStock && (
-          <button
-            onClick={onAddToCart}
-            className="relative flex items-center justify-center w-16 h-12 rounded-lg transition-all shadow-md"
-            style={{ backgroundColor: cartCount > 0 ? '#262626' : '#DC013C' }}
-            aria-label={t('common.addToCart')}
-          >
-            <ShoppingCart size={24} className="text-white" strokeWidth={2.5} />
-            {cartCount > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1" style={{ backgroundColor: '#DC013C' }}>
-                {cartCount > 99 ? '99+' : cartCount}
-              </span>
-            )}
-          </button>
-        )}
       </div>
     </div>
   )

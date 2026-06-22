@@ -4,40 +4,59 @@ import Store from "@/models/Store";
 import Product from "@/models/Product";
 import { NextResponse } from "next/server";
 
-// Get Dashboard Data for Admin ( total orders, total stores, total products, total revenue )
-
-export async function GET(request){
-
+export async function GET(request) {
     try {
         await dbConnect();
 
-        // Get total orders
-        const orders = await Order.countDocuments();
-        // Get total stores on app
-        const stores = await Store.countDocuments();
-        // get all orders include only createdAt and total & calculate total revenue
-        const allOrders = await Order.find({}, { createdAt: 1, total: 1, userId: 1 });
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        thirtyDaysAgo.setHours(0, 0, 0, 0);
 
-        let totalRevenue = 0;
-        allOrders.forEach(order => {
-            totalRevenue += order.total || 0;
-        });
+        const [
+            totalOrders,
+            totalStores,
+            totalProducts,
+            revenueAgg,
+            uniqueCustomers,
+            ordersChartAgg,
+        ] = await Promise.all([
+            Order.countDocuments(),
+            Store.countDocuments(),
+            Product.countDocuments(),
+            Order.aggregate([
+                { $group: { _id: null, revenue: { $sum: { $ifNull: ['$total', 0] } } } },
+            ]),
+            Order.distinct('userId', { userId: { $exists: true, $nin: [null, ''] } }),
+            Order.aggregate([
+                { $match: { createdAt: { $gte: thirtyDaysAgo } } },
+                {
+                    $group: {
+                        _id: {
+                            $dateToString: { format: '%Y-%m-%d', date: '$createdAt' },
+                        },
+                        orders: { $sum: 1 },
+                    },
+                },
+                { $sort: { _id: 1 } },
+                {
+                    $project: {
+                        _id: 0,
+                        date: '$_id',
+                        orders: 1,
+                    },
+                },
+            ]),
+        ]);
 
-        const revenue = totalRevenue.toFixed(2);
-        // total products on app
-        const products = await Product.countDocuments();
-
-        // Get total unique customers (users who have placed orders)
-        const uniqueUserIds = new Set(allOrders.map(order => order.userId).filter(Boolean));
-        const customers = uniqueUserIds.size;
+        const revenue = Number(revenueAgg[0]?.revenue || 0).toFixed(2);
 
         const dashboardData = {
-            orders,
-            stores,
-            products,
+            orders: totalOrders,
+            stores: totalStores,
+            products: totalProducts,
             revenue,
-            customers,
-            allOrders
+            customers: uniqueCustomers.length,
+            ordersChartData: ordersChartAgg,
         };
 
         return NextResponse.json({ dashboardData });

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-export default function DeferredSection({ children, minHeight = 200, rootMargin = '300px 0px' }) {
+export default function DeferredSection({ children, placeholder = null, minHeight = 200, rootMargin = '300px 0px' }) {
   const ref = useRef(null);
   const [visible, setVisible] = useState(false);
 
@@ -31,7 +31,7 @@ export default function DeferredSection({ children, minHeight = 200, rootMargin 
 
   return (
     <div ref={ref} style={{ minHeight: visible ? undefined : minHeight }}>
-      {visible ? children : null}
+      {visible ? children : placeholder}
     </div>
   );
 }

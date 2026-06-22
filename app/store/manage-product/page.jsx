@@ -111,6 +111,8 @@ export default function StoreManageProducts() {
         price: '',
         AED: '',
     })
+    const [aiAutofillRunning, setAiAutofillRunning] = useState(false)
+    const [aiAutofillProgress, setAiAutofillProgress] = useState(null)
     const productImportInputRef = useRef(null)
 
     const fetchStoreProducts = async () => {
@@ -346,6 +348,10 @@ export default function StoreManageProducts() {
         const startIndex = (safeCurrentPage - 1) * pageSize
         return filteredProducts.slice(startIndex, startIndex + pageSize)
     }, [filteredProducts, pageSize, safeCurrentPage])
+    const productNameById = useMemo(
+        () => Object.fromEntries(products.map((product) => [String(product._id), product.name || 'Product'])),
+        [products]
+    )
     const paginationStart = filteredProducts.length ? ((safeCurrentPage - 1) * pageSize) + 1 : 0
     const paginationEnd = filteredProducts.length ? Math.min(safeCurrentPage * pageSize, filteredProducts.length) : 0
 
@@ -548,6 +554,81 @@ export default function StoreManageProducts() {
         }
     }
 
+    const runAiAutofillQueue = async () => {
+        if (!selectedProductIds.length) {
+            toast.error('Select products to auto-fill first')
+            return
+        }
+
+        if (aiAutofillRunning) return
+
+        const queueIds = [...selectedProductIds]
+        if (!confirm(`Run AI auto-fill for ${queueIds.length} selected product(s)? Existing titles and descriptions may be overwritten.`)) {
+            return
+        }
+
+        setAiAutofillRunning(true)
+        setAiAutofillProgress({
+            current: 0,
+            total: queueIds.length,
+            currentName: '',
+            results: [],
+        })
+
+        const results = []
+        const token = await getToken()
+
+        for (let index = 0; index < queueIds.length; index += 1) {
+            const productId = queueIds[index]
+            const currentName = productNameById[productId] || 'Product'
+
+            setAiAutofillProgress((prev) => ({
+                ...prev,
+                current: index + 1,
+                currentName,
+            }))
+
+            try {
+                const { data } = await axios.post('/api/store/product/ai-autofill', {
+                    productId,
+                    includeArabic: true,
+                }, {
+                    headers: { Authorization: `Bearer ${token}` },
+                })
+
+                const item = data?.results?.[0] || data
+                results.push(item?.success === false
+                    ? item
+                    : { success: true, productId, name: item?.name || currentName, updatedFields: item?.updatedFields || [] })
+            } catch (error) {
+                results.push({
+                    success: false,
+                    productId,
+                    name: currentName,
+                    error: error?.response?.data?.error || error.message || 'AI autofill failed',
+                })
+            }
+
+            setAiAutofillProgress((prev) => ({
+                ...prev,
+                results: [...results],
+            }))
+        }
+
+        const successCount = results.filter((item) => item.success).length
+        const failedCount = results.length - successCount
+
+        if (failedCount === 0) {
+            toast.success(`AI auto-fill finished: ${successCount}/${queueIds.length} updated`)
+        } else {
+            toast.error(`AI auto-fill finished: ${successCount} updated, ${failedCount} failed`)
+        }
+
+        setAiAutofillRunning(false)
+        await fetchStoreProducts()
+        dispatch(fetchProductsAction(STOREFRONT_CATALOG_FETCH))
+    }
+
     return (
         <div className="w-full max-w-[1920px]">
             <h1 className="text-2xl text-slate-500 mb-5">Manage <span className="text-slate-800 font-medium">Products</span></h1>
@@ -611,6 +692,14 @@ export default function StoreManageProducts() {
                 >
                     Export CSV
                 </button>
+                <button
+                    type="button"
+                    onClick={runAiAutofillQueue}
+                    disabled={!hasSelectedProducts || aiAutofillRunning}
+                    className="px-4 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 transition disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                    {aiAutofillRunning ? 'AI Auto Fill...' : 'AI Auto Fill Queue'}
+                </button>
                 <Link
                     href="/store/bulk-import"
                     className="px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-slate-700 hover:bg-slate-50 transition"
@@ -619,49 +708,45 @@ export default function StoreManageProducts() {
                 </Link>
             </div>
 
-            {/* Quick Category Filter Buttons */}
-            <div className="mb-6 w-full">
-                <p className="text-sm text-gray-600 font-medium mb-3">Quick Filter by Category:</p>
-                <div className="flex flex-wrap gap-2 mb-3">
-                    {['Trending & Featured', "Men's Fashion", "Women's Fashion", 'Kids', 'Electronics', 'Mobile Accessories', 'Home & Kitchen', 'Beauty', 'Car Essentials'].map((categoryName) => {
-                        const categoryId = Object.entries(categoryMap).find(([_, name]) => name === categoryName)?.[0];
-                        const isSelected = selectedCategory === categoryId;
-                        return (
+            {aiAutofillProgress && (
+                <div className="mb-4 w-full rounded-lg border border-violet-200 bg-violet-50 px-4 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="text-sm font-medium text-violet-900">
+                            AI queue: {aiAutofillProgress.current} / {aiAutofillProgress.total}
+                            {aiAutofillProgress.currentName ? ` — ${aiAutofillProgress.currentName}` : ''}
+                        </div>
+                        {!aiAutofillRunning && (
                             <button
-                                key={categoryName}
-                                onClick={() => setSelectedCategory(isSelected ? '' : (categoryId || ''))}
-                                className={`px-4 py-2 rounded-full text-sm font-medium transition ${
-                                    isSelected ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
-                                }`}
+                                type="button"
+                                onClick={() => setAiAutofillProgress(null)}
+                                className="text-xs font-semibold text-violet-700 hover:text-violet-900"
                             >
-                                {categoryName}
+                                Dismiss
                             </button>
-                        );
-                    })}
-                </div>
-                
-                {/* Selected Category Pills */}
-                {selectedCategory && (
-                    <div className="flex flex-wrap gap-2">
-                        {Object.entries(categoryMap)
-                            .filter(([id]) => id === selectedCategory)
-                            .map(([id, name]) => (
-                                <div
-                                    key={id}
-                                    className="inline-flex items-center gap-2 bg-blue-600 text-white px-3 py-1.5 rounded-full text-sm font-medium"
-                                >
-                                    {name}
-                                    <button
-                                        onClick={() => setSelectedCategory('')}
-                                        className="ml-1 hover:opacity-70 transition"
-                                    >
-                                        ✕
-                                    </button>
-                                </div>
-                            ))}
+                        )}
                     </div>
-                )}
-            </div>
+                    {aiAutofillRunning && (
+                        <p className="mt-1 text-xs text-violet-700">
+                            Processing one product at a time. Please keep this page open.
+                        </p>
+                    )}
+                    {aiAutofillProgress.results?.length > 0 && (
+                        <ul className="mt-3 max-h-40 space-y-1 overflow-y-auto text-xs">
+                            {aiAutofillProgress.results.map((item) => (
+                                <li
+                                    key={item.productId}
+                                    className={item.success ? 'text-emerald-700' : 'text-red-700'}
+                                >
+                                    {item.success
+                                        ? `✓ ${item.name || item.productId}`
+                                        : `✕ ${item.name || item.productId}: ${item.error}`}
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </div>
+            )}
+
 
             {hasSelectedProducts && (
                 <div className="mb-4 flex w-full flex-wrap items-center justify-between gap-3 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3">
@@ -675,6 +760,14 @@ export default function StoreManageProducts() {
                             className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
                         >
                             Clear Selection
+                        </button>
+                        <button
+                            type="button"
+                            onClick={runAiAutofillQueue}
+                            disabled={aiAutofillRunning}
+                            className="px-3 py-2 rounded-lg bg-violet-600 text-white text-xs font-semibold hover:bg-violet-700 transition disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                            {aiAutofillRunning ? 'AI Running...' : 'AI Auto Fill'}
                         </button>
                         <button
                             type="button"

@@ -114,5 +114,6 @@ OrderSchema.index({ userId: 1, isCouponUsed: 1 });            // Coupon eligibil
 OrderSchema.index({ storeId: 1, createdAt: -1 });             // Store order history
 OrderSchema.index({ storeId: 1, status: 1, createdAt: -1 }); // Store dashboard filtered by status
 OrderSchema.index({ status: 1, createdAt: -1 });              // Global status queries / admin
+OrderSchema.index({ userId: 1, 'coupon.code': 1 });           // Per-user coupon usage checks
 
 export default mongoose.models.Order || mongoose.model("Order", OrderSchema);

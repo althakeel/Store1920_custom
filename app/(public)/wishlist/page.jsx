@@ -331,7 +331,7 @@ function WishlistAuthed() {
                         </h3>
 
                         <div className="mt-2 flex items-end gap-2">
-                          <span className="text-[34px] font-extrabold leading-none text-gray-900">
+                          <span className="text-[34px] font-medium leading-none text-gray-900">
                             {market.currency} {Math.round(convertedPrice).toLocaleString()}
                           </span>
                           {product.AED && (

@@ -27,21 +27,9 @@ const designPages = [
   },
   {
     title: 'Preference',
-    description: 'Configure shop showcase banners, highlights, and homepage content.',
+    description: 'Referral rewards, showcase 4-grid banners, and Banner 2 slider — all in one place.',
     href: '/store/preferences',
     icon: LayoutTemplate,
-  },
-  {
-    title: 'Showcase 4-Grid Banners',
-    description: 'Upload images and edit the four product banners shown in the showcase strip.',
-    href: '/store/customize/showcase-banners',
-    icon: Images,
-  },
-  {
-    title: 'Banner 2 Section',
-    description: 'Upload rotating banner slides shown below Top Deals on the homepage.',
-    href: '/store/customize/banner-2-section',
-    icon: Rows3,
   },
   {
     title: 'Appearance',
@@ -107,12 +95,6 @@ const selectionPages = [
     icon: Rows3,
   },
   {
-    title: 'Carousel Products',
-    description: 'Choose the products shown in the homepage carousel.',
-    href: '/store/carousel-slider',
-    icon: Images,
-  },
-  {
     title: 'Featured Products',
     description: 'Edit the Top Picks section title and choose products manually, by category, or by tags.',
     href: '/store/featured-products',
@@ -132,58 +114,59 @@ const selectionPages = [
   },
 ]
 
-const Section = ({ title, description, items }) => (
-  <section className="rounded-3xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-    <div className="border-b border-slate-200 bg-slate-50 px-6 py-5">
-      <h2 className="text-xl font-semibold text-slate-900">{title}</h2>
-      <p className="mt-1 text-sm text-slate-600">{description}</p>
-    </div>
+function Section({ title, description, items }) {
+  return (
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+      <div className="border-b border-slate-100 px-4 py-4 sm:px-6 sm:py-5">
+        <h2 className="text-lg font-semibold text-slate-900 sm:text-xl">{title}</h2>
+        <p className="mt-1 text-sm text-slate-500">{description}</p>
+      </div>
 
-    <div className="grid gap-4 p-6 md:grid-cols-2 xl:grid-cols-3">
-      {items.map((item) => {
-        const Icon = item.icon
+      <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 sm:gap-4 sm:p-6 lg:grid-cols-3 xl:grid-cols-4">
+        {items.map((item) => {
+          const Icon = item.icon
 
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            className="group rounded-2xl border border-slate-200 bg-white p-5 transition hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
-                <Icon size={20} />
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="group flex min-w-0 flex-col rounded-xl border border-slate-200 bg-white p-4 transition hover:border-emerald-300 hover:shadow-sm sm:p-5"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 sm:h-11 sm:w-11">
+                  <Icon size={20} />
+                </div>
+                <ArrowRight
+                  size={18}
+                  className="shrink-0 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-emerald-700"
+                />
               </div>
-              <ArrowRight size={18} className="text-slate-400 transition group-hover:translate-x-1 group-hover:text-emerald-700" />
-            </div>
 
-            <h3 className="mt-4 text-base font-semibold text-slate-900">{item.title}</h3>
-            <p className="mt-2 text-sm leading-6 text-slate-600">{item.description}</p>
-          </Link>
-        )
-      })}
-    </div>
-  </section>
-)
+              <h3 className="mt-3 text-sm font-semibold text-slate-900 sm:text-base">{item.title}</h3>
+              <p className="mt-1.5 flex-1 text-xs leading-5 text-slate-500 sm:text-sm sm:leading-6">{item.description}</p>
+            </Link>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
 
 export default function CustomizePage() {
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 text-slate-700 sm:px-6 lg:px-8">
-      <div className="rounded-3xl bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 px-6 py-8 text-white shadow-lg">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em]">
-              <Palette size={14} />
-              Customize
-            </div>
-            <h1 className="mt-4 text-3xl font-bold sm:text-4xl">Store Design Hub</h1>
-            <p className="mt-3 max-w-3xl text-sm leading-6 text-emerald-50 sm:text-base">
-              Open any design or selection page from here to customize the look of your storefront and choose the products, categories, and sections shown to customers.
-            </p>
-          </div>
+    <div className="-mx-3 -mt-3 min-h-full w-full max-w-full overflow-x-hidden bg-white pb-12 sm:-mx-4 sm:-mt-4 lg:-mx-5 lg:-mt-5">
+      <div className="border-b border-emerald-100 bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 px-4 py-6 text-white sm:px-6 lg:px-8 lg:py-8">
+        <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold uppercase tracking-wide">
+          <Palette size={14} />
+          Customize
         </div>
+        <h1 className="mt-3 text-2xl font-bold sm:text-3xl lg:text-4xl">Store Design Hub</h1>
+        <p className="mt-2 max-w-4xl text-sm leading-6 text-emerald-50 sm:text-base">
+          Open any design or selection page from here to customize the look of your storefront and choose the products, categories, and sections shown to customers.
+        </p>
       </div>
 
-      <div className="mt-8 space-y-8">
+      <div className="space-y-6 px-4 py-6 sm:space-y-8 sm:px-6 lg:px-8 lg:py-8">
         <Section
           title="Design Pages"
           description="These pages control the appearance, layout, and section behavior of your storefront."

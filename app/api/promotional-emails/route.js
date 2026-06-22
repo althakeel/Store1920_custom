@@ -6,6 +6,7 @@ import Store from '@/models/Store';
 import EmailHistory from '@/models/EmailHistory';
 import { sendMail } from '@/lib/email';
 import { getRandomTemplate, getTemplateById, getAllTemplateIds } from '@/lib/promotionalEmailTemplates';
+import { withBrandEmailLogo } from '@/lib/brandLogo';
 import mongoose from 'mongoose';
 
 /**
@@ -67,7 +68,7 @@ export async function GET(request) {
     const results = [];
     for (const customer of customers) {
       try {
-        const htmlContent = template.template(products, customer.email);
+        const htmlContent = withBrandEmailLogo(template.template(products, customer.email));
         
         // Personalize subject with customer name
         const customerFirstName = customer.name ? customer.name.split(' ')[0] : 'there';
@@ -235,7 +236,7 @@ export async function POST(request) {
     const results = [];
     for (const customer of customers) {
       try {
-        const htmlContent = template.template(products, customer.email);
+        const htmlContent = withBrandEmailLogo(template.template(products, customer.email));
         
         // Personalize subject with customer name
         const customerFirstName = customer.name ? customer.name.split(' ')[0] : 'there';

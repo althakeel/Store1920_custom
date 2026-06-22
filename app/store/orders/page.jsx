@@ -23,7 +23,7 @@ const updateOrderStatus = async (orderId, newStatus, getToken, fetchOrders) => {
 };
 import { useAuth } from '@/lib/useAuth';
 export const dynamic = 'force-dynamic'
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, useRef, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import Loading from "@/components/Loading"
 import PageSkeleton from "@/components/PageSkeleton"
@@ -31,10 +31,18 @@ import { readPageCache, writePageCache } from "@/lib/storePageCache"
 
 import axios from "axios"
 import toast from "react-hot-toast"
-import { Package, Truck, X, Download, Printer, RefreshCw, MapPin, Trash2 } from "lucide-react"
+import { Package, Truck, X, Download, Printer, RefreshCw, MapPin, Trash2, CalendarClock, AlertTriangle } from "lucide-react"
 import { downloadInvoice, printInvoice } from "@/lib/generateInvoice"
 import { schedulePickup } from '@/lib/delhivery'
 import { STORE_ORDER_NOTIFICATION_EVENT } from '@/lib/storeOrderNotifications'
+import {
+    formatConversionDiscount,
+    getConversionPaymentLabel,
+    getDeliveryBucket,
+    getOrderDiscountLines,
+    getOrderExpectedDeliveryDate,
+    summarizeDeliveryBuckets,
+} from '@/lib/storeOrderInsights'
 
 // Add updateTrackingDetails function
 // (must be inside the component, not top-level)
@@ -289,8 +297,18 @@ export default function StoreOrders() {
         });
         if (filterStatus === 'PENDING_SHIPMENT') return dateFiltered.filter(o => !o.trackingId && ['ORDER_PLACED', 'PROCESSING'].includes(o.status));
         if (filterStatus === 'RETURN_REQUESTED') return dateFiltered.filter(o => o.returns && o.returns.some(r => r.status === 'REQUESTED'));
+        if (filterStatus === 'CONVERTED') return dateFiltered.filter(o => Boolean(o.conversion));
+        if (filterStatus === 'DELIVERY_TODAY') return dateFiltered.filter(o => getDeliveryBucket(o) === 'today');
+        if (filterStatus === 'DELIVERY_TOMORROW') return dateFiltered.filter(o => getDeliveryBucket(o) === 'tomorrow');
+        if (filterStatus === 'DELIVERY_DELAYED') return dateFiltered.filter(o => getDeliveryBucket(o) === 'delayed');
         return dateFiltered.filter(o => o.status === filterStatus);
     };
+
+    const deliverySummary = useMemo(() => summarizeDeliveryBuckets(orders), [orders]);
+    const convertedOrderCount = useMemo(
+        () => orders.filter((order) => Boolean(order.conversion)).length,
+        [orders]
+    );
 
     const stats = getOrderStats();
     const filteredOrders = getFilteredOrders();
@@ -650,7 +668,10 @@ export default function StoreOrders() {
             }
             if (!silent && !readPageCache('store-orders')) setLoading(true);
 
-            const { data } = await axios.get('/api/store/orders', {headers: { Authorization: `Bearer ${token}` }});
+            const { data } = await axios.get('/api/store/orders', {
+                params: { withDelhivery: autoRefreshEnabled ? 'true' : 'false' },
+                headers: { Authorization: `Bearer ${token}` },
+            });
             console.log('[ORDERS DEBUG] Raw orders data:', data.orders);
             
             // Debug first 3 orders
@@ -1326,6 +1347,48 @@ export default function StoreOrders() {
                 </div>
             </div>
 
+            <div className="mb-6">
+                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-700">
+                    <CalendarClock size={16} />
+                    <span>Delivery schedule</span>
+                </div>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <div
+                        onClick={() => setFilterStatus('DELIVERY_TODAY')}
+                        className={`cursor-pointer rounded-lg border p-4 transition-all ${filterStatus === 'DELIVERY_TODAY' ? 'border-sky-600 bg-sky-600 text-white shadow-lg' : 'border-sky-200 bg-sky-50 text-sky-900 hover:border-sky-300'}`}
+                    >
+                        <p className="text-xs opacity-80">Delivering today</p>
+                        <p className="text-2xl font-bold">{deliverySummary.today}</p>
+                    </div>
+                    <div
+                        onClick={() => setFilterStatus('DELIVERY_TOMORROW')}
+                        className={`cursor-pointer rounded-lg border p-4 transition-all ${filterStatus === 'DELIVERY_TOMORROW' ? 'border-indigo-600 bg-indigo-600 text-white shadow-lg' : 'border-indigo-200 bg-indigo-50 text-indigo-900 hover:border-indigo-300'}`}
+                    >
+                        <p className="text-xs opacity-80">Delivering tomorrow</p>
+                        <p className="text-2xl font-bold">{deliverySummary.tomorrow}</p>
+                    </div>
+                    <div
+                        onClick={() => setFilterStatus('DELIVERY_DELAYED')}
+                        className={`cursor-pointer rounded-lg border p-4 transition-all ${filterStatus === 'DELIVERY_DELAYED' ? 'border-amber-600 bg-amber-600 text-white shadow-lg' : 'border-amber-200 bg-amber-50 text-amber-900 hover:border-amber-300'}`}
+                    >
+                        <div className="flex items-center gap-1 text-xs opacity-80">
+                            <AlertTriangle size={12} />
+                            <span>Delayed delivery</span>
+                        </div>
+                        <p className="text-2xl font-bold">{deliverySummary.delayed}</p>
+                    </div>
+                </div>
+                {convertedOrderCount > 0 ? (
+                    <button
+                        type="button"
+                        onClick={() => setFilterStatus('CONVERTED')}
+                        className={`mt-3 rounded-lg border px-4 py-2 text-sm font-medium transition ${filterStatus === 'CONVERTED' ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:border-emerald-300'}`}
+                    >
+                        Converted orders: {convertedOrderCount}
+                    </button>
+                ) : null}
+            </div>
+
             {/* Status Filter Tabs */}
             <div className="mb-6 flex flex-wrap gap-2">
                 {['ALL', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'PAYMENT_FAILED', 'RETURNED', 'RETURN_REQUESTED'].map(status => (
@@ -1498,6 +1561,7 @@ export default function StoreOrders() {
                                 <th className="px-4 py-3">Customer</th>
                                 <th className="px-4 py-3">Total</th>
                                 <th className="px-4 py-3">Payment</th>
+                                <th className="px-4 py-3">Tags</th>
                                 <th className="px-4 py-3">Status</th>
                                 <th className="px-4 py-3">Tracking</th>
                                 <th className="px-4 py-3">Date</th>
@@ -1540,6 +1604,37 @@ export default function StoreOrders() {
                                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${getPaymentStatus(order) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                                             {getPaymentStatus(order) ? '✓ Paid' : 'Pending'}
                                         </span>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                        <div className="flex max-w-[220px] flex-wrap gap-1">
+                                            {order.conversion ? (
+                                                <span
+                                                    className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800"
+                                                    title={order.conversion.note || 'Recovered from abandoned checkout'}
+                                                >
+                                                    Converted{order.conversion.convertedByName ? ` · ${order.conversion.convertedByName}` : ''}
+                                                </span>
+                                            ) : null}
+                                            {formatConversionDiscount(order.conversion, currency) ? (
+                                                <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-medium text-violet-800">
+                                                    {formatConversionDiscount(order.conversion, currency)}
+                                                </span>
+                                            ) : null}
+                                            {getOrderDiscountLines(order, currency).filter((line) => line.label !== 'Recovery discount').map((line) => (
+                                                <span key={`${order._id}-${line.label}`} className="rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-medium text-green-800">
+                                                    {line.label}
+                                                </span>
+                                            ))}
+                                            {getDeliveryBucket(order) === 'today' ? (
+                                                <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-800">Today</span>
+                                            ) : null}
+                                            {getDeliveryBucket(order) === 'tomorrow' ? (
+                                                <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-semibold text-indigo-800">Tomorrow</span>
+                                            ) : null}
+                                            {getDeliveryBucket(order) === 'delayed' ? (
+                                                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">Delayed</span>
+                                            ) : null}
+                                        </div>
                                     </td>
                                     <td className="px-4 py-3" onClick={e => { e.stopPropagation(); }}>
                                         <div className="flex items-center gap-2">
@@ -2141,12 +2236,76 @@ export default function StoreOrders() {
                                         </div>
                                     )}
                                     
-                                    {selectedOrder.isCouponUsed && (
-                                        <div>
-                                            <p className="text-slate-500">Coupon Used</p>
-                                            <p className="font-medium text-green-600">{selectedOrder.coupon.code} ({selectedOrder.coupon.discount}% off)</p>
+                                    {getOrderDiscountLines(selectedOrder, currency).length > 0 && (
+                                        <div className="rounded-lg border border-green-200 bg-green-50 p-3">
+                                            <p className="text-sm font-semibold text-green-800">Discounts applied</p>
+                                            <ul className="mt-2 space-y-1 text-sm text-green-900">
+                                                {getOrderDiscountLines(selectedOrder, currency).map((line) => (
+                                                    <li key={line.label}>
+                                                        <span className="font-medium">{line.label}:</span> {line.detail}
+                                                    </li>
+                                                ))}
+                                            </ul>
                                         </div>
                                     )}
+
+                                    {selectedOrder.conversion ? (
+                                        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                                            <p className="text-sm font-semibold text-emerald-800">Converted order</p>
+                                            <p className="mt-1 text-sm text-emerald-900">
+                                                {selectedOrder.conversion.convertedByName
+                                                    ? `Converted by ${selectedOrder.conversion.convertedByName}`
+                                                    : 'Converted from abandoned checkout'}
+                                            </p>
+                                            {selectedOrder.conversion.convertedAt ? (
+                                                <p className="mt-1 text-xs text-emerald-700">
+                                                    {new Date(selectedOrder.conversion.convertedAt).toLocaleString()}
+                                                </p>
+                                            ) : null}
+                                            {formatConversionDiscount(selectedOrder.conversion, currency) ? (
+                                                <p className="mt-1 text-sm text-emerald-900">
+                                                    Recovery discount: {formatConversionDiscount(selectedOrder.conversion, currency)}
+                                                </p>
+                                            ) : null}
+                                            {getConversionPaymentLabel(selectedOrder.conversion) ? (
+                                                <p className="mt-1 text-sm text-emerald-900">
+                                                    Payment: {getConversionPaymentLabel(selectedOrder.conversion)}
+                                                </p>
+                                            ) : null}
+                                            {selectedOrder.conversion.originalTotal != null && selectedOrder.conversion.finalTotal != null ? (
+                                                <p className="mt-1 text-sm text-emerald-900">
+                                                    Cart {currency}{Number(selectedOrder.conversion.originalTotal).toFixed(2)} → {currency}{Number(selectedOrder.conversion.finalTotal).toFixed(2)}
+                                                </p>
+                                            ) : null}
+                                            {selectedOrder.conversion.note ? (
+                                                <p className="mt-2 text-xs text-emerald-700">{selectedOrder.conversion.note}</p>
+                                            ) : null}
+                                        </div>
+                                    ) : null}
+
+                                    {getOrderExpectedDeliveryDate(selectedOrder) ? (
+                                        <div className={`rounded-lg border p-3 ${
+                                            getDeliveryBucket(selectedOrder) === 'delayed'
+                                                ? 'border-amber-200 bg-amber-50'
+                                                : getDeliveryBucket(selectedOrder) === 'today'
+                                                    ? 'border-sky-200 bg-sky-50'
+                                                    : 'border-indigo-200 bg-indigo-50'
+                                        }`}>
+                                            <p className="text-sm font-semibold text-slate-800">Expected delivery</p>
+                                            <p className="mt-1 text-sm font-medium text-slate-900">
+                                                {getOrderExpectedDeliveryDate(selectedOrder).toLocaleString()}
+                                            </p>
+                                            {getDeliveryBucket(selectedOrder) === 'delayed' ? (
+                                                <p className="mt-1 text-xs font-semibold text-amber-700">This delivery is delayed</p>
+                                            ) : null}
+                                            {getDeliveryBucket(selectedOrder) === 'today' ? (
+                                                <p className="mt-1 text-xs font-semibold text-sky-700">Scheduled for today</p>
+                                            ) : null}
+                                            {getDeliveryBucket(selectedOrder) === 'tomorrow' ? (
+                                                <p className="mt-1 text-xs font-semibold text-indigo-700">Scheduled for tomorrow</p>
+                                            ) : null}
+                                        </div>
+                                    ) : null}
                                     <div>
                                         <p className="text-slate-500">Order Date</p>
                                         <p className="font-medium text-slate-900">{new Date(selectedOrder.createdAt).toLocaleDateString()}</p>

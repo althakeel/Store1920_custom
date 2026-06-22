@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getAuth } from '@/lib/firebase-admin';
+import { emailLogoImg } from '@/lib/brandLogo';
 
 export async function POST(req) {
   try {
@@ -93,6 +94,7 @@ export async function POST(req) {
           </head>
           <body>
             <div class="header">
+              ${emailLogoImg('max-width:180px;height:auto;margin-bottom:16px;')}
               <h1>👋 Signed Out Successfully</h1>
             </div>
             <div class="content">

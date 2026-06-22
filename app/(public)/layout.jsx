@@ -46,7 +46,7 @@ function PublicLayoutContent({ children }) {
         <div className={`flex flex-col ${isCartPage ? '' : 'min-h-screen'}`}>
             <GuestOrderLinker />
             <DeferredTrackers />
-            <main className={`flex-1 ${isHomePage ? 'pb-8' : 'pb-20'} lg:pb-0`}>{children}</main>
+            <main className={`flex-1 min-w-0 overflow-x-clip ${isHomePage ? 'pb-8' : 'pb-20'} lg:pb-0`}>{children}</main>
             {!isHomePage && !isCheckout && <MobileBottomNav />}
         </div>
     );

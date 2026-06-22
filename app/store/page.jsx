@@ -32,7 +32,6 @@ const EMPTY_DASHBOARD = {
   totalOrders: 0,
   totalCustomers: 0,
   abandonedCarts: 0,
-  ratings: [],
   analytics: {
     ordersTrend: [],
     ordersStatusTrend: [],

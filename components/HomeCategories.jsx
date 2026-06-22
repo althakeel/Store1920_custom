@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { HOME_SECTION_CLASS } from '@/lib/storefrontCarousel';
+import { HomeCategoryRowSkeleton } from '@/components/home/HomeSectionSkeletons';
 import { cleanDisplayText } from '@/lib/displayText';
 import { normalizeMediaUrl } from '@/lib/mediaUrls';
 
@@ -156,18 +157,7 @@ export default function HomeCategories() {
   };
 
   if (loading && categories.length === 0) {
-    return (
-      <div className={`${HOME_SECTION_CLASS} relative w-full max-w-[1400px] mx-auto px-4 sm:px-6`}>
-        <div className="flex gap-4 md:gap-6 overflow-x-auto scrollbar-hide px-12 md:px-4 md:justify-between">
-          {Array(10).fill(0).map((_, idx) => (
-            <div key={idx} className="flex flex-col items-center flex-shrink-0 w-24 md:flex-1 p-2 md:p-3">
-              <div className="w-20 h-20 md:w-24 md:h-24 rounded-lg bg-gray-200 animate-pulse" />
-              <div className="mt-2 h-3 bg-gray-200 rounded w-12 md:w-full animate-pulse" />
-            </div>
-          ))}
-        </div>
-      </div>
-    );
+    return <HomeCategoryRowSkeleton />;
   }
 
   // Show error if we have one and no categories

@@ -29,21 +29,30 @@ export async function GET(req) {
 
         await connectDB();
 
-        // Get all categories
-        const categories = await Category.find({}).sort({ name: 1 }).lean();
-        
-        // Populate children for each category
-        const categoriesWithChildren = await Promise.all(
-            categories.map(async (cat) => {
-                const children = await Category.find({ parentId: cat._id.toString() }).sort({ name: 1 }).lean();
-                return localizeRecord(sanitizeCategoryFields({
-                    ...cat,
-                    children: children.map((child) => localizeRecord(sanitizeCategoryFields(child), language, ['name', 'description'])),
-                }), language, ['name', 'description']);
-            })
-        );
+        const allCategories = await Category.find({}).sort({ name: 1 }).lean();
 
-        const lookup = buildCategoryLookup(categories);
+        const childrenByParent = new Map();
+        for (const category of allCategories) {
+            const parentId = category.parentId ? String(category.parentId) : '';
+            if (!parentId) continue;
+            if (!childrenByParent.has(parentId)) {
+                childrenByParent.set(parentId, []);
+            }
+            childrenByParent.get(parentId).push(category);
+        }
+
+        const categoriesWithChildren = allCategories.map((category) => {
+            const children = (childrenByParent.get(String(category._id)) || [])
+                .sort((first, second) => String(first.name || '').localeCompare(String(second.name || '')))
+                .map((child) => localizeRecord(sanitizeCategoryFields(child), language, ['name', 'description']));
+
+            return localizeRecord(sanitizeCategoryFields({
+                ...category,
+                children,
+            }), language, ['name', 'description']);
+        });
+
+        const lookup = buildCategoryLookup(allCategories);
 
         const payload = {
             categories: sanitizeCategoryTree(categoriesWithChildren),

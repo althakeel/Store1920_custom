@@ -64,6 +64,8 @@ const UserSchema = new mongoose.Schema({
   // Add other fields as needed
 }, { timestamps: true, _id: false }); // Disable auto ObjectId generation
 
+UserSchema.index({ createdAt: -1 });
+
 if (process.env.NODE_ENV === "development" && mongoose.models.User) {
   delete mongoose.models.User;
 }

@@ -29,7 +29,7 @@ const DEFAULT_APPEARANCE = {
     cutoffHour: 23,
     cutoffMinute: 0,
     deliveryMinDays: 2,
-    deliveryMaxDays: 5,
+    deliveryMaxDays: 3,
     rushPrefix: 'Or ⚡ Rush delivery',
     rushHour: 11,
     rushMinute: 15,
@@ -256,10 +256,9 @@ export async function GET(request) {
 
     await connectDB()
 
-    let preference = await StorePreference.findOne({ storeId }).lean()
+    let preference = await StorePreference.findOne({ storeId }).select('appearanceSections').lean()
     if (!preference) {
-      const created = await StorePreference.create({ storeId })
-      preference = created.toObject()
+      return NextResponse.json(normalizeAppearance(DEFAULT_APPEARANCE))
     }
 
     return NextResponse.json(normalizeAppearance(preference.appearanceSections || DEFAULT_APPEARANCE))

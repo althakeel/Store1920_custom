@@ -11,10 +11,9 @@ import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
 import tabbyLogo from '@/assets/payments/tabby.webp';
 import tamaraLogo from '@/assets/payments/tamara.webp';
 import {
-  STOREFRONT_LANGUAGE_KEY,
   STOREFRONT_LANGUAGE_EVENT,
-  STOREFRONT_LANGUAGE_COOKIE,
   normalizeStorefrontLanguage,
+  persistStorefrontLanguage,
   readPersistedStorefrontLanguage,
 } from '@/lib/storefrontLanguage';
 
@@ -119,11 +118,7 @@ export default function TopBar({ initialLanguage = 'en' }) {
     const nextLanguage = normalizeStorefrontLanguage(lang);
     setStorefrontLanguage(nextLanguage);
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STOREFRONT_LANGUAGE_KEY, nextLanguage);
-      document.cookie = `${STOREFRONT_LANGUAGE_COOKIE}=${nextLanguage}; path=/; max-age=31536000; SameSite=Lax`;
-      document.documentElement.setAttribute('lang', nextLanguage === 'ar' ? 'ar' : 'en');
-      document.documentElement.setAttribute('dir', nextLanguage === 'ar' ? 'rtl' : 'ltr');
-      window.dispatchEvent(new CustomEvent(STOREFRONT_LANGUAGE_EVENT, { detail: { language: nextLanguage } }));
+      persistStorefrontLanguage(nextLanguage, { userChosen: true });
     }
     closeDropdown();
   };

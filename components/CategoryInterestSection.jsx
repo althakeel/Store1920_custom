@@ -1,7 +1,6 @@
 'use client';
 
 import { useMemo, useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
 import ProductCard from '@/components/ProductCard';
 import {
   HOME_PRODUCT_GRID_CLASS,
@@ -10,11 +9,12 @@ import {
   HOME_SECTION_GRID_INNER_CLASS,
 } from '@/lib/storefrontCarousel';
 import { cleanDisplayText } from '@/lib/displayText';
-import { useHorizontalCarouselDrag } from '@/lib/useHorizontalCarouselDrag';
+import CategoryChipScroller from '@/components/CategoryChipScroller';
+import { HomeExploreInterestsSkeleton } from '@/components/home/HomeSectionSkeletons';
 
 const MAX_CATEGORIES = 10;
 const MAX_PRODUCTS = 60;
-const CATALOG_FETCH_LIMIT = 200;
+const CATALOG_FETCH_LIMIT = 100;
 
 function getColumnsForWidth(width) {
   if (width >= 1024) return 6;
@@ -114,19 +114,6 @@ export default function CategoryInterestSection() {
   const [catalogProducts, setCatalogProducts] = useState([]);
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [columnsPerRow, setColumnsPerRow] = useState(6);
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
-
-  const {
-    scrollRef,
-    isDragging,
-    handlePointerDown,
-    handlePointerMove,
-    endDragging,
-    scrollLeft,
-    scrollRight,
-    trackStyle,
-  } = useHorizontalCarouselDrag();
 
   useEffect(() => {
     const updateColumns = () => {
@@ -396,27 +383,12 @@ export default function CategoryInterestSection() {
     latestProducts,
   ]);
 
-  useEffect(() => {
-    const container = scrollRef.current;
-    if (!container) return undefined;
-
-    const updateScrollState = () => {
-      setCanScrollLeft(container.scrollLeft > 0);
-      setCanScrollRight(container.scrollLeft < container.scrollWidth - container.clientWidth - 1);
-    };
-
-    updateScrollState();
-    container.addEventListener('scroll', updateScrollState, { passive: true });
-    window.addEventListener('resize', updateScrollState);
-
-    return () => {
-      container.removeEventListener('scroll', updateScrollState);
-      window.removeEventListener('resize', updateScrollState);
-    };
-  }, [categoriesToRender, scrollRef]);
-
   if (!sectionEnabled) {
     return null;
+  }
+
+  if (catalogLoading && catalogProducts.length === 0) {
+    return <HomeExploreInterestsSkeleton productCount={columnsPerRow} />;
   }
 
   const productSkeletonCount = columnsPerRow;
@@ -428,65 +400,12 @@ export default function CategoryInterestSection() {
           <h2 className={HOME_SECTION_BLOCK_HEADING_CLASS}>Explore your interests</h2>
         </div>
 
-        <div className="relative mb-5 flex items-center gap-2">
-          {canScrollLeft ? (
-            <button
-              type="button"
-              onClick={scrollLeft}
-              className="flex shrink-0 rounded-full border border-gray-200 bg-white p-1.5 shadow-md transition hover:bg-gray-50"
-              aria-label="Scroll categories left"
-            >
-              <ChevronLeft size={18} className="text-gray-800" />
-            </button>
-          ) : null}
-
-          <div
-            ref={scrollRef}
-            role="tablist"
-            aria-label="Explore your interests categories"
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={endDragging}
-            onPointerLeave={endDragging}
-            onPointerCancel={endDragging}
-            className={`min-w-0 flex-1 snap-x snap-mandatory items-center gap-2.5 overflow-x-auto overscroll-x-contain scroll-smooth py-1 scrollbar-hide flex ${
-              isDragging ? 'cursor-grabbing select-none' : 'cursor-grab'
-            }`}
-            style={trackStyle}
-          >
-            {categoriesToRender.map((category) => {
-              const isActive = category.key === selectedCategoryOption?.key;
-
-              return (
-                <button
-                  key={category.key}
-                  type="button"
-                  role="tab"
-                  aria-selected={isActive}
-                  onClick={() => setSelectedCategoryKey(category.key)}
-                  className={`relative z-[1] shrink-0 snap-start whitespace-nowrap rounded-xl border px-4 py-2.5 text-sm font-semibold leading-none shadow-sm transition-all duration-200 active:scale-[0.98] ${
-                    isActive
-                      ? 'border-gray-900 bg-gray-900 text-white shadow-md'
-                      : 'border-gray-300 bg-gray-50 text-gray-800 hover:border-gray-400 hover:bg-white'
-                  }`}
-                >
-                  {category.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {canScrollRight ? (
-            <button
-              type="button"
-              onClick={scrollRight}
-              className="flex shrink-0 rounded-full border border-gray-200 bg-white p-1.5 shadow-md transition hover:bg-gray-50"
-              aria-label="Scroll categories right"
-            >
-              <ChevronRight size={18} className="text-gray-800" />
-            </button>
-          ) : null}
-        </div>
+        <CategoryChipScroller
+          items={categoriesToRender}
+          activeKey={selectedCategoryOption?.key}
+          onSelect={setSelectedCategoryKey}
+          ariaLabel="Explore your interests categories"
+        />
 
         {catalogLoading && displayedProducts.length === 0 ? (
           <div className={HOME_PRODUCT_GRID_CLASS}>

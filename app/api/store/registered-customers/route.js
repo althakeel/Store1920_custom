@@ -52,10 +52,11 @@ export async function GET(request) {
         };
 
     const customers = await User.find(query)
-      .select('email name createdAt locations firstVisitLocation lastLocation')
-      .sort({ createdAt: -1 });
+      .select('email name createdAt firstVisitLocation lastLocation')
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .lean();
 
-    // Calculate stats
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     
@@ -65,30 +66,29 @@ export async function GET(request) {
     const monthStart = new Date();
     monthStart.setMonth(now.getMonth() - 1);
 
+    const emailFilter = { email: { $exists: true, $ne: null } };
+
+    const [total, today, thisWeek, thisMonth] = await Promise.all([
+      User.countDocuments(emailFilter),
+      User.countDocuments({ ...emailFilter, createdAt: { $gte: todayStart } }),
+      User.countDocuments({ ...emailFilter, createdAt: { $gte: weekStart } }),
+      User.countDocuments({ ...emailFilter, createdAt: { $gte: monthStart } }),
+    ]);
+
     const stats = {
-      total: await User.countDocuments({ email: { $exists: true, $ne: null } }),
-      today: await User.countDocuments({ 
-        email: { $exists: true, $ne: null },
-        createdAt: { $gte: todayStart }
-      }),
-      thisWeek: await User.countDocuments({ 
-        email: { $exists: true, $ne: null },
-        createdAt: { $gte: weekStart }
-      }),
-      thisMonth: await User.countDocuments({ 
-        email: { $exists: true, $ne: null },
-        createdAt: { $gte: monthStart }
-      })
+      total,
+      today,
+      thisWeek,
+      thisMonth,
     };
 
-    // Format customer data
     const formattedCustomers = customers.map(customer => ({
       email: customer.email,
       name: customer.name,
       createdAt: customer.createdAt,
       firstVisitLocation: customer.firstVisitLocation,
       lastLocation: customer.lastLocation,
-      totalVisits: customer.locations?.length || 0
+      totalVisits: 0,
     }));
 
     return NextResponse.json({

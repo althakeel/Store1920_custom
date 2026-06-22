@@ -1,11 +1,11 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { auth } from '@/lib/firebase'
-import { getAuthErrorMessage, signInWithEmail, signInWithGooglePopup } from '@/lib/firebaseAuthActions'
+import { getAuthErrorMessage, signInWithEmail } from '@/lib/firebaseAuthActions'
+import { startStoreGoogleSignIn, verifyStoreSellerAccess } from '@/lib/storeGoogleSignIn'
 import toast from 'react-hot-toast'
 import Image from 'next/image'
-import Logo from '@/assets/logo/logo.png'
+import Logo from '@/assets/logo/Store1920.png'
 import { useAuth } from '@/lib/useAuth'
 
 export default function StoreLogin() {
@@ -64,29 +64,9 @@ export default function StoreLogin() {
       }
 
       const userCredential = await signInWithEmail(loginEmail, password)
-      const user = userCredential.user
-      
-      // Check if user has seller access
-      const token = await user.getIdToken()
-      const response = await fetch('/api/store/is-seller', {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      const data = await response.json()
-      
-      if (!response.ok) {
-        if (response.status === 503 || data?.reason === 'database-unavailable' || data?.reason === 'server-error') {
-          toast.error('Store access check failed temporarily. Please try again.')
-          return
-        }
-      }
-
-      if (data.isSeller) {
-        toast.success('Login successful!')
-        router.push('/store')
-      } else {
-        await auth.signOut()
-        toast.error('You do not have seller access')
-      }
+      await verifyStoreSellerAccess(userCredential.user)
+      toast.success('Login successful!')
+      router.push('/store')
     } catch (error) {
       console.error('Login error:', error)
       toast.error(getAuthErrorMessage(error, 'Invalid credentials'));
@@ -98,33 +78,13 @@ export default function StoreLogin() {
   const handleGoogleLogin = async () => {
     setLoading(true)
     try {
-      const userCredential = await signInWithGooglePopup()
-      const user = userCredential.user
-      
-      // Check if user has seller access
-      const token = await user.getIdToken()
-      const response = await fetch('/api/store/is-seller', {
-        headers: { Authorization: `Bearer ${token}` }
+      await startStoreGoogleSignIn({
+        router,
+        onSuccess: () => toast.success('Login successful!'),
+        onError: (message) => toast.error(message),
       })
-      const data = await response.json()
-      
-      if (!response.ok) {
-        if (response.status === 503 || data?.reason === 'database-unavailable' || data?.reason === 'server-error') {
-          toast.error('Store access check failed temporarily. Please try again.')
-          return
-        }
-      }
-
-      if (data.isSeller) {
-        toast.success('Login successful!')
-        router.push('/store')
-      } else {
-        await auth.signOut()
-        toast.error('You do not have seller access')
-      }
     } catch (error) {
       console.error('Google login error:', error)
-      toast.error(getAuthErrorMessage(error, 'Login failed'));
     } finally {
       setLoading(false)
     }

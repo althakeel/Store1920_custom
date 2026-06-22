@@ -61,6 +61,10 @@ ProductSchema.index({ tags: 1, inStock: 1 }); // For tag-based filtering
 ProductSchema.index({ fastDelivery: 1, inStock: 1 }); // For fast delivery filter
 ProductSchema.index({ brand: 1, inStock: 1 });                    // Brand page filtering
 ProductSchema.index({ storeId: 1, category: 1, inStock: 1 });    // Store + category listings
+ProductSchema.index({ storeId: 1, createdAt: -1 });              // Store product picker (newest)
+ProductSchema.index({ storeId: 1, name: 1 });                      // Store product picker (name sort)
+ProductSchema.index({ storeId: 1, price: 1 });                   // Store product picker (price sort)
+ProductSchema.index({ storeId: 1, sku: 1 });                     // Store SKU lookup
 ProductSchema.index({ name: 'text', brand: 'text', shortDescription: 'text' }); // Full-text search
 
 export default mongoose.models.Product || mongoose.model("Product", ProductSchema);

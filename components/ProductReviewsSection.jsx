@@ -1,18 +1,56 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
+import axios from 'axios';
 import { StarIcon, ChevronLeft, ChevronRight, ThumbsUp, BadgeCheck } from 'lucide-react';
+import { useStorefrontI18n } from '@/lib/useStorefrontI18n';
 
-const formatReviewDate = (dateString) => {
+const HELPFUL_VOTER_KEY = 'store1920_helpful_voter';
+
+function getHelpfulVoterId() {
+  if (typeof window === 'undefined') return '';
+  try {
+    let id = window.localStorage.getItem(HELPFUL_VOTER_KEY);
+    if (!id) {
+      id = typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `voter_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      window.localStorage.setItem(HELPFUL_VOTER_KEY, id);
+    }
+    return id;
+  } catch {
+    return '';
+  }
+}
+
+function hasVotedHelpfulLocally(reviewId) {
+  if (typeof window === 'undefined' || !reviewId) return false;
+  try {
+    return window.localStorage.getItem(`helpful_review_${reviewId}`) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function markVotedHelpfulLocally(reviewId) {
+  if (typeof window === 'undefined' || !reviewId) return;
+  try {
+    window.localStorage.setItem(`helpful_review_${reviewId}`, '1');
+  } catch {
+    // ignore
+  }
+}
+
+const formatReviewDate = (dateString, locale = 'en-GB') => {
   if (!dateString) return '';
   const date = new Date(dateString);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  return date.toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
-const maskReviewerName = (name) => {
-  const safeName = (name || 'Guest User').trim();
+const maskReviewerName = (name, guestLabel = 'Guest User') => {
+  const safeName = (name || guestLabel).trim();
   if (safeName.length <= 2) return `${safeName[0] || 'U'}***`;
   if (safeName.length <= 5) return `${safeName.slice(0, 2)}***`;
   return `${safeName.slice(0, 3)}***${safeName.slice(-1)}`;
@@ -33,7 +71,7 @@ function StarRow({ rating, size = 16, filledColor = '#16a34a', emptyColor = '#d1
   );
 }
 
-function RatingBar({ stars, count, total, barClassName }) {
+function RatingBar({ stars, count, total, barClassName, isArabic }) {
   const percentage = total > 0 ? Math.round((count / total) * 100) : 0;
 
   return (
@@ -42,14 +80,50 @@ function RatingBar({ stars, count, total, barClassName }) {
       <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
         <div className={`h-full rounded-full ${barClassName}`} style={{ width: `${percentage}%` }} />
       </div>
-      <span className="text-right text-gray-500">{percentage}%</span>
+      <span className={`text-gray-500 ${isArabic ? 'text-left' : 'text-right'}`}>{percentage}%</span>
     </div>
   );
 }
 
-function ReviewCard({ review, productLabel, onImageClick }) {
+function ReviewCard({ review, productLabel, onImageClick, onHelpfulVote, t, isArabic, dateLocale, guestLabel }) {
   const [expanded, setExpanded] = useState(false);
-  const reviewerName = review.user?.name || review.userId?.name || review.customerName || 'Guest User';
+  const [helpfulCount, setHelpfulCount] = useState(Number(review.helpfulCount || 0));
+  const [hasVoted, setHasVoted] = useState(false);
+  const [voting, setVoting] = useState(false);
+  const reviewId = String(review._id || review.id || '');
+
+  useEffect(() => {
+    setHelpfulCount(Number(review.helpfulCount || 0));
+  }, [review.helpfulCount]);
+
+  useEffect(() => {
+    setHasVoted(hasVotedHelpfulLocally(reviewId));
+  }, [reviewId]);
+
+  const handleHelpfulClick = async () => {
+    if (!reviewId || voting || hasVoted) return;
+    const voterId = getHelpfulVoterId();
+    if (!voterId) return;
+
+    setVoting(true);
+    try {
+      const { data } = await axios.post('/api/review/helpful', { reviewId, voterId });
+      const nextCount = Number(data?.helpfulCount ?? helpfulCount);
+      setHelpfulCount(nextCount);
+      setHasVoted(true);
+      markVotedHelpfulLocally(reviewId);
+      onHelpfulVote?.(reviewId, nextCount);
+    } catch (error) {
+      console.error('Failed to mark review helpful:', error);
+    } finally {
+      setVoting(false);
+    }
+  };
+
+  const helpfulLabel = helpfulCount > 0
+    ? t('reviews.helpfulCount', { count: helpfulCount })
+    : t('reviews.helpful');
+  const reviewerName = review.user?.name || review.userId?.name || review.customerName || guestLabel;
   const reviewText = String(review.review || review.comment || '').trim();
   const shouldTruncate = reviewText.length > 220;
   const displayText = expanded || !shouldTruncate ? reviewText : `${reviewText.slice(0, 220).trim()}...`;
@@ -62,13 +136,13 @@ function ReviewCard({ review, productLabel, onImageClick }) {
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-gray-700">
-            <span className="font-semibold text-gray-900">{maskReviewerName(reviewerName)}</span>
+            <span className="font-semibold text-gray-900">{maskReviewerName(reviewerName, guestLabel)}</span>
             <span className="text-gray-400">|</span>
-            <span>{formatReviewDate(review.createdAt)}</span>
+            <span>{formatReviewDate(review.createdAt, dateLocale)}</span>
             {review.orderId ? (
               <span className="inline-flex items-center gap-1 rounded bg-green-50 px-2 py-0.5 text-[11px] font-semibold text-green-700">
                 <BadgeCheck size={12} />
-                Verified Purchase
+                {t('reviews.verifiedPurchase')}
               </span>
             ) : null}
           </div>
@@ -97,7 +171,7 @@ function ReviewCard({ review, productLabel, onImageClick }) {
           ) : null}
 
           {reviewText ? (
-            <div className="mt-2 text-[14px] leading-7 text-gray-900">
+            <div className="mt-2 text-[14px] leading-7 text-gray-900" dir="auto">
               <p>{displayText}</p>
               {shouldTruncate ? (
                 <button
@@ -105,7 +179,7 @@ function ReviewCard({ review, productLabel, onImageClick }) {
                   onClick={() => setExpanded((prev) => !prev)}
                   className="mt-1 text-[13px] font-medium text-blue-600 hover:underline"
                 >
-                  {expanded ? 'Less' : 'More'}
+                  {expanded ? t('reviews.less') : t('reviews.more')}
                 </button>
               ) : null}
             </div>
@@ -113,10 +187,16 @@ function ReviewCard({ review, productLabel, onImageClick }) {
 
           <button
             type="button"
-            className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-gray-200 px-3 py-1.5 text-[12px] text-gray-600 hover:bg-gray-50"
+            onClick={handleHelpfulClick}
+            disabled={voting || hasVoted || !reviewId}
+            className={`mt-3 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] transition ${
+              hasVoted
+                ? 'border-green-200 bg-green-50 text-green-700'
+                : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+            } disabled:cursor-default`}
           >
             <ThumbsUp size={13} />
-            Helpful
+            {helpfulLabel}
           </button>
         </div>
       </div>
@@ -130,32 +210,52 @@ export default function ProductReviewsSection({
   loading = false,
   initialVisibleCount = 4,
 }) {
+  const { t, isArabic } = useStorefrontI18n();
   const [starFilter, setStarFilter] = useState('all');
   const [sortBy, setSortBy] = useState('top');
   const [showAllReviews, setShowAllReviews] = useState(false);
   const [lightboxImage, setLightboxImage] = useState(null);
   const [photoScrollRef, setPhotoScrollRef] = useState(null);
+  const [reviewItems, setReviewItems] = useState(reviews);
 
-  const reviewCount = reviews.length;
+  useEffect(() => {
+    setReviewItems(reviews);
+  }, [reviews]);
+
+  const handleHelpfulVote = (reviewId, helpfulCount) => {
+    setReviewItems((prev) => prev.map((item) => (
+      String(item._id || item.id) === String(reviewId)
+        ? { ...item, helpfulCount }
+        : item
+    )));
+  };
+
+  const dateLocale = isArabic ? 'ar-AE' : 'en-GB';
+  const guestLabel = t('reviews.guestUser');
+  const getRatingLabel = (count) => (
+    count === 1 ? t('product.ratingSingular') : t('product.ratingPlural')
+  );
+
+  const reviewCount = reviewItems.length;
   const averageRating = reviewCount > 0
-    ? reviews.reduce((sum, item) => sum + (Number(item.rating) || 0), 0) / reviewCount
+    ? reviewItems.reduce((sum, item) => sum + (Number(item.rating) || 0), 0) / reviewCount
     : 0;
 
   const ratingBreakdown = useMemo(() => {
     const counts = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
-    reviews.forEach((review) => {
+    reviewItems.forEach((review) => {
       const stars = Math.round(Number(review.rating) || 0);
       if (stars >= 1 && stars <= 5) counts[stars] += 1;
     });
     return counts;
-  }, [reviews]);
+  }, [reviewItems]);
 
   const customerPhotos = useMemo(() => {
-    return reviews.flatMap((review) => (Array.isArray(review.images) ? review.images : [])).filter(Boolean);
-  }, [reviews]);
+    return reviewItems.flatMap((review) => (Array.isArray(review.images) ? review.images : [])).filter(Boolean);
+  }, [reviewItems]);
 
   const filteredReviews = useMemo(() => {
-    let next = [...reviews];
+    let next = [...reviewItems];
 
     if (starFilter !== 'all') {
       const target = Number(starFilter);
@@ -175,20 +275,29 @@ export default function ProductReviewsSection({
     }
 
     return next;
-  }, [reviews, sortBy, starFilter]);
+  }, [reviewItems, sortBy, starFilter]);
 
   const visibleReviews = showAllReviews ? filteredReviews : filteredReviews.slice(0, initialVisibleCount);
-  const productLabel = product?.name ? `Product: ${product.name}` : '';
+  const productLabel = product?.name
+    ? t('reviews.productLabel', { name: product.name })
+    : '';
 
   const scrollPhotos = (direction) => {
     if (!photoScrollRef) return;
-    photoScrollRef.scrollBy({ left: direction * 220, behavior: 'smooth' });
+    const scrollAmount = direction * 220;
+    photoScrollRef.scrollBy({ left: isArabic ? -scrollAmount : scrollAmount, behavior: 'smooth' });
+  };
+
+  const starOptionLabel = (value) => {
+    if (value === 'all') return t('reviews.allStars');
+    if (value === 1) return t('reviews.oneStar');
+    return t('reviews.starsCount', { count: value });
   };
 
   return (
-    <section id="product-reviews" className="border-t border-gray-200 pt-8">
+    <section id="product-reviews" className="border-t border-gray-200 pt-8" dir={isArabic ? 'rtl' : 'ltr'}>
       <h2 className="text-[22px] sm:text-[24px] font-semibold text-gray-900 mb-6">
-        Product Ratings &amp; Reviews
+        {t('reviews.title')}
       </h2>
 
       {loading ? (
@@ -198,9 +307,9 @@ export default function ProductReviewsSection({
         </div>
       ) : reviewCount === 0 ? (
         <div className="rounded-xl border border-gray-200 bg-gray-50 p-8 text-center">
-          <p className="text-lg font-semibold text-gray-900">No reviews yet</p>
+          <p className="text-lg font-semibold text-gray-900">{t('reviews.noReviewsTitle')}</p>
           <p className="mt-2 text-sm text-gray-600">
-            Be the first to review this product after your order is delivered.
+            {t('reviews.noReviewsBody')}
           </p>
         </div>
       ) : (
@@ -211,34 +320,36 @@ export default function ProductReviewsSection({
                 <span className="text-[42px] leading-none font-semibold text-gray-900">{averageRating.toFixed(1)}</span>
                 <StarRow rating={averageRating} size={18} />
               </div>
-              <p className="mt-2 text-[13px] text-gray-600">Based on {reviewCount} {reviewCount === 1 ? 'rating' : 'ratings'}</p>
+              <p className="mt-2 text-[13px] text-gray-600">
+                {t('reviews.basedOn', { count: reviewCount, label: getRatingLabel(reviewCount) })}
+              </p>
             </div>
 
             <div className="space-y-2">
-              <RatingBar stars={5} count={ratingBreakdown[5]} total={reviewCount} barClassName="bg-green-500" />
-              <RatingBar stars={4} count={ratingBreakdown[4]} total={reviewCount} barClassName="bg-green-400" />
-              <RatingBar stars={3} count={ratingBreakdown[3]} total={reviewCount} barClassName="bg-yellow-400" />
-              <RatingBar stars={2} count={ratingBreakdown[2]} total={reviewCount} barClassName="bg-orange-400" />
-              <RatingBar stars={1} count={ratingBreakdown[1]} total={reviewCount} barClassName="bg-red-500" />
+              <RatingBar stars={5} count={ratingBreakdown[5]} total={reviewCount} barClassName="bg-green-500" isArabic={isArabic} />
+              <RatingBar stars={4} count={ratingBreakdown[4]} total={reviewCount} barClassName="bg-green-400" isArabic={isArabic} />
+              <RatingBar stars={3} count={ratingBreakdown[3]} total={reviewCount} barClassName="bg-yellow-400" isArabic={isArabic} />
+              <RatingBar stars={2} count={ratingBreakdown[2]} total={reviewCount} barClassName="bg-orange-400" isArabic={isArabic} />
+              <RatingBar stars={1} count={ratingBreakdown[1]} total={reviewCount} barClassName="bg-red-500" isArabic={isArabic} />
             </div>
 
             <div className="space-y-4 rounded-xl border border-gray-200 p-4">
               <div>
                 <div className="flex items-center gap-2 text-[14px] font-semibold text-gray-900">
                   <StarIcon size={14} className="text-amber-500" fill="#f59e0b" />
-                  How do I review this product?
+                  {t('reviews.howToReviewTitle')}
                 </div>
                 <p className="mt-2 text-[13px] leading-6 text-gray-600">
-                  If you recently purchased this item, go to your order details page and leave a review from there.
+                  {t('reviews.howToReviewBody')}
                 </p>
               </div>
               <div>
                 <div className="flex items-center gap-2 text-[14px] font-semibold text-gray-900">
                   <StarIcon size={14} className="text-amber-500" fill="#f59e0b" />
-                  Where do the reviews come from?
+                  {t('reviews.whereFromTitle')}
                 </div>
                 <p className="mt-2 text-[13px] leading-6 text-gray-600">
-                  Reviews shown here are from customers who purchased this item on Store1920.
+                  {t('reviews.whereFromBody')}
                 </p>
               </div>
             </div>
@@ -246,33 +357,32 @@ export default function ProductReviewsSection({
 
           <div>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
-              <h3 className="text-[18px] font-semibold text-gray-900">Reviews</h3>
+              <h3 className="text-[18px] font-semibold text-gray-900">{t('reviews.heading')}</h3>
               <div className="flex flex-wrap items-center gap-3 text-[12px] text-gray-600">
                 <label className="inline-flex items-center gap-2">
-                  <span className="font-semibold uppercase tracking-wide">Filter by:</span>
+                  <span className="font-semibold uppercase tracking-wide">{t('reviews.filterBy')}</span>
                   <select
                     value={starFilter}
                     onChange={(event) => setStarFilter(event.target.value)}
                     className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-gray-800"
                   >
-                    <option value="all">All Stars</option>
-                    <option value="5">5 Stars</option>
-                    <option value="4">4 Stars</option>
-                    <option value="3">3 Stars</option>
-                    <option value="2">2 Stars</option>
-                    <option value="1">1 Star</option>
+                    {['all', '5', '4', '3', '2', '1'].map((value) => (
+                      <option key={value} value={value}>
+                        {starOptionLabel(value === 'all' ? 'all' : Number(value))}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 <label className="inline-flex items-center gap-2">
-                  <span className="font-semibold uppercase tracking-wide">Sort by:</span>
+                  <span className="font-semibold uppercase tracking-wide">{t('reviews.sortBy')}</span>
                   <select
                     value={sortBy}
                     onChange={(event) => setSortBy(event.target.value)}
                     className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-gray-800"
                   >
-                    <option value="top">Top Reviews</option>
-                    <option value="recent">Most Recent</option>
-                    <option value="lowest">Lowest Rating</option>
+                    <option value="top">{t('reviews.topReviews')}</option>
+                    <option value="recent">{t('reviews.mostRecent')}</option>
+                    <option value="lowest">{t('reviews.lowestRating')}</option>
                   </select>
                 </label>
               </div>
@@ -282,24 +392,24 @@ export default function ProductReviewsSection({
               <div className="mb-6">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <h4 className="text-[15px] font-semibold text-gray-900">
-                    Customer Photos ({customerPhotos.length})
+                    {t('reviews.customerPhotos', { count: customerPhotos.length })}
                   </h4>
                   <button
                     type="button"
                     onClick={() => setLightboxImage(customerPhotos[0])}
                     className="text-[13px] font-medium text-blue-600 hover:underline"
                   >
-                    View all &gt;
+                    {t('reviews.viewAll')}
                   </button>
                 </div>
                 <div className="relative">
                   <button
                     type="button"
                     onClick={() => scrollPhotos(-1)}
-                    className="absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded-full border border-gray-200 bg-white p-1.5 shadow-sm"
-                    aria-label="Scroll photos left"
+                    className={`absolute top-1/2 z-10 -translate-y-1/2 rounded-full border border-gray-200 bg-white p-1.5 shadow-sm ${isArabic ? 'right-0' : 'left-0'}`}
+                    aria-label={t('reviews.scrollPhotosLeft')}
                   >
-                    <ChevronLeft size={16} />
+                    <ChevronLeft size={16} className={isArabic ? 'rotate-180' : ''} />
                   </button>
                   <div
                     ref={setPhotoScrollRef}
@@ -319,10 +429,10 @@ export default function ProductReviewsSection({
                   <button
                     type="button"
                     onClick={() => scrollPhotos(1)}
-                    className="absolute right-0 top-1/2 z-10 -translate-y-1/2 rounded-full border border-gray-200 bg-white p-1.5 shadow-sm"
-                    aria-label="Scroll photos right"
+                    className={`absolute top-1/2 z-10 -translate-y-1/2 rounded-full border border-gray-200 bg-white p-1.5 shadow-sm ${isArabic ? 'left-0' : 'right-0'}`}
+                    aria-label={t('reviews.scrollPhotosRight')}
                   >
-                    <ChevronRight size={16} />
+                    <ChevronRight size={16} className={isArabic ? 'rotate-180' : ''} />
                   </button>
                 </div>
               </div>
@@ -335,6 +445,11 @@ export default function ProductReviewsSection({
                   review={review}
                   productLabel={productLabel}
                   onImageClick={setLightboxImage}
+                  onHelpfulVote={handleHelpfulVote}
+                  t={t}
+                  isArabic={isArabic}
+                  dateLocale={dateLocale}
+                  guestLabel={guestLabel}
                 />
               ))}
             </div>
@@ -346,7 +461,7 @@ export default function ProductReviewsSection({
                   onClick={() => setShowAllReviews((prev) => !prev)}
                   className="inline-flex min-w-[220px] items-center justify-center rounded-full border border-blue-600 px-6 py-2.5 text-[14px] font-semibold text-blue-600 hover:bg-blue-50"
                 >
-                  {showAllReviews ? 'Show Fewer Reviews' : 'View All Reviews >'}
+                  {showAllReviews ? t('reviews.showFewer') : t('reviews.viewAllReviews')}
                 </button>
               </div>
             ) : null}

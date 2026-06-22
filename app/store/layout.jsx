@@ -6,8 +6,13 @@ import StoreShellSkeleton from "@/components/store/StoreShellSkeleton";
 import { useEffect, useState } from "react"
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/useAuth"
-import { getAuthErrorMessage, signInWithGooglePopup } from "@/lib/firebaseAuthActions";
+import { getAuthErrorMessage } from "@/lib/firebaseAuthActions";
+import {
+    completeStoreGoogleRedirectSignIn,
+    startStoreGoogleSignIn,
+} from "@/lib/storeGoogleSignIn";
 import Link from "next/link";
+import { Loader2 } from "lucide-react";
 
 // Client-only skeleton — static fallback must match SSR output to avoid hydration errors
 function StoreLoadingShell() {
@@ -28,6 +33,7 @@ export default function RootAdminLayout({ children }) {
     const { user, loading } = useAuth();
     const [mounted, setMounted] = useState(false);
     const [isSigningIn, setIsSigningIn] = useState(false);
+    const [isCompletingRedirect, setIsCompletingRedirect] = useState(false);
     const [signInError, setSignInError] = useState('');
     const pathname = usePathname();
     const router = useRouter();
@@ -35,6 +41,43 @@ export default function RootAdminLayout({ children }) {
     useEffect(() => {
         setMounted(true)
     }, [])
+
+    useEffect(() => {
+        if (!mounted || loading || user || isPublicStorePath(pathname)) return;
+
+        let cancelled = false;
+
+        (async () => {
+            setIsCompletingRedirect(true);
+            try {
+                const completed = await completeStoreGoogleRedirectSignIn({ router });
+                if (cancelled || !completed) return;
+            } catch (error) {
+                if (!cancelled) {
+                    setSignInError(getAuthErrorMessage(error, 'Sign in failed'));
+                }
+            } finally {
+                if (!cancelled) {
+                    setIsCompletingRedirect(false);
+                }
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [mounted, loading, user, pathname, router]);
+
+    useEffect(() => {
+        if (!isSigningIn) return;
+
+        const timeout = setTimeout(() => {
+            setIsSigningIn(false);
+            setSignInError('Redirect to Google is taking too long. Check your connection or use username/email sign-in.');
+        }, 15000);
+
+        return () => clearTimeout(timeout);
+    }, [isSigningIn]);
 
     if (!mounted) {
         return <StoreLoadingShell />;
@@ -53,6 +96,19 @@ export default function RootAdminLayout({ children }) {
     }
 
     if (!user) {
+        if (isCompletingRedirect) {
+            return (
+                <StoreLanguageScope>
+                    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-100 via-slate-50 to-blue-100 px-4">
+                        <div className="rounded-3xl border border-white/70 bg-white/90 p-8 text-center shadow-2xl">
+                            <Loader2 className="mx-auto h-8 w-8 animate-spin text-blue-600" />
+                            <p className="mt-4 text-sm text-slate-600">Completing Google sign-in...</p>
+                        </div>
+                    </div>
+                </StoreLanguageScope>
+            );
+        }
+
         return (
             <StoreLanguageScope>
             <div className="min-h-screen bg-gradient-to-br from-slate-100 via-slate-50 to-blue-100 px-4 flex items-center justify-center">
@@ -72,10 +128,12 @@ export default function RootAdminLayout({ children }) {
                             setSignInError('');
                             setIsSigningIn(true);
                             try {
-                                await signInWithGooglePopup();
-                                router.push('/store');
-                            } catch (error) {
-                                setSignInError(getAuthErrorMessage(error, 'Sign in failed'));
+                                await startStoreGoogleSignIn({
+                                    router,
+                                    onError: setSignInError,
+                                });
+                            } catch {
+                                // Error message already handled in startStoreGoogleSignIn.
                             } finally {
                                 setIsSigningIn(false);
                             }
@@ -89,8 +147,14 @@ export default function RootAdminLayout({ children }) {
                             <path fill="#4CAF50" d="M24 44c5.168 0 9.86-1.977 13.409-5.192l-6.19-5.238C29.146 35.091 26.715 36 24 36c-5.189 0-9.625-3.327-11.287-7.946l-6.522 5.025C9.504 39.556 16.684 44 24 44z"/>
                             <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.046 12.046 0 0 1-4.084 5.57h.003l6.19 5.238C36.97 39.093 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/>
                         </svg>
-                        {isSigningIn ? 'Signing in...' : 'Sign in with Google'}
+                        {isSigningIn ? 'Redirecting to Google...' : 'Sign in with Google'}
                     </button>
+
+                    {isSigningIn ? (
+                        <p className="mt-3 text-xs text-slate-500">
+                            You will be sent to Google in this tab. Come back here after choosing your account.
+                        </p>
+                    ) : null}
 
                     <Link
                         href="/store/login"

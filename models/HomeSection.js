@@ -20,4 +20,6 @@ const HomeSectionSchema = new mongoose.Schema({
   sortOrder: { type: Number, default: 0 },
 }, { timestamps: true });
 
+HomeSectionSchema.index({ isActive: 1, sortOrder: 1 });
+
 export default mongoose.models.HomeSection || mongoose.model("HomeSection", HomeSectionSchema);

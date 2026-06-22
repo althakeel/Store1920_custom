@@ -1,8 +1,23 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useAuth } from '@/lib/useAuth';
 import toast from 'react-hot-toast';
+import PageSkeleton from '@/components/PageSkeleton';
+import NavbarPreview from '@/components/store/NavbarPreview';
+import {
+  Eye,
+  Loader2,
+  Menu,
+  Palette,
+  Save,
+  Settings2,
+  ShoppingCart,
+  Sparkles,
+  Store,
+  Heart,
+} from 'lucide-react';
 
 const createMenuItem = () => ({
   name: '',
@@ -570,211 +585,339 @@ export default function MenuManagementPage() {
   };
 
   if (loading) {
-    return <div className="p-6 text-slate-500">Loading menu settings...</div>;
+    return <PageSkeleton />;
   }
 
   if (!user) {
-    return <div className="p-6 text-slate-500">Please sign in to manage menu settings.</div>;
+    return (
+      <div className="mx-auto max-w-4xl p-6">
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-amber-950">
+          <p className="text-sm">Please sign in to manage menu settings.</p>
+          <Link href="/store/login" className="mt-4 inline-flex rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700">
+            Go to Store Login
+          </Link>
+        </div>
+      </div>
+    );
   }
 
+  const actionToggles = [
+    { key: 'store', label: 'Store action', icon: Store },
+    { key: 'wishlist', label: 'Wishlist action', icon: Heart },
+    { key: 'cart', label: 'Cart action', icon: ShoppingCart },
+  ];
+
+  const handleSaveSettings = async () => {
+    setSaving(true);
+    try {
+      const saveErrors = [];
+
+      try {
+        await saveNavbarBranding();
+      } catch (error) {
+        saveErrors.push(error?.message || 'Failed to save navbar branding');
+      }
+
+      try {
+        await saveSettings({
+          navMenuEnabled: form.navMenuEnabled,
+          navActionsVisibility: form.navActionsVisibility,
+        }, null);
+      } catch (error) {
+        saveErrors.push(error?.message || 'Failed to save settings');
+      }
+
+      if (saveErrors.length) {
+        throw new Error(saveErrors[0]);
+      }
+
+      toast.success('Settings saved');
+    } catch (error) {
+      toast.error(error?.message || 'Failed to save settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveMenu = async () => {
+    setSaving(true);
+    try {
+      await saveSettings({
+        navMenuItems: form.navMenuItems,
+      }, 'Menu saved');
+    } catch (error) {
+      toast.error(error?.message || 'Failed to save menu');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
-    <div className="max-w-5xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-900">Menu Management</h1>
-        <p className="mt-1 text-sm text-slate-500">Configure desktop navbar links, mega menus, and icon visibility.</p>
-      </div>
-
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setActivePanel('settings')}
-          className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
-            activePanel === 'settings'
-              ? 'bg-blue-600 text-white'
-              : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
-          }`}
-        >
-          Settings
-        </button>
-        <button
-          type="button"
-          onClick={() => setActivePanel('menu')}
-          className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
-            activePanel === 'menu'
-              ? 'bg-blue-600 text-white'
-              : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
-          }`}
-        >
-          Menu
-        </button>
-      </div>
-
-      {activePanel === 'settings' ? (
-      <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <div className="flex items-center justify-between">
+    <div className="-mx-3 -mt-3 min-h-full w-full max-w-full overflow-x-hidden bg-white pb-16 sm:-mx-4 sm:-mt-4 lg:-mx-5 lg:-mt-5">
+      <div className="border-b border-slate-200 bg-white">
+        <div className="flex w-full flex-col gap-4 px-4 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8 lg:py-6">
           <div>
-            <p className="text-sm font-semibold text-slate-800">Enable desktop menu</p>
-            <p className="text-xs text-slate-500">Navbar strip is shown only when enabled and menu has items.</p>
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
+              <Sparkles size={14} />
+              Navigation
+            </div>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+              Menu Management
+            </h1>
+            <p className="mt-1 text-sm text-slate-500">
+              Configure desktop navbar links, mega menus, logo, and icon visibility.
+            </p>
           </div>
-          <input
-            type="checkbox"
-            checked={form.navMenuEnabled}
-            onChange={(e) => setForm((prev) => ({ ...prev, navMenuEnabled: e.target.checked }))}
-            className="h-4 w-4"
-          />
+
+          <div className="flex flex-wrap items-center gap-3">
+            <Link
+              href="/store/storefront/navbar-menu"
+              className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+            >
+              Navbar layout
+            </Link>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={activePanel === 'settings' ? handleSaveSettings : handleSaveMenu}
+              className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+              {activePanel === 'settings' ? 'Save settings' : 'Save menu'}
+            </button>
+          </div>
         </div>
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-3">
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={form.navActionsVisibility.store}
-              onChange={(e) =>
-                setForm((prev) => ({
-                  ...prev,
-                  navActionsVisibility: { ...prev.navActionsVisibility, store: e.target.checked },
-                }))
-              }
-            />
-            Show store action
-          </label>
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={form.navActionsVisibility.wishlist}
-              onChange={(e) =>
-                setForm((prev) => ({
-                  ...prev,
-                  navActionsVisibility: { ...prev.navActionsVisibility, wishlist: e.target.checked },
-                }))
-              }
-            />
-            Show wishlist action
-          </label>
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={form.navActionsVisibility.cart}
-              onChange={(e) =>
-                setForm((prev) => ({
-                  ...prev,
-                  navActionsVisibility: { ...prev.navActionsVisibility, cart: e.target.checked },
-                }))
-              }
-            />
-            Show cart action
-          </label>
+        <div className="flex gap-2 border-t border-slate-100 px-4 pb-0 pt-3 sm:px-6 lg:px-8">
+          {[
+            { id: 'settings', label: 'Settings', icon: Settings2 },
+            { id: 'menu', label: 'Menu items', icon: Menu },
+          ].map((tab) => {
+            const Icon = tab.icon;
+            const active = activePanel === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActivePanel(tab.id)}
+                className={`inline-flex items-center gap-2 rounded-t-xl border-b-2 px-4 py-2.5 text-sm font-semibold transition ${
+                  active
+                    ? 'border-indigo-600 bg-indigo-50 text-indigo-700'
+                    : 'border-transparent text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                }`}
+              >
+                <Icon size={16} />
+                {tab.label}
+              </button>
+            );
+          })}
         </div>
       </div>
-      ) : null}
 
+      <div className="w-full px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
       {activePanel === 'settings' ? (
-      <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <div className="mb-4">
-          <p className="text-sm font-semibold text-slate-800">Navbar Branding</p>
-          <p className="text-xs text-slate-500">Upload navbar logo, set logo size, and change the main navbar background color.</p>
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-3">
-            <p className="text-xs font-medium text-slate-600">Navbar Logo</p>
-            <div className="flex items-center gap-3">
-              <label className="inline-flex cursor-pointer items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-                {uploadingNavbarLogo ? 'Uploading...' : 'Upload logo'}
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  disabled={uploadingNavbarLogo}
-                  onChange={(event) => uploadNavbarLogo(event.target.files?.[0])}
-                />
-              </label>
-              {navbarBranding.logoUrl ? (
-                <button
-                  type="button"
-                  onClick={() => setNavbarBranding((prev) => ({ ...prev, logoUrl: '' }))}
-                  className="rounded-lg border border-rose-300 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50"
-                >
-                  Remove
-                </button>
-              ) : null}
+        <div className="space-y-5">
+          <div className="overflow-visible rounded-2xl border border-slate-200 bg-white">
+            <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-5">
+              <Eye size={14} />
+              Navbar preview
             </div>
-
-            <div className="h-16 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-              {navbarBranding.logoUrl ? (
-                <img
-                  src={navbarBranding.logoUrl}
-                  alt="Navbar logo preview"
-                  className="h-full object-contain"
-                />
-              ) : (
-                <p className="text-xs text-slate-500">No custom logo uploaded</p>
-              )}
+            <div className="overflow-visible p-4 sm:p-5">
+              <NavbarPreview
+                backgroundColor={navbarBranding.backgroundColor || defaultNavbarBranding.backgroundColor}
+                logoUrl={navbarBranding.logoUrl}
+                logoWidth={navbarBranding.logoWidth}
+                logoHeight={navbarBranding.logoHeight}
+                navMenuEnabled={form.navMenuEnabled}
+                navMenuItems={form.navMenuItems}
+                navActionsVisibility={form.navActionsVisibility}
+                userName={user?.displayName || user?.email?.split('@')[0] || 'store1920'}
+                searchPlaceholder="Wireless Headphones"
+              />
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="space-y-1">
-              <span className="text-xs font-medium text-slate-600">Logo width</span>
-              <input
-                type="number"
-                min={20}
-                max={400}
-                value={navbarBranding.logoWidth}
-                onChange={(e) => setNavbarBranding((prev) => ({ ...prev, logoWidth: e.target.value }))}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-xs font-medium text-slate-600">Logo height</span>
-              <input
-                type="number"
-                min={10}
-                max={200}
-                value={navbarBranding.logoHeight}
-                onChange={(e) => setNavbarBranding((prev) => ({ ...prev, logoHeight: e.target.value }))}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              />
-            </label>
-
-            <label className="space-y-1 sm:col-span-2">
-              <span className="text-xs font-medium text-slate-600">Main navbar color</span>
-              <div className="flex items-center gap-2 rounded-lg border border-slate-300 px-2 py-1.5">
-                <input
-                  type="color"
-                  value={navbarBranding.backgroundColor}
-                  onChange={(e) => setNavbarBranding((prev) => ({ ...prev, backgroundColor: e.target.value }))}
-                  className="h-7 w-9 cursor-pointer rounded border-0 bg-transparent p-0"
-                />
-                <input
-                  type="text"
-                  value={navbarBranding.backgroundColor}
-                  onChange={(e) => setNavbarBranding((prev) => ({ ...prev, backgroundColor: e.target.value }))}
-                  className="w-full border-0 bg-transparent text-xs text-slate-700 outline-none"
-                />
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Enable desktop menu</p>
+                <p className="text-xs text-slate-500">Shown when enabled and menu has items.</p>
               </div>
-            </label>
+              <label className="relative inline-flex cursor-pointer items-center">
+                <input
+                  type="checkbox"
+                  checked={form.navMenuEnabled}
+                  onChange={(e) => setForm((prev) => ({ ...prev, navMenuEnabled: e.target.checked }))}
+                  className="peer sr-only"
+                />
+                <span className="h-6 w-11 rounded-full bg-slate-300 transition peer-checked:bg-indigo-600 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:after:translate-x-5" />
+              </label>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+              <h2 className="mb-4 text-sm font-semibold text-slate-900">Navbar actions</h2>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {actionToggles.map(({ key, label, icon: Icon }) => {
+                  const checked = form.navActionsVisibility[key];
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() =>
+                        setForm((prev) => ({
+                          ...prev,
+                          navActionsVisibility: {
+                            ...prev.navActionsVisibility,
+                            [key]: !checked,
+                          },
+                        }))
+                      }
+                      className={`rounded-xl border p-3 text-left transition ${
+                        checked
+                          ? 'border-indigo-300 bg-indigo-50 ring-2 ring-indigo-200'
+                          : 'border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <Icon size={16} className={checked ? 'text-indigo-600' : 'text-slate-400'} />
+                      <p className="mt-2 text-sm font-semibold text-slate-900">{label}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+              <div className="mb-4 flex items-center gap-2">
+                <Palette size={16} className="text-indigo-600" />
+                <h2 className="text-sm font-semibold text-slate-900">Navbar branding</h2>
+              </div>
+              <p className="mb-4 text-xs text-slate-500">Upload logo, set size, and change the navbar background color.</p>
+
+              <div className="grid gap-4 lg:grid-cols-[180px_minmax(0,1fr)]">
+                <div className="flex min-h-[120px] items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3">
+                  {navbarBranding.logoUrl ? (
+                    <img
+                      src={navbarBranding.logoUrl}
+                      alt="Navbar logo preview"
+                      className="max-h-16 max-w-full object-contain"
+                    />
+                  ) : (
+                    <p className="text-xs text-slate-400">No logo uploaded</p>
+                  )}
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex flex-wrap gap-2">
+                    <label className="inline-flex cursor-pointer items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                      {uploadingNavbarLogo ? 'Uploading...' : 'Upload logo'}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        disabled={uploadingNavbarLogo}
+                        onChange={(event) => uploadNavbarLogo(event.target.files?.[0])}
+                      />
+                    </label>
+                    {navbarBranding.logoUrl ? (
+                      <button
+                        type="button"
+                        onClick={() => setNavbarBranding((prev) => ({ ...prev, logoUrl: '' }))}
+                        className="rounded-lg border border-rose-300 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50"
+                      >
+                        Remove
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="block space-y-1">
+                      <span className="text-xs font-medium text-slate-600">Logo width</span>
+                      <input
+                        type="number"
+                        min={20}
+                        max={400}
+                        value={navbarBranding.logoWidth}
+                        onChange={(e) => setNavbarBranding((prev) => ({ ...prev, logoWidth: e.target.value }))}
+                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                      />
+                    </label>
+                    <label className="block space-y-1">
+                      <span className="text-xs font-medium text-slate-600">Logo height</span>
+                      <input
+                        type="number"
+                        min={10}
+                        max={200}
+                        value={navbarBranding.logoHeight}
+                        onChange={(e) => setNavbarBranding((prev) => ({ ...prev, logoHeight: e.target.value }))}
+                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                      />
+                    </label>
+                  </div>
+
+                  <label className="block space-y-1">
+                    <span className="text-xs font-medium text-slate-600">Main navbar color</span>
+                    <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-2 py-1.5">
+                      <input
+                        type="color"
+                        value={navbarBranding.backgroundColor}
+                        onChange={(e) => setNavbarBranding((prev) => ({ ...prev, backgroundColor: e.target.value }))}
+                        className="h-8 w-10 cursor-pointer rounded border-0 bg-transparent p-0"
+                      />
+                      <input
+                        type="text"
+                        value={navbarBranding.backgroundColor}
+                        onChange={(e) => setNavbarBranding((prev) => ({ ...prev, backgroundColor: e.target.value }))}
+                        className="w-full border-0 bg-transparent text-sm text-slate-700 outline-none"
+                      />
+                    </div>
+                  </label>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
       ) : null}
 
       {activePanel === 'menu' ? (
-      <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <div className="mb-4 flex items-center justify-between">
+      <div className="space-y-5">
+        <div className="overflow-visible rounded-2xl border border-slate-200 bg-white">
+          <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-5">
+            <Eye size={14} />
+            Navbar preview
+          </div>
+          <div className="overflow-visible p-4 sm:p-5">
+            <NavbarPreview
+              backgroundColor={navbarBranding.backgroundColor || defaultNavbarBranding.backgroundColor}
+              logoUrl={navbarBranding.logoUrl}
+              logoWidth={navbarBranding.logoWidth}
+              logoHeight={navbarBranding.logoHeight}
+              navMenuEnabled={form.navMenuEnabled}
+              navMenuItems={form.navMenuItems}
+              navActionsVisibility={form.navActionsVisibility}
+              userName={user?.displayName || user?.email?.split('@')[0] || 'store1920'}
+              searchPlaceholder="Coffee Maker"
+            />
+          </div>
+        </div>
+
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
           <div>
-            <p className="text-sm font-semibold text-slate-800">Navigation items</p>
-            <p className="text-xs text-slate-500">Each item can be a plain link, Collections flyout, or generic mega menu.</p>
-            <p className="mt-1 text-xs text-slate-500">Tip: Use Drag handle to reorder. Link can target category, product, existing page, or custom URL.</p>
+            <p className="text-sm font-semibold text-slate-900">Navigation items</p>
+            <p className="text-xs text-slate-500">Plain links, Collections flyouts, or mega menus. Drag to reorder.</p>
           </div>
           <button
             type="button"
             onClick={() => setForm((prev) => ({ ...prev, navMenuItems: [...prev.navMenuItems, createMenuItem()] }))}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            className="inline-flex items-center justify-center rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100"
           >
             Add item
           </button>
         </div>
+
+        <div className="p-4 sm:p-5">
 
         <div className="space-y-4">
           {form.navMenuItems.map((item, index) => (
@@ -793,7 +936,7 @@ export default function MenuManagementPage() {
                 setDragIndex(null);
                 setDropIndex(null);
               }}
-              className={`rounded-lg border bg-slate-50 p-4 transition ${dropIndex === index ? 'border-blue-300 ring-2 ring-blue-100' : 'border-slate-200'}`}
+              className={`rounded-xl border bg-slate-50/80 p-4 transition ${dropIndex === index ? 'border-indigo-300 ring-2 ring-indigo-100' : 'border-slate-200'}`}
             >
               <div className="mb-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -1308,72 +1451,10 @@ export default function MenuManagementPage() {
             </div>
           ))}
         </div>
+        </div>
+      </div>
       </div>
       ) : null}
-
-      <div className="flex gap-3">
-        {activePanel === 'settings' ? (
-          <button
-            type="button"
-            disabled={saving}
-            onClick={async () => {
-              setSaving(true);
-              try {
-                const saveErrors = [];
-
-                try {
-                  await saveNavbarBranding();
-                } catch (error) {
-                  saveErrors.push(error?.message || 'Failed to save navbar branding');
-                }
-
-                try {
-                  await saveSettings({
-                    navMenuEnabled: form.navMenuEnabled,
-                    navActionsVisibility: form.navActionsVisibility,
-                  }, null);
-                } catch (error) {
-                  saveErrors.push(error?.message || 'Failed to save settings');
-                }
-
-                if (saveErrors.length) {
-                  throw new Error(saveErrors[0]);
-                }
-
-                toast.success('Settings saved');
-              } catch (error) {
-                toast.error(error?.message || 'Failed to save settings');
-              } finally {
-                setSaving(false);
-              }
-            }}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-          >
-            {saving ? 'Saving...' : 'Save Settings'}
-          </button>
-        ) : null}
-
-        {activePanel === 'menu' ? (
-          <button
-            type="button"
-            disabled={saving}
-            onClick={async () => {
-              setSaving(true);
-              try {
-                await saveSettings({
-                  navMenuItems: form.navMenuItems,
-                }, 'Menu saved');
-              } catch (error) {
-                toast.error(error?.message || 'Failed to save menu');
-              } finally {
-                setSaving(false);
-              }
-            }}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-          >
-            {saving ? 'Saving...' : 'Save Menu'}
-          </button>
-        ) : null}
       </div>
     </div>
   );

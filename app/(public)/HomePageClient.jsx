@@ -9,14 +9,42 @@ import LatestProducts from '@/components/LatestProducts';
 import ShopShowcaseSection from '@/components/ShopShowcaseSection';
 import HomeCategories from '@/components/HomeCategories';
 import DeferredSection from '@/components/DeferredSection';
+import {
+  HomeBannerSkeleton,
+  HomeCategorySlidersSkeleton,
+  HomeExploreInterestsSkeleton,
+  HomeProductCarouselSkeleton,
+  HomeProductGridSkeleton,
+} from '@/components/home/HomeSectionSkeletons';
 
-const BannerSlider = dynamic(() => import('@/components/BannerSlider'), { ssr: false, loading: () => null });
-const BannerSlider2 = dynamic(() => import('@/components/BannerSlider2'), { ssr: false, loading: () => null });
-const Section3 = dynamic(() => import('@/components/section3'), { ssr: false, loading: () => null });
-const Section4 = dynamic(() => import('@/components/section4'), { ssr: false, loading: () => null });
-const CategoryInterestSection = dynamic(() => import('@/components/CategoryInterestSection'), { ssr: false, loading: () => null });
-const RecentSearchProducts = dynamic(() => import('@/components/RecentSearchProducts'), { ssr: false, loading: () => null });
-const RecommendedProducts = dynamic(() => import('@/components/RecommendedProducts'), { ssr: false, loading: () => null });
+const BannerSlider = dynamic(() => import('@/components/BannerSlider'), {
+  ssr: false,
+  loading: () => <HomeBannerSkeleton />,
+});
+const BannerSlider2 = dynamic(() => import('@/components/BannerSlider2'), {
+  ssr: false,
+  loading: () => <HomeBannerSkeleton />,
+});
+const Section3 = dynamic(() => import('@/components/section3'), {
+  ssr: false,
+  loading: () => <HomeProductGridSkeleton count={6} />,
+});
+const Section4 = dynamic(() => import('@/components/section4'), {
+  ssr: false,
+  loading: () => <HomeCategorySlidersSkeleton sections={2} />,
+});
+const CategoryInterestSection = dynamic(() => import('@/components/CategoryInterestSection'), {
+  ssr: false,
+  loading: () => <HomeExploreInterestsSkeleton productCount={6} />,
+});
+const RecentSearchProducts = dynamic(() => import('@/components/RecentSearchProducts'), {
+  ssr: false,
+  loading: () => <HomeProductGridSkeleton count={6} />,
+});
+const RecommendedProducts = dynamic(() => import('@/components/RecommendedProducts'), {
+  ssr: false,
+  loading: () => <HomeProductCarouselSkeleton count={6} />,
+});
 
 export default function HomePageClient({ initialData }) {
   const {
@@ -61,14 +89,14 @@ export default function HomePageClient({ initialData }) {
   return (
     <>
       <HeroBannerSlider showcaseConfig={shopShowcaseConfig} showcaseReady />
-      <div className={`${HOME_SECTION_STACK_CLASS} pb-6 sm:pb-8`}>
+      <div className={`${HOME_SECTION_STACK_CLASS} w-full min-w-0 pb-6 sm:pb-8`}>
         <ShopShowcaseSection
           initialShowcaseData={shopShowcase}
           initialStoreSettings={storeSettings}
           skipInitialFetch
         />
         {showSecondaryBannerAt('below_small_banners') && <BannerSlider2 config={shopShowcaseConfig} />}
-        {showHeroCategories && <HomeCategories />}
+        {showHeroCategories ? <HomeCategories /> : null}
         <LatestProducts
           initialProducts={featuredProducts.products}
           initialSectionTitle={featuredProducts.sectionTitle}
@@ -78,7 +106,7 @@ export default function HomePageClient({ initialData }) {
         {featuredSections.length === 0 && <BannerSlider config={shopShowcaseConfig} />}
         {showSecondaryBannerAt('above_top_deals') && <BannerSlider2 config={shopShowcaseConfig} />}
 
-        <DeferredSection minHeight={320}>
+        <DeferredSection minHeight={320} placeholder={<HomeProductGridSkeleton count={6} />}>
           <Section3
             homeSections={homeSections}
             sectionsLoading={false}
@@ -90,18 +118,21 @@ export default function HomePageClient({ initialData }) {
         {showSecondaryBannerAt('below_top_deals') && <BannerSlider2 config={shopShowcaseConfig} />}
 
         {featuredSections.length > 0 && (
-          <DeferredSection minHeight={280}>
+          <DeferredSection
+            minHeight={280}
+            placeholder={<HomeCategorySlidersSkeleton sections={Math.min(featuredSections.length, 2)} />}
+          >
             <Section4 sections={featuredSections} loading={false} />
           </DeferredSection>
         )}
 
-        <DeferredSection minHeight={260}>
+        <DeferredSection minHeight={260} placeholder={<HomeExploreInterestsSkeleton productCount={6} />}>
           <CategoryInterestSection />
         </DeferredSection>
-        <DeferredSection minHeight={220}>
+        <DeferredSection minHeight={220} placeholder={<HomeProductGridSkeleton count={6} />}>
           <RecentSearchProducts />
         </DeferredSection>
-        <DeferredSection minHeight={220}>
+        <DeferredSection minHeight={220} placeholder={<HomeProductCarouselSkeleton count={6} />}>
           <RecommendedProducts />
         </DeferredSection>
       </div>

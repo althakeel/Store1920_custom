@@ -18,28 +18,12 @@ export async function GET(request) {
 
     await connectDB();
 
-    console.log('=== COUPONS API GET ===');
-    console.log('Requested storeId:', storeId);
-
     const now = new Date();
-    
-    // Get all coupons for this store - both active and expired (for display)
-    const allCoupons = await Coupon.find({ storeId }).lean();
-    console.log('Total coupons for this storeId:', allCoupons.length);
-    
-    // Also check if coupons exist with different storeId format
-    const allCouponsAnyStore = await Coupon.find({}).lean();
-    console.log('Total coupons in entire DB:', allCouponsAnyStore.length);
-    
-    if (allCouponsAnyStore.length > 0 && allCoupons.length === 0) {
-      console.warn('⚠️ STOREID MISMATCH DETECTED!');
-      console.warn('Coupons exist but with different storeId:');
-      allCouponsAnyStore.forEach(c => {
-        console.warn(`  - ${c.code}: storeId="${c.storeId}" (requested: "${storeId}")`);
-      });
-    }
-    
-    // Separate active and expired coupons
+
+    const allCoupons = await Coupon.find({ storeId })
+      .select('code title description discountType discountValue discount minOrderValue minPrice maxDiscount badgeColor specificProducts expiresAt isActive usedCount maxUses freeShipping')
+      .lean();
+
     const coupons = allCoupons
       .filter(c => c.isActive)
       .map(coupon => {
@@ -66,8 +50,6 @@ export async function GET(request) {
           status: isExpired ? 'expired' : isExhausted ? 'exhausted' : 'active',
         };
       });
-
-    console.log('Active coupons found:', coupons.length, coupons.map(c => ({ code: c.code, status: c.status })));
 
     return NextResponse.json({ success: true, coupons });
   } catch (error) {

@@ -1,6 +1,6 @@
 'use client'
 
-import { StarIcon, Share2Icon, HeartIcon, MinusIcon, PlusIcon, ShoppingCartIcon, Trash2, Check } from "lucide-react";
+import { StarIcon, Share2Icon, HeartIcon, MinusIcon, PlusIcon, ShoppingCartIcon, Trash2, Check, ChevronLeft, ChevronRight, X, Truck } from "lucide-react";
 import Image from "next/image";
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { createPortal } from "react-dom";
@@ -15,8 +15,11 @@ import ProductCard from "./ProductCard";
 import ProductCarousel from "./ProductCarousel";
 import ProductDescription from "./ProductDescription";
 import ProductReviewsSection from "./ProductReviewsSection";
+import BnplLogo from "./BnplLogo";
+import PayLaterModal from "./PayLaterModal";
 import { useAuth } from '@/lib/useAuth';
 import { trackMetaEvent } from "@/lib/metaPixelClient";
+import { getStorefrontLocale, formatLocalizedNumber } from '@/lib/storefrontMarket';
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
 import { useStorefrontI18n } from '@/lib/useStorefrontI18n';
 import { trackCustomerEvent } from '@/lib/trackingClient';
@@ -89,13 +92,12 @@ const DEFAULT_BADGE_STYLES = [
   { label: 'Free Shipping', backgroundColor: '#007185', textColor: '#ffffff', borderRadius: 0 }
 ];
 
-const ProductDetails = ({ product, reviews = [], loadingReviews = false, onReviewAdded, hideTitle = false, offerData = null, recommendedProducts = [] }) => {
-  // Assume product loading state from redux if available
-  const loading = useSelector(state => state.product?.status === 'loading');
-  const { market, convertPrice } = useStorefrontMarket();
+const ProductDetails = ({ product, reviews = [], loadingReviews = false, onReviewAdded, hideTitle = false, offerData = null, recommendedProducts = [], initialFbt = null, reviewsPreloaded = false, fbtPreloaded = false }) => {
+  const { market, convertPrice, formatMoney: formatMarketMoney, formatNumber } = useStorefrontMarket();
   const { t, isArabic, language } = useStorefrontI18n();
   const currency = market.currency;
-  const formatMoney = (amount) => `${currency} ${Number(amount || 0).toFixed(2)}`;
+  const formatMoney = (amount, alreadyConverted = false) => formatMarketMoney(amount, { language, alreadyConverted });
+  const formatCount = (value, options) => formatNumber(value, language, options);
 
   const renderSplitPrice = (amount, options = {}) => {
     const {
@@ -104,6 +106,19 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       decimalClass = 'text-[16px] font-semibold',
       wrapperClass = 'inline-flex items-start leading-none tracking-[-0.01em]'
     } = options;
+
+    if (isArabic) {
+      const label = options.useRegular
+        ? (storedRegularPriceAr || formatMoney(amount, true))
+        : (storedSalePriceAr || formatMoney(amount, true));
+      return (
+        <bdi dir="rtl" className={wrapperClass}>
+          <span className={`${mainClass} text-slate-900`}>
+            {label}
+          </span>
+        </bdi>
+      );
+    }
 
     const [mainPart, decimalPart] = Number(amount || 0).toFixed(2).split('.');
 
@@ -124,7 +139,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     cutoffHour: 23,
     cutoffMinute: 0,
     deliveryMinDays: 2,
-    deliveryMaxDays: 5,
+    deliveryMaxDays: 3,
     badgeSettings: {
       badges: DEFAULT_BADGE_STYLES
     }
@@ -149,12 +164,17 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const [showRatingBreakdown, setShowRatingBreakdown] = useState(false);
   const ratingBreakdownRef = useRef(null);
   const [addedToCart, setAddedToCart] = useState(false);
-  const [showPayLaterModal, setShowPayLaterModal] = useState(false);
+  const [payLaterProvider, setPayLaterProvider] = useState(null);
   const [categoryMap, setCategoryMap] = useState({});
-  const { isSignedIn, userId } = useAuth();
+  const { user, getToken } = useAuth();
+  const isSignedIn = Boolean(user);
+  const userId = user?.uid || null;
 
   useEffect(() => {
     let mounted = true;
+    let idleId;
+    let timerId;
+
     const loadProductPageInfo = async () => {
       try {
         const { data } = await axios.get('/api/store/appearance/sections/public');
@@ -167,9 +187,22 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
         // keep defaults
       }
     };
-    loadProductPageInfo();
+
+    const scheduleLoad = () => {
+      if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+        idleId = window.requestIdleCallback(() => loadProductPageInfo(), { timeout: 3000 });
+      } else {
+        timerId = window.setTimeout(loadProductPageInfo, 1500);
+      }
+    };
+
+    scheduleLoad();
     return () => {
       mounted = false;
+      if (idleId && typeof window !== 'undefined' && 'cancelIdleCallback' in window) {
+        window.cancelIdleCallback(idleId);
+      }
+      if (timerId) window.clearTimeout(timerId);
     };
   }, []);
 
@@ -180,25 +213,58 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     return () => clearInterval(timer);
   }, []);
 
-  const deliveryRangeText = useMemo(() => {
-    const minDays = Number(productPageInfo.deliveryMinDays || 0);
-    const maxDays = Number(productPageInfo.deliveryMaxDays || 0);
-    const startDate = new Date(timeNow);
-    const endDate = new Date(timeNow);
-    startDate.setDate(startDate.getDate() + minDays);
-    endDate.setDate(endDate.getDate() + Math.max(minDays, maxDays));
+  const deliveryWindow = useMemo(() => {
+    const minDays = Math.max(1, Number(productPageInfo.deliveryMinDays ?? 2));
+    const maxDays = Math.max(minDays, Number(productPageInfo.deliveryMaxDays ?? 3));
 
-    const locale = language === 'ar' ? 'ar-AE' : 'en-GB';
-    const startDay = startDate.toLocaleDateString(locale, { day: 'numeric' });
-    const endDay = endDate.toLocaleDateString(locale, { day: 'numeric' });
+    const today = new Date(timeNow);
+    today.setHours(0, 0, 0, 0);
+
+    const startDate = new Date(today);
+    const endDate = new Date(today);
+    startDate.setDate(startDate.getDate() + minDays);
+    endDate.setDate(endDate.getDate() + maxDays);
+
+    const locale = getStorefrontLocale(market.code, language);
+    const startDay = formatLocalizedNumber(startDate.getDate(), market.code, language, { maximumFractionDigits: 0 });
+    const endDay = formatLocalizedNumber(endDate.getDate(), market.code, language, { maximumFractionDigits: 0 });
     const startMonth = startDate.toLocaleDateString(locale, { month: 'short' });
     const endMonth = endDate.toLocaleDateString(locale, { month: 'short' });
 
-    if (startMonth === endMonth) {
-      return `${startDay}-${endDay} ${startMonth}`;
+    let rangeText;
+    if (startDate.getTime() === endDate.getTime()) {
+      rangeText = `${startDay} ${startMonth}`;
+    } else if (startMonth === endMonth) {
+      rangeText = `${startDay}-${endDay} ${startMonth}`;
+    } else {
+      rangeText = `${startDay} ${startMonth} - ${endDay} ${endMonth}`;
     }
-    return `${startDay} ${startMonth} - ${endDay} ${endMonth}`;
-  }, [productPageInfo.deliveryMinDays, productPageInfo.deliveryMaxDays, timeNow, language]);
+
+    return { minDays, maxDays, rangeText };
+  }, [productPageInfo.deliveryMinDays, productPageInfo.deliveryMaxDays, timeNow, language, market.code]);
+
+  const deliverySummary = useMemo(() => {
+    const { minDays, maxDays, rangeText } = deliveryWindow;
+
+    if (isArabic) {
+      const daysText = minDays === maxDays
+        ? `خلال ${minDays} أيام`
+        : `خلال ${minDays}-${maxDays} أيام`;
+      return {
+        primary: `توصيل مجاني ${rangeText}`,
+        secondary: `اطلب الآن — استلمه ${daysText}`,
+      };
+    }
+
+    const daysText = minDays === maxDays
+      ? `within ${minDays} days`
+      : `in ${minDays}-${maxDays} days`;
+
+    return {
+      primary: `FREE delivery by ${rangeText}`,
+      secondary: `Order now — get it ${daysText}`,
+    };
+  }, [deliveryWindow, isArabic]);
 
   const buyboxCopy = useMemo(() => {
     if (isArabic) {
@@ -235,37 +301,54 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     }, {});
   }, [productPageInfo?.badgeSettings?.badges]);
 
-  const orderWithinText = useMemo(() => {
-    const target = new Date(timeNow);
-    target.setHours(Number(productPageInfo.cutoffHour || 0), Number(productPageInfo.cutoffMinute || 0), 0, 0);
-    if (target.getTime() <= timeNow.getTime()) {
-      target.setDate(target.getDate() + 1);
-    }
-    const diffMs = target.getTime() - timeNow.getTime();
-    const hours = Math.floor(diffMs / (1000 * 60 * 60));
-    const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-    return t('product.durationHoursMins', { hours, mins });
-  }, [productPageInfo.cutoffHour, productPageInfo.cutoffMinute, timeNow, t]);
-
-  const cutoffDisplayText = useMemo(() => {
-    const d = new Date(timeNow);
-    d.setHours(Number(productPageInfo.cutoffHour || 0), Number(productPageInfo.cutoffMinute || 0), 0, 0);
-    const locale = language === 'ar' ? 'ar-AE' : 'en-US';
-    return d.toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit', hour12: true });
-  }, [productPageInfo.cutoffHour, productPageInfo.cutoffMinute, timeNow, language]);
-
   // Fetch all categories once to resolve IDs → {name, parentId}
   useEffect(() => {
-    fetch('/api/categories')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (!data?.categories) return;
+    let mounted = true;
+    const cacheKey = `product-category-map:${language}`;
+    const cacheTtlMs = 10 * 60 * 1000;
+
+    try {
+      const cachedRaw = sessionStorage.getItem(cacheKey);
+      if (cachedRaw) {
+        const cached = JSON.parse(cachedRaw);
+        if (cached?.expiresAt > Date.now() && cached?.map) {
+          setCategoryMap(cached.map);
+          return () => {
+            mounted = false;
+          };
+        }
+      }
+    } catch {
+      // Ignore cache read failures.
+    }
+
+    fetch('/api/categories', { credentials: 'same-origin' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!mounted || !data?.categories) return;
         const map = {};
-        data.categories.forEach(c => { map[c._id] = { name: c.name, parentId: c.parentId || null }; });
+        data.categories.forEach((c) => {
+          map[c._id] = {
+            name: c.name,
+            nameAr: c.nameAr || '',
+            parentId: c.parentId || null,
+          };
+        });
         setCategoryMap(map);
+        try {
+          sessionStorage.setItem(cacheKey, JSON.stringify({
+            map,
+            expiresAt: Date.now() + cacheTtlMs,
+          }));
+        } catch {
+          // Ignore cache write failures.
+        }
       })
       .catch(() => {});
-  }, []);
+    return () => {
+      mounted = false;
+    };
+  }, [language]);
   const router = useRouter();
   const dispatch = useDispatch();
   const cartCount = useSelector((state) => state.cart.total);
@@ -328,23 +411,32 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   };
 
   // FBT (Frequently Bought Together) state
-  const [fbtProducts, setFbtProducts] = useState([]);
-  const [fbtEnabled, setFbtEnabled] = useState(false);
-  const [fbtBundlePrice, setFbtBundlePrice] = useState(0);
-  const [fbtBundleDiscount, setFbtBundleDiscount] = useState(0);
-  const [selectedFbtProducts, setSelectedFbtProducts] = useState({});
-  const [loadingFbt, setLoadingFbt] = useState(false);
+  const [fbtProducts, setFbtProducts] = useState(() => (fbtPreloaded && initialFbt?.products ? initialFbt.products : []));
+  const [fbtEnabled, setFbtEnabled] = useState(() => Boolean(fbtPreloaded && initialFbt?.enableFBT));
+  const [fbtBundlePrice, setFbtBundlePrice] = useState(() => (fbtPreloaded ? Number(initialFbt?.bundlePrice || 0) : 0));
+  const [fbtBundleDiscount, setFbtBundleDiscount] = useState(() => (fbtPreloaded ? Number(initialFbt?.bundleDiscount || 0) : 0));
+  const [selectedFbtProducts, setSelectedFbtProducts] = useState(() => {
+    if (!fbtPreloaded || !initialFbt?.products?.length) return {};
+    const initialSelection = {};
+    initialFbt.products.forEach((item) => {
+      initialSelection[item._id] = true;
+    });
+    return initialSelection;
+  });
+  const [loadingFbt, setLoadingFbt] = useState(() => !fbtPreloaded);
   const [showFbtPopup, setShowFbtPopup] = useState(false);
   const fbtViewedEventSent = useRef(false);
 
   const isValidFbtPrice = (value) => Number.isFinite(Number(value)) && Number(value) >= 0;
 
   // Review state and fetching logic
-  const [fetchedReviews, setFetchedReviews] = useState([]);
+  const [fetchedReviews, setFetchedReviews] = useState(() => (reviewsPreloaded ? reviews : []));
   const [loadingReviewsLocal, setLoadingReviewsLocal] = useState(false);
 
   // Use fetched reviews if available, else prop
-  const reviewsToUse = fetchedReviews.length > 0 ? fetchedReviews : reviews;
+  const reviewsToUse = reviewsPreloaded
+    ? reviews
+    : (fetchedReviews.length > 0 ? fetchedReviews : reviews);
   const averageRating = reviewsToUse.length > 0
     ? reviewsToUse.reduce((acc, item) => acc + (item.rating || 0), 0) / reviewsToUse.length
     : (typeof product.averageRating === 'number' ? product.averageRating : 0);
@@ -390,6 +482,8 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   }, [router]);
 
   useEffect(() => {
+    if (reviewsPreloaded) return;
+
     const fetchReviews = async () => {
       try {
         setLoadingReviewsLocal(true);
@@ -402,10 +496,12 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       }
     };
     fetchReviews();
-  }, [product._id]);
+  }, [product._id, reviewsPreloaded]);
 
   // Fetch FBT products
   useEffect(() => {
+    if (fbtPreloaded) return;
+
     fbtViewedEventSent.current = false;
 
     const fetchFbtProducts = async () => {
@@ -459,7 +555,25 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     };
     
     fetchFbtProducts();
-  }, [product._id]);
+  }, [product._id, fbtPreloaded]);
+
+  useEffect(() => {
+    if (!fbtPreloaded || !fbtEnabled || fbtProducts.length === 0 || fbtViewedEventSent.current) return;
+
+    pushDataLayerEvent('fbt_viewed', {
+      currency: 'AED',
+      items: fbtProducts.map((p) => ({
+        item_id: String(p._id),
+        item_name: p.name || 'Product',
+        price: Number(p.price || 0),
+        quantity: 1,
+      })),
+    });
+    trackCustomerBehavior('fbt_viewed', {
+      relatedProductIds: fbtProducts.map((p) => String(p._id)),
+    });
+    fbtViewedEventSent.current = true;
+  }, [fbtPreloaded, fbtEnabled, fbtProducts, product?.storeId]);
 
   // Variants support
   const variants = Array.isArray(product.variants) ? product.variants : [];
@@ -533,13 +647,26 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     : 0;
   const convertedEffPrice = convertPrice(effPrice);
   const convertedEffAED = convertPrice(effAED);
-  const installmentAmount = (Number(convertedEffPrice || 0) / 4).toFixed(2);
+  const savingsAmount = Math.max(0, Number(convertedEffAED || 0) - Number(convertedEffPrice || 0));
+  const tabbyInstallmentAmount = Number(convertedEffPrice || 0) / 12;
+  const tamaraInstallmentAmount = Number(convertedEffPrice || 0) / 4;
+  const storedSalePriceAr = String(product?.attributes?.priceAr || '').trim();
+  const storedRegularPriceAr = String(product?.attributes?.AEDAr || '').trim();
+  const displaySalePrice = isArabic && storedSalePriceAr
+    ? storedSalePriceAr
+    : formatMoney(convertedEffPrice, true);
+  const displayRegularPrice = isArabic && storedRegularPriceAr
+    ? storedRegularPriceAr
+    : formatMoney(convertedEffAED, true);
+  const displayTabbyInstallmentAmount = formatMoney(tabbyInstallmentAmount, true);
+  const displayTamaraInstallmentAmount = formatMoney(tamaraInstallmentAmount, true);
+  const displaySavingsAmount = formatMoney(savingsAmount, true);
   const tabbyPromoSelector = `#tabbyPromoProduct-${String(product?._id || product?.id || 'default')}`;
   const tabbyPublicKey = process.env.NEXT_PUBLIC_TABBY_PUBLIC_KEY || '';
   const tabbyMerchantCode = process.env.NEXT_PUBLIC_TABBY_MERCHANT_CODE || process.env.TABBY_MERCHANT_CODE || 'Store1920';
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined') return undefined;
 
     const initTabbyPromo = () => {
       if (!window.TabbyPromo || !tabbyPublicKey || !tabbyMerchantCode) return;
@@ -563,23 +690,58 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       }
     };
 
-    if (window.TabbyPromo) {
-      initTabbyPromo();
-      return;
+    const loadTabbyScript = () => {
+      if (window.TabbyPromo) {
+        initTabbyPromo();
+        return;
+      }
+
+      const existing = document.querySelector('script[data-tabby-promo="true"]');
+      if (existing) {
+        existing.addEventListener('load', initTabbyPromo, { once: true });
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = 'https://checkout.tabby.ai/tabby-promo.js';
+      script.async = true;
+      script.dataset.tabbyPromo = 'true';
+      script.onload = initTabbyPromo;
+      document.body.appendChild(script);
+    };
+
+    const node = document.querySelector(tabbyPromoSelector);
+    if (!node) return undefined;
+
+    let observer;
+    let idleId;
+    let timerId;
+
+    const scheduleLoad = () => {
+      if ('requestIdleCallback' in window) {
+        idleId = window.requestIdleCallback(loadTabbyScript, { timeout: 4000 });
+      } else {
+        timerId = window.setTimeout(loadTabbyScript, 2000);
+      }
+    };
+
+    if ('IntersectionObserver' in window) {
+      observer = new IntersectionObserver((entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        observer?.disconnect();
+        scheduleLoad();
+      }, { rootMargin: '240px' });
+      observer.observe(node);
+    } else {
+      scheduleLoad();
     }
 
-    const script = document.createElement('script');
-    script.src = 'https://checkout.tabby.ai/tabby-promo.js';
-    script.async = true;
-    script.onload = initTabbyPromo;
-    document.body.appendChild(script);
+    return () => {
+      observer?.disconnect();
+      if (idleId && 'cancelIdleCallback' in window) window.cancelIdleCallback(idleId);
+      if (timerId) window.clearTimeout(timerId);
+    };
   }, [tabbyPromoSelector, convertedEffPrice, isArabic, tabbyPublicKey, tabbyMerchantCode, currency]);
-
-  const deliveredByText = String(
-    product?.attributes?.deliveredBy ??
-    product?.deliveryInfo?.deliveredBy ??
-    ''
-  ).trim();
 
   const soldByText = String(
     product?.attributes?.soldBy ??
@@ -588,22 +750,40 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     ''
   ).trim();
 
-  const hasSellerMeta = Boolean(deliveredByText || soldByText);
-  const soldUnitsRaw = product?.attributes?.sold ?? product?.sold ?? product?.soldCount ?? product?.orderCount;
-  const soldUnits = Number.isFinite(Number(soldUnitsRaw)) ? Number(soldUnitsRaw) : 0;
   const displaySellerName = soldByText || product?.store?.name || 'Store1920';
-  const safeProductName = sanitizeDisplayText(product?.name || product?.title || t('common.untitledProduct'));
+  const localizedProductName = (isArabic && String(product?.nameAr || '').trim())
+    ? product.nameAr
+    : (product?.name || product?.title || '');
+  const safeProductName = sanitizeDisplayText(localizedProductName || t('common.untitledProduct'));
+  const localizedShortDescription = sanitizeDisplayText(
+    (isArabic && String(product?.shortDescriptionAr || '').trim())
+      ? product.shortDescriptionAr
+      : (product?.shortDescription || product?.attributes?.shortDescription || '')
+  );
+  const localizedShortDescription2 = sanitizeDisplayText(
+    (isArabic
+      ? (product?.attributes?.shortDescription2Ar || product?.shortDescription2Ar || product?.shortDescription2 || product?.attributes?.shortDescription2 || '')
+      : (product?.shortDescription2 || product?.attributes?.shortDescription2 || '')
+    ).replace(/<[^>]*>/g, ' ')
+  );
+  const mobileShortDescription = localizedShortDescription || localizedShortDescription2;
   const safeDisplaySellerName = sanitizeDisplayText(displaySellerName);
+  const mobileProductBrand = sanitizeDisplayText(
+    (isArabic && String(product?.brandAr || '').trim())
+      ? product.brandAr
+      : (product?.brand || '')
+  );
+  const mobileArrivalDate = deliveryWindow.rangeText.includes('-')
+    ? deliveryWindow.rangeText.split('-').pop()?.trim() || deliveryWindow.rangeText
+    : deliveryWindow.rangeText;
+  const qualifiesForFreeMobileDelivery =
+    Boolean(product?.freeShippingEligible) || Number(effPrice || 0) >= 100;
+  const mobileDeliveryFeeLabel = qualifiesForFreeMobileDelivery
+    ? t('product.mobile.freeDeliveryFee')
+    : t('product.mobile.deliveryFee', { amount: formatMoney(convertPrice(15), true) });
   const selectedVariantLabel = [selectedColor, selectedSize]
     .filter(Boolean)
     .join(' • ') || (selectedBundleQty ? `Bundle ${selectedBundleQty}` : 'Default');
-  const formatSoldCount = (count) => {
-    const value = Number(count || 0);
-    if (!Number.isFinite(value) || value <= 0) return '0';
-    if (value >= 1000000) return `${(value / 1000000).toFixed(value >= 10000000 ? 0 : 1).replace(/\.0$/, '')}m`;
-    if (value >= 1000) return `${(value / 1000).toFixed(value >= 10000 ? 0 : 1).replace(/\.0$/, '')}k`;
-    return `${Math.round(value)}`;
-  };
 
   // Helper to check if a color+size combination has stock
   const isVariantInStock = (color, size) => {
@@ -674,6 +854,8 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const [zoomPos, setZoomPos] = useState({ x: 0.5, y: 0.5 });
   const [zoomPanelPos, setZoomPanelPos] = useState({ top: 0, left: 0, height: 0, width: 0, panelSize: 420 });
   const [zoomPortalReady, setZoomPortalReady] = useState(false);
+  const [showFullViewGallery, setShowFullViewGallery] = useState(false);
+  const [fullViewIndex, setFullViewIndex] = useState(0);
 
   useEffect(() => {
     setZoomPortalReady(true);
@@ -745,6 +927,168 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
           pointerEvents: 'none',
         }}
       />,
+      document.body
+    );
+  };
+
+  const openFullViewGallery = useCallback(() => {
+    setFullViewIndex(activeMediaIndex);
+    setShowZoom(false);
+    setShowFullViewGallery(true);
+  }, [activeMediaIndex]);
+
+  const closeFullViewGallery = useCallback(() => {
+    setActiveMediaIndex(fullViewIndex);
+    setShowFullViewGallery(false);
+  }, [fullViewIndex]);
+
+  const goToPreviousFullView = useCallback(() => {
+    if (mediaGallery.length <= 1) return;
+    setFullViewIndex((prev) => (prev - 1 + mediaGallery.length) % mediaGallery.length);
+  }, [mediaGallery.length]);
+
+  const goToNextFullView = useCallback(() => {
+    if (mediaGallery.length <= 1) return;
+    setFullViewIndex((prev) => (prev + 1) % mediaGallery.length);
+  }, [mediaGallery.length]);
+
+  useEffect(() => {
+    if (!showFullViewGallery) return undefined;
+
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') closeFullViewGallery();
+      if (event.key === 'ArrowLeft') goToPreviousFullView();
+      if (event.key === 'ArrowRight') goToNextFullView();
+    };
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [showFullViewGallery, closeFullViewGallery, goToPreviousFullView, goToNextFullView]);
+
+  const renderFullViewGallery = () => {
+    if (!showFullViewGallery || !zoomPortalReady || mediaGallery.length === 0) return null;
+
+    const current = mediaGallery[fullViewIndex] || mediaGallery[0];
+
+    return createPortal(
+      <div
+        className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/92 p-4"
+        onClick={closeFullViewGallery}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Product image gallery"
+      >
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            closeFullViewGallery();
+          }}
+          className="absolute right-4 top-4 z-10 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/20"
+          aria-label="Close gallery"
+        >
+          <X size={22} />
+        </button>
+
+        {mediaGallery.length > 1 ? (
+          <>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                goToPreviousFullView();
+              }}
+              className="absolute left-3 top-1/2 z-10 inline-flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white/15 text-white transition hover:bg-white/25 sm:left-6"
+              aria-label="Previous image"
+            >
+              <ChevronLeft size={28} />
+            </button>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                goToNextFullView();
+              }}
+              className="absolute right-3 top-1/2 z-10 inline-flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white/15 text-white transition hover:bg-white/25 sm:right-6"
+              aria-label="Next image"
+            >
+              <ChevronRight size={28} />
+            </button>
+          </>
+        ) : null}
+
+        <div
+          className="relative flex h-[min(85vh,900px)] w-full max-w-5xl items-center justify-center"
+          onClick={(event) => event.stopPropagation()}
+        >
+          {current?.type === 'video' ? (
+            <video
+              key={current.src}
+              src={current.src}
+              poster={current.poster || PLACEHOLDER_IMAGE}
+              controls
+              playsInline
+              preload="metadata"
+              className="max-h-[85vh] max-w-full rounded-lg"
+            />
+          ) : (
+            <Image
+              src={current?.src || PLACEHOLDER_IMAGE}
+              alt={`${safeProductName} ${fullViewIndex + 1}`}
+              width={1200}
+              height={1200}
+              className="max-h-[85vh] w-auto max-w-full object-contain"
+              priority
+              onError={(event) => { event.currentTarget.src = PLACEHOLDER_IMAGE; }}
+            />
+          )}
+        </div>
+
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 rounded-full bg-black/55 px-4 py-1.5 text-sm font-medium text-white">
+          {fullViewIndex + 1} / {mediaGallery.length}
+        </div>
+
+        {mediaGallery.length > 1 ? (
+          <div className="absolute bottom-16 left-1/2 flex max-w-[min(90vw,640px)] -translate-x-1/2 gap-2 overflow-x-auto px-2 py-1 scrollbar-hide">
+            {mediaGallery.map((item, index) => (
+              <button
+                key={`fullview-thumb-${item.src}-${index}`}
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setFullViewIndex(index);
+                }}
+                className={`relative h-14 w-14 shrink-0 overflow-hidden rounded-md border-2 transition ${
+                  fullViewIndex === index ? 'border-orange-500' : 'border-white/30 hover:border-white/60'
+                }`}
+                aria-label={`View image ${index + 1}`}
+              >
+                <Image
+                  src={item.poster || item.src || PLACEHOLDER_IMAGE}
+                  alt=""
+                  width={56}
+                  height={56}
+                  className="h-full w-full object-cover"
+                  onError={(event) => { event.currentTarget.src = PLACEHOLDER_IMAGE; }}
+                />
+                {item.type === 'video' ? (
+                  <span className="absolute inset-0 flex items-center justify-center bg-black/30">
+                    <svg className="h-4 w-4 text-white" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                  </span>
+                ) : null}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>,
       document.body
     );
   };
@@ -839,6 +1183,15 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     checkWishlistStatus();
   }, [isSignedIn, product._id]);
 
+  useEffect(() => {
+    const handleWishlistUpdate = () => {
+      checkWishlistStatus();
+    };
+
+    window.addEventListener('wishlistUpdated', handleWishlistUpdate);
+    return () => window.removeEventListener('wishlistUpdated', handleWishlistUpdate);
+  }, [isSignedIn, product._id, user]);
+
   // Close share menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -869,20 +1222,26 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   }, []);
 
   const checkWishlistStatus = async () => {
+    const productId = String(product?._id || product?.id || '').trim();
+    if (!productId) {
+      setIsInWishlist(false);
+      return;
+    }
+
     try {
       if (isSignedIn) {
         // Check server wishlist for signed-in users
-        const token = await user?.getIdToken?.();
+        const token = await getToken();
         if (!token) return;
         const { data } = await axios.get('/api/wishlist', {
           headers: { Authorization: `Bearer ${token}` },
         });
-        const isInList = data.wishlist?.some(item => item.productId === product._id);
+        const isInList = data.wishlist?.some((item) => String(item?.productId) === productId);
         setIsInWishlist(isInList);
       } else {
         // Check localStorage for guests
         const guestWishlist = JSON.parse(localStorage.getItem('guestWishlist') || '[]');
-        const isInList = guestWishlist.some(item => item && item.productId === product._id);
+        const isInList = guestWishlist.some((item) => item && String(item.productId) === productId);
         setIsInWishlist(isInList);
       }
     } catch (error) {
@@ -899,10 +1258,10 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       if (isSignedIn) {
         // Handle server wishlist for signed-in users
         const action = isInWishlist ? 'remove' : 'add';
-        const token = await user?.getIdToken?.();
+        const token = await getToken();
         if (!token) throw new Error('No auth token');
         await axios.post('/api/wishlist', { 
-          productId: product._id, 
+          productId: String(product._id || product.id), 
           action 
         }, {
           headers: { Authorization: `Bearer ${token}` },
@@ -920,14 +1279,15 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
         
         if (isInWishlist) {
           // Remove from wishlist
-          const updatedWishlist = guestWishlist.filter(item => item && item.productId !== product._id);
+          const productId = String(product._id || product.id);
+          const updatedWishlist = guestWishlist.filter((item) => item && String(item.productId) !== productId);
           localStorage.setItem('guestWishlist', JSON.stringify(updatedWishlist));
           setIsInWishlist(false);
           setWishlistMessage('Removed from wishlist');
         } else {
           // Add to wishlist with product details
           const wishlistItem = {
-            productId: product._id,
+            productId: String(product._id || product.id),
             slug: product.slug,
             name: product.name,
             price: effPrice,
@@ -1080,6 +1440,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
   useEffect(() => {
     setAddedToCart(false);
+    setQuantity(1);
   }, [product?._id, selectedColor, selectedSize, selectedBundleQty]);
 
   // Keep addedToCart in sync with actual cart state
@@ -1089,7 +1450,6 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       setQuantity(cartQty);
     } else {
       setAddedToCart(false);
-      setQuantity(1);
     }
   }, [cartQty]);
 
@@ -1255,11 +1615,6 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     badge: item.fastDelivery ? 'express' : (String(item.tags?.[0] || '').toLowerCase() === 'supermall' ? null : (item.tags?.[0] || null)),
   }))];
 
-  if (loading) {
-    return (
-      <div className="min-h-[400px] flex items-center justify-center text-gray-500 text-lg">Loading product…</div>
-    );
-  }
   if (!product) {
     return (
       <div className="min-h-[400px] flex items-center justify-center text-gray-400 text-lg">Product not found.</div>
@@ -1270,16 +1625,22 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       {/* Breadcrumb */}
       <div className="bg-white border-b border-gray-200">
         <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 py-1.5 lg:py-2">
-          <nav className="flex items-center flex-wrap gap-x-1 gap-y-0.5 text-[11px] sm:text-xs text-gray-500 leading-tight">
-            <a href="/" className="hover:underline hover:text-gray-800 whitespace-nowrap">Home</a>
+          <nav className="flex items-center flex-wrap gap-x-1 gap-y-0.5 text-[11px] sm:text-xs text-gray-500 leading-tight" dir={isArabic ? 'rtl' : 'ltr'}>
+            <a href="/" className="hover:underline hover:text-gray-800 whitespace-nowrap">{t('common.home')}</a>
             {(() => {
+              const breadcrumbSep = isArabic ? '‹' : '›';
+              const getCategoryLabel = (category) => (
+                isArabic && String(category?.nameAr || '').trim()
+                  ? category.nameAr
+                  : category.name
+              );
               // Build ordered chain: resolve first category, walk up to parent
               const firstCatId = product.categories?.[0];
               const chain = [];
               if (firstCatId && categoryMap[firstCatId]) {
                 let cur = firstCatId;
                 while (cur && categoryMap[cur]) {
-                  chain.unshift({ id: cur, name: categoryMap[cur].name });
+                  chain.unshift({ id: cur, name: getCategoryLabel(categoryMap[cur]) });
                   cur = categoryMap[cur].parentId;
                 }
               }
@@ -1290,29 +1651,29 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
               if (chain.length === 0) {
                 return (
                   <>
-                    <span className="text-gray-400">›</span>
-                    <a href="/shop" className="hover:underline hover:text-gray-800">Products</a>
+                    <span className="text-gray-400">{breadcrumbSep}</span>
+                    <a href="/shop" className="hover:underline hover:text-gray-800">{t('common.products')}</a>
                   </>
                 );
               }
               return chain.map(c => (
                 <span key={c.id} className="flex items-center gap-x-1">
-                  <span className="text-gray-400">›</span>
+                  <span className="text-gray-400">{breadcrumbSep}</span>
                   <a href={`/browse?category=${c.id}`} className="hover:underline hover:text-gray-800 whitespace-nowrap">{c.name}</a>
                 </span>
               ));
             })()}
-            <span className="text-gray-400">›</span>
+            <span className="text-gray-400">{isArabic ? '‹' : '›'}</span>
             <span className="text-gray-700 truncate max-w-[160px] sm:max-w-xs md:max-w-sm">{safeProductName}</span>
           </nav>
         </div>
       </div>
 
-      <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 pt-0 pb-8 lg:py-6">
+      <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 pt-0 pb-28 lg:py-6 overflow-x-clip lg:overflow-x-visible">
         <div className="product-page-grid gap-0 lg:gap-8 items-start">
 
           {/* LEFT: Media gallery */}
-          <div className="space-y-3 lg:space-y-4 lg:min-w-0 lg:sticky lg:top-24 lg:self-start relative z-20">
+          <div className="w-full min-w-0 space-y-3 lg:space-y-4 lg:min-w-0 lg:sticky lg:top-24 lg:self-start relative z-20">
             <div className="hidden lg:flex gap-3 items-start">
               <div className="flex flex-col gap-1.5 w-[56px] xl:w-[64px] flex-shrink-0 overflow-y-auto max-h-[720px] scrollbar-hide">
                 {mediaGallery.map((item, index) => (
@@ -1455,6 +1816,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                       poster={activeMedia.poster || PLACEHOLDER_IMAGE}
                       controls
                       playsInline
+                      preload="metadata"
                       className="w-full h-full object-contain bg-white"
                     />
                   ) : (
@@ -1489,13 +1851,19 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 {renderZoomPanel()}
               </div>
                 <div className="mt-2 hidden lg:flex items-center justify-center">
-                  <a href="#" className="text-sm text-blue-600 hover:underline">Click to see full view</a>
+                  <button
+                    type="button"
+                    onClick={openFullViewGallery}
+                    className="text-sm text-blue-600 hover:underline"
+                  >
+                    Click to see full view
+                  </button>
                 </div>
               </div>
             </div>
 
             {/* Mobile: Swipeable image slider */}
-            <div className="lg:hidden relative -mx-4 sm:mx-0">
+            <div className="lg:hidden relative -mx-4 sm:mx-0 overflow-x-clip">
               <div className={`relative w-full ${aspectRatioClass} bg-white border border-gray-200 rounded-none sm:rounded-lg overflow-hidden`}>
                 {product.attributes?.condition === 'used' && (
                   <div className="absolute top-4 left-4 z-10">
@@ -1508,7 +1876,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   </div>
                 )}
 
-                <div className="absolute top-4 right-4 z-10">
+                <div className="absolute top-4 right-4 z-10 flex flex-col gap-2">
                   <button
                     onClick={handleWishlist}
                     disabled={wishlistLoading}
@@ -1520,6 +1888,24 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                       className={isInWishlist ? 'text-red-500' : 'text-gray-600'}
                       strokeWidth={2} 
                     />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (typeof navigator !== 'undefined' && navigator.share) {
+                        navigator.share({
+                          title: product.name,
+                          text: `Check out ${product.name}`,
+                          url: window.location.href,
+                        }).catch(() => {});
+                        return;
+                      }
+                      setShowShareMenu(true);
+                    }}
+                    className="w-10 h-10 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center hover:border-gray-300 transition"
+                    aria-label={t('product.shareTo')}
+                  >
+                    <Share2Icon size={18} className="text-gray-600" strokeWidth={2} />
                   </button>
                 </div>
 
@@ -1540,6 +1926,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                             poster={item.poster || PLACEHOLDER_IMAGE}
                             controls
                             playsInline
+                            preload="metadata"
                             className="absolute inset-0 h-full w-full object-cover"
                           />
                         ) : (
@@ -1563,6 +1950,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                     poster={activeMedia.poster || PLACEHOLDER_IMAGE}
                     controls
                     playsInline
+                    preload="metadata"
                     className="absolute inset-0 h-full w-full object-cover"
                   />
                 ) : (
@@ -1579,9 +1967,10 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
             </div>
 
             {/* Mobile Thumbnail Gallery */}
+            <div className="lg:hidden -mx-4 sm:mx-0 overflow-x-clip">
             <div
               ref={mobileThumbnailsRef}
-              className="lg:hidden -mx-4 sm:mx-0 px-4 sm:px-0 flex gap-2 overflow-x-auto pb-2 scrollbar-hide scroll-smooth"
+              className="px-4 sm:px-0 flex gap-2 overflow-x-auto overflow-y-hidden pb-2 scrollbar-hide scroll-smooth"
             >
               {mediaGallery.map((item, index) => (
                 <button
@@ -1590,7 +1979,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   onClick={() => goToMobileImage(index)}
                   className={`relative flex-shrink-0 w-14 h-14 border-2 rounded overflow-hidden transition-all duration-200 bg-white cursor-pointer ${
                     activeImageIndex === index
-                      ? 'border-orange-500 ring-1 ring-orange-200'
+                      ? 'border-[#E52721] ring-1 ring-red-200'
                       : 'border-gray-200 opacity-80 hover:opacity-100'
                   }`}
                 >
@@ -1612,6 +2001,212 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 </button>
               ))}
             </div>
+            </div>
+
+            {/* Mobile: title, price, brand card, BNPL, services */}
+            <div className="lg:hidden relative z-30 mt-3 w-full min-w-0 max-w-full space-y-2" dir={isArabic ? 'rtl' : 'ltr'}>
+              <div className="space-y-2">
+                <h1 className="w-full min-w-0 max-w-full text-[22px] font-bold leading-snug text-gray-900 break-words whitespace-normal [overflow-wrap:anywhere]">
+                  {safeProductName}
+                </h1>
+                {mobileShortDescription ? (
+                  <p className="w-full min-w-0 text-sm leading-relaxed text-gray-600">
+                    {mobileShortDescription}
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <bdi dir={isArabic ? 'rtl' : 'ltr'} className="text-[30px] font-bold leading-none text-[#E52721]">
+                    {displaySalePrice}
+                  </bdi>
+                  {effAED > effPrice ? (
+                    <>
+                      <bdi dir={isArabic ? 'rtl' : 'ltr'} className="text-base text-gray-400 line-through">
+                        {displayRegularPrice}
+                      </bdi>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-[#E52721]">
+                        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                          <path d="M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58s1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41 0-.55-.23-1.06-.59-1.42zM5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7z" />
+                        </svg>
+                        {t('product.mobile.savePercent', { percent: formatCount(discountPercent) })}
+                      </span>
+                    </>
+                  ) : null}
+                </div>
+                {savingsAmount > 0 ? (
+                  <p className="flex items-center gap-1.5 text-sm font-semibold text-[#E52721]">
+                    <span aria-hidden="true">🔥</span>
+                    {t('product.mobile.saveAmount', { amount: displaySavingsAmount })}
+                  </p>
+                ) : null}
+              </div>
+
+              {isSelectionInStock ? (
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3">
+                  <span className="text-sm font-semibold text-gray-900">
+                    {t('product.quantityLabel').replace(':', '')}
+                  </span>
+                  <div className="flex items-stretch overflow-hidden rounded-lg border border-gray-300 bg-white">
+                    <button
+                      type="button"
+                      onClick={() => setQuantity((current) => Math.max(1, current - 1))}
+                      disabled={quantity <= 1}
+                      className="flex h-10 w-10 items-center justify-center text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                      aria-label="Decrease quantity"
+                    >
+                      <MinusIcon size={16} />
+                    </button>
+                    <div className="flex min-w-[52px] flex-col items-center justify-center border-x border-gray-300 px-2">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                        {t('product.qty')}
+                      </span>
+                      <span className="text-base font-bold leading-none text-gray-900">{formatCount(quantity)}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setQuantity((current) => Math.min(maxOrderQty, current + 1))}
+                      disabled={quantity >= maxOrderQty}
+                      className="flex h-10 w-10 items-center justify-center text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                      aria-label="Increase quantity"
+                    >
+                      <PlusIcon size={16} />
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
+                {mobileProductBrand ? (
+                  <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-3">
+                    <span className="text-[15px] font-bold text-gray-900">{mobileProductBrand}</span>
+                    {product?.store?.username ? (
+                      <a
+                        href={`/shop/${product.store.username}`}
+                        className="shrink-0 text-[13px] font-semibold text-[#E52721]"
+                      >
+                        {t('product.mobile.shopAllProducts')} ›
+                      </a>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <button
+                  type="button"
+                  onClick={() => setPayLaterProvider('tabby')}
+                  className="flex w-full items-center gap-3 border-b border-gray-100 bg-[#EAF9F4] px-3.5 py-3.5 text-start active:bg-[#dff5ec]"
+                >
+                  <p className="min-w-0 flex-1 text-[12px] leading-[1.5] text-gray-700">
+                    {t('product.mobile.bnplTabby', { amount: displayTabbyInstallmentAmount })}
+                    {' '}
+                    <span className="font-semibold text-gray-900">{t('product.mobile.learnMore')}</span>
+                  </p>
+                  <BnplLogo provider="tabby" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPayLaterProvider('tamara')}
+                  className="flex w-full items-center gap-3 border-b border-gray-100 bg-[#FFF1F3] px-3.5 py-3.5 text-start active:bg-[#ffe8ec]"
+                >
+                  <p className="min-w-0 flex-1 text-[12px] leading-[1.5] text-gray-700">
+                    {t('product.mobile.bnplTamara', { amount: displayTamaraInstallmentAmount })}
+                    {' '}
+                    <span className="font-semibold text-gray-900">{t('product.mobile.learnMore')}</span>
+                  </p>
+                  <BnplLogo provider="tamara" />
+                </button>
+
+                <div className="grid grid-cols-2 divide-x divide-y divide-gray-100">
+                  <div className="flex items-start gap-2 px-3 py-3.5">
+                    <svg className="mt-0.5 h-[18px] w-[18px] shrink-0 text-[#E52721]" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a5 5 0 015 5v2M3 10l4 4m-4-4l4-4" />
+                    </svg>
+                    <span className="text-[12px] font-medium leading-snug text-[#1e293b]">{t('product.mobile.freeReturns')}</span>
+                  </div>
+                  <div className="flex items-start gap-2 px-3 py-3.5">
+                    <svg className="mt-0.5 h-[18px] w-[18px] shrink-0 text-[#E52721]" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <span className="text-[12px] leading-snug text-[#1e293b]">
+                      {t('product.mobile.arrivesInDays', { days: formatCount(deliveryWindow.minDays) })}{' '}
+                      <span className="font-semibold text-[#E52721]">{mobileArrivalDate}</span>
+                    </span>
+                  </div>
+                  <div className="flex items-start gap-2 px-3 py-3.5">
+                    <Truck className="mt-0.5 h-[18px] w-[18px] shrink-0 text-[#E52721]" strokeWidth={1.75} aria-hidden="true" />
+                    <span className="text-[12px] leading-snug text-[#1e293b]">{mobileDeliveryFeeLabel}</span>
+                  </div>
+                  <div className="flex items-start gap-2 px-3 py-3.5">
+                    <svg className="mt-0.5 h-[18px] w-[18px] shrink-0 text-[#E52721]" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                    <span className="text-[12px] font-medium leading-snug text-[#1e293b]">{t('product.mobile.cashOnDelivery')}</span>
+                  </div>
+                </div>
+              </div>
+
+              {(variantColors.length > 0 || variantSizes.length > 0) ? (
+                <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                  {variantColors.length > 0 ? (
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-gray-900">{t('product.color')}</label>
+                      <div className="flex flex-wrap gap-2">
+                        {variantColors.map((color) => (
+                          <button
+                            key={color}
+                            type="button"
+                            onClick={() => setSelectedColor(color)}
+                            className={`rounded-lg border-2 px-3 py-2 text-sm font-medium transition ${
+                              selectedColor === color
+                                ? 'border-[#E52721] bg-red-50 text-[#E52721]'
+                                : 'border-gray-200 bg-white text-gray-700'
+                            }`}
+                          >
+                            {color}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {variantSizes.length > 0 ? (
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-gray-900">{t('product.size')}</label>
+                      <div className="flex flex-wrap gap-2">
+                        {variantSizes.map((size) => (
+                          <button
+                            key={size}
+                            type="button"
+                            onClick={() => setSelectedSize(size)}
+                            className={`rounded-lg border-2 px-3 py-2 text-sm font-medium transition ${
+                              selectedSize === size
+                                ? 'border-[#E52721] bg-red-50 text-[#E52721]'
+                                : 'border-gray-200 bg-white text-gray-700'
+                            }`}
+                          >
+                            {size}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
+                <ProductDescription
+                  product={product}
+                  reviews={reviews}
+                  loadingReviews={loadingReviewsLocal || loadingReviews}
+                  onReviewAdded={onReviewAdded}
+                  showSuggestedProducts={false}
+                  showMainDescription={true}
+                  showOverviewSections={true}
+                  compactMobile={true}
+                />
+              </div>
+            </div>
 
           </div>
 
@@ -1619,7 +2214,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
           <div className="min-w-0 relative z-0">
             <div className="hidden lg:block bg-white space-y-4" dir={isArabic ? 'rtl' : 'ltr'}>
               <div>
-                <h1 className="text-[38px] leading-[1.2] font-medium text-gray-900">{safeProductName}</h1>
+                <h1 className="text-2xl leading-snug font-medium text-gray-900">{safeProductName}</h1>
                 <a href={`/shop/${product.store?.username || ''}`} className="mt-1 inline-block text-sm text-[#007185] hover:underline">
                   {t('product.visitStore', { store: product.store?.name || safeDisplaySellerName })}
                 </a>
@@ -1744,7 +2339,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 </div>
                 {discountPercent > 0 && (
                   <bdi dir="ltr" className="text-sm text-gray-500 line-through whitespace-nowrap">
-                    {formatMoney(convertedEffAED)}
+                    {formatMoney(convertedEffAED, true)}
                   </bdi>
                 )}
                 {discountPercent > 0 && (
@@ -1754,35 +2349,11 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 )}
               </div>
 
-              {/* Pay-later — center column, below price */}
-              <div className="flex flex-col items-start gap-2 mt-2" dir={isArabic ? 'rtl' : 'ltr'}>
-                <button
-                  type="button"
-                  onClick={() => setShowPayLaterModal(true)}
-                  className="inline-flex max-w-full flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-gray-500 transition hover:text-gray-700 text-start"
-                >
-                  <span>{t('product.installmentsLead')}</span>
-                  <bdi dir="ltr" className="font-medium text-gray-700 whitespace-nowrap">
-                    {formatMoney(installmentAmount)}
-                  </bdi>
-                  <span>{t('product.installmentsWith')}</span>
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 26" className="h-[22px] w-auto shrink-0" aria-label="Tabby">
-                    <rect width="72" height="26" rx="6" fill="#3DBEA3"/>
-                    <text x="36" y="17.5" textAnchor="middle" fill="white" fontSize="12" fontWeight="bold" fontFamily="Arial,sans-serif" letterSpacing="1">tabby</text>
-                  </svg>
-                  <span className="text-gray-400">{t('common.or')}</span>
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 84 26" className="h-[22px] w-auto shrink-0" aria-label="Tamara">
-                    <defs><linearGradient id="tg-center" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor="#3D1DBF"/><stop offset="100%" stopColor="#0FB49A"/></linearGradient></defs>
-                    <rect width="84" height="26" rx="13" fill="url(#tg-center)"/>
-                    <text x="42" y="17.5" textAnchor="middle" fill="white" fontSize="12" fontWeight="bold" fontFamily="Arial,sans-serif" letterSpacing="0.3">tamara</text>
-                  </svg>
-                </button>
-                <div
-                  id={`tabbyPromoProduct-${String(product?._id || product?.id || 'default')}`}
-                  className="product-tabby-promo w-full"
-                  dir="ltr"
-                />
-              </div>
+              <div
+                id={`tabbyPromoProduct-${String(product?._id || product?.id || 'default')}`}
+                className="product-tabby-promo w-full mt-2"
+                dir="ltr"
+              />
 
               <ProductDescription
                 product={product}
@@ -1914,8 +2485,8 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
             )}
           </div>
 
-          {/* RIGHT: Product Info (buy box, meta) */}
-          <div className="bg-white rounded-lg p-3 lg:p-4 space-y-3 lg:sticky lg:top-24 lg:self-start border border-gray-200 relative z-0" dir={isArabic ? 'rtl' : 'ltr'}>
+          {/* RIGHT: Product Info (buy box) — desktop/tablet only; mobile uses fixed bar below */}
+          <div className="relative z-0 min-w-0 self-start rounded-xl border border-slate-200 bg-white p-4 shadow-sm max-lg:hidden lg:sticky lg:top-24 lg:p-5" dir={isArabic ? 'rtl' : 'ltr'}>
 
             {/* Special Offer - Countdown Timer */}
             {offerData?.countdownTimer && (
@@ -1941,39 +2512,6 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
             {/* Product Title intentionally hidden in buybox */}
 
-
-            {/* Seller + Rating Meta */}
-            {(hasSellerMeta || soldUnits > 0 || reviewCount > 0) && (
-              <div>
-                <div className="flex items-center justify-between text-sm font-normal text-gray-600">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="whitespace-nowrap">{t('product.soldCount', { count: formatSoldCount(soldUnits) })}</span>
-                    <span className="text-gray-400">|</span>
-                    <span className="truncate">
-                      <span>{t('product.soldBy')} </span>
-                      <span className="text-gray-800">{safeDisplaySellerName}</span>
-                    </span>
-                  </div>
-
-                  {reviewCount > 0 && (
-                    <div className="flex items-center gap-1.5 text-gray-900 whitespace-nowrap">
-                      <span className="text-sm font-normal">{Number(averageRating).toFixed(1)}</span>
-                      <div className="flex items-center gap-0.5">
-                        {[...Array(5)].map((_, i) => (
-                          <StarIcon
-                            key={i}
-                            size={14}
-                            fill={i < Math.round(averageRating) ? "#111827" : "none"}
-                            className={i < Math.round(averageRating) ? "text-gray-900" : "text-gray-300"}
-                            strokeWidth={1.6}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
 
             {/* Special Offer - Discount Badge */}
             {offerData?.discountBadge && (
@@ -2034,7 +2572,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
                 {effAED > effPrice && (
                   <bdi dir="ltr" className="text-sm text-gray-500 line-through whitespace-nowrap pb-1">
-                    {formatMoney(convertedEffAED)}
+                    {formatMoney(convertedEffAED, true)}
                   </bdi>
                 )}
 
@@ -2053,24 +2591,15 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
             {/* Delivery & Returns (buybox info) */}
             <div
-              className="space-y-2 pb-3 border-b border-gray-200 text-sm leading-relaxed"
+              className="mb-4 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2.5 text-[12px] leading-relaxed"
               dir={isArabic ? 'rtl' : 'ltr'}
             >
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="font-medium text-gray-800">{buyboxCopy.returnsText}</span>
-                <span className="text-gray-400" aria-hidden="true">•</span>
-                <span className="text-gray-700">{buyboxCopy.vatText}</span>
-              </div>
-              <p className="text-gray-700">
-                {t('product.deliveryLine', {
-                  prefix: buyboxCopy.deliveryPrefix,
-                  dates: deliveryRangeText,
-                  suffix: buyboxCopy.deliverySuffix,
-                })}
-              </p>
-              <p className="text-gray-500">
-                {t('product.orderBefore', { time: cutoffDisplayText })}{' '}
-                {t('product.orderWithin', { duration: orderWithinText })}
+              <p className="font-semibold text-slate-900">{deliverySummary.primary}</p>
+              <p className="mt-0.5 text-slate-700">{deliverySummary.secondary}</p>
+              <p className="mt-1.5 text-[11px] text-slate-500">
+                {buyboxCopy.returnsText}
+                <span className="mx-1 text-slate-300" aria-hidden="true">·</span>
+                {buyboxCopy.vatText}
               </p>
             </div>
 
@@ -2078,12 +2607,9 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
             {/* Quantity */}
             {isSelectionInStock && !addedToCart && (
-              <div
-                className="flex w-full items-center gap-3 pt-2"
-                dir={isArabic ? 'rtl' : 'ltr'}
-              >
-                <label className="text-sm font-semibold text-gray-900 leading-none whitespace-nowrap">
-                  {t('product.quantityLabel')}
+              <div className="mb-4" dir={isArabic ? 'rtl' : 'ltr'}>
+                <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-500">
+                  {t('product.quantityLabel').replace(':', '')}
                 </label>
                 <select
                   value={quantity}
@@ -2092,7 +2618,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                     setQuantity(newQty);
                   }}
                   dir={isArabic ? 'rtl' : 'ltr'}
-                  className="h-11 flex-1 w-full rounded-[2px] border border-gray-300 bg-white px-3 text-base text-gray-900 font-medium cursor-pointer transition hover:border-gray-400 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                  className="h-10 w-full cursor-pointer rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-900 shadow-sm transition hover:border-slate-400 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-100"
                 >
                   {Array.from({ length: Math.max(1, maxOrderQty) }).map((_, i) => {
                     const val = i + 1;
@@ -2103,16 +2629,16 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
             )}
 
             {/* Action Buttons */}
-            <div className="pt-2 space-y-3" dir={isArabic ? 'rtl' : 'ltr'}>
+            <div dir={isArabic ? 'rtl' : 'ltr'}>
               {!addedToCart ? (
-                <div className="space-y-3">
+                <div className="space-y-2">
                   <button
                     onClick={handleAddToCart}
                     disabled={!isSelectionInStock}
-                    className={`w-full py-3 px-4 rounded-[2px] font-bold text-base transition ${
+                    className={`h-11 w-full rounded-lg px-4 text-sm font-semibold shadow-sm transition active:scale-[0.99] ${
                       !isSelectionInStock
-                        ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
-                        : 'bg-yellow-400 text-black hover:brightness-95'
+                        ? 'cursor-not-allowed bg-slate-200 text-slate-500'
+                        : 'bg-[#E5E5E5] text-slate-900 hover:bg-[#D9D9D9] hover:shadow'
                     }`}
                   >
                     {!isSelectionInStock
@@ -2123,20 +2649,22 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   <button
                     onClick={handleOrderNow}
                     disabled={!isSelectionInStock}
-                    className={`w-full py-3 px-4 rounded-[2px] font-bold text-base transition ${
-                      !isSelectionInStock ? 'bg-gray-300 text-gray-600 cursor-not-allowed' : 'bg-orange-500 text-white hover:bg-orange-600'
+                    className={`h-11 w-full rounded-lg px-4 text-sm font-semibold shadow-sm transition active:scale-[0.99] ${
+                      !isSelectionInStock
+                        ? 'cursor-not-allowed bg-slate-200 text-slate-500'
+                        : 'bg-[#E52D27] text-white hover:bg-[#CC261F] hover:shadow'
                     }`}
                   >
                     {t('common.buyNow')}
                   </button>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2.5">
-                    <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-green-600 text-white">
+                <div className="space-y-2.5">
+                  <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+                    <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white">
                       <Check size={14} strokeWidth={3} />
                     </span>
-                    <p className="text-sm font-semibold text-green-900">
+                    <p className="text-sm font-medium text-emerald-900">
                       {t('product.addedToCartSummary', {
                         count: cartQty,
                         items: cartQty === 1 ? t('product.itemSingular') : t('product.itemPlural'),
@@ -2144,7 +2672,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                     </p>
                   </div>
 
-                  <div className="overflow-hidden rounded-md border border-gray-300 bg-white shadow-sm">
+                  <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
                     <div className="grid grid-cols-[1fr_auto_1fr] items-stretch">
                       <button
                         type="button"
@@ -2202,14 +2730,14 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                     <button
                       type="button"
                       onClick={() => router.push('/cart')}
-                      className="h-11 rounded-md border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-800 transition hover:bg-gray-50"
+                      className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 transition hover:bg-slate-50"
                     >
                       {t('product.viewCart')}
                     </button>
                     <button
                       type="button"
                       onClick={() => router.push('/checkout')}
-                      className="h-11 rounded-md bg-orange-500 px-4 text-sm font-bold text-white transition hover:bg-orange-600"
+                      className="h-10 rounded-lg bg-[#E52D27] px-4 text-sm font-semibold text-white transition hover:bg-[#CC261F]"
                     >
                       {t('cart.checkout')}
                     </button>
@@ -2217,6 +2745,46 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 </div>
               )}
 
+              <button
+                type="button"
+                onClick={handleWishlist}
+                disabled={wishlistLoading}
+                className={`mt-2 flex h-10 w-full items-center justify-center gap-2 rounded-lg border text-sm font-medium transition ${
+                  isInWishlist
+                    ? 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                <HeartIcon size={16} fill={isInWishlist ? 'currentColor' : 'none'} />
+                {isInWishlist ? t('common.saved') : t('common.save')}
+              </button>
+
+              <div className="mt-3 space-y-2 border-t border-slate-100 pt-3" dir={isArabic ? 'rtl' : 'ltr'}>
+                <button
+                  type="button"
+                  onClick={() => setPayLaterProvider('tabby')}
+                  className="inline-flex w-full max-w-full flex-wrap items-center gap-x-1.5 gap-y-1 text-left text-[12px] leading-snug text-gray-500 transition hover:text-gray-700"
+                >
+                  <span>{t('product.installmentsTabbyLead')}</span>
+                  <bdi dir="ltr" className="font-semibold text-gray-800 whitespace-nowrap">
+                    {displayTabbyInstallmentAmount}
+                  </bdi>
+                  <span>{t('product.installmentsWith')}</span>
+                  <BnplLogo provider="tabby" size="sm" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPayLaterProvider('tamara')}
+                  className="inline-flex w-full max-w-full flex-wrap items-center gap-x-1.5 gap-y-1 text-left text-[12px] leading-snug text-gray-500 transition hover:text-gray-700"
+                >
+                  <span>{t('product.installmentsTamaraLead')}</span>
+                  <bdi dir="ltr" className="font-semibold text-gray-800 whitespace-nowrap">
+                    {displayTamaraInstallmentAmount}
+                  </bdi>
+                  <span>{t('product.installmentsWith')}</span>
+                  <BnplLogo provider="tamara" size="sm" />
+                </button>
+              </div>
 
             </div>
 
@@ -2306,37 +2874,28 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
               </div>
             )}
 
-            {/* Save (wishlist) row */}
-            <div className="flex items-center pt-4 border-t border-gray-200 mt-4">
-              <button
-                onClick={handleWishlist}
-                disabled={wishlistLoading}
-                className={`flex items-center gap-2 text-sm transition ${
-                  isInWishlist ? 'text-red-500' : 'text-gray-500 hover:text-red-500'
-                }`}
-              >
-                <HeartIcon size={16} fill={isInWishlist ? 'currentColor' : 'none'} />
-                {isInWishlist ? t('common.saved') : t('common.save')}
-              </button>
-            </div>
           </div>
         </div>
       </div>
 
-      {/* Full product description below the grid (mobile only to avoid desktop duplication) */}
-      <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 pb-8">
-        <ProductDescription
-          product={product}
-          reviews={reviews}
-          loadingReviews={loadingReviewsLocal || loadingReviews}
-          onReviewAdded={onReviewAdded}
-          showSuggestedProducts={false}
-          showMainDescription={true}
-          showOverviewSections={false}
-        />
+      {/* Full product description below the grid — desktop only; mobile uses inline card above */}
+      <div className="hidden lg:block w-full max-w-[1400px] mx-auto px-4 sm:px-6 pb-8">
+        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm lg:overflow-visible lg:rounded-none lg:border-0 lg:bg-transparent lg:shadow-none" dir={isArabic ? 'rtl' : 'ltr'}>
+          <div className="px-4 py-4 lg:p-0">
+            <ProductDescription
+              product={product}
+              reviews={reviews}
+              loadingReviews={loadingReviewsLocal || loadingReviews}
+              onReviewAdded={onReviewAdded}
+              showSuggestedProducts={false}
+              showMainDescription={true}
+              showOverviewSections={false}
+            />
+          </div>
+        </div>
       </div>
 
-      <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 pb-8">
+      <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 pt-2 pb-8 lg:pt-0">
         <ProductReviewsSection
           product={product}
           reviews={reviewsToUse}
@@ -2347,10 +2906,10 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       {relatedProducts.length > 0 && (
         <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 pb-8">
           <div className="pt-8">
-            <div className="mb-5 flex items-start justify-between gap-4">
+            <div className="mb-5 flex items-start justify-between gap-4" dir={isArabic ? 'rtl' : 'ltr'}>
               <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-[18px] sm:text-[20px] font-bold text-gray-900">Products related to this item</h2>
-                <span className="text-xs text-gray-500">Sponsored</span>
+                <span className="text-xs text-gray-500">{t('product.sponsored')}</span>
+                <h2 className="text-[18px] sm:text-[20px] font-bold text-gray-900">{t('product.relatedProductsTitle')}</h2>
               </div>
             </div>
 
@@ -2400,60 +2959,28 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
         </div>
       )}
 
-      {/* Pay Later Info Modal */}
-      {showPayLaterModal && (
-        <div
-          className="fixed inset-0 z-[10000] bg-black/45 flex items-center justify-center p-4"
-          onClick={() => setShowPayLaterModal(false)}
-        >
-          <div
-            className="w-full max-w-[560px] rounded bg-white p-7 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start justify-end">
-              <button
-                type="button"
-                onClick={() => setShowPayLaterModal(false)}
-                className="-mt-2 -mr-2 h-8 w-8 rounded-full text-gray-600 hover:bg-gray-100"
-                aria-label="Close"
-              >
-                ×
-              </button>
-            </div>
+      {renderFullViewGallery()}
 
-            <h3 className="-mt-4 text-center text-[34px] font-medium text-gray-900">Shop now, pay later</h3>
-
-            <div className="mt-4 text-[18px] text-gray-900 font-medium">How it works:</div>
-
-            <div className="mt-3 space-y-3 text-[16px] leading-7 text-gray-800">
-              <p>Select Tabby as your payment method at checkout to pay in interest free installments:</p>
-              <p className="flex items-center gap-2 flex-wrap">
-                <span>pay in 4 interest free installments with</span>
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 26" className="h-[22px] w-auto" aria-label="Tabby">
-                  <rect width="72" height="26" rx="6" fill="#3DBEA3"/>
-                  <text x="36" y="17.5" textAnchor="middle" fill="white" fontSize="12" fontWeight="bold" fontFamily="Arial,sans-serif" letterSpacing="1">tabby</text>
-                </svg>
-              </p>
-              <p className="flex items-center gap-2 flex-wrap">
-                <span>pay in 4 interest free installments with</span>
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 84 26" className="h-[22px] w-auto" aria-label="Tamara"><defs><linearGradient id="tg2" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor="#3D1DBF"/><stop offset="100%" stopColor="#0FB49A"/></linearGradient></defs><rect width="84" height="26" rx="13" fill="url(#tg2)"/><text x="42" y="17.5" textAnchor="middle" fill="white" fontSize="12" fontWeight="bold" fontFamily="Arial,sans-serif" letterSpacing="0.3">tamara</text></svg>
-              </p>
-              <p>Tabby services are available to any citizen and resident of Saudi Arabia, Kuwait or the UAE, over the age of 18.</p>
-              <p>Tamara: By using the Tamara Services, you warrant and represent that you are over the age of eighteen (18) years. The process of registering the Tamara Account requires you to provide Tamara with certain personal information. Such information may include your full name, address, email, phone number, and age.</p>
-            </div>
-          </div>
-        </div>
-      )}
+      <PayLaterModal
+        provider={payLaterProvider}
+        installmentAmount={
+          payLaterProvider === 'tabby'
+            ? displayTabbyInstallmentAmount
+            : payLaterProvider === 'tamara'
+              ? displayTamaraInstallmentAmount
+              : ''
+        }
+        onClose={() => setPayLaterProvider(null)}
+      />
 
       {/* Mobile Actions Bar */}
       <MobileProductActions
         onOrderNow={handleOrderNow}
         onAddToCart={handleAddToCart}
-        effPrice={effPrice}
-        currency={currency}
-        cartCount={cartCount}
         isOutOfStock={!isSelectionInStock}
         isOrdering={isOrderingNow}
+        quantity={quantity}
+        formatQuantity={(value) => formatCount(value)}
       />
 
       <style jsx>{`
@@ -2558,13 +3085,13 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
         }
         @media (min-width: 1024px) {
           .product-page-grid {
-            grid-template-columns: minmax(360px, 460px) minmax(340px, 1fr) 250px;
+            grid-template-columns: minmax(360px, 460px) minmax(340px, 1fr) minmax(280px, 300px);
             align-items: start;
           }
         }
         @media (min-width: 1280px) {
           .product-page-grid {
-            grid-template-columns: minmax(400px, 500px) minmax(360px, 1fr) 270px;
+            grid-template-columns: minmax(400px, 500px) minmax(360px, 1fr) minmax(300px, 320px);
           }
         }
       `}</style>

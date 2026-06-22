@@ -43,7 +43,7 @@ export async function GET(request) {
         productSpecificFreeShippingMode: "ORDER_LEVEL",
         localDeliveryFee: null,
         regionalDeliveryFee: null,
-        estimatedDays: "3-5",
+        estimatedDays: "2-5",
         enableCOD: true,
         codFee: 0,
         maxCODAmount: 0,
@@ -122,7 +122,7 @@ export async function PUT(request) {
       localDeliveryFee: body.localDeliveryFee ? Number(body.localDeliveryFee) : null,
       regionalDeliveryFee: body.regionalDeliveryFee ? Number(body.regionalDeliveryFee) : null,
       // Delivery Time
-      estimatedDays: body.estimatedDays || "3-5",
+      estimatedDays: body.estimatedDays || "2-5",
       // COD
       enableCOD: Boolean(body.enableCOD ?? true),
       codFee: Number(body.codFee ?? 0),

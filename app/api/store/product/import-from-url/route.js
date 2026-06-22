@@ -4,6 +4,7 @@ import authSeller from '@/middlewares/authSeller';
 import connectDB from '@/lib/mongodb';
 import Category from '@/models/Category';
 import { importProductFromUrl } from '@/lib/importProductFromUrl';
+import { runInProductAiQueue } from '@/lib/aiRequestQueue';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -42,7 +43,7 @@ export async function POST(request) {
     await connectDB();
     const storeCategories = await Category.find({}).select('_id name').sort({ name: 1 }).lean();
 
-    const result = await importProductFromUrl(url, { enhanceImages, storeCategories });
+    const result = await runInProductAiQueue(() => importProductFromUrl(url, { enhanceImages, storeCategories }));
     return NextResponse.json(result);
   } catch (error) {
     console.error('[product/import-from-url POST]', error);

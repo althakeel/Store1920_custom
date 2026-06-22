@@ -4,6 +4,8 @@ const domains = ['store1920-images.s3.ap-south-1.amazonaws.com', 'ik.imagekit.io
 if (!domains.includes('placehold.co')) domains.push('placehold.co');
 // Allow Flixcart CDN for category images
 if (!domains.includes('rukminim2.flixcart.com')) domains.push('rukminim2.flixcart.com');
+// Store1920 media / WordPress uploads (category images, catalog imports)
+if (!domains.includes('db.store1920.com')) domains.push('db.store1920.com');
 // Amazon product image CDNs (imported / scraped catalog images)
 [
     'm.media-amazon.com',
@@ -42,27 +44,26 @@ if (!domains.includes('lh3.googleusercontent.com')) domains.push('lh3.googleuser
 const nextConfig = {
     images: {
         unoptimized: false,
+        // `domains` is deprecated but still required for Turbopack dev image allowlist in Next 16.
         domains,
-        // Allow the same hosts via remotePatterns for fine-grained control
         remotePatterns: [
-            ...domains.map((host) => ({ protocol: 'https', hostname: host, pathname: '/:path*' })),
-            { protocol: 'https', hostname: '*.media-amazon.com', pathname: '/:path*' },
-            { protocol: 'https', hostname: '*.ssl-images-amazon.com', pathname: '/:path*' },
+            ...domains.map((host) => ({ protocol: 'https', hostname: host, pathname: '/**' })),
+            { protocol: 'https', hostname: '*.media-amazon.com', pathname: '/**' },
+            { protocol: 'https', hostname: '*.ssl-images-amazon.com', pathname: '/**' },
+            { protocol: 'https', hostname: '*.store1920.com', pathname: '/**' },
+            { protocol: 'https', hostname: 'ik.imagekit.io', pathname: '/**' },
         ],
         formats: ['image/avif', 'image/webp'],
         deviceSizes: [320, 420, 640, 768, 1024, 1280, 1536, 1920],
         imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
         qualities: [75, 85, 90, 100]
     },
-    // Enable response compression (gzip/brotli) to reduce payload size by 70%
     compress: true,
-    // Increase body size limit for product uploads with multiple images (up to 4MB per image)
     experimental: {
         serverActions: {
             bodySizeLimit: '50mb'
         },
-        // Avoid truncated JSON when saving large category menus through middleware
-        middlewareClientMaxBodySize: '50mb',
+        proxyClientMaxBodySize: '50mb',
         optimizePackageImports: [
             'lucide-react',
             'react-icons',
@@ -75,6 +76,7 @@ const nextConfig = {
         ],
     },
     serverExternalPackages: ['mongoose', 'firebase-admin'],
+    turbopack: {},
 
     webpack: (config, { dev }) => {
         config.module.rules.push({

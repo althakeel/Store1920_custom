@@ -20,7 +20,7 @@ const ShippingSettingSchema = new mongoose.Schema({
   },
   localDeliveryFee: Number,
   regionalDeliveryFee: Number,
-  estimatedDays: { type: String, default: "3-5" },
+  estimatedDays: { type: String, default: "2-5" },
   enableCOD: { type: Boolean, default: true },
   codFee: { type: Number, default: 0 },
   maxCODAmount: { type: Number, default: 0 },

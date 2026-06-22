@@ -14,11 +14,13 @@ const RatingSchema = new mongoose.Schema({
   isApproved: { type: Boolean, default: false },
   customerName: String, // For manually added reviews
   customerEmail: String, // For manually added reviews
+  helpfulCount: { type: Number, default: 0 },
+  helpfulVoters: { type: [String], default: [] },
   // Add more fields as needed
 }, { timestamps: true });
 
 // Indexes for query performance
-RatingSchema.index({ productId: 1, approved: 1 });     // CRITICAL: batch ratings on product listing page
+RatingSchema.index({ productId: 1, approved: 1, createdAt: -1 }); // Product page review list
 RatingSchema.index({ productId: 1, userId: 1 });        // Check if user already rated a product
 RatingSchema.index({ userId: 1, createdAt: -1 });       // User's rating history
 RatingSchema.index({ orderId: 1 });                     // Look up ratings by order

@@ -23,13 +23,36 @@ export default function ContactUs() {
   const [navBg, setNavBg] = useState(DEFAULT_BG);
 
   useEffect(() => {
+    try {
+      const draftRaw = sessionStorage.getItem('productReportDraft');
+      if (draftRaw) {
+        const draft = JSON.parse(draftRaw);
+        const composedMessage = [
+          draft?.subject ? `Subject: ${draft.subject}` : '',
+          draft?.message || '',
+        ].filter(Boolean).join('\n\n');
+
+        setForm((prev) => ({
+          ...prev,
+          message: composedMessage || prev.message,
+        }));
+        sessionStorage.removeItem('productReportDraft');
+        return;
+      }
+    } catch {
+      // ignore malformed draft
+    }
+
     const subject = searchParams.get('subject');
     const message = searchParams.get('message');
     if (!subject && !message) return;
 
     setForm((prev) => ({
       ...prev,
-      message: message || prev.message,
+      message: [
+        subject ? `Subject: ${subject}` : '',
+        message || prev.message,
+      ].filter(Boolean).join('\n\n'),
     }));
   }, [searchParams]);
 

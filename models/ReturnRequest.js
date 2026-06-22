@@ -17,4 +17,8 @@ const ReturnRequestSchema = new mongoose.Schema({
   // Add more fields as needed
 }, { timestamps: true });
 
+ReturnRequestSchema.index({ storeId: 1, createdAt: -1 });
+ReturnRequestSchema.index({ storeId: 1, status: 1, createdAt: -1 });
+ReturnRequestSchema.index({ userId: 1, createdAt: -1 });
+
 export default mongoose.models.ReturnRequest || mongoose.model("ReturnRequest", ReturnRequestSchema);

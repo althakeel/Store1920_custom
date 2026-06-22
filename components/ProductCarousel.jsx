@@ -16,8 +16,6 @@ export default function ProductCarousel({
   const {
     scrollRef,
     handlePointerDown,
-    handlePointerMove,
-    endDragging,
     handleCardClick,
     scrollLeft,
     scrollRight,
@@ -42,12 +40,12 @@ export default function ProductCarousel({
   if (!products.length) return null
 
   return (
-    <div className={`relative w-full min-w-0 max-md:left-1/2 max-md:w-screen max-md:max-w-[100vw] max-md:-translate-x-1/2 ${className}`.trim()}>
+    <div className={`relative w-full min-w-0 overflow-hidden ${className}`.trim()}>
       {showArrows && canScrollLeft ? (
         <button
           type="button"
           onClick={scrollLeft}
-          className="absolute -left-3 top-1/2 z-10 hidden -translate-y-1/2 rounded-full border border-gray-100 bg-white p-2 shadow-xl transition-all hover:bg-gray-50 lg:flex"
+          className="absolute left-1 top-1/2 z-10 hidden -translate-y-1/2 rounded-full border border-gray-100 bg-white p-2 shadow-xl transition-all hover:bg-gray-50 lg:flex"
           aria-label="Scroll left"
         >
           <ChevronLeft size={18} className="text-gray-800" />
@@ -59,10 +57,6 @@ export default function ProductCarousel({
         role="region"
         aria-label="Product carousel"
         onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={endDragging}
-        onPointerLeave={endDragging}
-        onPointerCancel={endDragging}
         className={trackClassName}
         style={trackStyle}
       >
@@ -81,7 +75,7 @@ export default function ProductCarousel({
         <button
           type="button"
           onClick={scrollRight}
-          className="absolute -right-3 top-1/2 z-10 hidden -translate-y-1/2 rounded-full border border-gray-100 bg-white p-2 shadow-xl transition-all hover:bg-gray-50 lg:flex"
+          className="absolute right-1 top-1/2 z-10 hidden -translate-y-1/2 rounded-full border border-gray-100 bg-white p-2 shadow-xl transition-all hover:bg-gray-50 lg:flex"
           aria-label="Scroll right"
         >
           <ChevronRight size={18} className="text-gray-800" />

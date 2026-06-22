@@ -21,7 +21,7 @@ const DEFAULT_APPEARANCE = {
     cutoffHour: 23,
     cutoffMinute: 0,
     deliveryMinDays: 2,
-    deliveryMaxDays: 5,
+    deliveryMaxDays: 3,
     rushPrefix: 'Or ⚡ Rush delivery',
     rushHour: 11,
     rushMinute: 15,

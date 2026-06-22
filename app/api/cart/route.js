@@ -67,7 +67,7 @@ export async function POST(request){
 
                 const now = new Date();
 
-                for (const [storeId, storeItems] of grouped.entries()) {
+                await Promise.all([...grouped.entries()].map(async ([storeId, storeItems]) => {
                     const existingCart = await AbandonedCart.findOne({
                         storeId,
                         userId,
@@ -101,7 +101,7 @@ export async function POST(request){
                         },
                         { upsert: true }
                     );
-                }
+                }));
             } catch (err) {
                 console.warn('[cart] Could not track abandoned cart:', err.message);
             }
