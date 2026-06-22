@@ -408,6 +408,24 @@ export async function GET(request) {
         const search = String(searchParams.get('search') || '').trim();
 
         const idsParam = String(searchParams.get('ids') || '').trim();
+        const productId = String(searchParams.get('productId') || '').trim();
+
+        if (productId) {
+            if (!productId.match(/^[a-fA-F0-9]{24}$/)) {
+                return NextResponse.json({ error: 'Invalid product ID' }, { status: 400 });
+            }
+
+            const product = await Product.findOne({ _id: productId, storeId }).lean();
+            if (!product) {
+                return NextResponse.json({ error: 'Product not found' }, { status: 404 });
+            }
+
+            return NextResponse.json(
+                { product },
+                { headers: { 'Cache-Control': 'private, no-cache, no-store, must-revalidate' } }
+            );
+        }
+
         if (idsParam) {
             const ids = idsParam.split(',').map((id) => id.trim()).filter(Boolean).slice(0, 20);
             const products = await fetchPickerProductsByIds(Product, storeId, ids);
@@ -624,10 +642,13 @@ export async function PUT(request) {
             finalPrice = prices.length ? Math.min(...prices) : finalPrice;
             finalAED = AEDs.length ? Math.min(...AEDs) : finalAED;
             inStock = stocks.some(s => s > 0);
-        } else if (price !== undefined || AED !== undefined) {
-            // no variants, keep numeric price/AED if provided
+        } else {
+            variants = [];
             if (price !== undefined) finalPrice = price;
             if (AED !== undefined) finalAED = AED;
+            if (stockQuantity !== undefined) {
+                inStock = Number(stockQuantity) > 0;
+            }
         }
 
         let shortDescription = typeof shortDescriptionRaw === 'string' ? shortDescriptionRaw : product.shortDescription;
@@ -644,7 +665,11 @@ export async function PUT(request) {
             : (Array.isArray(product.specTableRows) ? parseSpecTableRows(product.specTableRows, specTableColumns.length) : []);
         if (attributesRaw) {
             try {
-                attributes = JSON.parse(attributesRaw) || attributes;
+                const parsed = JSON.parse(attributesRaw) || {};
+                attributes = { ...(product.attributes || {}), ...parsed };
+                if (!attributes.variantType) {
+                    delete attributes.variantType;
+                }
                 // Extract shortDescription from attributes
                 if (attributes.shortDescription !== undefined) {
                     shortDescription = attributes.shortDescription;
@@ -669,12 +694,13 @@ export async function PUT(request) {
             try {
                 const parsed = JSON.parse(categoriesRaw);
                 console.log('DEBUG PUT: JSON parsed result:', parsed, 'isArray:', Array.isArray(parsed));
-                categories = Array.isArray(parsed) ? parsed : [];
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    categories = parsed;
+                }
                 console.log('DEBUG PUT: Using categoriesRaw, categories:', categories, 'length:', categories.length);
                 console.log('PUT: Parsed categories from form:', { raw: categoriesRaw, parsed, categories });
             } catch (e) {
                 console.error('PUT: Error parsing categories:', categoriesRaw, e);
-                categories = [];
             }
         } 
         // FALLBACK: Only use single category if no multiple categories provided and nothing in DB

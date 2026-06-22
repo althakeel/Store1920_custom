@@ -92,8 +92,8 @@ const ProductCard = ({
 
   const dispatch = useDispatch()
   const { getToken } = useAuth()
-  const { market, convertPrice } = useStorefrontMarket()
-  const { t } = useStorefrontI18n()
+  const { market, convertPrice, formatNumber } = useStorefrontMarket()
+  const { t, language } = useStorefrontI18n()
   const cartItems = useSelector((state) => state.cart.cartItems)
   const [hovered, setHovered] = useState(false)
   const [showCardVideo, setShowCardVideo] = useState(false)
@@ -423,13 +423,13 @@ const ProductCard = ({
                   <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-600">
                     {market.currency}
                   </span>
-                  <span>{convertedPrice.toFixed(0)}</span>
+                  <span>{formatNumber(convertedPrice, language, { maximumFractionDigits: 0 })}</span>
                 </p>
               ) : null}
               {AEDNum > 0 && AEDNum > priceNum ? (
                 <p className="inline-flex items-center gap-1 text-[10px] leading-none text-slate-400 line-through sm:text-xs">
                   <span className="uppercase tracking-wide">{market.currency}</span>
-                  <span>{convertedAED.toFixed(0)}</span>
+                  <span>{formatNumber(convertedAED, language, { maximumFractionDigits: 0 })}</span>
                 </p>
               ) : null}
               {discount > 0 ? (

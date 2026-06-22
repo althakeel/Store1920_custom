@@ -1,5 +1,6 @@
 import connectDB from '@/lib/mongodb';
 import Rating from '@/models/Rating';
+import Product from '@/models/Product';
 import { deleteCacheKey } from '@/lib/cache';
 
 export async function POST(request) {
@@ -43,6 +44,11 @@ export async function POST(request) {
 
     if (review.productId) {
       deleteCacheKey(`reviews:product:${review.productId}`);
+      const product = await Product.findById(review.productId).select('slug').lean();
+      if (product?.slug) {
+        deleteCacheKey(`product-page:${product.slug}:en`);
+        deleteCacheKey(`product-page:${product.slug}:ar`);
+      }
     }
 
     return Response.json({

@@ -11,6 +11,7 @@ export default function ProductCarousel({
   priorityCount = 4,
   className = '',
   showArrows = true,
+  compactBottom = false,
 }) {
   const [canScrollLeft, setCanScrollLeft] = useState(false)
   const {
@@ -39,6 +40,10 @@ export default function ProductCarousel({
 
   if (!products.length) return null
 
+  const resolvedTrackClassName = compactBottom
+    ? trackClassName.replace(' pb-2', ' pb-0')
+    : trackClassName
+
   return (
     <div className={`relative w-full min-w-0 overflow-hidden ${className}`.trim()}>
       {showArrows && canScrollLeft ? (
@@ -57,7 +62,7 @@ export default function ProductCarousel({
         role="region"
         aria-label="Product carousel"
         onPointerDown={handlePointerDown}
-        className={trackClassName}
+        className={resolvedTrackClassName}
         style={trackStyle}
       >
         {products.map((product, index) => (

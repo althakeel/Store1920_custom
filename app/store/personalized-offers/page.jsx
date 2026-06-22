@@ -8,7 +8,6 @@ import { useAuth } from "@/lib/useAuth";
 
 export default function PersonalizedOffersAdmin() {
   const { user, getToken } = useAuth();
-  const [myStoreId, setMyStoreId] = useState(null);
   const [offers, setOffers] = useState([]);
   const [products, setProducts] = useState([]);
   const [abandonedCarts, setAbandonedCarts] = useState([]);
@@ -33,16 +32,10 @@ export default function PersonalizedOffersAdmin() {
   useEffect(() => {
     if (user) {
       fetchOffers();
+      fetchProducts();
       fetchAbandonedCarts();
     }
   }, [user, statusFilter]);
-
-  // Fetch products when we have the storeId
-  useEffect(() => {
-    if (myStoreId) {
-      fetchProducts();
-    }
-  }, [myStoreId]);
 
   // Fetch offers
   const fetchOffers = async () => {
@@ -56,14 +49,6 @@ export default function PersonalizedOffersAdmin() {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
       setOffers(data.offers || []);
-      
-      // Store the storeId from first offer for filtering products
-      if (data.offers && data.offers.length > 0 && !myStoreId) {
-        setMyStoreId(data.offers[0].storeId);
-      } else if (data.storeId) {
-        // API might return storeId directly
-        setMyStoreId(data.storeId);
-      }
     } catch (error) {
       toast.error("Failed to fetch offers");
       console.error(error);
@@ -84,20 +69,10 @@ export default function PersonalizedOffersAdmin() {
       const { data } = await axios.get(`/api/store/product`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
-      
-      console.log('Total products in database:', data.products?.length || 0);
-      
-      // Filter products by store if we have the storeId
-      let storeProducts = data.products || [];
-      if (myStoreId) {
-        storeProducts = storeProducts.filter(p => p.storeId === myStoreId);
-        console.log('Filtered to your store products:', storeProducts.length);
-      } else {
-        console.warn('No storeId yet, showing all products');
-      }
-      
+
+      const storeProducts = data.products || [];
       setProducts(storeProducts);
-      
+
       if (storeProducts.length === 0) {
         toast.error("No products found in your store. Please add products first.");
       }

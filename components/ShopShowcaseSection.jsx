@@ -27,6 +27,62 @@ import {
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket'
 import { getProductThumbnailUrl } from '@/lib/productMedia'
 
+const NAVBAR_APPEARANCE_CACHE_KEY = 'navbarAppearanceCache'
+const DEFAULT_NAVBAR_BG = '#8f3404'
+
+function readCachedNavbarBg() {
+  if (typeof window === 'undefined') return DEFAULT_NAVBAR_BG
+
+  try {
+    const raw = window.localStorage.getItem(NAVBAR_APPEARANCE_CACHE_KEY)
+    if (!raw) return DEFAULT_NAVBAR_BG
+
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed.backgroundColor === 'string' && parsed.backgroundColor.trim()) {
+      return parsed.backgroundColor.trim()
+    }
+  } catch {
+    // Ignore cache read failures.
+  }
+
+  return DEFAULT_NAVBAR_BG
+}
+
+function useNavbarBackgroundColor() {
+  const [navbarBg, setNavbarBg] = useState(DEFAULT_NAVBAR_BG)
+
+  useEffect(() => {
+    setNavbarBg(readCachedNavbarBg())
+
+    const controller = new AbortController()
+
+    fetch(`/api/store/navbar-menu?t=${Date.now()}`, { cache: 'no-store', signal: controller.signal })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        const nextBg = String(data?.backgroundColor || '').trim()
+        if (nextBg) setNavbarBg(nextBg)
+      })
+      .catch(() => {})
+
+    const handleNavbarAppearanceUpdate = (event) => {
+      const nextBg = event?.detail?.backgroundColor
+      if (typeof nextBg === 'string' && nextBg.trim()) {
+        setNavbarBg(nextBg.trim())
+        return
+      }
+      setNavbarBg(readCachedNavbarBg())
+    }
+
+    window.addEventListener('navbarAppearanceUpdated', handleNavbarAppearanceUpdate)
+    return () => {
+      controller.abort()
+      window.removeEventListener('navbarAppearanceUpdated', handleNavbarAppearanceUpdate)
+    }
+  }, [])
+
+  return navbarBg
+}
+
 function getCategoryHref(category) {
   if (category?.slug) return `/shop?category=${encodeURIComponent(category.slug)}`
   if (category?._id) return `/shop?category=${encodeURIComponent(String(category._id))}`
@@ -57,13 +113,13 @@ function getOriginalImageUrl(value) {
 
 const DEFAULT_FLYOUT_IMAGE = TABBY_LOGO_SRC
 
-function ShopShowcaseSkeleton() {
+function ShopShowcaseSkeleton({ navbarBg = DEFAULT_NAVBAR_BG }) {
   return (
     <section className={`${HOME_SECTION_CLASS} max-w-[1400px] mx-auto px-0 sm:px-6`} aria-label="Loading shop showcase">
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-[280px_minmax(0,1fr)] lg:items-stretch">
         <div className="relative hidden min-h-0 lg:block">
           <aside className="absolute inset-0 flex min-h-0 flex-col overflow-hidden rounded-none border border-slate-200 bg-white shadow-sm">
-            <div className="flex items-center justify-between bg-[#222] px-4 py-3 text-white">
+            <div className="flex items-center justify-between px-4 py-3 text-white" style={{ backgroundColor: navbarBg }}>
               <div className="flex items-center gap-2">
                 <div className="h-4 w-4 rounded-[2px] bg-white/25" />
                 <div className="h-3 w-24 rounded-[2px] bg-white/35" />
@@ -147,6 +203,7 @@ export default function ShopShowcaseSection({
   const [hoveredMenuIndex, setHoveredMenuIndex] = useState(null)
   const closeFlyoutTimerRef = useRef(null)
   const { market, convertPrice } = useStorefrontMarket()
+  const navbarBg = useNavbarBackgroundColor()
 
   const clearFlyoutCloseTimer = () => {
     if (closeFlyoutTimerRef.current) {
@@ -346,7 +403,7 @@ export default function ShopShowcaseSection({
     }
   }, [])
 
-  if (loading) return <ShopShowcaseSkeleton />
+  if (loading) return <ShopShowcaseSkeleton navbarBg={navbarBg} />
   if (!config || config.enabled === false) return null
 
   return (
@@ -359,7 +416,8 @@ export default function ShopShowcaseSection({
         >
           <aside className="absolute inset-0 flex min-h-0 flex-col overflow-hidden rounded-none border border-slate-200 bg-white shadow-sm">
             <div
-              className="flex items-center justify-between bg-[#222] px-4 py-3 text-white"
+              className="flex items-center justify-between px-4 py-3 text-white"
+              style={{ backgroundColor: navbarBg }}
               onMouseEnter={() => {
                 clearFlyoutCloseTimer()
                 setHoveredMenuIndex(null)

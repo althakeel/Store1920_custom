@@ -345,7 +345,7 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
             )}
 
             {showOverviewSections && showSpecTable && (
-                <div className={`order-2 bg-white ${compactMobile ? 'border-t border-gray-100 px-4 py-3' : 'border-t border-gray-300 pt-4 sm:pt-5'}`}>
+                <div className={`order-2 bg-white ${compactMobile ? 'border-t border-gray-100 px-4 py-2.5' : 'border-t border-gray-300 pt-4 sm:pt-5'}`}>
                     <h3 className={`${compactMobile ? 'text-[15px] font-bold mb-2' : 'text-[28px] leading-none font-semibold mb-3'} text-gray-900`}>
                         {(
                             isArabic
@@ -385,7 +385,7 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
             )}
 
             {showMainDescription && (
-                <div className={`${compactMobile ? 'order-1' : 'order-3'} bg-white ${compactMobile ? 'px-4 py-3' : 'border-t border-gray-200 pt-4'}`} dir={isArabic ? 'rtl' : 'ltr'}>
+                <div className={`${compactMobile ? 'order-1' : 'order-3'} bg-white ${compactMobile ? 'px-4 py-2.5' : 'border-t border-gray-200 pt-4'}`} dir={isArabic ? 'rtl' : 'ltr'}>
                     <div className={`${compactMobile ? 'mb-2' : 'mb-3'} flex items-center justify-between gap-3`}>
                         <h2 className={`${compactMobile ? 'text-[15px] font-bold' : 'text-[18px] font-semibold'} leading-none text-gray-900`}>{t('product.productDetails')}</h2>
                         <div className="flex shrink-0 items-center gap-2 text-[13px] text-gray-800">

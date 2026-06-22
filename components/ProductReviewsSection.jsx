@@ -209,6 +209,7 @@ export default function ProductReviewsSection({
   reviews = [],
   loading = false,
   initialVisibleCount = 4,
+  compactMobile = false,
 }) {
   const { t, isArabic } = useStorefrontI18n();
   const [starFilter, setStarFilter] = useState('all');
@@ -221,6 +222,31 @@ export default function ProductReviewsSection({
   useEffect(() => {
     setReviewItems(reviews);
   }, [reviews]);
+
+  useEffect(() => {
+    const productId = String(product?._id || product?.id || '').trim();
+    if (!productId) return undefined;
+
+    const needsHelpfulRefresh = reviews.some(
+      (review) => review.helpfulCount === undefined || review.helpfulCount === null
+    );
+    if (!needsHelpfulRefresh) return undefined;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await axios.get(`/api/review?productId=${productId}`);
+        if (cancelled || !Array.isArray(data?.reviews)) return;
+        setReviewItems(data.reviews);
+      } catch {
+        // Keep SSR reviews if refresh fails.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [product?._id, product?.id, reviews]);
 
   const handleHelpfulVote = (reviewId, helpfulCount) => {
     setReviewItems((prev) => prev.map((item) => (
@@ -295,8 +321,12 @@ export default function ProductReviewsSection({
   };
 
   return (
-    <section id="product-reviews" className="border-t border-gray-200 pt-8" dir={isArabic ? 'rtl' : 'ltr'}>
-      <h2 className="text-[22px] sm:text-[24px] font-semibold text-gray-900 mb-6">
+    <section
+      id="product-reviews"
+      className={compactMobile ? 'border-t border-gray-100 pt-3' : 'border-t border-gray-200 pt-8'}
+      dir={isArabic ? 'rtl' : 'ltr'}
+    >
+      <h2 className={`font-semibold text-gray-900 ${compactMobile ? 'mb-3 text-[18px]' : 'mb-6 text-[22px] sm:text-[24px]'}`}>
         {t('reviews.title')}
       </h2>
 
@@ -306,7 +336,7 @@ export default function ProductReviewsSection({
           <div className="h-40 rounded-xl bg-gray-100" />
         </div>
       ) : reviewCount === 0 ? (
-        <div className="rounded-xl border border-gray-200 bg-gray-50 p-8 text-center">
+        <div className={`rounded-xl border border-gray-200 bg-gray-50 text-center ${compactMobile ? 'p-5' : 'p-8'}`}>
           <p className="text-lg font-semibold text-gray-900">{t('reviews.noReviewsTitle')}</p>
           <p className="mt-2 text-sm text-gray-600">
             {t('reviews.noReviewsBody')}

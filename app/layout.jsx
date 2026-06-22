@@ -3,10 +3,10 @@ import Script from "next/script";
 import React from "react";
 import { cookies, headers } from "next/headers";
 import ClientLayout from "./ClientLayout";
+import StorefrontLanguageInitScript from "@/components/StorefrontLanguageInitScript";
 import {
   STOREFRONT_LANGUAGE_COOKIE,
   detectLanguageFromAcceptLanguage,
-  getStorefrontLanguageInitScript,
 } from "@/lib/storefrontLanguage";
 
 export const metadata = {
@@ -50,13 +50,6 @@ export default async function RootLayout({ children }) {
   return (
     <html lang={storefrontLanguage} dir={isArabic ? 'rtl' : 'ltr'}>
       <head>
-        <Script
-          id="document-direction-init"
-          strategy="beforeInteractive"
-          dangerouslySetInnerHTML={{
-            __html: getStorefrontLanguageInitScript(),
-          }}
-        />
         {/* S3 media preconnect */}
         {s3Origin && (
           <>
@@ -70,7 +63,9 @@ export default async function RootLayout({ children }) {
             <link rel="preconnect" href={imageKitOrigin} crossOrigin="anonymous" />
           </>
         )}
-        {/* Google Tag Manager - HEAD */}
+      </head>
+      <body className="overflow-x-clip antialiased" suppressHydrationWarning>
+        <StorefrontLanguageInitScript />
         <Script
           id="gtm-head"
           strategy="afterInteractive"
@@ -100,22 +95,6 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
             `,
           }}
         />
-        {/* Tawk.to Chat Widget - DISABLED */}
-        {/* <Script id="tawk-to" strategy="lazyOnload">
-          {`
-            var Tawk_API=Tawk_API||{}, Tawk_LoadStart=new Date();
-            (function(){
-            var s1=document.createElement("script"),s0=document.getElementsByTagName("script")[0];
-            s1.async=true;
-            s1.src='https://embed.tawk.to/6960fec410a230197fa5d3f5/1jehe6c93';
-            s1.charset='UTF-8';
-            s1.setAttribute('crossorigin','*');
-            s0.parentNode.insertBefore(s1,s0);
-            })();
-          `}
-        </Script> */}
-      </head>
-      <body className="overflow-x-clip antialiased" suppressHydrationWarning>
         {/* Google Tag Manager (noscript required for browsers with JS disabled) */}
         <noscript>
           <iframe

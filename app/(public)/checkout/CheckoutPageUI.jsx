@@ -103,7 +103,7 @@ export default function CheckoutPage() {
   };
   const formatMoneyFixed = (amount) => {
     const converted = Number(convertPrice(Number(amount || 0)) || 0);
-    return `${market.currency} ${converted.toFixed(2)}`;
+    return `${market.currency} ${converted.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
   const pushDataLayerEvent = (event, ecommerce) => {

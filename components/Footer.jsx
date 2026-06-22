@@ -2,6 +2,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import Logo from "@/assets/logo/Store1920.png";
 import { useStorefrontI18n } from '@/lib/useStorefrontI18n';
 import { HOME_SECTION_INNER_CLASS } from '@/lib/storefrontCarousel';
@@ -16,6 +17,22 @@ const Footer = () => {
         logoWidth: 160,
         logoHeight: 40,
     });
+    const [appComingSoonOpen, setAppComingSoonOpen] = useState(false);
+    const [portalReady, setPortalReady] = useState(false);
+
+    useEffect(() => {
+        setPortalReady(true);
+    }, []);
+
+    useEffect(() => {
+        if (!appComingSoonOpen) return undefined;
+
+        const onKeyDown = (event) => {
+            if (event.key === 'Escape') setAppComingSoonOpen(false);
+        };
+        document.addEventListener('keydown', onKeyDown);
+        return () => document.removeEventListener('keydown', onKeyDown);
+    }, [appComingSoonOpen]);
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
@@ -144,15 +161,45 @@ const Footer = () => {
             icon: GooglePlayIcon,
             title: t('footer.getItOn'),
             platform: t('footer.googlePlay'),
-            href: 'https://play.google.com/store',
         },
         {
             icon: AppleIcon,
             title: t('footer.downloadOnThe'),
             platform: t('footer.appStore'),
-            href: 'https://www.apple.com/app-store/',
         },
     ];
+
+    const renderAppComingSoonPopup = () => {
+        if (!appComingSoonOpen || !portalReady) return null;
+
+        return createPortal(
+            <div
+                className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/45 p-4"
+                onClick={() => setAppComingSoonOpen(false)}
+                role="dialog"
+                aria-modal="true"
+                aria-label={t('footer.comingSoon')}
+            >
+                <div
+                    className="w-full max-w-[280px] rounded-2xl bg-white px-5 py-4 text-center shadow-2xl"
+                    onClick={(event) => event.stopPropagation()}
+                >
+                    <p className="text-base font-semibold text-slate-900">{t('footer.comingSoon')}</p>
+                    <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                        {t('footer.appComingSoonMessage')}
+                    </p>
+                    <button
+                        type="button"
+                        onClick={() => setAppComingSoonOpen(false)}
+                        className="mt-4 h-10 w-full rounded-lg bg-slate-900 text-sm font-semibold text-white transition hover:bg-slate-800"
+                    >
+                        OK
+                    </button>
+                </div>
+            </div>,
+            document.body
+        );
+    };
 
     return (
         <footer className="bg-black text-slate-200 border-t border-slate-800 pt-0 lg:pt-12" dir={isArabic ? 'rtl' : 'ltr'}>
@@ -189,12 +236,11 @@ const Footer = () => {
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
                             {appDownloadLinks.map((item) => (
-                                <Link
+                                <button
                                     key={item.platform}
-                                    href={item.href}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="group min-w-[156px] h-12 px-3 rounded-xl border border-slate-700 bg-slate-900/60 hover:bg-slate-800 transition flex items-center gap-2"
+                                    type="button"
+                                    onClick={() => setAppComingSoonOpen(true)}
+                                    className="group min-w-[156px] h-12 px-3 rounded-xl border border-slate-700 bg-slate-900/60 hover:bg-slate-800 transition flex items-center gap-2 text-start"
                                     aria-label={item.platform}
                                 >
                                     <item.icon />
@@ -202,7 +248,7 @@ const Footer = () => {
                                         <span className="text-[10px] text-slate-400 group-hover:text-slate-300">{item.title}</span>
                                         <span className="text-sm text-slate-100 font-semibold">{item.platform}</span>
                                     </span>
-                                </Link>
+                                </button>
                             ))}
                         </div>
                         {/* Social Icons removed from brand section to avoid duplication */}
@@ -250,6 +296,7 @@ const Footer = () => {
                     </div>
                 </div>
             </div>
+            {renderAppComingSoonPopup()}
         </footer>
     );
 };

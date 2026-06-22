@@ -140,7 +140,6 @@ const Navbar = () => {
   const [searchSuggestionResults, setSearchSuggestionResults] = useState([]);
   const [searchSuggestionsLoading, setSearchSuggestionsLoading] = useState(false);
   const searchDebounceRef = useRef(null);
-  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const mobileSearchInputRef = useRef(null);
   const [showAddressModal, setShowAddressModal] = useState(false);
   const [selectedAddressId, setSelectedAddressId] = useState(null);
@@ -172,21 +171,9 @@ const Navbar = () => {
   const [isClient, setIsClient] = useState(false);
   useEffect(() => { setIsClient(true); }, []);
 
-  useEffect(() => {
-    if (mobileSearchOpen && mobileSearchInputRef.current) {
-      mobileSearchInputRef.current.focus();
-    }
-  }, [mobileSearchOpen]);
-
   const router = useRouter();
   const pathname = usePathname();
   const isHomePage = pathname === '/';
-
-  useEffect(() => {
-    if (!isHomePage) {
-      setMobileSearchOpen(false);
-    }
-  }, [isHomePage]);
 
   const mobileNavbarUsesBrandColor = isHomePage;
   const mobileNavbarBackgroundColor = mobileNavbarUsesBrandColor
@@ -890,7 +877,6 @@ const Navbar = () => {
     e.preventDefault();
     const query = search.trim();
     if (!query) return;
-    setMobileSearchOpen(false);
     setSearchFocused(false);
     router.push(`/shop?search=${encodeURIComponent(query)}`);
   };
@@ -1225,139 +1211,37 @@ const Navbar = () => {
         <div className="flex items-center gap-2 px-3 py-2.5">
           <button
             type="button"
-            onClick={() => {
-              setMobileMenuOpen((prev) => !prev);
-              if (mobileNavbarUsesBrandColor) {
-                setMobileSearchOpen(false);
-              }
-            }}
+            onClick={() => setMobileMenuOpen((prev) => !prev)}
             className={`inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md ${mobileNavbarControlClass}`}
             aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
           >
             {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
 
-          {!(mobileNavbarUsesBrandColor && mobileSearchOpen) ? (
-            <Link
-              href="/"
-              onClick={handleLogoNavigation}
-              className="flex flex-shrink-0 items-center"
+          <Link
+            href="/"
+            onClick={handleLogoNavigation}
+            className="flex flex-shrink-0 items-center"
+          >
+            <Image
+              src={mobileLogoSrc}
+              alt={`${STOREFRONT_BRAND_NAME} logo`}
+              width={navbarAppearance.logoWidth}
+              height={navbarAppearance.logoHeight}
+              className="h-7 w-auto object-contain"
+              style={{ maxHeight: '32px', maxWidth: mobileNavbarUsesBrandColor ? '110px' : '88px' }}
+              priority
+            />
+          </Link>
+
+          <form onSubmit={handleSearch} className="relative min-w-0 flex-1">
+            <div
+              className={`relative flex h-9 items-center rounded-full pl-3 pr-1 ${
+                mobileNavbarUsesBrandColor
+                  ? 'bg-white shadow-[0_2px_10px_rgba(15,23,42,0.12)]'
+                  : 'border border-gray-200 bg-gray-50'
+              }`}
             >
-              <Image
-                src={mobileLogoSrc}
-                alt={`${STOREFRONT_BRAND_NAME} logo`}
-                width={navbarAppearance.logoWidth}
-                height={navbarAppearance.logoHeight}
-                className="h-7 w-auto object-contain"
-                style={{ maxHeight: '32px', maxWidth: mobileNavbarUsesBrandColor ? '110px' : '88px' }}
-                priority
-              />
-            </Link>
-          ) : null}
-
-          {mobileNavbarUsesBrandColor ? (
-            <div className="flex min-w-0 flex-1 items-center justify-end gap-1">
-              {!mobileSearchOpen ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setMobileSearchOpen(true)}
-                    className={`inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full ${mobileNavbarControlClass}`}
-                    aria-label="Open search"
-                  >
-                    <Search size={20} />
-                  </button>
-                  <Link
-                    href={firebaseUser ? '/dashboard/wishlist' : '/wishlist'}
-                    className={`relative inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full ${mobileNavbarControlClass}`}
-                    aria-label="Wishlist"
-                  >
-                    <HeartIcon size={20} />
-                    {wishlistCount > 0 && (
-                      <span className="absolute -right-1 -top-1 inline-flex min-h-[16px] min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
-                        {wishlistCount > 99 ? '99+' : wishlistCount}
-                      </span>
-                    )}
-                  </Link>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMobileSearchOpen(false);
-                    setSearchFocused(false);
-                  }}
-                  className={`inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full ${mobileNavbarControlClass}`}
-                  aria-label="Close search"
-                >
-                  <X size={20} />
-                </button>
-              )}
-            </div>
-          ) : (
-            <>
-              <form onSubmit={handleSearch} className="relative min-w-0 flex-1">
-                <div className="relative flex h-9 items-center rounded-full border border-gray-200 bg-gray-50 pl-3 pr-1">
-                  <input
-                    ref={mobileSearchInputRef}
-                    type="search"
-                    enterKeyHint="search"
-                    placeholder={searchPlaceholder || t('navbar.searchFragrances')}
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    onFocus={() => setSearchFocused(true)}
-                    onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
-                    className="min-w-0 flex-1 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
-                  />
-                  {search.trim() ? (
-                    <button
-                      type="button"
-                      onClick={() => setSearch('')}
-                      className="mr-0.5 inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200/70"
-                      aria-label="Clear search"
-                    >
-                      <X size={13} />
-                    </button>
-                  ) : null}
-                  <button
-                    type="submit"
-                    aria-label="Search"
-                    className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-white transition hover:opacity-90"
-                    style={{ backgroundColor: navbarAppearance.backgroundColor }}
-                  >
-                    <Search size={14} strokeWidth={2.5} />
-                  </button>
-                </div>
-
-                {renderSearchSuggestionsDropdown(
-                  'absolute left-0 right-0 top-full z-50 mt-2 max-h-80 overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-xl',
-                )}
-              </form>
-
-              <Link
-                href={firebaseUser ? '/dashboard/wishlist' : '/wishlist'}
-                className={`relative inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full ${mobileNavbarControlClass}`}
-                aria-label="Wishlist"
-              >
-                <HeartIcon size={20} />
-                {wishlistCount > 0 && (
-                  <span className="absolute -right-1 -top-1 inline-flex min-h-[16px] min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
-                    {wishlistCount > 99 ? '99+' : wishlistCount}
-                  </span>
-                )}
-              </Link>
-            </>
-          )}
-        </div>
-
-        {mobileNavbarUsesBrandColor ? (
-        <div
-          className={`overflow-hidden transition-all duration-300 ease-out ${
-            mobileSearchOpen ? 'max-h-40 opacity-100' : 'pointer-events-none max-h-0 opacity-0'
-          }`}
-        >
-          <form onSubmit={handleSearch} className={`relative border-t px-3 pb-3 pt-2.5 ${mobileNavbarUsesBrandColor ? 'border-white/10' : 'border-gray-200'}`}>
-            <div className="relative flex h-11 items-center rounded-full bg-white pl-4 pr-1.5 shadow-[0_4px_16px_rgba(15,23,42,0.14)]">
               <input
                 ref={mobileSearchInputRef}
                 type="search"
@@ -1367,35 +1251,46 @@ const Navbar = () => {
                 onChange={(e) => setSearch(e.target.value)}
                 onFocus={() => setSearchFocused(true)}
                 onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
-                className="min-w-0 flex-1 bg-transparent text-[15px] text-slate-900 outline-none placeholder:text-slate-400"
+                className="min-w-0 flex-1 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
               />
               {search.trim() ? (
                 <button
                   type="button"
                   onClick={() => setSearch('')}
-                  className="mr-1 inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100"
+                  className="mr-0.5 inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200/70"
                   aria-label="Clear search"
                 >
-                  <X size={14} />
+                  <X size={13} />
                 </button>
               ) : null}
               <button
                 type="submit"
                 aria-label="Search"
-                className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-white transition hover:opacity-90"
+                className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-white transition hover:opacity-90"
                 style={{ backgroundColor: navbarAppearance.backgroundColor }}
               >
-                <Search size={16} strokeWidth={2.5} />
+                <Search size={14} strokeWidth={2.5} />
               </button>
             </div>
 
             {renderSearchSuggestionsDropdown(
-              'absolute left-3 right-3 top-full z-50 mt-2 max-h-80 overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-xl',
-              () => setMobileSearchOpen(false),
+              'absolute left-0 right-0 top-full z-50 mt-2 max-h-80 overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-xl',
             )}
           </form>
+
+          <Link
+            href={firebaseUser ? '/dashboard/wishlist' : '/wishlist'}
+            className={`relative inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full ${mobileNavbarControlClass}`}
+            aria-label="Wishlist"
+          >
+            <HeartIcon size={20} />
+            {wishlistCount > 0 && (
+              <span className="absolute -right-1 -top-1 inline-flex min-h-[16px] min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
+                {wishlistCount > 99 ? '99+' : wishlistCount}
+              </span>
+            )}
+          </Link>
         </div>
-        ) : null}
       </nav>
 
       {/* Original Full Navbar (Desktop only) */}

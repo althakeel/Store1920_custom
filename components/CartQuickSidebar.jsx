@@ -30,7 +30,7 @@ export default function CartQuickSidebar() {
   const { getToken, user } = useAuth()
   const { cartItems = {}, total = 0 } = useSelector((state) => state.cart || {})
   const products = useSelector((state) => state.product?.list || [])
-  const { market, convertPrice } = useStorefrontMarket()
+  const { market, convertPrice, formatDisplay } = useStorefrontMarket()
   const { isArabic } = useStorefrontI18n()
   const pathname = usePathname()
 
@@ -203,7 +203,7 @@ export default function CartQuickSidebar() {
           </div>
 
           <p className="text-lg font-extrabold text-slate-900">
-            {market.currency} {Number(convertedSubtotal || 0).toFixed(2)}
+            {market.currency} {formatDisplay(convertedSubtotal || 0)}
           </p>
 
           <div className="mt-2 rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700">
@@ -239,7 +239,7 @@ export default function CartQuickSidebar() {
                 </div>
                 <p className="mt-1 line-clamp-2 text-[10px] text-slate-600">{item.name}</p>
                 <p className="mt-0.5 text-[11px] font-semibold text-slate-900">
-                  {item.isFreeGift ? 'FREE' : `${market.currency} ${Number(item.convertedUnitPrice || 0).toFixed(2)}`}
+                  {item.isFreeGift ? 'FREE' : `${market.currency} ${formatDisplay(item.convertedUnitPrice || 0)}`}
                 </p>
                 <div className="mt-1 flex items-center justify-between gap-1">
                   {item.isFreeGift ? (

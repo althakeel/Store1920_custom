@@ -127,7 +127,7 @@ export default function ProductPageClient({ slug, initialData }) {
   }
 
   return (
-    <div className="w-full pb-24 lg:pb-0">
+    <div className="w-full">
       {refreshingLanguage ? (
         <div className="pointer-events-none w-full max-w-[1400px] mx-auto px-4 sm:px-6 py-6 pb-8 opacity-60">
           <ProductPageSkeleton />

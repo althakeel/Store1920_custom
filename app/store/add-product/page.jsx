@@ -23,6 +23,7 @@ import { TableHeader } from '@tiptap/extension-table-header'
 
 import { useAuth } from '@/lib/useAuth';
 import { formatStorefrontMoney } from '@/lib/storefrontMarket';
+import { getProductImageAspectRatioClass } from '@/lib/productMedia';
 
 const toArabicPriceDisplay = (amount) => {
     const numeric = Number(amount);
@@ -697,10 +698,18 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
             fetchFbtConfig();
         }
     }, [product?._id]);
+    // Reset form when switching products
+    useEffect(() => {
+        setIsFormInitialized(false)
+    }, [product?._id])
+
     // Prefill form when editing
     useEffect(() => {
-        if (product && !isFormInitialized) {
-            console.log('Initializing form with product:', product._id)
+        if (!product?._id || isFormInitialized) {
+            return
+        }
+
+        console.log('Initializing form with product:', product._id)
             setProductInfo({
                 name: product.name || "",
                 nameAr: product.nameAr || "",
@@ -789,8 +798,8 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
             const pv = Array.isArray(product.variants) ? product.variants : []
             setHasVariants(Boolean(product.hasVariants))
             setVariants(pv)
-            // Detect bulk bundle style variants (presence of options.bundleQty)
-            const isBulk = pv.length > 0 && pv.every(v => v?.options && (v.options.bundleQty || v.options.bundleQty === 0) && !v.options.color && !v.options.size)
+            const isBulk = product.attributes?.variantType === 'bulk_bundles'
+              || (pv.length > 0 && pv.every(v => v?.options && (v.options.bundleQty || v.options.bundleQty === 0) && !v.options.color && !v.options.size))
             if (isBulk) {
                 setBulkEnabled(true)
                 // Map into editable bulkOptions
@@ -800,7 +809,9 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                     price: v.price ?? '',
                     AED: v.AED ?? v.price ?? '',
                     stock: v.stock ?? 0,
-                    tag: v.tag || v.options?.tag || ''
+                    tag: v.tag || v.options?.tag || '',
+                    image: v?.options?.image || '',
+                    imageSlot: v?.options?.imageSlot || '',
                 }))
                 // Keep sorted by qty
                 mapped.sort((a,b)=>a.qty-b.qty)
@@ -814,14 +825,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 })
             }
             setImages(imgState)
-        }
     }, [product, isFormInitialized])
-
-    useEffect(() => {
-        if (!product) {
-            setSelectedCategories([])
-        }
-    }, [product])
     
     useEffect(() => {
         setProductInfo(prev => ({
@@ -1475,11 +1479,47 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
         setProductInfo(prev => ({ ...prev, reviews: prev.reviews.filter((_, i) => i !== index) }))
     }
 
+    const buildBulkRow = (qty, title = '') => {
+        const basePrice = Number(productInfo.price) || 0
+        const baseAED = Number(productInfo.AED) || basePrice
+        const stock = Number(productInfo.stockQuantity) || 0
+        const bundleMultiplier = Math.max(1, Number(qty) || 1)
+        return {
+            title: title || (bundleMultiplier === 1 ? 'Buy 1' : `Bundle of ${bundleMultiplier}`),
+            qty: bundleMultiplier,
+            price: basePrice ? Number((basePrice * bundleMultiplier * (bundleMultiplier > 1 ? 0.9 : 1)).toFixed(2)) : '',
+            AED: baseAED ? Number((baseAED * bundleMultiplier).toFixed(2)) : '',
+            stock: bundleMultiplier === 1 ? stock : (stock ? Math.max(1, Math.floor(stock / bundleMultiplier)) : 0),
+            tag: bundleMultiplier === 2 ? 'MOST_POPULAR' : '',
+            image: '',
+            imageSlot: '',
+        }
+    }
+
     const onSubmitHandler = async (e) => {
         e.preventDefault()
         try {
             const hasImage = Object.values(images).some(img => img)
             if (!hasImage) return toast.error('Please upload at least one product image')
+
+            if (dedupeCategoryIds(selectedCategories).length === 0) {
+                return toast.error('Please select at least one category')
+            }
+
+            if (product && !product._id) {
+                return toast.error('Product ID missing. Close the editor and try again.')
+            }
+
+            if (bulkEnabled) {
+                const validRows = bulkOptions.filter((b) => Number(b.qty) > 0 && Number(b.price) > 0)
+                if (validRows.length === 0) {
+                    return toast.error('Bundle rows need a Qty and Sale (AED) greater than 0. Rows with 0.00 are not saved.')
+                }
+                const inStockRows = validRows.filter((b) => Number(b.stock) > 0)
+                if (inStockRows.length === 0) {
+                    return toast.error('Set Stock greater than 0 on at least one bundle row so customers can buy it.')
+                }
+            }
 
             setLoading(true)
             const formData = new FormData()
@@ -1521,7 +1561,9 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
             // Attributes bucket for extra details
             const attributes = {
                 brand: productInfo.brand,
+                brandAr: productInfo.brandAr || '',
                 shortDescription: productInfo.shortDescription,
+                shortDescriptionAr: productInfo.shortDescriptionAr || '',
                 shortDescription2: productInfo.shortDescription2 || '',
                 shortDescription2Ar: productInfo.shortDescription2Ar || '',
                 priceAr: productInfo.priceAr || '',
@@ -1538,7 +1580,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 soldBy: productInfo.soldBy,
                 paymentInfo: productInfo.paymentInfo,
                 additionalDetails: aiAdditionalDetails || '',
-                ...(bulkEnabled ? { variantType: 'bulk_bundles' } : {})
+                variantType: bulkEnabled ? 'bulk_bundles' : '',
             }
             formData.append('attributes', JSON.stringify(attributes))
 
@@ -1550,7 +1592,13 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 variantsToSend = bulkOptions
                     .filter(b => Number(b.qty) > 0 && Number(b.price) > 0)
                     .map(b => ({
-                        options: { bundleQty: Number(b.qty), title: (b.title || undefined), tag: b.tag || undefined },
+                        options: {
+                            bundleQty: Number(b.qty),
+                            title: (b.title || undefined),
+                            tag: b.tag || undefined,
+                            ...(b.image ? { image: b.image } : {}),
+                            ...(b.imageSlot ? { imageSlot: b.imageSlot } : {}),
+                        },
                         price: Number(b.price),
                         AED: Number(b.AED || b.price),
                         stock: Number(b.stock || 0),
@@ -1587,12 +1635,12 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
 
             // Add productId for edit mode
             if (product?._id) {
-                formData.append('productId', product._id)
+                formData.append('productId', String(product._id))
             }
 
             const token = await getAuthTokenOrThrow(true)
             console.log('Submitting product with token:', token);
-            const apiCall = product
+            const apiCall = product?._id
                 ? axios.put(`/api/store/product`, formData, { 
                     headers: { 
                         'Authorization': `Bearer ${token}`
@@ -1626,13 +1674,13 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
             
             // Call success callback if provided
             if (onSubmitSuccess) {
-                onSubmitSuccess(savedProduct)
+                await onSubmitSuccess(savedProduct)
+            } else {
+                if (onClose) {
+                    onClose()
+                }
+                router.push('/store/manage-product')
             }
-            // Always close modal (if any) and navigate to manage-product
-            if (onClose) {
-                onClose()
-            }
-            router.push('/store/manage-product')
         } catch (error) {
             toast.error(normalizeErrorMessage(error?.response?.data?.error || error?.response?.data || error?.message))
         } finally {
@@ -2204,8 +2252,9 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                             const hasImage = img && (img.preview || typeof img === 'string')
                             const mediaSrc = img?.preview || img
                             const isVideo = Boolean(hasImage && ((typeof img === 'string' && isVideoSource(img)) || img?.type === 'video' || isVideoSource(mediaSrc)))
+                            const mediaAspectClass = getProductImageAspectRatioClass(productInfo.imageAspectRatio)
                             return (
-                                <div key={key} className="relative border rounded flex items-center justify-center h-32 cursor-pointer bg-gray-50 hover:bg-gray-100 overflow-hidden group">
+                                <div key={key} className={`relative border rounded flex items-center justify-center w-full ${mediaAspectClass} cursor-pointer bg-gray-50 hover:bg-gray-100 overflow-hidden group`}>
                                     <label className="absolute inset-0 w-full h-full cursor-pointer">
                                         <input type="file" accept="image/*,video/*" className="hidden" onChange={(e)=> e.target.files && handleImageUpload(key, e.target.files[0])} />
                                         {hasImage ? (
@@ -2278,7 +2327,30 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                           onChange={(e) => {
                             const enabled = e.target.checked
                             setBulkEnabled(enabled)
-                            if (enabled && !hasVariants) setHasVariants(true)
+                            if (enabled) {
+                              setHasVariants(true)
+                              if (bulkOptions.length === 0) {
+                                const existingBulk = (Array.isArray(variants) ? variants : []).filter(
+                                  (v) => v?.options && (v.options.bundleQty || v.options.bundleQty === 0) && !v.options?.color && !v.options?.size
+                                )
+                                if (existingBulk.length > 0) {
+                                  setBulkOptions(existingBulk.map((v) => ({
+                                    title: v?.options?.title || (Number(v?.options?.bundleQty) === 1 ? 'Buy 1' : `Bundle of ${Number(v?.options?.bundleQty) || 1}`),
+                                    qty: Number(v?.options?.bundleQty) || 1,
+                                    price: v.price ?? '',
+                                    AED: v.AED ?? v.price ?? '',
+                                    stock: v.stock ?? 0,
+                                    tag: v.tag || v.options?.tag || '',
+                                    image: v?.options?.image || '',
+                                    imageSlot: v?.options?.imageSlot || '',
+                                  })).sort((a, b) => a.qty - b.qty))
+                                } else {
+                                  setBulkOptions([buildBulkRow(1), buildBulkRow(2)])
+                                }
+                              }
+                            } else if (product?.attributes?.variantType === 'bulk_bundles') {
+                              setBulkOptions([])
+                            }
                           }}
                           className="mt-0.5 h-4 w-4 rounded accent-emerald-600"
                         />
@@ -2293,10 +2365,11 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                       <div className="rounded-xl border border-emerald-200 bg-emerald-50/30 overflow-hidden">
                         <div className="px-4 py-3 border-b border-emerald-100 bg-white/80">
                           <h4 className="text-sm font-semibold text-slate-800">Bundle pricing rows</h4>
-                          <p className="text-xs text-slate-500 mt-0.5">Configure quantities and pricing. At least one row is required.</p>
+                          <p className="text-xs text-slate-500 mt-0.5">Configure quantities and pricing. Sale (AED) must be greater than 0 or the row will not be saved.</p>
                         </div>
                         <div className="p-4 space-y-3 overflow-x-auto">
-                          <div className="min-w-[720px] grid grid-cols-[minmax(140px,1.4fr)_72px_110px_110px_80px_120px_72px] gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500 px-1">
+                          <div className="min-w-[860px] grid grid-cols-[88px_minmax(130px,1.2fr)_64px_100px_100px_72px_110px_64px] gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500 px-1">
+                            <div>Image</div>
                             <div>Label</div>
                             <div>Qty</div>
                             <div>Sale (AED)</div>
@@ -2306,8 +2379,50 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                             <div></div>
                           </div>
                           <div className="space-y-2">
-                            {bulkOptions.map((b, idx) => (
-                              <div key={idx} className="min-w-[720px] grid grid-cols-[minmax(140px,1.4fr)_72px_110px_110px_80px_120px_72px] gap-2 items-center">
+                            {bulkOptions.map((b, idx) => {
+                              const bulkImagePreview = b.image
+                                || variantImageOptions.find((opt) => opt.slot === b.imageSlot)?.preview
+                                || ''
+                              return (
+                              <div key={idx} className="min-w-[860px] grid grid-cols-[88px_minmax(130px,1.2fr)_64px_100px_100px_72px_110px_64px] gap-2 items-center">
+                                <div className="flex flex-col items-center gap-1">
+                                  <div className="h-12 w-12 rounded-lg border border-slate-200 bg-white overflow-hidden flex items-center justify-center">
+                                    {bulkImagePreview ? (
+                                      <Image
+                                        src={bulkImagePreview}
+                                        alt={`Bundle ${b.qty || idx + 1}`}
+                                        width={48}
+                                        height={48}
+                                        className="h-full w-full object-cover"
+                                      />
+                                    ) : (
+                                      <span className="text-[10px] text-slate-400 text-center leading-tight px-1">No image</span>
+                                    )}
+                                  </div>
+                                  <select
+                                    className="w-full border border-slate-200 rounded-md px-1 py-1 text-[10px] bg-white"
+                                    value={b.imageSlot || ''}
+                                    onChange={(e) => {
+                                      const slot = e.target.value
+                                      const selected = variantImageOptions.find((opt) => opt.slot === slot)
+                                      const v = [...bulkOptions]
+                                      v[idx] = {
+                                        ...b,
+                                        imageSlot: slot,
+                                        image: selected?.persistentUrl || (slot ? b.image : ''),
+                                      }
+                                      if (!slot) {
+                                        v[idx].image = ''
+                                      }
+                                      setBulkOptions(v)
+                                    }}
+                                  >
+                                    <option value="">Media</option>
+                                    {variantImageOptions.map((opt) => (
+                                      <option key={opt.slot} value={opt.slot}>#{opt.slot}</option>
+                                    ))}
+                                  </select>
+                                </div>
                                 <input className="border border-slate-200 rounded-lg px-2.5 py-2 text-sm bg-white" placeholder="Buy 1 / Bundle of 2" value={b.title || ''}
                                   onChange={(e) => { const v = [...bulkOptions]; v[idx] = { ...b, title: e.target.value }; setBulkOptions(v) }} />
                                 <input className="border border-slate-200 rounded-lg px-2.5 py-2 text-sm bg-white" type="number" min={1} value={b.qty}
@@ -2326,9 +2441,14 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                                 </select>
                                 <button type="button" className="text-xs font-medium text-red-600 hover:text-red-800 px-2" onClick={() => setBulkOptions(bulkOptions.filter((_, i) => i !== idx))}>Remove</button>
                               </div>
-                            ))}
+                            )})}
                           </div>
-                          <button type="button" className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50" onClick={() => setBulkOptions([...bulkOptions, { title: '', qty: 1, price: '', AED: '', stock: 0, tag: '' }])}>+ Add bundle row</button>
+                          <button type="button" className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50" onClick={() => {
+                            const nextQty = bulkOptions.length
+                              ? Math.max(...bulkOptions.map((b) => Number(b.qty) || 1)) + 1
+                              : 1
+                            setBulkOptions([...bulkOptions, buildBulkRow(nextQty)])
+                          }}>+ Add bundle row</button>
                         </div>
                       </div>
                     )}

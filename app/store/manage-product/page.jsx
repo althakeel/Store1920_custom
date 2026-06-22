@@ -168,9 +168,17 @@ export default function StoreManageProducts() {
         return data.message
     }
 
-    const handleEdit = (product) => {
-        setEditingProduct(product)
-        setShowEditModal(true)
+    const handleEdit = async (product) => {
+        try {
+            const token = await getToken()
+            const { data } = await axios.get(`/api/store/product?productId=${product._id}`, {
+                headers: { Authorization: `Bearer ${token}` },
+            })
+            setEditingProduct(data.product || product)
+            setShowEditModal(true)
+        } catch (error) {
+            toast.error(error?.response?.data?.error || 'Failed to load product details')
+        }
     }
 
     const handleDelete = async (productId) => {
@@ -274,14 +282,18 @@ export default function StoreManageProducts() {
         }
     }
 
-    const handleUpdateSuccess = (updatedProduct) => {
-        setProducts(prevProducts => prevProducts.map(p => 
-            p._id === updatedProduct._id ? updatedProduct : p
-        ))
+    const handleUpdateSuccess = async (updatedProduct) => {
+        if (updatedProduct?._id) {
+            setProducts((prevProducts) =>
+                prevProducts.map((p) =>
+                    String(p._id) === String(updatedProduct._id) ? { ...p, ...updatedProduct } : p
+                )
+            )
+        }
         setShowEditModal(false)
         setEditingProduct(null)
-        // Refresh global Redux product list so frontend always uses latest slug
-        dispatch(fetchProductsAction(STOREFRONT_CATALOG_FETCH));
+        dispatch(fetchProductsAction(STOREFRONT_CATALOG_FETCH))
+        await fetchStoreProducts()
     }
 
     useEffect(() => {

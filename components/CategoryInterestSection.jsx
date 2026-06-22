@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState, useEffect } from 'react';
+import { PackageOpen } from 'lucide-react';
 import ProductCard from '@/components/ProductCard';
 import {
   HOME_PRODUCT_GRID_CLASS,
@@ -433,8 +434,12 @@ export default function CategoryInterestSection() {
             ))}
           </div>
         ) : (
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">
-            No products found in this category.
+          <div className="flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-6 py-10 text-center">
+            <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-slate-200">
+              <PackageOpen size={28} className="text-slate-400" strokeWidth={1.75} aria-hidden="true" />
+            </div>
+            <p className="text-sm font-medium text-slate-600">No products found in this category.</p>
+            <p className="mt-1 text-xs text-slate-400">Try selecting another interest above.</p>
           </div>
         )}
       </div>

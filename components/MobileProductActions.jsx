@@ -23,7 +23,7 @@ export default function MobileProductActions({
 
   return (
     <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-slate-200 bg-white shadow-[0_-4px_24px_rgba(15,23,42,0.08)] safe-area-bottom" dir={isArabic ? 'rtl' : 'ltr'}>
-      <div className="flex items-center gap-2.5 px-3 py-3" dir="ltr">
+      <div className={`flex items-center gap-2.5 px-3 py-3 ${isArabic ? '' : 'flex-row-reverse'}`} dir="ltr">
         {!isOutOfStock ? (
           <button
             type="button"

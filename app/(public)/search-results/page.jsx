@@ -11,8 +11,8 @@ import { PRODUCT_CARD_GRID_CLASS_1_2_3_6, PRODUCT_CARD_CELL_CLASS } from '@/lib/
 function SearchResultsInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { market, convertPrice } = useStorefrontMarket();
-  const formatPrice = (amount) => `${market.currency} ${Math.round(convertPrice(Number(amount) || 0))}`;
+  const { market, convertPrice, formatNumber } = useStorefrontMarket();
+  const formatPrice = (amount) => `${market.currency} ${formatNumber(convertPrice(Number(amount) || 0), 'en', { maximumFractionDigits: 0 })}`;
   const [keyword, setKeyword] = useState('');
   const [method, setMethod] = useState('image-search');
   const [source, setSource] = useState('');

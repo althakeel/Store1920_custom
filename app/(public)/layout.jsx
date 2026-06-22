@@ -41,12 +41,13 @@ function PublicLayoutContent({ children }) {
     const isHomePage = pathname === '/';
     const isCheckout = pathname === '/checkout';
     const isCartPage = pathname === '/cart';
+    const isProductPage = pathname?.includes('/product/');
 
     return (
-        <div className={`flex flex-col ${isCartPage ? '' : 'min-h-screen'}`}>
+        <div className={`flex flex-col ${isCartPage || isProductPage ? '' : 'min-h-screen'}`}>
             <GuestOrderLinker />
             <DeferredTrackers />
-            <main className={`flex-1 min-w-0 overflow-x-clip ${isHomePage ? 'pb-8' : 'pb-20'} lg:pb-0`}>{children}</main>
+            <main className={`${isProductPage ? '' : 'flex-1'} min-w-0 overflow-x-clip ${isHomePage ? 'pb-8' : isProductPage ? 'pb-0' : 'pb-20'} lg:pb-0`}>{children}</main>
             {!isHomePage && !isCheckout && <MobileBottomNav />}
         </div>
     );

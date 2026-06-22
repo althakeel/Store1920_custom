@@ -134,7 +134,7 @@ export async function GET(request) {
         })
             .sort({ createdAt: -1 })
             .limit(30)
-            .select('rating review images videos customerName customerEmail userId orderId helpfulCount createdAt')
+            .select('_id rating review images videos customerName customerEmail userId orderId helpfulCount createdAt')
             .lean();
 
         const userIds = [

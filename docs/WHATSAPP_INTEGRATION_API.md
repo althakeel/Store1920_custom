@@ -121,17 +121,49 @@ You can send either `orderId` or `orderNumber`.
 
 ### Supported events
 
-| Event | WhatsApp use case |
-|-------|-------------------|
-| `cod_confirmation` | COD order confirmation |
-| `order_confirmed` | Same as COD confirmation |
-| `order_paid` | Paid order confirmation |
-| `paid_confirmation` | Paid order confirmation |
-| `order_shipped` | Order shipped notification |
-| `abandoned_checkout` | Abandoned checkout reminder |
-| `cart_reminder` | Add to cart reminder |
-| `order_delivered` | Reserved for delivered template |
-| `promotional_offer` | Reserved for coupon / promo template |
+| Event | WhatsApp use case | Template |
+|-------|-------------------|----------|
+| `cod_confirmation` | COD order confirmation | `order_confirmation_final` |
+| `order_confirmed` | Same as COD confirmation | `order_confirmation_final` |
+| `order_paid` | Paid order confirmation | `confirmation_paid_order` |
+| `paid_confirmation` | Paid order confirmation | `confirmation_paid_order` |
+| `order_shipped` | Order shipped notification | `order_shipped` |
+| `abandoned_checkout` | Abandoned checkout reminder | `cart_reminder_1920` (button → `/checkout`) |
+| `cart_reminder` | Add to cart reminder | `cart_reminder_1920` (button → `/cart`) |
+| `order_delivered` | Reserved for delivered template | — |
+| `promotional_offer` | Reserved for coupon / promo template | — |
+
+### Cart reminder without order
+
+`cart_reminder` and `abandoned_checkout` can be sent **without** an order if you provide customer phone + product:
+
+```json
+{
+  "event": "cart_reminder",
+  "phone": "526478393",
+  "phoneCode": "+971",
+  "customerName": "Ahmed",
+  "cartTotal": 99,
+  "slug": "neck-face-massager"
+}
+```
+
+Store1920 maps this to Elastic WABA template `cart_reminder_1920`:
+
+| Component | Value |
+|-----------|--------|
+| Header image | `product.imageUrl` |
+| Body {{1}} | Customer name |
+| Body {{2}} | Cart total / price (e.g. `99 AED`) |
+| Body {{3}} | Free shipping label (`Available`) |
+| Button URL {{1}} | `/cart` or `/checkout` |
+
+Elastic API endpoint used internally:
+
+```text
+POST {WABA_API_BASE_URL}/{WABA_PHONE_NUMBER_ID}/messages
+Authorization: Bearer {WABA_TOKEN_CART_REMINDER}
+```
 
 ### Example response
 
