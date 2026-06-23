@@ -141,15 +141,25 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '' }
         axios.post('/api/wallet/bonus', {}, {
           headers: { Authorization: `Bearer ${token}` },
         }).catch(() => {});
-      }
 
-      const emailEndpoint = isNewUser ? '/api/send-welcome-email' : '/api/send-login-email';
-      axios.post(emailEndpoint, {
-        email: emailOverride || user.email,
-        name: nameOverride || user.displayName || 'Customer',
-      }, {
-        headers: { Authorization: `Bearer ${token}` },
-      }).catch(() => {});
+        axios.post('/api/send-welcome-email', {
+          email: emailOverride || user.email,
+          name: nameOverride || user.displayName || 'Customer',
+        }, {
+          headers: { Authorization: `Bearer ${token}` },
+        }).catch((err) => {
+          console.error('Welcome email failed:', err?.response?.data || err?.message || err);
+        });
+      } else {
+        axios.post('/api/send-login-email', {
+          email: emailOverride || user.email,
+          name: nameOverride || user.displayName || 'Customer',
+        }, {
+          headers: { Authorization: `Bearer ${token}` },
+        }).catch((err) => {
+          console.error('Login alert email failed:', err?.response?.data || err?.message || err);
+        });
+      }
     } catch {
       // Non-blocking background work.
     }
