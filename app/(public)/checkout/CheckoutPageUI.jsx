@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useLayoutEffect } from "react";
 import { Check, Truck, Zap } from "lucide-react";
 import axios from "axios";
 import { countryCodes } from "@/assets/countryCodes";
@@ -21,6 +21,9 @@ import BnplLogo from "@/components/BnplLogo";
 import { useStorefrontI18n } from "@/lib/useStorefrontI18n";
 import { useStorefrontMarket } from "@/lib/useStorefrontMarket";
 import { trackCustomerEvent, withOrderTrackingFields } from '@/lib/trackingClient';
+import { pushGtmEcommerceEvent, toGtmItem } from '@/lib/pushGtmEcommerceEvent';
+import { runTrackedOnce } from '@/lib/trackingDedupe';
+import { GTM_EVENTS, gtmDedupeKey } from '@/lib/gtmEvents';
 import { getCartEntryProductId, getCartEntryQuantity, isFreeGiftEntry } from "@/lib/freeGiftUtils";
 import { STORE1920_LOGO_PATH } from "@/lib/brandLogo";
 import {
@@ -122,12 +125,6 @@ export default function CheckoutPage() {
   const formatMoneyFixed = (amount) => {
     const converted = Number(convertPrice(Number(amount || 0)) || 0);
     return `${market.currency} ${converted.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  };
-
-  const pushDataLayerEvent = (event, ecommerce) => {
-    if (typeof window === 'undefined') return;
-    window.dataLayer = window.dataLayer || [];
-    window.dataLayer.push({ event, ecommerce });
   };
 
   const cleanDigits = (value) => (value ? String(value).replace(/\D/g, '') : '');
@@ -672,55 +669,73 @@ export default function CheckoutPage() {
     !hasValidPhone(user?.phoneNumber || user?.phone);
   const isPincodeError = /pincode/i.test(String(formError || ''));
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (typeof window === 'undefined') return;
-    if (cartArray.length === 0) return;
 
-    const orderKey = cartArray
-      .map((item) => `${String(item?._id || item?._cartKey || '')}:${Number(item?.quantity || 0)}`)
-      .join('|');
-    const eventKey = `gtm_begin_checkout_${orderKey}`;
-    if (sessionStorage.getItem(eventKey)) return;
+    const gtmItems = [];
+    for (const [key, value] of Object.entries(cartItems || {})) {
+      if (isFreeGiftEntry(value)) continue;
+      const productId = getCartEntryProductId(key, value);
+      const qty = getCartEntryQuantity(value);
+      if (!productId || qty <= 0) continue;
 
-    pushDataLayerEvent('begin_checkout', {
-      currency: 'AED',
-      value: Number(totalAfterWallet || 0),
-      items: cartArray.map((item) => ({
-        item_id: String(item?._id || item?._cartKey || ''),
-        item_name: item?.name || 'Product',
-        price: Number(item?._cartPrice ?? item?.price ?? 0),
-        quantity: Number(item?.quantity || 0),
-      })),
+      const product = products?.find((p) => String(p._id) === String(productId));
+      const priceOverride = typeof value === 'object' ? value?.price : undefined;
+      const unitPrice = product
+        ? Number(product.salePrice ?? product.price ?? priceOverride ?? 0)
+        : Number(priceOverride ?? 0);
+
+      gtmItems.push(toGtmItem(product || { _id: productId, name: 'Product', price: unitPrice }, {
+        item_id: productId,
+        item_name: product?.name || 'Product',
+        price: unitPrice,
+        quantity: qty,
+      }));
+    }
+
+    if (gtmItems.length === 0) return;
+
+    const orderKey = gtmItems.map((item) => `${item.item_id}:${item.quantity}`).join('|');
+    const checkoutValue = gtmItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const value = Number(totalAfterWallet || checkoutValue || 0);
+    const currencyCode = market.currency || 'AED';
+
+    runTrackedOnce(gtmDedupeKey(GTM_EVENTS.BEGIN_CHECKOUT, orderKey), () => {
+      pushGtmEcommerceEvent(GTM_EVENTS.BEGIN_CHECKOUT, {
+        currency: currencyCode,
+        value,
+        items: gtmItems,
+      });
     });
 
-    trackInitiateCheckout({
-      value: Number(totalAfterWallet || 0),
-      currency: 'AED',
-      items: cartArray.map((item) => ({
-        productId: String(item?._id || item?._cartKey || ''),
-        name: item?.name || 'Product',
-        price: Number(item?._cartPrice ?? item?.price ?? 0),
-        quantity: Number(item?.quantity || 0),
-      })),
-      numItems: cartArray.reduce((sum, item) => sum + Number(item?.quantity || 0), 0),
-    });
+    runTrackedOnce(gtmDedupeKey('meta_begin_checkout', orderKey), () => {
+      trackInitiateCheckout({
+        value,
+        currency: currencyCode,
+        items: gtmItems.map((item) => ({
+          productId: item.item_id,
+          name: item.item_name,
+          price: item.price,
+          quantity: item.quantity,
+        })),
+        numItems: gtmItems.reduce((sum, item) => sum + item.quantity, 0),
+      });
 
-    trackCustomerEvent({
-      eventType: 'checkout_start',
-      firebaseUid: user?.uid || null,
-      userId: user?.uid || null,
-      pageType: 'checkout',
-      pagePath: '/checkout',
-      value: Number(totalAfterWallet || 0),
-      currency: 'AED',
-      metadata: {
-        itemCount: cartArray.length,
-        cartValue: Number(totalAfterWallet || 0),
-      },
+      trackCustomerEvent({
+        eventType: 'checkout_start',
+        firebaseUid: user?.uid || null,
+        userId: user?.uid || null,
+        pageType: 'checkout',
+        pagePath: '/checkout',
+        value,
+        currency: currencyCode,
+        metadata: {
+          itemCount: gtmItems.length,
+          cartValue: value,
+        },
+      });
     });
-
-    sessionStorage.setItem(eventKey, '1');
-  }, [cartArray, totalAfterWallet, user?.uid]);
+  }, [cartItems, products, totalAfterWallet, user?.uid, market.currency]);
 
   useEffect(() => {
     if (hasPersonalizedOfferItem && form.payment === 'cod') {

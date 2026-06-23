@@ -12,6 +12,8 @@ import { useStorefrontI18n } from '@/lib/useStorefrontI18n'
 import { addToCart, deleteItemFromCart, fetchCart, removeFromCart, uploadCart } from '@/lib/features/cart/cartSlice'
 import { useAuth } from '@/lib/useAuth'
 import { getCartEntryProductId, getCartEntryQuantity, isFreeGiftEntry } from '@/lib/freeGiftUtils'
+import { pushGtmEcommerceEvent, toGtmItem } from '@/lib/pushGtmEcommerceEvent'
+import { GTM_EVENTS, gtmDedupeKey } from '@/lib/gtmEvents'
 
 const getQty = (entry) => {
   if (typeof entry === 'number') return entry
@@ -110,6 +112,20 @@ export default function CartQuickSidebar() {
 
   const handleDelete = async (productId) => {
     const id = String(productId)
+    const row = cartRows.find((entry) => String(entry.productId) === id)
+    if (row) {
+      pushGtmEcommerceEvent(GTM_EVENTS.REMOVE_FROM_CART, {
+        currency: market.currency || 'AED',
+        value: Number(row.convertedUnitPrice || 0) * Number(row.qty || 1),
+        items: [toGtmItem({
+          _id: row.actualProductId,
+          name: row.name,
+          price: row.convertedUnitPrice,
+          quantity: row.qty,
+        })],
+      })
+    }
+
     dispatch(deleteItemFromCart({ productId: id }))
 
     if (user) {

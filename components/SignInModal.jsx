@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { X, Eye, EyeOff } from 'lucide-react';
 import { auth, googleProvider } from '../lib/firebase';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { pushGtmEvent } from '@/lib/pushGtmEcommerceEvent';
+import { GTM_EVENTS, gtmDedupeKey } from '@/lib/gtmEvents';
 import { signInWithGooglePopup } from '@/lib/firebaseAuthActions';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -138,6 +140,12 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '' }
       });
 
       if (isNewUser) {
+        pushGtmEvent(
+          GTM_EVENTS.SIGN_UP,
+          { method: emailOverride ? 'email' : 'google' },
+          gtmDedupeKey(GTM_EVENTS.SIGN_UP, user.uid),
+        );
+
         axios.post('/api/wallet/bonus', {}, {
           headers: { Authorization: `Bearer ${token}` },
         }).catch(() => {});

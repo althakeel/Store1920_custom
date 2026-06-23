@@ -2,7 +2,7 @@
 "use client";
 
 import { useDispatch, useSelector, useStore } from "react-redux";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import axios from "axios";
 import Counter from "@/components/Counter";
 import CartSummaryBox from "@/components/CartSummaryBox";
@@ -12,6 +12,9 @@ import { PackageIcon, Trash2Icon } from "lucide-react";
 import Image from "next/image";
 import { useAuth } from "@/lib/useAuth";
 import { trackViewCart } from "@/lib/metaPixelTracking";
+import { pushGtmEcommerceEvent, toGtmItem } from "@/lib/pushGtmEcommerceEvent";
+import { runTrackedOnce } from "@/lib/trackingDedupe";
+import { GTM_EVENTS, gtmDedupeKey } from "@/lib/gtmEvents";
 import { STORE_CURRENCY } from "@/lib/storeCurrency";
 import { getCartEntryProductId, getCartEntryQuantity, isFreeGiftEntry } from "@/lib/freeGiftUtils";
 
@@ -202,6 +205,15 @@ export default function Cart() {
         const key = String(cartKey || '');
         if (!key) return;
 
+        const removedItem = cartArray.find((item) => String(item._cartKey || item._id) === key);
+        if (removedItem) {
+            pushGtmEcommerceEvent(GTM_EVENTS.REMOVE_FROM_CART, {
+                currency: STORE_CURRENCY,
+                value: Number(removedItem.price || 0) * Number(removedItem.quantity || 1),
+                items: [toGtmItem(removedItem)],
+            });
+        }
+
         setDeletingKeys((prev) => ({ ...prev, [key]: true }));
         dispatch(deleteItemFromCart({ productId: key }));
 
@@ -250,7 +262,7 @@ export default function Cart() {
     const outOfStockCartArray = cartArray.filter((item) => getMaxQty(item) === 0);
     const checkoutDisabled = inStockCartArray.length === 0;
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         if (typeof window === 'undefined') return;
         if (!inStockCartArray.length) return;
 
@@ -259,20 +271,24 @@ export default function Cart() {
             .filter(Boolean);
 
         const cartSignature = `${contentIds.join(',')}_${Number(totalPrice || 0)}`;
-        const eventKey = `meta_viewcart_sent_${cartSignature}`;
-        if (sessionStorage.getItem(eventKey)) return;
 
-        trackViewCart({
-            value: Number(totalPrice || 0),
-            currency: STORE_CURRENCY,
-            items: inStockCartArray.map((item) => ({
-                productId: String(item?._id || item?._cartKey || ''),
-                quantity: Number(item?.quantity || 0),
-            })),
-            numItems: inStockCartArray.reduce((sum, item) => sum + Number(item?.quantity || 0), 0),
+        runTrackedOnce(gtmDedupeKey(GTM_EVENTS.VIEW_CART, cartSignature), () => {
+            trackViewCart({
+                value: Number(totalPrice || 0),
+                currency: STORE_CURRENCY,
+                items: inStockCartArray.map((item) => ({
+                    productId: String(item?._id || item?._cartKey || ''),
+                    quantity: Number(item?.quantity || 0),
+                })),
+                numItems: inStockCartArray.reduce((sum, item) => sum + Number(item?.quantity || 0), 0),
+            });
+
+            pushGtmEcommerceEvent(GTM_EVENTS.VIEW_CART, {
+                currency: STORE_CURRENCY,
+                value: Number(totalPrice || 0),
+                items: inStockCartArray.map((item) => toGtmItem(item)),
+            });
         });
-
-        sessionStorage.setItem(eventKey, '1');
     }, [inStockCartArray, totalPrice]);
 
     return (

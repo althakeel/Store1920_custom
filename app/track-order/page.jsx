@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import axios from "axios";
 import { toast } from "react-hot-toast";
@@ -41,6 +41,7 @@ function TrackOrderPageInner() {
   const [relatedOrders, setRelatedOrders] = useState([])
   const [notFound, setNotFound] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const autoTrackStarted = useRef(false)
 
   const handleRefresh = async () => {
     if (refreshing || !order) return;
@@ -62,10 +63,11 @@ function TrackOrderPageInner() {
   };
 
   useEffect(() => {
-    const orderId = searchParams.get("orderId");
-    if (orderId) {
-      setAwbNumber(orderId);
-    }
+    const orderNo = searchParams.get('orderNo') || searchParams.get('orderId');
+    const phone = searchParams.get('phone') || '';
+
+    if (phone) setPhoneNumber(phone);
+    if (orderNo) setAwbNumber(orderNo);
   }, [searchParams]);
 
   const trackWithParams = async (params) => {
@@ -84,51 +86,72 @@ function TrackOrderPageInner() {
     return false
   }
 
-  const handleTrack = async (e) => {
-    if (e?.preventDefault) e.preventDefault()
-    if (!phoneNumber.trim() && !awbNumber.trim()) {
-      toast.error('Please enter mobile number, email, AWB, reference number, or booking number')
-      return
+  const runTrack = async ({ phone = phoneNumber, reference = awbNumber } = {}) => {
+    const contact = String(phone || '').trim();
+    const ref = String(reference || '').trim();
+
+    if (!contact && !ref) {
+      toast.error('Please enter mobile number, email, AWB, reference number, or booking number');
+      return false;
     }
 
-    setLoading(true)
-    setNotFound(false)
-    setOrder(null)
-    setRelatedOrders([])
+    setLoading(true);
+    setNotFound(false);
+    setOrder(null);
+    setRelatedOrders([]);
 
     try {
-      const params = buildTrackingParams(phoneNumber, awbNumber)
+      const params = buildTrackingParams(contact, ref);
 
-      const tracked = await trackWithParams(params)
+      const tracked = await trackWithParams(params);
       if (tracked) {
-        return
+        return true;
       }
 
-      if (awbNumber.trim()) {
-        const retry = await axios.get(`/api/track-order?carrier=c3xpress&awb=${encodeURIComponent(awbNumber.trim())}`, {
+      if (ref) {
+        const retry = await axios.get(`/api/track-order?carrier=c3xpress&awb=${encodeURIComponent(ref)}`, {
           validateStatus: (status) => status < 500,
-        })
+        });
         if (retry.data?.success && retry.data?.order) {
-          setOrder(retry.data.order)
-          setRelatedOrders([])
-          setNotFound(false)
-          toast.dismiss()
-        } else {
-          setNotFound(true)
-          toast.error(retry.data?.message || 'Order not found')
+          setOrder(retry.data.order);
+          setRelatedOrders([]);
+          setNotFound(false);
+          toast.dismiss();
+          return true;
         }
-      } else {
-        setNotFound(true)
-        toast.error('Order not found')
+
+        setNotFound(true);
+        toast.error(retry.data?.message || 'Order not found');
+        return false;
       }
+
+      setNotFound(true);
+      toast.error('Order not found');
+      return false;
     } catch (error) {
-      const msg = error?.response?.data?.message
-      toast.error(msg || 'Unable to track order. Please try again.')
-      setNotFound(true)
+      const msg = error?.response?.data?.message;
+      toast.error(msg || 'Unable to track order. Please try again.');
+      setNotFound(true);
+      return false;
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
+
+  const handleTrack = async (e) => {
+    if (e?.preventDefault) e.preventDefault();
+    await runTrack();
+  };
+
+  useEffect(() => {
+    const orderNo = searchParams.get('orderNo') || searchParams.get('orderId');
+    const phone = searchParams.get('phone') || '';
+
+    if (searchParams.get('auto') !== '1' || !orderNo || autoTrackStarted.current) return;
+    autoTrackStarted.current = true;
+
+    runTrack({ phone, reference: orderNo });
+  }, [searchParams]);
 
   const getStatusColor = (status) => {
     switch (status?.toUpperCase()) {

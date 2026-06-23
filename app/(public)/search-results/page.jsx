@@ -6,6 +6,8 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { ArrowLeft, PackageIcon } from 'lucide-react';
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
+import { pushGtmEvent } from '@/lib/pushGtmEcommerceEvent';
+import { GTM_EVENTS, gtmDedupeKey } from '@/lib/gtmEvents';
 import { PRODUCT_CARD_GRID_CLASS_1_2_3_6, PRODUCT_CARD_CELL_CLASS } from '@/lib/storefrontCarousel';
 
 function SearchResultsInner() {
@@ -91,6 +93,13 @@ function SearchResultsInner() {
           setProducts([]);
         } else {
           setProducts(data.products || []);
+          if (keyword.trim()) {
+            pushGtmEvent(
+              GTM_EVENTS.SEARCH,
+              { search_term: keyword.trim() },
+              gtmDedupeKey(GTM_EVENTS.SEARCH, keyword.trim().toLowerCase()),
+            );
+          }
           if ((data.products || []).length === 0) {
             setError('No products found. Try another search.');
           }

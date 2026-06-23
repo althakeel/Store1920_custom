@@ -25,6 +25,8 @@ import { getStorefrontLocale, formatLocalizedNumber } from '@/lib/storefrontMark
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
 import { useStorefrontI18n } from '@/lib/useStorefrontI18n';
 import { trackCustomerEvent } from '@/lib/trackingClient';
+import { pushGtmEcommerceEvent } from '@/lib/pushGtmEcommerceEvent';
+import { GTM_EVENTS } from '@/lib/gtmEvents';
 import {
   buildProductMediaGallery,
   findMediaIndexBySrc,
@@ -683,7 +685,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       currency: 'AED',
     });
 
-    pushDataLayerEvent('view_item', {
+    pushGtmEcommerceEvent(GTM_EVENTS.VIEW_ITEM, {
       currency: 'AED',
       value: eventPrice,
       items: [{
@@ -1957,7 +1959,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       dispatch(addToCart(payload));
     }
 
-    pushDataLayerEvent('add_to_cart', {
+    pushGtmEcommerceEvent(GTM_EVENTS.ADD_TO_CART, {
       currency: 'AED',
       value: Number((effPrice || product.price || 0) * (useBundleLine ? 1 : quantity)),
       items: [{

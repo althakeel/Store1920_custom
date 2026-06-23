@@ -21,6 +21,9 @@ import {
   resolveCardVideoPreview,
 } from '@/lib/productMedia'
 import { PRODUCT_CARD_CELL_CLASS, PRODUCT_CARD_SHELL_CLASS } from '@/lib/storefrontCarousel'
+import { pushGtmEcommerceEvent } from '@/lib/pushGtmEcommerceEvent'
+import { GTM_EVENTS } from '@/lib/gtmEvents'
+import { STORE_CURRENCY } from '@/lib/storeCurrency'
 
 const parseAmount = (value) => {
   const num = Number(String(value ?? '').replace(/[^0-9.]/g, ''))
@@ -212,20 +215,16 @@ const ProductCard = ({
   }, [cardPreview.type, cardPreview.delayMs, cardPreview.videoSrc])
 
   const pushDataLayerAddToCart = () => {
-    if (typeof window === 'undefined') return
-    window.dataLayer = window.dataLayer || []
-    window.dataLayer.push({
-      event: 'add_to_cart',
-      ecommerce: {
-        currency: 'AED',
-        value: Number(priceNum > 0 ? priceNum : product.price || 0),
-        items: [{
-          item_id: String(product._id || product.id || ''),
-          item_name: product.name || product.title || 'Product',
-          price: Number(priceNum > 0 ? priceNum : product.price || 0),
-          quantity: 1,
-        }],
-      },
+    const unitPrice = Number(priceNum > 0 ? priceNum : product.price || 0)
+    pushGtmEcommerceEvent(GTM_EVENTS.ADD_TO_CART, {
+      currency: STORE_CURRENCY,
+      value: unitPrice,
+      items: [{
+        item_id: String(product._id || product.id || ''),
+        item_name: product.name || product.title || 'Product',
+        price: unitPrice,
+        quantity: 1,
+      }],
     })
   }
 

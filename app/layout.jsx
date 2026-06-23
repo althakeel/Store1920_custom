@@ -51,7 +51,11 @@ export default async function RootLayout({ children }) {
   } catch {}
 
   return (
-    <html lang={storefrontLanguage} dir={isArabic ? 'rtl' : 'ltr'}>
+    <html
+      lang={storefrontLanguage}
+      dir={isArabic ? 'rtl' : 'ltr'}
+      suppressHydrationWarning
+    >
       <GoogleTagManager gtmId={GTM_ID} />
       <head>
         {/* S3 media preconnect */}
