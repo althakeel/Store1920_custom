@@ -1,5 +1,9 @@
 {
   "functions": {
+    "app/api/store/product/bulk-import/route.js": {
+      "maxDuration": 300,
+      "memory": 3008
+    },
     "app/api/store/home-menu-categories/route.js": {
       "maxDuration": 120,
       "memory": 2048

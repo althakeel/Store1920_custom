@@ -48,6 +48,12 @@ function applyStorefrontLanguageCookie(request: NextRequest, response: NextRespo
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // Large CSV uploads are authenticated in the route handler; skip proxy buffering.
+  if (pathname === '/api/store/product/bulk-import') {
+    return NextResponse.next();
+  }
+
   const isApiRoute = pathname.startsWith('/api/');
   const response = NextResponse.next();
 

@@ -12,6 +12,7 @@ import { toast } from "react-hot-toast"
 import Loading from "@/components/Loading"
 
 import axios from "axios"
+import { importProductSpreadsheetFile } from '@/lib/productImportClient'
 import ProductForm from "../add-product/page"
 import {
     buildCategoryLookup,
@@ -414,14 +415,7 @@ export default function StoreManageProducts() {
         try {
             setImportingProducts(true)
             const token = await getToken()
-            const formData = new FormData()
-            formData.append('file', activeImportFile)
-            formData.append('importMode', 'update')
-            formData.append('skipExisting', 'false')
-
-            const { data } = await axios.post('/api/store/product/bulk-import', formData, {
-                headers: { Authorization: `Bearer ${token}` }
-            })
+            const data = await importProductSpreadsheetFile(activeImportFile, token)
 
             if (data?.summary?.created > 0 || data?.summary?.updated > 0) {
                 toast.success(data?.message || 'Products imported successfully')

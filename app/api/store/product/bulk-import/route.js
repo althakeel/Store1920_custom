@@ -7,6 +7,7 @@ import Category from '@/models/Category';
 import StorePreference from '@/models/StorePreference';
 import authSeller from '@/middlewares/authSeller';
 import { getAuth } from '@/lib/firebase-admin';
+import { sheetToRows } from '@/lib/productImportSpreadsheet';
 
 const KNOWN_BADGES = [
   'Price Lower Than Usual',
@@ -81,37 +82,6 @@ const normalizeImportedRichText = (value) => normalizeImportedText(value)
   .replace(/=\"\"([^\"]*)\"\"/g, '="$1"')
   .replace(/contenteditable=\"false\"/gi, 'contenteditable="false"')
   .replace(/contenteditable=\"true\"/gi, 'contenteditable="true"');
-
-const normalizeHeaderRow = (headerRow = []) => {
-  const seen = new Map();
-
-  return headerRow.map((value, index) => {
-    const baseHeader = String(value || `Column ${index + 1}`).trim() || `Column ${index + 1}`;
-    const duplicateCount = seen.get(baseHeader) || 0;
-    seen.set(baseHeader, duplicateCount + 1);
-
-    return duplicateCount > 0 ? `${baseHeader} (${duplicateCount + 1})` : baseHeader;
-  });
-};
-
-const sheetToRows = (sheet) => {
-  const matrix = XLSX.utils.sheet_to_json(sheet, {
-    header: 1,
-    defval: '',
-    blankrows: false,
-    raw: false,
-  });
-
-  const headerIndex = matrix.findIndex((row) => Array.isArray(row) && row.some((cell) => String(cell || '').trim() !== ''));
-  if (headerIndex === -1) return [];
-
-  const headers = normalizeHeaderRow(matrix[headerIndex] || []);
-
-  return matrix
-    .slice(headerIndex + 1)
-    .filter((row) => Array.isArray(row) && row.some((cell) => String(cell || '').trim() !== ''))
-    .map((row) => Object.fromEntries(headers.map((header, index) => [header, row[index] ?? ''])));
-};
 
 const parseRowType = (value) => String(value || 'simple').trim().toLowerCase();
 
@@ -532,6 +502,8 @@ const ensureUniqueSlug = async (baseSlug) => {
   return candidate;
 };
 
+export const maxDuration = 300;
+
 export async function POST(request) {
   try {
     await connectDB();
@@ -550,8 +522,33 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
     }
 
-    const formData = await request.formData();
-    const file = formData.get('file');
+    const contentType = String(request.headers.get('content-type') || '').toLowerCase();
+    let rows = [];
+
+    if (contentType.includes('application/json')) {
+      const body = await request.json();
+      rows = Array.isArray(body?.rows) ? body.rows : [];
+      if (!rows.length) {
+        return NextResponse.json({ error: 'No rows provided' }, { status: 400 });
+      }
+    } else {
+      const formData = await request.formData();
+      const file = formData.get('file');
+
+      if (!file) {
+        return NextResponse.json({ error: 'File is required' }, { status: 400 });
+      }
+
+      const arrayBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+
+      if (!sheetName) {
+        return NextResponse.json({ error: 'No worksheet found in file' }, { status: 400 });
+      }
+
+      rows = sheetToRows(workbook.Sheets[sheetName]);
+    }
 
     const preference = await StorePreference.findOne({ storeId }).lean();
     const customBadges = Array.isArray(preference?.appearanceSections?.productPageInfo?.badgeSettings?.badges)
@@ -560,20 +557,6 @@ export async function POST(request) {
           .filter(Boolean)
       : [];
     const allowedBadges = [...new Set([...(customBadges.length ? customBadges : []), ...KNOWN_BADGES])];
-
-    if (!file) {
-      return NextResponse.json({ error: 'File is required' }, { status: 400 });
-    }
-
-    const arrayBuffer = await file.arrayBuffer();
-    const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-    const sheetName = workbook.SheetNames[0];
-
-    if (!sheetName) {
-      return NextResponse.json({ error: 'No worksheet found in file' }, { status: 400 });
-    }
-
-    const rows = sheetToRows(workbook.Sheets[sheetName]);
 
     if (!rows.length) {
       return NextResponse.json({ error: 'No rows found in file' }, { status: 400 });
@@ -953,6 +936,12 @@ export async function POST(request) {
     );
   } catch (error) {
     console.error('Bulk import error:', error);
-    return NextResponse.json({ error: error?.message || 'Bulk import failed' }, { status: 500 });
+    const message = String(error?.message || 'Bulk import failed');
+    if (message.toLowerCase().includes('entity too large') || message.includes('413')) {
+      return NextResponse.json({
+        error: 'Import file is too large. The app will parse it in your browser and upload in smaller batches automatically. Please refresh and try again.',
+      }, { status: 413 });
+    }
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

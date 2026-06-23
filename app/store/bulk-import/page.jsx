@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useAuth } from '@/lib/useAuth';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
-import axios from 'axios';
+import { importProductSpreadsheetFile } from '@/lib/productImportClient';
 import { Upload, Download, AlertCircle, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 export default function BulkImportPage() {
@@ -13,11 +13,22 @@ export default function BulkImportPage() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [failures, setFailures] = useState([]);
+  const [importProgress, setImportProgress] = useState(null);
 
   const handleFileChange = (e) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
-      if (!['application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'text/csv'].includes(selectedFile.type)) {
+      const name = selectedFile.name.toLowerCase();
+      const allowed = ['.csv', '.xls', '.xlsx'];
+      const hasAllowedExtension = allowed.some((ext) => name.endsWith(ext));
+      const allowedMime = [
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'text/csv',
+        'text/plain',
+        'application/csv',
+      ];
+      if (!hasAllowedExtension && !allowedMime.includes(selectedFile.type)) {
         toast.error('Please upload an Excel file (.xlsx, .xls) or CSV file');
         return;
       }
@@ -43,37 +54,31 @@ export default function BulkImportPage() {
     if (!file || !user) return;
 
     setLoading(true);
+    setImportProgress(null);
     try {
       const token = await getToken();
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('importMode', 'update');
-      formData.append('skipExisting', 'false');
-
-      const response = await axios.post('/api/store/product/bulk-import', formData, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'multipart/form-data',
-        },
+      const response = await importProductSpreadsheetFile(file, token, {
+        onProgress: setImportProgress,
       });
 
-      const summary = response.data.summary;
+      const summary = response.summary;
       setResult(summary);
-      setFailures(response.data.failures || []);
+      setFailures(response.failures || []);
 
       if (summary?.created > 0 || summary?.updated > 0) {
-        toast.success(response.data?.message || 'Bulk import completed');
+        toast.success(response?.message || 'Bulk import completed');
       } else if (summary?.skipped === summary?.totalRows) {
-        toast((response.data?.message || 'Import finished, but all rows were skipped'), {
+        toast((response?.message || 'Import finished, but all rows were skipped'), {
           icon: '⚠️',
         });
       } else {
-        toast(response.data?.message || 'Import finished', {
+        toast(response?.message || 'Import finished', {
           icon: 'ℹ️',
         });
       }
     } catch (error) {
-      toast.error(error.response?.data?.error || 'Import failed');
+      const message = error.response?.data?.error || error.message || 'Import failed';
+      toast.error(message);
       console.error('Import error:', error);
     } finally {
       setLoading(false);
@@ -149,7 +154,11 @@ export default function BulkImportPage() {
               disabled={!file || loading}
               className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-medium py-3 px-6 rounded-lg transition"
             >
-              {loading ? 'Importing...' : 'Import And Update Products'}
+              {loading
+                ? (importProgress
+                  ? `Importing batch ${importProgress.current} of ${importProgress.total}...`
+                  : 'Preparing import...')
+                : 'Import And Update Products'}
             </button>
             <button
               onClick={downloadTemplate}

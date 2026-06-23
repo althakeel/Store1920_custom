@@ -59,11 +59,11 @@ const nextConfig = {
         qualities: [75, 85, 90, 100]
     },
     compress: true,
+    proxyClientMaxBodySize: '100mb',
     experimental: {
         serverActions: {
-            bodySizeLimit: '50mb'
+            bodySizeLimit: '100mb'
         },
-        proxyClientMaxBodySize: '50mb',
         optimizePackageImports: [
             'lucide-react',
             'react-icons',
