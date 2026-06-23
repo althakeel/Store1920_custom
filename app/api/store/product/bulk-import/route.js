@@ -527,8 +527,18 @@ export async function POST(request) {
 
     if (contentType.includes('application/json')) {
       const body = await request.json();
-      rows = Array.isArray(body?.rows) ? body.rows : [];
-      if (!rows.length) {
+      const batchRows = Array.isArray(body?.rows) ? body.rows : [];
+      const variationRows = Array.isArray(body?.variationRows) ? body.variationRows : [];
+      const merged = new Map();
+
+      [...variationRows, ...batchRows].forEach((row, index) => {
+        const key = String(row?.ID || row?.id || row?.SKU || row?.sku || `row-${index}`);
+        merged.set(key, row);
+      });
+
+      rows = [...merged.values()];
+
+      if (!batchRows.length) {
         return NextResponse.json({ error: 'No rows provided' }, { status: 400 });
       }
     } else {

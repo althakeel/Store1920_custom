@@ -144,8 +144,27 @@ export default function BulkImportPage() {
           </div>
 
           <div className="mt-6 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-            Update mode is always ON. Existing products will be updated, and WooCommerce variation rows will be imported instead of skipped.
+            Large files are imported in a queue (small batches with short pauses). You can keep this tab open while products are added gradually.
           </div>
+
+          {importProgress && loading ? (
+            <div className="mt-6 rounded-lg border border-blue-200 bg-blue-50 px-4 py-4">
+              <div className="flex items-center justify-between text-sm text-blue-900 mb-2">
+                <span>{importProgress.message || 'Processing...'}</span>
+                {importProgress.total > 0 ? (
+                  <span>{importProgress.current} / {importProgress.total}</span>
+                ) : null}
+              </div>
+              {importProgress.total > 0 ? (
+                <div className="h-2 w-full rounded-full bg-blue-100 overflow-hidden">
+                  <div
+                    className="h-full bg-blue-600 transition-all duration-300"
+                    style={{ width: `${Math.min(100, (importProgress.current / importProgress.total) * 100)}%` }}
+                  />
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
           {/* Actions */}
           <div className="mt-8 flex gap-4">
@@ -155,10 +174,8 @@ export default function BulkImportPage() {
               className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-medium py-3 px-6 rounded-lg transition"
             >
               {loading
-                ? (importProgress
-                  ? `Importing batch ${importProgress.current} of ${importProgress.total}...`
-                  : 'Preparing import...')
-                : 'Import And Update Products'}
+                ? (importProgress?.message || 'Starting import queue...')
+                : 'Start Queued Import'}
             </button>
             <button
               onClick={downloadTemplate}
