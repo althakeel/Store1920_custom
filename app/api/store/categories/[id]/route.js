@@ -3,10 +3,8 @@ import connectDB from '@/lib/mongodb';
 import Category from '@/models/Category';
 import authSeller from '@/middlewares/authSeller';
 import { getAuth } from '@/lib/firebase-admin';
-import { deleteCacheKey } from '@/lib/cache';
+import { invalidateCategoryCaches } from '@/lib/categoryCache';
 import { cleanDisplayText, sanitizeCategoryFields } from '@/lib/displayText';
-
-const CATEGORY_TREE_CACHE_KEY = 'public:categories:tree:v2';
 
 async function verifyStoreSeller(request) {
   const authHeader = request.headers.get('authorization');
@@ -105,7 +103,7 @@ export async function PUT(req, { params }) {
       return NextResponse.json({ error: 'Failed to update category' }, { status: 500 });
     }
 
-    deleteCacheKey(CATEGORY_TREE_CACHE_KEY);
+    invalidateCategoryCaches();
 
     const parent = category.parentId ? await Category.findById(category.parentId).lean() : null;
     const children = await Category.find({ parentId: category._id }).lean();
@@ -144,7 +142,7 @@ export async function DELETE(req, { params }) {
     }
 
     await Category.findByIdAndDelete(category._id);
-    deleteCacheKey(CATEGORY_TREE_CACHE_KEY);
+    invalidateCategoryCaches();
 
     return NextResponse.json({ message: 'Category deleted successfully' }, { status: 200 });
   } catch (error) {

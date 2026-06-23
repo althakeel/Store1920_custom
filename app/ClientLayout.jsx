@@ -9,6 +9,7 @@ import Footer from "@/components/Footer";
 import SupportBar from "@/components/SupportBar";
 import DynamicMetaTags from "@/components/DynamicMetaTags";
 import MetaPixel from "@/components/MetaPixel";
+import GtmPageView from "@/components/GtmPageView";
 import { Toaster } from "react-hot-toast";
 
 const SpinWheelWidget = dynamic(() => import("@/components/SpinWheelWidget"), { ssr: false });
@@ -50,6 +51,7 @@ export default function ClientLayout({ children, initialStorefrontLanguage = 'en
   return (
     <ReduxProvider>
       <Suspense fallback={null}>
+        <GtmPageView />
         <MetaPixel />
       </Suspense>
       {!hideStorefrontChrome && (

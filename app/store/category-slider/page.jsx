@@ -159,9 +159,17 @@ export default function CategorySliderPage() {
       toast.error('Please select at least one product');
       return;
     }
+    if (showAllSliders && editingIdx !== null) {
+      toast.error('Turn off "Show all sliders" to edit your own store sliders');
+      return;
+    }
 
     try {
-      const token = await getToken();
+      let token = await getToken();
+      if (!token) {
+        toast.error('Please sign in again');
+        return;
+      }
       console.log('💾 Saving slider with data:', formData);
 
       if (editingIdx !== null) {
@@ -186,11 +194,24 @@ export default function CategorySliderPage() {
         };
         console.log('💾 Final update payload:', JSON.stringify(updatePayload));
         console.log('💾 === UPDATE PAYLOAD READY ===');
-        await axios.put(
-          `/api/store/category-slider/${encodeURIComponent(String(editId))}`,
-          updatePayload,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
+        try {
+          await axios.put(
+            `/api/store/category-slider/${encodeURIComponent(String(editId))}`,
+            updatePayload,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+        } catch (error) {
+          if (error?.response?.status === 401) {
+            token = await getToken(true);
+            await axios.put(
+              `/api/store/category-slider/${encodeURIComponent(String(editId))}`,
+              updatePayload,
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+          } else {
+            throw error;
+          }
+        }
         const successMsg = updatePayload.subtitle 
           ? `Slider "${updatePayload.title}" with subtitle updated!`
           : `Slider "${updatePayload.title}" updated!`;
@@ -226,7 +247,8 @@ export default function CategorySliderPage() {
       await fetchData();
     } catch (error) {
       console.error('Error saving slider:', error);
-      toast.error('Failed to save slider');
+      const message = error?.response?.data?.error || error.message || 'Failed to save slider';
+      toast.error(message);
     }
   };
 
@@ -341,7 +363,7 @@ export default function CategorySliderPage() {
             ) : (
               <div className="space-y-4">
                 {sliders.map((slider) => {
-                  const isOwnSlider = !slider.storeId || slider.storeId === user?.uid;
+                  const isOwnSlider = !showAllSliders || !slider.storeId || slider.storeId === user?.uid;
                   return (
                   <div key={slider.id} className={`bg-white rounded-xl shadow-sm p-6 hover:shadow-md transition border-l-4 ${isOwnSlider ? 'border-blue-500' : 'border-orange-500'}`}>
                     <div className="flex justify-between items-start mb-4">

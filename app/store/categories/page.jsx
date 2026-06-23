@@ -542,52 +542,33 @@ export default function StoreCategoryMenu() {
       return;
     }
 
-    if (!confirm(`Delete ${selectedCategoryIds.length} selected categor${selectedCategoryIds.length === 1 ? 'y' : 'ies'}?`)) {
+    if (!confirm(`Delete ${selectedCategoryIds.length} selected categor${selectedCategoryIds.length === 1 ? 'y' : 'ies'}? Nested categories under a selected parent will be deleted too.`)) {
       return;
     }
 
     try {
       setDeletingSelected(true);
       const token = await getToken();
-      const flatCategories = flattenSystemCategories(categories);
-      const categoryById = new Map(flatCategories.map((category) => [String(category._id), category]));
-      const getDepth = (categoryId) => {
-        let depth = 0;
-        let current = categoryById.get(String(categoryId));
+      const { data } = await axios.post('/api/store/categories/bulk-delete', {
+        ids: selectedCategoryIds,
+      }, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
-        while (current?.parentId) {
-          depth += 1;
-          current = categoryById.get(String(current.parentId));
-        }
-
-        return depth;
-      };
-
-      const idsToDelete = [...selectedCategoryIds].sort((left, right) => getDepth(right) - getDepth(left));
-      const deletedIds = [];
-      const failedMessages = [];
-
-      for (const categoryId of idsToDelete) {
-        try {
-          await axios.delete(`/api/store/categories/${categoryId}`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          deletedIds.push(categoryId);
-        } catch (error) {
-          const categoryName = categoryById.get(categoryId)?.name || 'Category';
-          failedMessages.push(`${categoryName}: ${error?.response?.data?.error || 'delete failed'}`);
-        }
-      }
+      const deletedIds = data?.deleted || [];
+      const failed = Array.isArray(data?.failed) ? data.failed : [];
 
       await fetchCategories();
       setSelectedCategoryIds((current) => current.filter((id) => !deletedIds.includes(id)));
 
       if (deletedIds.length) {
         toast.success(`Deleted ${deletedIds.length} categor${deletedIds.length === 1 ? 'y' : 'ies'}`);
+      } else if (!failed.length) {
+        toast.error('No categories were deleted');
       }
 
-      if (failedMessages.length) {
-        toast.error(failedMessages[0]);
+      if (failed.length) {
+        toast.error(`${failed[0].name}: ${failed[0].error}`);
       }
     } catch (error) {
       toast.error(error?.response?.data?.error || 'Failed to delete selected categories');

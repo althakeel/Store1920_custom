@@ -2,7 +2,6 @@
 'use client'
 import { useAuth } from '@/lib/useAuth';
 
-export const dynamic = 'force-dynamic'
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import Image from "next/image"
@@ -12,14 +11,26 @@ import { toast } from "react-hot-toast"
 import Loading from "@/components/Loading"
 
 import axios from "axios"
-import { importProductSpreadsheetFile } from '@/lib/productImportClient'
-import ProductForm from "../add-product/page"
+import dynamic from "next/dynamic"
+import { ImportCancelledError, importProductSpreadsheetFile } from '@/lib/productImportClient'
+import ProductImportProgressPanel from '@/components/store/ProductImportProgressPanel'
 import {
     buildCategoryLookup,
     getProductCategoryLabels,
     resolveCategoryName,
 } from '@/lib/categoryLookup'
 import { getProductThumbnailUrl } from '@/lib/productMedia'
+
+const ProductForm = dynamic(() => import('../add-product/page'), {
+    ssr: false,
+    loading: () => (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 p-4">
+            <div className="rounded-xl bg-white px-6 py-8 text-sm font-medium text-slate-700 shadow-xl">
+                Loading product editor...
+            </div>
+        </div>
+    ),
+})
 
 const MAX_VISIBLE_TAGS = 3
 const MAX_VISIBLE_CATEGORIES = 2
@@ -100,6 +111,8 @@ export default function StoreManageProducts() {
     const [searchFbt, setSearchFbt] = useState('')
     const [productImportFile, setProductImportFile] = useState(null)
     const [importingProducts, setImportingProducts] = useState(false)
+    const [importProgress, setImportProgress] = useState(null)
+    const [stoppingImport, setStoppingImport] = useState(false)
     const [selectedProductIds, setSelectedProductIds] = useState([])
     const [deletingBulkProducts, setDeletingBulkProducts] = useState(false)
     const [showBulkEditModal, setShowBulkEditModal] = useState(false)
@@ -115,6 +128,7 @@ export default function StoreManageProducts() {
     const [aiAutofillRunning, setAiAutofillRunning] = useState(false)
     const [aiAutofillProgress, setAiAutofillProgress] = useState(null)
     const productImportInputRef = useRef(null)
+    const importControlRef = useRef({ cancelled: false, abortController: null })
 
     const fetchStoreProducts = async () => {
         try {
@@ -412,10 +426,20 @@ export default function StoreManageProducts() {
             return
         }
 
+        importControlRef.current = { cancelled: false, abortController: null }
+        setStoppingImport(false)
+        setImportProgress(null)
+
         try {
             setImportingProducts(true)
-            const token = await getToken()
-            const data = await importProductSpreadsheetFile(activeImportFile, token)
+            const data = await importProductSpreadsheetFile(activeImportFile, {
+                getToken,
+                onProgress: setImportProgress,
+                shouldCancel: () => importControlRef.current.cancelled,
+                registerAbortController: (controller) => {
+                    importControlRef.current.abortController = controller
+                },
+            })
 
             if (data?.summary?.created > 0 || data?.summary?.updated > 0) {
                 toast.success(data?.message || 'Products imported successfully')
@@ -431,10 +455,37 @@ export default function StoreManageProducts() {
             await fetchStoreProducts()
             dispatch(fetchProductsAction(STOREFRONT_CATALOG_FETCH))
         } catch (error) {
-            toast.error(error?.response?.data?.error || error.message || 'Failed to import products')
+            if (error instanceof ImportCancelledError) {
+                const partial = error.partialResult
+                setImportProgress((current) => ({
+                    ...(current || {}),
+                    phase: 'cancelled',
+                    message: partial?.summary
+                        ? `Stopped after ${partial.summary.created || 0} created, ${partial.summary.updated || 0} updated`
+                        : 'Import stopped before any products were saved',
+                }))
+                toast(partial?.summary
+                    ? `Import stopped (${partial.summary.created || 0} created, ${partial.summary.updated || 0} updated)`
+                    : 'Import stopped', { icon: '⏹️' })
+                if (partial?.summary) {
+                    await fetchStoreProducts()
+                    dispatch(fetchProductsAction(STOREFRONT_CATALOG_FETCH))
+                }
+            } else {
+                toast.error(error?.response?.data?.error || error.message || 'Failed to import products')
+            }
         } finally {
             setImportingProducts(false)
+            setStoppingImport(false)
+            importControlRef.current.abortController = null
         }
+    }
+
+    const stopProductImport = () => {
+        setStoppingImport(true)
+        importControlRef.current.cancelled = true
+        importControlRef.current.abortController?.abort()
+        setImportProgress((current) => (current ? { ...current, phase: 'cancelled', message: 'Stopping import...' } : current))
     }
 
     const exportProductsToCsv = () => {
@@ -713,6 +764,23 @@ export default function StoreManageProducts() {
                     Bulk Import Page
                 </Link>
             </div>
+
+            {(importingProducts || importProgress) && (
+                <div className="mb-4">
+                    <ProductImportProgressPanel
+                        progress={importProgress || {
+                            phase: 'parsing',
+                            message: 'Starting import...',
+                            productsProcessed: 0,
+                            productTotal: 0,
+                            percent: 0,
+                        }}
+                        onStop={importingProducts ? stopProductImport : null}
+                        stopping={stoppingImport}
+                        onDismiss={() => setImportProgress(null)}
+                    />
+                </div>
+            )}
 
             {aiAutofillProgress && (
                 <div className="mb-4 w-full rounded-lg border border-violet-200 bg-violet-50 px-4 py-3">

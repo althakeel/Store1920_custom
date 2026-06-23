@@ -2,6 +2,7 @@ import dbConnect from '@/lib/mongodb';
 import CategorySlider from '@/models/CategorySlider';
 import { NextResponse } from 'next/server';
 import { getAuth } from '@/lib/firebase-admin';
+import authSeller from '@/middlewares/authSeller';
 import { deleteCacheKey } from '@/lib/cache';
 
 const FEATURED_SECTIONS_CACHE_KEY = 'public:featured-sections:v2';
@@ -13,19 +14,34 @@ function parseAuthHeader(req) {
   return parts.length === 2 ? parts[1] : null;
 }
 
+async function resolveStoreScope(token) {
+  const decoded = await getAuth().verifyIdToken(token);
+  const userId = decoded.uid;
+  const storeId = await authSeller(userId);
+  if (!storeId) return null;
+
+  return {
+    userId,
+    storeId: String(storeId),
+    storeIds: [...new Set([String(storeId), String(userId)])],
+  };
+}
+
 export async function GET(req) {
   try {
     await dbConnect();
     const token = parseAuthHeader(req);
-    
+
     if (!token) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const decoded = await getAuth().verifyIdToken(token);
-    const storeId = decoded.uid;
+    const scope = await resolveStoreScope(token);
+    if (!scope) {
+      return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
+    }
 
-    const sliders = await CategorySlider.find({ storeId }).lean();
+    const sliders = await CategorySlider.find({ storeId: { $in: scope.storeIds } }).lean();
     
     // Ensure all fields including subtitle are present
     const slidersWithDefaults = sliders.map(slider => ({
@@ -54,8 +70,10 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const decoded = await getAuth().verifyIdToken(token);
-    const storeId = decoded.uid;
+    const scope = await resolveStoreScope(token);
+    if (!scope) {
+      return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
+    }
 
     const { title, subtitle, productIds } = await req.json();
     console.log('=== 💾 POST SLIDER START ===');
@@ -87,7 +105,7 @@ export async function POST(req) {
     console.log('💾 Processed subtitle value:', JSON.stringify(subtitleValue), 'Length:', subtitleValue.length);
 
     const sliderData = {
-      storeId,
+      storeId: scope.storeId,
       title: title.trim(),
       subtitle: subtitleValue,
       productIds,
@@ -125,8 +143,10 @@ export async function DELETE(req) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const decoded = await getAuth().verifyIdToken(token);
-    const storeId = decoded.uid;
+    const scope = await resolveStoreScope(token);
+    if (!scope) {
+      return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
+    }
 
     // Get ID from query parameter
     const { searchParams } = new URL(req.url);
@@ -139,7 +159,10 @@ export async function DELETE(req) {
       );
     }
 
-    const slider = await CategorySlider.findOneAndDelete({ _id: id, storeId });
+    const slider = await CategorySlider.findOneAndDelete({
+      _id: id,
+      storeId: { $in: scope.storeIds },
+    });
 
     if (!slider) {
       return NextResponse.json(

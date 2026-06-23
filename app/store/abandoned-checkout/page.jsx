@@ -658,7 +658,7 @@ function ConvertModal({
   );
 }
 
-function CartRow({ cart, expanded, onToggle, onConvertClick, onResendEmail, onDelete, resendingId, deletingId }) {
+function CartRow({ cart, expanded, onToggle, onConvertClick, onResendEmail, onDelete, resendingId, deletingId, canDelete = false }) {
   const items = Array.isArray(cart.items) ? cart.items : [];
   const isConverted = cart.status === 'converted';
   const isAnonymous = cart.isAnonymousGuest || isAnonymousAbandonedCart(cart);
@@ -808,33 +808,37 @@ function CartRow({ cart, expanded, onToggle, onConvertClick, onResendEmail, onDe
                 <CheckCircle2 size={14} />
                 Convert order
               </button>
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onDelete?.(cart);
-                }}
-                disabled={deletingId === cart._id}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60"
-              >
-                <Trash2 size={14} />
-                {deletingId === cart._id ? 'Deleting...' : 'Delete'}
-              </button>
+              {canDelete ? (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onDelete?.(cart);
+                  }}
+                  disabled={deletingId === cart._id}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60"
+                >
+                  <Trash2 size={14} />
+                  {deletingId === cart._id ? 'Deleting...' : 'Delete'}
+                </button>
+              ) : null}
             </div>
           ) : (
             <div className="mt-3">
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onDelete?.(cart);
-                }}
-                disabled={deletingId === cart._id}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60"
-              >
-                <Trash2 size={14} />
-                {deletingId === cart._id ? 'Deleting...' : 'Delete'}
-              </button>
+              {canDelete ? (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onDelete?.(cart);
+                  }}
+                  disabled={deletingId === cart._id}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60"
+                >
+                  <Trash2 size={14} />
+                  {deletingId === cart._id ? 'Deleting...' : 'Delete'}
+                </button>
+              ) : null}
             </div>
           )}
         </div>
@@ -856,6 +860,7 @@ export default function AbandonedCheckoutPage() {
   const [resendingId, setResendingId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [dashboardUsers, setDashboardUsers] = useState([]);
+  const [canDeleteAbandonedCarts, setCanDeleteAbandonedCarts] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -872,6 +877,7 @@ export default function AbandonedCheckoutPage() {
 
         if (cartsResult.status === 'fulfilled') {
           setCarts(Array.isArray(cartsResult.value.data.carts) ? cartsResult.value.data.carts : []);
+          setCanDeleteAbandonedCarts(Boolean(cartsResult.value.data?.canDeleteAbandonedCarts));
         } else {
           const cartsError = cartsResult.reason;
           setError(cartsError?.response?.data?.error || cartsError?.message || 'Failed to fetch abandoned carts');
@@ -1163,9 +1169,10 @@ export default function AbandonedCheckoutPage() {
                 onToggle={() => setExpandedId((current) => (current === cart._id ? null : cart._id))}
                 onConvertClick={setConvertCart}
                 onResendEmail={handleResendEmail}
-                onDelete={handleDelete}
+                onDelete={canDeleteAbandonedCarts ? handleDelete : undefined}
                 resendingId={resendingId}
                 deletingId={deletingId}
+                canDelete={canDeleteAbandonedCarts}
               />
             ))}
           </div>

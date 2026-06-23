@@ -7,6 +7,8 @@ import authSeller from "@/middlewares/authSeller";
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/firebase-admin";
 
+export const dynamic = 'force-dynamic';
+
 const STATUS_LABELS = {
   ORDER_PLACED: 'Placed',
   PROCESSING: 'Processing',
@@ -83,6 +85,7 @@ export async function GET(request) {
 
       await dbConnect();
 
+      const storeIdString = String(storeId);
       const days = 30;
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -91,7 +94,7 @@ export async function GET(request) {
       const weekAgo = new Date(today);
       weekAgo.setDate(weekAgo.getDate() - 6);
 
-      const productIdStrings = (await Product.distinct('_id', { storeId })).map((id) => String(id));
+      const productIdStrings = (await Product.distinct('_id', { storeId: storeIdString })).map((id) => String(id));
 
       const [
         orderTotals,
@@ -104,7 +107,7 @@ export async function GET(request) {
         ratingStats,
       ] = await Promise.all([
         Order.aggregate([
-          { $match: { storeId } },
+          { $match: { storeId: storeIdString } },
           {
             $group: {
               _id: null,
@@ -114,11 +117,11 @@ export async function GET(request) {
           },
         ]),
         Order.aggregate([
-          { $match: { storeId } },
+          { $match: { storeId: storeIdString } },
           { $group: { _id: '$status', count: { $sum: 1 } } },
         ]),
         Order.aggregate([
-          { $match: { storeId, createdAt: { $gte: trendStart } } },
+          { $match: { storeId: storeIdString, createdAt: { $gte: trendStart } } },
           {
             $group: {
               _id: {
@@ -131,7 +134,7 @@ export async function GET(request) {
           },
         ]),
         Order.aggregate([
-          { $match: { storeId, createdAt: { $gte: weekAgo } } },
+          { $match: { storeId: storeIdString, createdAt: { $gte: weekAgo } } },
           {
             $group: {
               _id: null,
@@ -140,15 +143,36 @@ export async function GET(request) {
             },
           },
         ]),
-        Product.countDocuments({ storeId }),
+        Product.countDocuments({ storeId: storeIdString }),
         AbandonedCart.countDocuments({
-          storeId,
+          storeId: storeIdString,
           status: { $ne: 'converted' },
         }),
-        Order.distinct('userId', {
-          storeId,
-          userId: { $exists: true, $nin: [null, ''] },
-        }),
+        Order.aggregate([
+          { $match: { storeId: storeIdString } },
+          {
+            $group: {
+              _id: {
+                $cond: [
+                  { $eq: ['$isGuest', true] },
+                  {
+                    $concat: [
+                      'guest-',
+                      {
+                        $ifNull: [
+                          '$guestEmail',
+                          { $ifNull: ['$shippingAddress.email', { $toString: '$_id' }] },
+                        ],
+                      },
+                    ],
+                  },
+                  { $toString: '$userId' },
+                ],
+              },
+            },
+          },
+          { $count: 'count' },
+        ]),
         productIdStrings.length
           ? Rating.aggregate([
               { $match: { productId: { $in: productIdStrings } } },
@@ -236,7 +260,7 @@ export async function GET(request) {
          totalOrders,
          totalEarnings: Math.round(totalEarnings),
          totalProducts,
-         totalCustomers: totalCustomers.length,
+         totalCustomers: totalCustomers[0]?.count || 0,
          abandonedCarts,
          analytics: {
            ordersTrend,
@@ -255,7 +279,7 @@ export async function GET(request) {
         { dashboardData },
         {
           headers: {
-            'Cache-Control': 'private, max-age=30, stale-while-revalidate=60',
+            'Cache-Control': 'no-store, no-cache, must-revalidate',
           },
         }
       );

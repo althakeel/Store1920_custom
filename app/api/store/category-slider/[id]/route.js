@@ -2,6 +2,7 @@ import dbConnect from '@/lib/mongodb';
 import CategorySlider from '@/models/CategorySlider';
 import { NextResponse } from 'next/server';
 import { getAuth } from '@/lib/firebase-admin';
+import authSeller from '@/middlewares/authSeller';
 import { deleteCacheKey } from '@/lib/cache';
 
 const FEATURED_SECTIONS_CACHE_KEY = 'public:featured-sections:v2';
@@ -13,18 +14,37 @@ function parseAuthHeader(req) {
   return parts.length === 2 ? parts[1] : null;
 }
 
+async function resolveStoreScope(token) {
+  const decoded = await getAuth().verifyIdToken(token);
+  const userId = decoded.uid;
+  const storeId = await authSeller(userId);
+  if (!storeId) return null;
+
+  return {
+    userId,
+    storeId: String(storeId),
+    storeIds: [...new Set([String(storeId), String(userId)])],
+  };
+}
+
 export async function PUT(req, { params }) {
   try {
     await dbConnect();
     const token = parseAuthHeader(req);
-    
+
     if (!token) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const decoded = await getAuth().verifyIdToken(token);
-    const storeId = decoded.uid;
-    const { id } = params;
+    const scope = await resolveStoreScope(token);
+    if (!scope) {
+      return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
+    }
+
+    const { id } = await params;
+    if (!id) {
+      return NextResponse.json({ error: 'Slider ID is required' }, { status: 400 });
+    }
 
     const { title, subtitle, productIds } = await req.json();
     console.log('=== 💾 PUT SLIDER START ===');
@@ -53,8 +73,8 @@ export async function PUT(req, { params }) {
     console.log('💾 About to update with:', JSON.stringify(updateData));
 
     const slider = await CategorySlider.findOneAndUpdate(
-      { _id: id, storeId },
-      updateData,
+      { _id: id, storeId: { $in: scope.storeIds } },
+      { ...updateData, storeId: scope.storeId },
       { new: true }
     );
 
@@ -91,16 +111,25 @@ export async function DELETE(req, { params }) {
   try {
     await dbConnect();
     const token = parseAuthHeader(req);
-    
+
     if (!token) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const decoded = await getAuth().verifyIdToken(token);
-    const storeId = decoded.uid;
-    const { id } = params;
+    const scope = await resolveStoreScope(token);
+    if (!scope) {
+      return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
+    }
 
-    const slider = await CategorySlider.findOneAndDelete({ _id: id, storeId });
+    const { id } = await params;
+    if (!id) {
+      return NextResponse.json({ error: 'Slider ID is required' }, { status: 400 });
+    }
+
+    const slider = await CategorySlider.findOneAndDelete({
+      _id: id,
+      storeId: { $in: scope.storeIds },
+    });
 
     if (!slider) {
       return NextResponse.json(

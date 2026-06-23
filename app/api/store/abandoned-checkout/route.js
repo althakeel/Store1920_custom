@@ -8,6 +8,40 @@ import { enrichAbandonedCarts, getAbandonedCartTotal, isPlaceholderName } from '
 import { getConversionPaymentMethodLabel, resolveConversionPaymentLink } from '@/lib/abandonedCartRecoveryPayment';
 import { sendAbandonedCartConversionEmail } from '@/lib/email';
 import Store from '@/models/Store';
+import { resolveDashboardAccess } from '@/lib/storeAccessControl';
+import authAdmin from '@/middlewares/authAdmin';
+
+async function resolveAbandonedCheckoutAccess(request) {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
+  }
+
+  const idToken = authHeader.split('Bearer ')[1];
+  let decodedToken;
+  try {
+    decodedToken = await getAuth().verifyIdToken(idToken);
+  } catch {
+    return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
+  }
+
+  const access = await resolveDashboardAccess(decodedToken.uid, decodedToken);
+  if (!access.isSeller || !access.storeId) {
+    return { error: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) };
+  }
+
+  const isPlatformAdmin = Boolean(
+    decodedToken.email && await authAdmin(decodedToken.uid, decodedToken.email)
+  );
+
+  return {
+    storeId: String(access.storeId),
+    userId: decodedToken.uid,
+    isOwner: Boolean(access.isOwner),
+    isPlatformAdmin,
+    canDeleteAbandonedCarts: Boolean(access.isOwner || isPlatformAdmin),
+  };
+}
 
 export async function GET(request) {
   try {
@@ -46,12 +80,18 @@ export async function GET(request) {
 
     const enrichedCarts = enrichAbandonedCarts(carts, users);
 
+    const access = await resolveDashboardAccess(userId, decodedToken);
+    const isPlatformAdmin = Boolean(
+      decodedToken.email && await authAdmin(userId, decodedToken.email)
+    );
+
     return NextResponse.json({
       carts: enrichedCarts.map((cart) => ({
         ...cart,
         _id: String(cart._id),
         status: cart.status || 'active',
       })),
+      canDeleteAbandonedCarts: Boolean(access.isOwner || isPlatformAdmin),
     });
   } catch (error) {
     return NextResponse.json({ error: error.message || 'Failed' }, { status: 500 });
@@ -335,18 +375,16 @@ export async function PATCH(request) {
 
 export async function DELETE(request) {
   try {
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    await dbConnect();
 
-    const idToken = authHeader.split('Bearer ')[1];
-    const decodedToken = await getAuth().verifyIdToken(idToken);
-    const sellerUid = decodedToken.uid;
+    const auth = await resolveAbandonedCheckoutAccess(request);
+    if (auth.error) return auth.error;
 
-    const storeId = await authSeller(sellerUid);
-    if (!storeId) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    if (!auth.canDeleteAbandonedCarts) {
+      return NextResponse.json(
+        { error: 'Only the store owner can delete abandoned carts' },
+        { status: 403 }
+      );
     }
 
     const { searchParams } = new URL(request.url);
@@ -356,9 +394,7 @@ export async function DELETE(request) {
       return NextResponse.json({ error: 'cartId is required' }, { status: 400 });
     }
 
-    await dbConnect();
-
-    const deleted = await AbandonedCart.findOneAndDelete({ _id: cartId, storeId }).lean();
+    const deleted = await AbandonedCart.findOneAndDelete({ _id: cartId, storeId: auth.storeId }).lean();
     if (!deleted) {
       return NextResponse.json({ error: 'Abandoned cart not found' }, { status: 404 });
     }

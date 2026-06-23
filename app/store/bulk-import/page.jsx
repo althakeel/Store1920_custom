@@ -1,19 +1,30 @@
 'use client';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useAuth } from '@/lib/useAuth';
-import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
-import { importProductSpreadsheetFile } from '@/lib/productImportClient';
-import { Upload, Download, AlertCircle, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { ImportCancelledError, importProductSpreadsheetFile } from '@/lib/productImportClient';
+import ProductImportProgressPanel from '@/components/store/ProductImportProgressPanel';
+import { Upload, Download, AlertCircle, CheckCircle2, AlertTriangle, RotateCcw } from 'lucide-react';
 
 export default function BulkImportPage() {
   const { user, getToken } = useAuth();
-  const router = useRouter();
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const [wasCancelled, setWasCancelled] = useState(false);
   const [result, setResult] = useState(null);
   const [failures, setFailures] = useState([]);
   const [importProgress, setImportProgress] = useState(null);
+  const importControlRef = useRef({ cancelled: false, abortController: null });
+
+  const resetImportSession = () => {
+    importControlRef.current = { cancelled: false, abortController: null };
+    setStopping(false);
+    setWasCancelled(false);
+    setImportProgress(null);
+    setResult(null);
+    setFailures([]);
+  };
 
   const handleFileChange = (e) => {
     const selectedFile = e.target.files?.[0];
@@ -33,6 +44,7 @@ export default function BulkImportPage() {
         return;
       }
       setFile(selectedFile);
+      resetImportSession();
     }
   };
 
@@ -50,15 +62,39 @@ export default function BulkImportPage() {
     }
   };
 
-  const handleImport = async () => {
-    if (!file || !user) return;
+  const handleStopImport = () => {
+    setStopping(true);
+    importControlRef.current.cancelled = true;
+    importControlRef.current.abortController?.abort();
+    setImportProgress((current) => (current ? { ...current, phase: 'cancelled', message: 'Stopping import...' } : current));
+  };
 
+  const handleStartAgain = () => {
+    resetImportSession();
+    setFile(null);
+    const input = document.getElementById('fileInput');
+    if (input) input.value = '';
+  };
+
+  const handleImport = async () => {
+    if (!file || !user || loading) return;
+
+    importControlRef.current = { cancelled: false, abortController: null };
     setLoading(true);
+    setStopping(false);
+    setWasCancelled(false);
+    setResult(null);
+    setFailures([]);
     setImportProgress(null);
+
     try {
-      const token = await getToken();
-      const response = await importProductSpreadsheetFile(file, token, {
+      const response = await importProductSpreadsheetFile(file, {
+        getToken,
         onProgress: setImportProgress,
+        shouldCancel: () => importControlRef.current.cancelled,
+        registerAbortController: (controller) => {
+          importControlRef.current.abortController = controller;
+        },
       });
 
       const summary = response.summary;
@@ -77,11 +113,30 @@ export default function BulkImportPage() {
         });
       }
     } catch (error) {
-      const message = error.response?.data?.error || error.message || 'Import failed';
-      toast.error(message);
-      console.error('Import error:', error);
+      if (error instanceof ImportCancelledError) {
+        const partial = error.partialResult;
+        setWasCancelled(true);
+        if (partial?.summary) {
+          setResult(partial.summary);
+          setFailures(partial.failures || []);
+        }
+        setImportProgress((current) => ({
+          ...(current || {}),
+          phase: 'cancelled',
+          message: partial?.summary
+            ? `Stopped after ${partial.summary.created || 0} created, ${partial.summary.updated || 0} updated`
+            : 'Import stopped before any products were saved',
+        }));
+        toast('Import stopped', { icon: '⏹️' });
+      } else {
+        const message = error.response?.data?.error || error.message || 'Import failed';
+        toast.error(message);
+        console.error('Import error:', error);
+      }
     } finally {
       setLoading(false);
+      setStopping(false);
+      importControlRef.current.abortController = null;
     }
   };
 
@@ -101,6 +156,8 @@ export default function BulkImportPage() {
     return <div className="p-8 text-center text-slate-600">Please log in to access bulk import.</div>;
   }
 
+  const showProgress = loading || (importProgress && importProgress.phase === 'cancelled');
+
   return (
     <div className="min-h-screen bg-slate-50 p-8">
       <div className="max-w-4xl mx-auto">
@@ -112,15 +169,14 @@ export default function BulkImportPage() {
           </p>
         </div>
 
-        {/* Info Box */}
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-8 flex gap-3">
           <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-          <div className="text-sm text-blue-900">
+          <div className="text-sm text-blue-900 space-y-2">
             <p><strong>HTML Support:</strong> Your product descriptions can include HTML formatting (paragraphs, lists, bold, italics, links, etc.). Plain text descriptions are also supported.</p>
+            <p><strong>Variants (WooCommerce):</strong> Use <b>Type</b> = <code>variable</code> on the parent row, then add one row per variant with <b>Type</b> = <code>variation</code> and <b>Parent</b> = <code>id:PARENT_ID</code>.</p>
           </div>
         </div>
 
-        {/* Main Upload Section */}
         <div className="bg-white rounded-lg shadow-md p-8 mb-8">
           <div
             onDragOver={handleDragOver}
@@ -134,8 +190,9 @@ export default function BulkImportPage() {
               onChange={handleFileChange}
               className="hidden"
               id="fileInput"
+              disabled={loading}
             />
-            <label htmlFor="fileInput" className="cursor-pointer">
+            <label htmlFor="fileInput" className={`cursor-pointer ${loading ? 'pointer-events-none opacity-60' : ''}`}>
               <p className="text-lg font-medium text-slate-900 mb-1">
                 {file ? file.name : 'Click to upload or drag and drop'}
               </p>
@@ -143,43 +200,45 @@ export default function BulkImportPage() {
             </label>
           </div>
 
-          <div className="mt-6 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-            Large files are imported in a queue (small batches with short pauses). You can keep this tab open while products are added gradually.
-          </div>
-
-          {importProgress && loading ? (
-            <div className="mt-6 rounded-lg border border-blue-200 bg-blue-50 px-4 py-4">
-              <div className="flex items-center justify-between text-sm text-blue-900 mb-2">
-                <span>{importProgress.message || 'Processing...'}</span>
-                {importProgress.total > 0 ? (
-                  <span>{importProgress.current} / {importProgress.total}</span>
-                ) : null}
-              </div>
-              {importProgress.total > 0 ? (
-                <div className="h-2 w-full rounded-full bg-blue-100 overflow-hidden">
-                  <div
-                    className="h-full bg-blue-600 transition-all duration-300"
-                    style={{ width: `${Math.min(100, (importProgress.current / importProgress.total) * 100)}%` }}
-                  />
-                </div>
-              ) : null}
+          {showProgress ? (
+            <div className="mt-6">
+              <ProductImportProgressPanel
+                progress={importProgress}
+                onStop={loading ? handleStopImport : null}
+                stopping={stopping}
+                onDismiss={() => setImportProgress(null)}
+              />
             </div>
-          ) : null}
+          ) : (
+            <div className="mt-6 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+              Large files import in batches of 15 products (~1 second pause between batches). You will see a live progress bar with created/updated counts. Use <strong>Stop import</strong> to cancel anytime.
+            </div>
+          )}
 
-          {/* Actions */}
-          <div className="mt-8 flex gap-4">
+          <div className="mt-8 flex flex-wrap gap-3">
             <button
+              type="button"
               onClick={handleImport}
               disabled={!file || loading}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-medium py-3 px-6 rounded-lg transition"
+              className="flex-1 min-w-[200px] bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-medium py-3 px-6 rounded-lg transition"
             >
-              {loading
-                ? (importProgress?.message || 'Starting import queue...')
-                : 'Start Queued Import'}
+              {loading ? 'Import running...' : 'Start Queued Import'}
             </button>
+            {(wasCancelled || (result && !loading)) ? (
+              <button
+                type="button"
+                onClick={handleStartAgain}
+                className="inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-3 px-6 rounded-lg transition"
+              >
+                <RotateCcw className="w-4 h-4" />
+                Start again
+              </button>
+            ) : null}
             <button
+              type="button"
               onClick={downloadTemplate}
-              className="flex items-center gap-2 bg-slate-200 hover:bg-slate-300 text-slate-900 font-medium py-3 px-6 rounded-lg transition"
+              disabled={loading}
+              className="inline-flex items-center gap-2 bg-slate-200 hover:bg-slate-300 disabled:opacity-60 text-slate-900 font-medium py-3 px-6 rounded-lg transition"
             >
               <Download className="w-4 h-4" />
               Download Template
@@ -187,10 +246,9 @@ export default function BulkImportPage() {
           </div>
         </div>
 
-        {/* Required Columns Info */}
         <div className="bg-slate-100 rounded-lg p-6 mb-8">
           <h3 className="font-semibold text-slate-900 mb-4">Column Requirements</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
               <p className="text-sm font-medium text-slate-700 mb-2">Required Columns:</p>
               <ul className="text-sm text-slate-600 space-y-1">
@@ -207,38 +265,32 @@ export default function BulkImportPage() {
                 <li><b>Regular price</b>, <b>Images</b>, <b>Brands</b>, <b>SKU</b>, <b>Stock</b></li>
               </ul>
             </div>
+            <div>
+              <p className="text-sm font-medium text-slate-700 mb-2">Variant columns (WooCommerce):</p>
+              <ul className="text-sm text-slate-600 space-y-1">
+                <li><b>Type</b> - <code>variable</code> or <code>variation</code></li>
+                <li><b>Parent</b> - <code>id:2001</code> on variant rows</li>
+                <li><b>Attribute 1 name</b> / <b>Attribute 1 value(s)</b></li>
+              </ul>
+            </div>
           </div>
         </div>
 
-        {/* HTML Support Guide */}
-        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-6 mb-8">
-          <h3 className="font-semibold text-emerald-900 mb-3">HTML Support Guide</h3>
-          <div className="text-sm text-emerald-900 space-y-3">
-            <p><b>Plain Text Example:</b></p>
-            <code className="bg-emerald-100 p-2 rounded block">This is a simple product description</code>
-            
-            <p className="mt-4"><b>HTML Example:</b></p>
-            <code className="bg-emerald-100 p-2 rounded block text-xs">{"<p><b>Bold text</b> and <i>italic</i></p><ul><li>Bullet point 1</li><li>Bullet point 2</li></ul>"}</code>
-            
-            <p className="mt-4"><b>Supported HTML Tags:</b> &lt;p&gt;, &lt;h1-h6&gt;, &lt;b&gt;, &lt;i&gt;, &lt;strong&gt;, &lt;em&gt;, &lt;ul&gt;, &lt;ol&gt;, &lt;li&gt;, &lt;a&gt;, &lt;img&gt;, &lt;br&gt;, etc.</p>
-          </div>
-        </div>
-
-        {/* Results */}
         {result && (
           <div className="bg-white rounded-lg shadow-md p-8 mb-8">
-            <h3 className="text-xl font-bold text-slate-900 mb-6">Import Results</h3>
-
-            {result.totalRows > 0 && result.created === 0 && (result.updated || 0) === 0 && result.skipped === result.totalRows ? (
-              <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                All rows were skipped. Existing matches: {result.skippedExisting || 0}, unsupported WooCommerce row types: {result.skippedUnsupportedType || 0}, missing names: {result.skippedMissingName || 0}.
-              </div>
+            <h3 className="text-xl font-bold text-slate-900 mb-2">
+              {wasCancelled ? 'Partial import results (stopped)' : 'Import Results'}
+            </h3>
+            {wasCancelled ? (
+              <p className="mb-6 text-sm text-amber-700">Import was stopped before all products were processed. Products already imported are saved.</p>
             ) : null}
 
             <div className="mb-6 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-              Import mode: <span className="font-semibold capitalize">{result.importMode || 'update'}</span>. Existing skipped: <span className="font-semibold">{result.skippedExisting || 0}</span>. Unsupported row types skipped: <span className="font-semibold">{result.skippedUnsupportedType || 0}</span>. Missing names skipped: <span className="font-semibold">{result.skippedMissingName || 0}</span>.
+              Variants imported: <span className="font-semibold">{result.variantsImported || 0}</span>.
+              Created: <span className="font-semibold">{result.created || 0}</span>.
+              Updated: <span className="font-semibold">{result.updated || 0}</span>.
             </div>
-            
+
             <div className="grid grid-cols-1 gap-4 mb-8 md:grid-cols-5">
               <div className="bg-slate-50 rounded-lg p-4">
                 <p className="text-slate-600 text-sm">Total Rows</p>

@@ -4,10 +4,10 @@ import axios from 'axios';
 import { UserPlusIcon, UploadCloudIcon, FolderTreeIcon } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/lib/useAuth';
-import { readDashboardCache, writeDashboardCache } from '@/lib/storeDashboardCache';
+import { clearDashboardCache } from '@/lib/storeDashboardCache';
 
 const StoreDashboardCharts = dynamic(() => import('@/components/store/StoreDashboardCharts'), {
   ssr: false,
@@ -18,6 +18,8 @@ const StoreDashboardCharts = dynamic(() => import('@/components/store/StoreDashb
     </div>
   ),
 });
+
+const DASHBOARD_REFRESH_MS = 60 * 1000;
 
 const StoreLiveAnalytics = dynamic(() => import('@/components/store/StoreLiveAnalytics'), { ssr: false });
 
@@ -57,18 +59,6 @@ export default function Dashboard() {
   const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || 'AED';
   const [dashboardData, setDashboardData] = useState(EMPTY_DASHBOARD);
   const [chartsRefreshing, setChartsRefreshing] = useState(true);
-  const fetchedRef = useRef(false);
-  const cacheHydratedRef = useRef(false);
-
-  useEffect(() => {
-    if (cacheHydratedRef.current) return;
-    cacheHydratedRef.current = true;
-    const cached = readDashboardCache();
-    if (cached) {
-      setDashboardData(cached);
-      setChartsRefreshing(false);
-    }
-  }, []);
 
   const withTokenRetry = async (requestFn) => {
     try {
@@ -87,7 +77,7 @@ export default function Dashboard() {
       return;
     }
 
-    if (!silent && !readDashboardCache()) {
+    if (!silent) {
       setChartsRefreshing(true);
     }
 
@@ -95,28 +85,49 @@ export default function Dashboard() {
       const { data } = await withTokenRetry(async (forceRefresh) => {
         const token = await getToken(forceRefresh);
         return axios.get('/api/store/dashboard', {
-          headers: { Authorization: `Bearer ${token}` },
+          params: { _t: Date.now() },
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Cache-Control': 'no-cache',
+          },
         });
       });
 
       if (data?.dashboardData) {
         setDashboardData(data.dashboardData);
-        writeDashboardCache(data.dashboardData);
       }
     } catch (error) {
-      if (!readDashboardCache()) {
-        console.error('Dashboard fetch error:', error);
-        toast.error(error?.response?.data?.error || 'Failed to load dashboard');
-      }
+      console.error('Dashboard fetch error:', error);
+      toast.error(error?.response?.data?.error || 'Failed to load dashboard');
     } finally {
       setChartsRefreshing(false);
     }
   }, [getToken, user]);
 
   useEffect(() => {
-    if (authLoading || !user || fetchedRef.current) return;
-    fetchedRef.current = true;
-    fetchDashboard({ silent: Boolean(readDashboardCache()) });
+    if (authLoading || !user) return;
+
+    clearDashboardCache();
+    fetchDashboard();
+
+    const interval = window.setInterval(() => {
+      fetchDashboard({ silent: true });
+    }, DASHBOARD_REFRESH_MS);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        fetchDashboard({ silent: true });
+      }
+    };
+
+    window.addEventListener('focus', handleVisibility);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', handleVisibility);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, [authLoading, user, fetchDashboard]);
 
   if (authLoading) {

@@ -24,6 +24,7 @@
     "@google/generative-ai": "^0.24.1",
     "@imagekit/next": "^2.1.5",
     "@imagekit/nodejs": "^7.4.0",
+    "@next/third-parties": "^16.2.9",
     "@react-google-maps/api": "^2.20.8",
     "@reduxjs/toolkit": "^2.8.2",
     "@tiptap/extension-color": "^3.9.0",

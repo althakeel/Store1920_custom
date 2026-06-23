@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import axios from 'axios';
+import mongoose from 'mongoose';
 import connectDB from '@/lib/mongodb';
 import Product from '@/models/Product';
 import Category from '@/models/Category';
@@ -8,6 +9,11 @@ import StorePreference from '@/models/StorePreference';
 import authSeller from '@/middlewares/authSeller';
 import { getAuth } from '@/lib/firebase-admin';
 import { sheetToRows } from '@/lib/productImportSpreadsheet';
+import {
+  isSkippableVariationImportRow,
+  isVariableImportProductRow,
+  parseImportRowType,
+} from '@/lib/productImportTypes';
 
 const KNOWN_BADGES = [
   'Price Lower Than Usual',
@@ -18,7 +24,7 @@ const KNOWN_BADGES = [
   'Free Shipping',
 ];
 
-import { getS3PublicBaseUrl, isHostedMediaUrl, uploadToS3 } from '@/lib/storage';
+import { ensureS3Configured, getS3PublicBaseUrl, isHostedMediaUrl, uploadToS3 } from '@/lib/storage';
 
 const S3_PUBLIC_URL = getS3PublicBaseUrl();
 
@@ -83,7 +89,7 @@ const normalizeImportedRichText = (value) => normalizeImportedText(value)
   .replace(/contenteditable=\"false\"/gi, 'contenteditable="false"')
   .replace(/contenteditable=\"true\"/gi, 'contenteditable="true"');
 
-const parseRowType = (value) => String(value || 'simple').trim().toLowerCase();
+const parseRowType = parseImportRowType;
 
 const getFirstPresentValue = (...values) => {
   for (const value of values) {
@@ -159,6 +165,11 @@ const isRemoteHttpUrl = (value = '') => /^https?:\/\//i.test(String(value || '')
 
 const shouldMirrorImageUrl = (imageUrl = '') => {
   if (!isRemoteHttpUrl(imageUrl)) return false;
+  try {
+    ensureS3Configured();
+  } catch {
+    return false;
+  }
   if (!S3_PUBLIC_URL) return true;
 
   return !isHostedMediaUrl(imageUrl);
@@ -293,7 +304,10 @@ const resolveParentRow = (row, indexes) => {
     || null;
 };
 
-const normalizeParentReference = (value = '') => String(value || '').trim().replace(/^id:/i, '').trim();
+const normalizeParentReference = (value = '') => String(value || '')
+  .trim()
+  .replace(/^(id|post|product):/i, '')
+  .trim();
 
 const getParentLookupKeys = (row = {}) => {
   const keys = new Set();
@@ -312,7 +326,7 @@ const buildVariationRowsByParent = (rows = [], indexes) => {
   const map = new Map();
 
   rows.forEach((row, index) => {
-    if (parseRowType(row.Type || row.type) !== 'variation') return;
+    if (!isSkippableVariationImportRow(row)) return;
 
     const rawParent = normalizeParentReference(row?.Parent || row?.parent);
     if (!rawParent) return;
@@ -372,6 +386,28 @@ const buildVariantOptionsFromRow = (row, parentRow) => {
     }
   });
 
+  // WooCommerce variation rows sometimes only include Attribute N value(s).
+  if (!labels.length && parentRow) {
+    const rowKeys = Object.keys(row).filter((key) => /^Attribute \d+ value\(s\)$/i.test(key));
+    for (const valueKey of rowKeys) {
+      const match = valueKey.match(/Attribute (\d+) value\(s\)/i);
+      if (!match) continue;
+      const attributeIndex = match[1];
+      const parentNameKey = `Attribute ${attributeIndex} name`;
+      const attributeName = String(row[parentNameKey] || parentRow[parentNameKey] || '').trim();
+      const value = String(parseStringArray(row[valueKey] || '')[0] || '').trim();
+      if (!attributeName || !value) continue;
+
+      labels.push(value);
+      const optionKey = mapAttributeToOptionKey(attributeName);
+      if (optionKey && !options[optionKey]) {
+        options[optionKey] = value;
+      } else if (!optionKey) {
+        options[attributeName] = value;
+      }
+    }
+  }
+
   const parentName = String(parentRow?.Name || parentRow?.name || '').trim();
   if (labels.length) {
     options.title = parentName ? `${parentName} - ${labels.join(' / ')}` : labels.join(' / ');
@@ -405,6 +441,7 @@ const buildVariantsFromVariationRows = async (parentRow, variationRowsByParent, 
     }
 
     variants.push({
+      _id: new mongoose.Types.ObjectId().toString(),
       sku: String(getFirstPresentValue(row.SKU, row.sku) || '').trim() || undefined,
       price: salePrice,
       AED: regularPrice || salePrice,
@@ -503,6 +540,15 @@ const ensureUniqueSlug = async (baseSlug) => {
 };
 
 export const maxDuration = 300;
+export const runtime = 'nodejs';
+
+const MAX_IMPORTED_TEXT_LENGTH = 120000;
+
+const truncateImportedText = (value = '', max = MAX_IMPORTED_TEXT_LENGTH) => {
+  const text = String(value || '');
+  if (text.length <= max) return text;
+  return `${text.slice(0, max)}...[truncated during import]`;
+};
 
 export async function POST(request) {
   try {
@@ -514,7 +560,20 @@ export async function POST(request) {
     }
 
     const idToken = authHeader.split('Bearer ')[1];
-    const decodedToken = await getAuth().verifyIdToken(idToken);
+    let decodedToken;
+    try {
+      decodedToken = await getAuth().verifyIdToken(idToken);
+    } catch (authError) {
+      const code = authError?.code || authError?.errorInfo?.code || '';
+      const message = String(authError?.message || 'Invalid auth token');
+      const expired = code === 'auth/id-token-expired' || message.toLowerCase().includes('id token has expired');
+      return NextResponse.json({
+        error: expired
+          ? 'Session expired during import. Refresh the page — import will retry with a new login token.'
+          : message,
+        code: code || 'auth/invalid-token',
+      }, { status: 401 });
+    }
     const userId = decodedToken.uid;
     const storeId = await authSeller(userId);
 
@@ -524,23 +583,31 @@ export async function POST(request) {
 
     const contentType = String(request.headers.get('content-type') || '').toLowerCase();
     let rows = [];
+    let indexes;
+    let variationRowsByParent;
 
     if (contentType.includes('application/json')) {
-      const body = await request.json();
+      let body;
+      try {
+        body = await request.json();
+      } catch (parseError) {
+        console.error('Bulk import JSON parse error:', parseError);
+        return NextResponse.json({
+          error: 'Import batch payload was too large or invalid. Try splitting the file into smaller CSV files, or remove very long HTML descriptions and retry.',
+        }, { status: 413 });
+      }
+
       const batchRows = Array.isArray(body?.rows) ? body.rows : [];
       const variationRows = Array.isArray(body?.variationRows) ? body.variationRows : [];
-      const merged = new Map();
-
-      [...variationRows, ...batchRows].forEach((row, index) => {
-        const key = String(row?.ID || row?.id || row?.SKU || row?.sku || `row-${index}`);
-        merged.set(key, row);
-      });
-
-      rows = [...merged.values()];
 
       if (!batchRows.length) {
         return NextResponse.json({ error: 'No rows provided' }, { status: 400 });
       }
+
+      const referenceRows = [...variationRows, ...batchRows];
+      indexes = buildRowIndexes(referenceRows);
+      variationRowsByParent = buildVariationRowsByParent(referenceRows, indexes);
+      rows = batchRows;
     } else {
       const formData = await request.formData();
       const file = formData.get('file');
@@ -572,8 +639,10 @@ export async function POST(request) {
       return NextResponse.json({ error: 'No rows found in file' }, { status: 400 });
     }
 
-    const indexes = buildRowIndexes(rows);
-    const variationRowsByParent = buildVariationRowsByParent(rows, indexes);
+    if (!indexes || !variationRowsByParent) {
+      indexes = buildRowIndexes(rows);
+      variationRowsByParent = buildVariationRowsByParent(rows, indexes);
+    }
 
     let created = 0;
     let updated = 0;
@@ -585,6 +654,7 @@ export async function POST(request) {
     let skippedVariationRows = 0;
     let mirroredImages = 0;
     let failedImageMirrors = 0;
+    let variantsImported = 0;
     const failures = [];
 
     for (let index = 0; index < rows.length; index += 1) {
@@ -593,7 +663,7 @@ export async function POST(request) {
 
       try {
         const rowType = parseRowType(row.Type || row.type);
-        if (rowType === 'variation') {
+        if (isSkippableVariationImportRow(row)) {
           skipped += 1;
           skippedVariationRows += 1;
           continue;
@@ -659,26 +729,30 @@ export async function POST(request) {
             ? await ensureUniqueSlug(baseSlug)
             : baseSlug;
 
-        const description = normalizeImportedRichText(
-          getFirstPresentValue(
-            row.Description,
-            row.description,
-            row['Meta: fb_rich_text_description'],
-            row['Meta: fb_product_description'],
-            parentRow?.Description,
-            parentRow?.description,
-            parentRow?.['Meta: fb_rich_text_description'],
-            parentRow?.['Meta: fb_product_description']
+        const description = truncateImportedText(
+          normalizeImportedRichText(
+            getFirstPresentValue(
+              row.Description,
+              row.description,
+              row['Meta: fb_rich_text_description'],
+              row['Meta: fb_product_description'],
+              parentRow?.Description,
+              parentRow?.description,
+              parentRow?.['Meta: fb_rich_text_description'],
+              parentRow?.['Meta: fb_product_description']
+            )
           )
         );
-        const shortDescription = normalizeImportedText(
-          getFirstPresentValue(
-            row['Short description'],
-            row.shortDescription,
-            row['Meta: _store1920_product_subtitle'],
-            parentRow?.['Short description'],
-            parentRow?.shortDescription,
-            parentRow?.['Meta: _store1920_product_subtitle']
+        const shortDescription = truncateImportedText(
+          normalizeImportedText(
+            getFirstPresentValue(
+              row['Short description'],
+              row.shortDescription,
+              row['Meta: _store1920_product_subtitle'],
+              parentRow?.['Short description'],
+              parentRow?.shortDescription,
+              parentRow?.['Meta: _store1920_product_subtitle']
+            )
           )
         );
         const fallbackRegularPrice = parseNumber(
@@ -781,8 +855,12 @@ export async function POST(request) {
         }
 
         let variants = [];
-        if (rowType === 'variable') {
+        if (isVariableImportProductRow(row) || collectVariationRowsForParent(row, variationRowsByParent).length > 0) {
           variants = await buildVariantsFromVariationRows(row, variationRowsByParent, storeId, slug);
+        }
+
+        if (variants.length) {
+          variantsImported += variants.length;
         }
 
         const variantImageUrls = variants
@@ -920,6 +998,7 @@ export async function POST(request) {
       skippedMissingName,
       skippedUnsupportedType,
       skippedVariationRows,
+      variantsImported,
       mirroredImages,
       failedImageMirrors,
       importMode: 'update',
@@ -949,8 +1028,13 @@ export async function POST(request) {
     const message = String(error?.message || 'Bulk import failed');
     if (message.toLowerCase().includes('entity too large') || message.includes('413')) {
       return NextResponse.json({
-        error: 'Import file is too large. The app will parse it in your browser and upload in smaller batches automatically. Please refresh and try again.',
+        error: 'Import batch is too large. The app uploads in batches automatically — refresh and try again, or split the file into smaller parts.',
       }, { status: 413 });
+    }
+    if (message.toLowerCase().includes('s3 is not configured')) {
+      return NextResponse.json({
+        error: 'Image storage (AWS S3) is not configured on the server. Set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_S3_BUCKET, and AWS_REGION in .env, then restart the server.',
+      }, { status: 500 });
     }
     return NextResponse.json({ error: message }, { status: 500 });
   }

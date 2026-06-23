@@ -98,6 +98,9 @@ export async function GET(request) {
     });
   } catch (error) {
     console.error('[customers API]', error);
-    return NextResponse.json({ error: error.code || error.message }, { status: 400 });
+    const message = error?.code === 40600
+      ? 'Failed to load customers (invalid database query)'
+      : (error?.message || 'Failed to load customers');
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

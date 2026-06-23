@@ -7,6 +7,7 @@ import StoreMenu from '@/models/StoreMenu';
 import authAdmin from '@/middlewares/authAdmin';
 import { resolveStoreAccess } from '@/lib/storeAccess';
 import { cleanDisplayText } from '@/lib/displayText';
+import { invalidateCategoryCaches } from '@/lib/categoryCache';
 
 import { getS3PublicBaseUrl, isHostedMediaUrl, uploadToS3 } from '@/lib/storage';
 
@@ -602,6 +603,8 @@ export async function POST(request) {
         { upsert: true, new: true }
       );
     }
+
+    invalidateCategoryCaches();
 
     return NextResponse.json({
       message: 'Category import completed.',

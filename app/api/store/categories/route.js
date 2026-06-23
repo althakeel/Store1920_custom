@@ -6,7 +6,8 @@ import Category from '@/models/Category';
 import { localizeRecord, resolveStorefrontLanguage } from '@/lib/storefrontLanguage';
 import { cleanDisplayText, sanitizeCategoryFields, sanitizeCategoryTree } from '@/lib/displayText';
 import { buildCategoryLookup, getProductCategoryLabels } from '@/lib/categoryLookup';
-import { deleteCacheKey, getCachedData, setCachedData } from '@/lib/cache';
+import { getCachedData, setCachedData } from '@/lib/cache';
+import { invalidateCategoryCaches } from '@/lib/categoryCache';
 
 const CATEGORY_TREE_CACHE_KEY = 'public:categories:tree:v2';
 
@@ -15,7 +16,8 @@ export async function GET(req) {
     try {
         const language = resolveStorefrontLanguage(req);
         const cacheKey = `${CATEGORY_TREE_CACHE_KEY}:${language}`;
-        const cached = getCachedData(cacheKey);
+        const isStoreDashboardRequest = Boolean(req.headers.get('authorization')?.startsWith('Bearer '));
+        const cached = !isStoreDashboardRequest ? getCachedData(cacheKey) : null;
         if (cached) {
             const isDev = process.env.NODE_ENV !== 'production';
             return NextResponse.json(cached, {
@@ -142,7 +144,7 @@ export async function POST(req) {
             parentId: parentId || null
         });
 
-        deleteCacheKey(CATEGORY_TREE_CACHE_KEY);
+        invalidateCategoryCaches();
 
         // Populate parent and children
         const parent = category.parentId ? await Category.findById(category.parentId).lean() : null;
