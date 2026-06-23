@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation"
 
 import { HomeIcon, LayoutListIcon, SquarePenIcon, SquarePlusIcon, StarIcon, FolderIcon, TicketIcon, TruckIcon, RefreshCw, User as UserIcon, Users as UsersIcon, MessageSquare, Sparkles, BellIcon, MailIcon, Image as ImageIcon, ShoppingCart, Wallet, BarChart3, Target, Gift, Palette, CircleDashed, PackagePlus, Activity, Layers, LineChart, Warehouse, MousePointerClick, ShieldAlert, Zap } from "lucide-react"
 
-import Link from "next/link"
+import StoreNavLink from "@/components/store/StoreNavLink"
 
 import { canAccessDashboardArea, getPermissionIdForHref } from "@/lib/storeDashboardPermissions"
 import { useStoreOrderNotifications } from "./StoreOrderNotificationProvider"
@@ -554,7 +554,7 @@ const StoreSidebar = ({ storeInfo, isOwner = false, permissions = {} }) => {
 
                                             return (
 
-                                                <Link
+                                                <StoreNavLink
 
                                                     key={`${section.name}-${link.href}`}
 
@@ -608,7 +608,7 @@ const StoreSidebar = ({ storeInfo, isOwner = false, permissions = {} }) => {
 
                                                     )}
 
-                                                </Link>
+                                                </StoreNavLink>
 
                                             )
 
@@ -630,7 +630,7 @@ const StoreSidebar = ({ storeInfo, isOwner = false, permissions = {} }) => {
 
                     <div className="border-t border-slate-200 bg-slate-50/50 px-1.5 py-2 lg:px-2">
 
-                        <Link
+                        <StoreNavLink
 
                             href="/store/settings"
 
@@ -652,7 +652,7 @@ const StoreSidebar = ({ storeInfo, isOwner = false, permissions = {} }) => {
 
                             <span className="hidden lg:inline">Settings</span>
 
-                        </Link>
+                        </StoreNavLink>
 
                     </div>
 

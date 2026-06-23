@@ -11,7 +11,7 @@ import {
 } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import Link from 'next/link';
+import StoreNavLink from '@/components/store/StoreNavLink';
 import { usePathname } from 'next/navigation';
 import { canAccessDashboardArea } from '@/lib/storeDashboardPermissions';
 import {
@@ -75,13 +75,13 @@ function showNewOrderToast(order) {
           {order.customerName || 'Customer'}
           {order.itemCount ? ` · ${order.itemCount} item${order.itemCount === 1 ? '' : 's'}` : ''}
         </p>
-        <Link
+        <StoreNavLink
           href="/store/orders"
           onClick={() => toast.dismiss(toastInstance.id)}
           className="mt-3 inline-flex text-xs font-semibold text-emerald-700 hover:text-emerald-800"
         >
           View orders →
-        </Link>
+        </StoreNavLink>
       </div>
       <button
         type="button"

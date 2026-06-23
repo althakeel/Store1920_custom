@@ -49,6 +49,15 @@ function applyStorefrontLanguageCookie(request: NextRequest, response: NextRespo
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Let Next.js RSC / prefetch / HMR requests through without extra work.
+  if (
+    pathname.startsWith('/_next')
+    || request.headers.get('RSC') === '1'
+    || request.headers.get('Next-Router-Prefetch') === '1'
+  ) {
+    return NextResponse.next();
+  }
+
   // Large CSV uploads are authenticated in the route handler; skip proxy buffering.
   if (pathname === '/api/store/product/bulk-import') {
     return NextResponse.next();
@@ -86,6 +95,6 @@ export const config = {
   matcher: [
     '/api/store/:path*',
     '/api/wishlist/:path*',
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
+    '/((?!_next|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|mp3|woff2?)$).*)',
   ],
 };

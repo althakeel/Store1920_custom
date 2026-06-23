@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import StoreNavLink from '@/components/store/StoreNavLink';
 import Image from 'next/image';
 import { useEffect, useRef, useState } from 'react';
 import { Bell, LogOut } from 'lucide-react';
@@ -175,7 +176,7 @@ const StoreNavbar = ({ storeInfo }) => {
                                 <div className="max-h-72 overflow-y-auto">
                                     {recentOrders.length > 0 ? (
                                         recentOrders.map((order) => (
-                                            <Link
+                                            <StoreNavLink
                                                 key={order.orderId}
                                                 href="/store/orders"
                                                 onClick={() => {
@@ -194,20 +195,20 @@ const StoreNavbar = ({ storeInfo }) => {
                                                     {order.customerName}
                                                     {order.itemCount ? ` · ${order.itemCount} item${order.itemCount === 1 ? '' : 's'}` : ''}
                                                 </p>
-                                            </Link>
+                                            </StoreNavLink>
                                         ))
                                     ) : (
                                         <p className="px-4 py-6 text-sm text-slate-500">No new orders yet.</p>
                                     )}
                                 </div>
                                 <div className="border-t border-slate-100 px-4 py-3">
-                                    <Link
+                                    <StoreNavLink
                                         href="/store/orders"
                                         onClick={() => setShowNotifications(false)}
                                         className="text-sm font-semibold text-slate-800 hover:text-slate-950"
                                     >
                                         Open orders page →
-                                    </Link>
+                                    </StoreNavLink>
                                 </div>
                             </div>
                         ) : null}
