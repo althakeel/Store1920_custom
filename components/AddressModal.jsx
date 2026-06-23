@@ -2,14 +2,20 @@
 import { addAddress, fetchAddress } from "@/lib/features/address/addressSlice"
 
 import axios from "axios"
-import { Check, MapPin, Pencil, Phone, Plus, User, XIcon } from "lucide-react"
-import { useState, useEffect, useRef } from "react"
+import { Check, MapPin, Pencil, Phone, Plus, Trash2, User, XIcon } from "lucide-react"
+import { useState, useEffect } from "react"
 import { toast } from "react-hot-toast"
 import { useDispatch } from "react-redux"
 
 import { useAuth } from '@/lib/useAuth';
 import { UAE_EMIRATES, getUaeAreasForEmirate, isUaeCountry } from '@/lib/uaeEmirateAreas';
 import SearchableSelect from '@/components/SearchableSelect';
+import PhoneNumberField from '@/components/PhoneNumberField';
+import {
+    getPhoneInputError,
+    getPhoneValidationMessage,
+    isValidPhoneNumber,
+} from '@/lib/phoneValidation';
 
 const indianStates = [
     "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal", "Delhi", "Jammu and Kashmir", "Ladakh"
@@ -38,16 +44,20 @@ function formatPhoneLine(addr) {
     return `${code} ${phone}`;
 }
 
-const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddress = null, isEdit = false, onAddressUpdated, addressList = [], onSelectAddress, selectedAddressId }) => {
+function resolveAddressCity(addr) {
+    return String(addr?.district || addr?.state || addr?.city || '').trim();
+}
+
+const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddress = null, isEdit = false, onAddressUpdated, onAddressDeleted, addressList = [], onSelectAddress, selectedAddressId }) => {
     const { user, getToken } = useAuth()
     const dispatch = useDispatch()
-    const phoneInputRef = useRef(null)
     
     const [mode, setMode] = useState('select') // 'select' or 'form'
     const [editingAddress, setEditingAddress] = useState(null) // Track which address is being edited
     const [pincodeLoading, setPincodeLoading] = useState(false)
     const [pincodeError, setPincodeError] = useState('')
     const [pendingAddressId, setPendingAddressId] = useState(selectedAddressId || null)
+    const [deletingAddressId, setDeletingAddressId] = useState(null)
 
     const [address, setAddress] = useState({
         name: '',
@@ -77,6 +87,43 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
             }
         }
     }, [isEdit, addressList, open, selectedAddressId]);
+
+    useEffect(() => {
+        if (!pendingAddressId) return;
+        const stillExists = addressList.some((addr) => addr._id === pendingAddressId);
+        if (!stillExists) {
+            setPendingAddressId(addressList[0]?._id || null);
+        }
+    }, [addressList, pendingAddressId]);
+
+    const handleDeleteAddress = async (addr) => {
+        const addressId = addr?._id || addr?.id;
+        if (!addressId) return;
+
+        const confirmed = window.confirm('Delete this address? This cannot be undone.');
+        if (!confirmed) return;
+
+        try {
+            setDeletingAddressId(addressId);
+            const token = await getToken();
+            await axios.delete(`/api/address/${encodeURIComponent(String(addressId))}`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+
+            if (pendingAddressId === addressId) {
+                const nextId = addressList.find((item) => item._id !== addressId)?._id || null;
+                setPendingAddressId(nextId);
+            }
+
+            dispatch(fetchAddress({ getToken }));
+            toast.success('Address deleted');
+            onAddressDeleted?.(addressId);
+        } catch (error) {
+            toast.error(error?.response?.data?.error || 'Failed to delete address');
+        } finally {
+            setDeletingAddressId(null);
+        }
+    };
 
     // Prefill when editing or reset when adding new
     useEffect(() => {
@@ -147,7 +194,6 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
                 district: '',
                 zip: '',
                 phoneCode: selectedCountry?.code || '+971',
-                alternatePhoneCode: selectedCountry?.code || '+971'
             })
             setPincodeError('')
         } else if (name === 'state') {
@@ -227,15 +273,9 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
 
             // Clean and validate phone number
             const cleanedPhone = address.phone.replace(/[^0-9]/g, '');
-            const cleanedAlternate = (address.alternatePhone || '').replace(/[^0-9]/g, '');
             
-            if (!cleanedPhone || cleanedPhone.length < 7 || cleanedPhone.length > 15) {
-                toast.error('Phone number must be between 7 and 15 digits');
-                return;
-            }
-
-            if (cleanedAlternate && (cleanedAlternate.length < 7 || cleanedAlternate.length > 15)) {
-                toast.error('Alternate number must be between 7 and 15 digits');
+            if (!isValidPhoneNumber(cleanedPhone, address.phoneCode)) {
+                toast.error(getPhoneInputError(cleanedPhone, address.phoneCode) || getPhoneValidationMessage(address.phoneCode));
                 return;
             }
 
@@ -256,9 +296,10 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
             
             // Prepare address data with userId from authenticated user
             const addressData = { ...address, userId: user.uid, phone: cleanedPhone };
+            addressData.city = resolveAddressCity(address);
             addressData.zip = normalizedZip;
-            addressData.alternatePhone = cleanedAlternate || '';
-            addressData.alternatePhoneCode = cleanedAlternate ? address.alternatePhoneCode || address.phoneCode : '';
+            delete addressData.alternatePhone;
+            delete addressData.alternatePhoneCode;
             
             if (!addressData.zip || addressData.zip.trim() === '') {
                 delete addressData.zip
@@ -266,10 +307,6 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
             // Remove district if not present or empty (to match Prisma schema)
             if (!addressData.district) {
                 delete addressData.district;
-            }
-            if (!addressData.alternatePhone) {
-                delete addressData.alternatePhone;
-                delete addressData.alternatePhoneCode;
             }
             
             if (isEdit && addressData.id) {
@@ -427,6 +464,7 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
                                                                         </span>
                                                                     ) : null}
                                                                 </div>
+                                                                <div className="flex shrink-0 items-center gap-1.5">
                                                                 <button
                                                                     type="button"
                                                                     className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:border-[#E52721]/30 hover:text-[#E52721]"
@@ -439,6 +477,20 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
                                                                     <Pencil className="h-3 w-3" />
                                                                     Edit
                                                                 </button>
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={deletingAddressId === addr._id}
+                                                                    className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                                                    onClick={(event) => {
+                                                                        event.stopPropagation();
+                                                                        handleDeleteAddress(addr);
+                                                                    }}
+                                                                    aria-label={`Delete address for ${addr.name}`}
+                                                                >
+                                                                    <Trash2 className="h-3 w-3" />
+                                                                    {deletingAddressId === addr._id ? 'Deleting…' : 'Delete'}
+                                                                </button>
+                                                                </div>
                                                             </div>
 
                                                             <div className="mt-2 space-y-1 text-sm text-slate-600">
@@ -528,6 +580,17 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
                             placeholder="Email address" 
                         />
                     </div>
+
+                    <PhoneNumberField
+                        id="address-phone"
+                        label="Phone Number"
+                        phone={address.phone}
+                        phoneCode={address.phoneCode}
+                        onPhoneChange={(value) => setAddress((prev) => ({ ...prev, phone: value }))}
+                        onPhoneCodeChange={handleAddressChange}
+                        countryOptions={countries.map((country) => ({ code: country.code }))}
+                        inputKey={address.id || 'new'}
+                    />
                     </div>
 
                     <div className="grid gap-5 rounded-[24px] border border-[#f1e4d3] bg-white/88 p-5 shadow-[0_12px_32px_rgba(15,23,42,0.05)] md:p-6">
@@ -554,43 +617,29 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
                         />
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label className="mb-1.5 block text-sm font-semibold text-slate-700">City</label>
-                            <input 
-                                name="city" 
-                                onChange={handleAddressChange} 
-                                value={address.city} 
-                                className="w-full rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#f59e0b] focus:bg-white focus:ring-4 focus:ring-[#fde7c2]" 
-                                type="text" 
-                                placeholder="City" 
-                                required 
+                    <div>
+                        <label className="mb-1.5 block text-sm font-semibold text-slate-700">{isUaeCountry(address.country) ? 'Emirate' : 'State'}</label>
+                        {(address.country === 'India' || isUaeCountry(address.country)) ? (
+                            <SearchableSelect
+                                value={address.state}
+                                onChange={(value) => setAddress({ ...address, state: value, district: '' })}
+                                options={isUaeCountry(address.country) ? UAE_EMIRATES : indianStates}
+                                placeholder={isUaeCountry(address.country) ? 'Select Emirate' : 'Select State'}
+                                searchPlaceholder={isUaeCountry(address.country) ? 'Search emirate...' : 'Search state...'}
+                                emptyMessage="No matches found"
+                                required
                             />
-                        </div>
-                        <div>
-                            <label className="mb-1.5 block text-sm font-semibold text-slate-700">{isUaeCountry(address.country) ? 'Emirate' : 'State'}</label>
-                            {(address.country === 'India' || isUaeCountry(address.country)) ? (
-                                <SearchableSelect
-                                    value={address.state}
-                                    onChange={(value) => setAddress({ ...address, state: value, district: '' })}
-                                    options={isUaeCountry(address.country) ? UAE_EMIRATES : indianStates}
-                                    placeholder={isUaeCountry(address.country) ? 'Select Emirate' : 'Select State'}
-                                    searchPlaceholder={isUaeCountry(address.country) ? 'Search emirate...' : 'Search state...'}
-                                    emptyMessage="No matches found"
-                                    required
-                                />
-                            ) : (
-                                <input
-                                    name="state"
-                                    onChange={handleAddressChange}
-                                    value={address.state}
-                                    className="w-full rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#f59e0b] focus:bg-white focus:ring-4 focus:ring-[#fde7c2]"
-                                    type="text"
-                                    placeholder="State/Region"
-                                    required
-                                />
-                            )}
-                        </div>
+                        ) : (
+                            <input
+                                name="state"
+                                onChange={handleAddressChange}
+                                value={address.state}
+                                className="w-full rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#f59e0b] focus:bg-white focus:ring-4 focus:ring-[#fde7c2]"
+                                type="text"
+                                placeholder="State/Region"
+                                required
+                            />
+                        )}
                     </div>
 
                     {isUaeCountry(address.country) && address.state ? (
@@ -634,7 +683,6 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
                                     district: '',
                                     zip: '',
                                     phoneCode: selectedCountry?.code || '+971',
-                                    alternatePhoneCode: selectedCountry?.code || '+971',
                                 });
                                 setPincodeError('');
                             }}
@@ -644,97 +692,6 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
                             emptyMessage="No countries found"
                             required
                         />
-                    </div>
-                    </div>
-
-                    <div className="grid gap-5 rounded-[24px] border border-[#f1e4d3] bg-white/88 p-5 shadow-[0_12px_32px_rgba(15,23,42,0.05)] md:p-6">
-                        <div className="flex items-center justify-between gap-3">
-                            <div>
-                                <h3 className="text-base font-bold text-slate-900">Phone numbers</h3>
-                                <p className="mt-1 text-sm text-slate-500">We may call this number if the rider needs help finding you.</p>
-                            </div>
-                            <span className="rounded-full bg-[#fff5db] px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-[#b45309]">
-                                Step 3
-                            </span>
-                        </div>
-
-                    <div>
-                        <label className="mb-1.5 block text-sm font-semibold text-slate-700">Phone Number</label>
-                        <div className="flex gap-2">
-                            <select
-                                name="phoneCode"
-                                onChange={handleAddressChange}
-                                value={address.phoneCode}
-                                className="min-w-[88px] rounded-2xl border border-slate-200 bg-slate-50/70 px-3 py-3 font-medium text-slate-700 outline-none transition focus:border-[#f59e0b] focus:bg-white focus:ring-4 focus:ring-[#fde7c2]"
-                                required
-                            >
-                                {countries.map((country) => (
-                                    <option key={country.code} value={country.code}>{country.code}</option>
-                                ))}
-                            </select>
-                            <input 
-                                key={address.id || 'new'}
-                                ref={phoneInputRef}
-                                name="phone" 
-                                onChange={(e) => {
-                                    // Only allow numbers, max 15 digits
-                                    const value = e.target.value.replace(/[^0-9]/g, '').slice(0, 15);
-                                    e.target.value = value;
-                                    setAddress({
-                                        ...address,
-                                        phone: value
-                                    });
-                                }}
-                                defaultValue={address.phone}
-                                className="flex-1 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#f59e0b] focus:bg-white focus:ring-4 focus:ring-[#fde7c2]" 
-                                type="text"
-                                inputMode="numeric"
-                                placeholder={address.phoneCode === '+971' ? '501234567' : '9876543210'} 
-                                maxLength="15"
-                                pattern="[0-9]{7,15}"
-                                title="Phone number must be 7-15 digits"
-                                required 
-                                autoComplete="off"
-                            />
-                        </div>
-                        <p className="mt-1 text-xs text-slate-500">Enter phone number without country code</p>
-                    </div>
-
-                    <div>
-                        <label className="mb-1.5 block text-sm font-semibold text-slate-700">Alternate Phone (Optional)</label>
-                        <div className="flex gap-2">
-                            <select
-                                name="alternatePhoneCode"
-                                onChange={handleAddressChange}
-                                value={address.alternatePhoneCode}
-                                className="min-w-[88px] rounded-2xl border border-slate-200 bg-slate-50/70 px-3 py-3 font-medium text-slate-700 outline-none transition focus:border-[#f59e0b] focus:bg-white focus:ring-4 focus:ring-[#fde7c2]"
-                            >
-                                {countries.map((country) => (
-                                    <option key={country.code} value={country.code}>{country.code}</option>
-                                ))}
-                            </select>
-                            <input
-                                name="alternatePhone"
-                                onChange={(e) => {
-                                    const value = e.target.value.replace(/[^0-9]/g, '').slice(0, 15);
-                                    e.target.value = value;
-                                    setAddress({
-                                        ...address,
-                                        alternatePhone: value
-                                    });
-                                }}
-                                value={address.alternatePhone}
-                                className="flex-1 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#f59e0b] focus:bg-white focus:ring-4 focus:ring-[#fde7c2]"
-                                type="text"
-                                inputMode="numeric"
-                                placeholder="Alternate contact number"
-                                maxLength="15"
-                                pattern="[0-9]{7,15}"
-                                title="Phone number must be 7-15 digits"
-                                autoComplete="off"
-                            />
-                        </div>
-                        <p className="mt-1 text-xs text-slate-500">Optional number we can reach if primary is unavailable.</p>
                     </div>
                     </div>
 

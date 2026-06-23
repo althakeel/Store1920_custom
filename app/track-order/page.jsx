@@ -8,12 +8,37 @@ import AnimatedProgressTracker from "@/components/AnimatedProgressTracker";
 import styles from "./tracking.module.css";
 import { CheckCircle2, Clock3, PackageSearch, RefreshCw, SearchCheck } from "lucide-react";
 
+function buildTrackingParams(phoneNumber, awbNumber) {
+  const params = new URLSearchParams();
+  const contact = String(phoneNumber || '').trim();
+  const reference = String(awbNumber || '').trim();
+
+  if (contact.includes('@')) {
+    params.append('email', contact);
+  } else if (contact) {
+    params.append('phone', contact);
+  }
+
+  if (reference) {
+    if (!contact && reference.includes('@')) {
+      params.append('email', reference);
+    } else if (!contact && /^[\d+\s()-]{9,}$/.test(reference) && !/^[a-fA-F0-9]{24}$/.test(reference)) {
+      params.append('phone', reference);
+    } else {
+      params.append('awb', reference);
+    }
+  }
+
+  return params;
+}
+
 function TrackOrderPageInner() {
   const [phoneNumber, setPhoneNumber] = useState('')
   const [awbNumber, setAwbNumber] = useState('')
   const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false)
   const [order, setOrder] = useState(null)
+  const [relatedOrders, setRelatedOrders] = useState([])
   const [notFound, setNotFound] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
 
@@ -21,18 +46,12 @@ function TrackOrderPageInner() {
     if (refreshing || !order) return;
     setRefreshing(true);
     try {
-      const params = new URLSearchParams();
-      if (order.trackingId) params.append("awb", order.trackingId);
-      const contact = phoneNumber.trim();
-      if (contact.includes("@")) {
-        params.append("email", contact);
-      } else if (contact) {
-        params.append("phone", contact);
-      }
-      
+      const params = buildTrackingParams(phoneNumber, order.trackingId || awbNumber);
+
       const res = await axios.get(`/api/track-order?${params.toString()}`);
       if (res.data.success && res.data.order) {
         setOrder(res.data.order);
+        setRelatedOrders(Array.isArray(res.data.relatedOrders) ? res.data.relatedOrders : []);
         toast.success("Tracking updated!");
       }
     } catch (error) {
@@ -49,8 +68,24 @@ function TrackOrderPageInner() {
     }
   }, [searchParams]);
 
+  const trackWithParams = async (params) => {
+    const res = await axios.get(`/api/track-order?${params.toString()}`, {
+      validateStatus: (status) => status < 500,
+    })
+    if (res.data.success && res.data.order) {
+      setOrder(res.data.order)
+      setRelatedOrders(Array.isArray(res.data.relatedOrders) ? res.data.relatedOrders : [])
+      setNotFound(false)
+      if (res.data.message) {
+        toast.success(res.data.message)
+      }
+      return true
+    }
+    return false
+  }
+
   const handleTrack = async (e) => {
-    e.preventDefault()
+    if (e?.preventDefault) e.preventDefault()
     if (!phoneNumber.trim() && !awbNumber.trim()) {
       toast.error('Please enter mobile number, email, AWB, reference number, or booking number')
       return
@@ -59,37 +94,32 @@ function TrackOrderPageInner() {
     setLoading(true)
     setNotFound(false)
     setOrder(null)
+    setRelatedOrders([])
 
     try {
-      const params = new URLSearchParams()
-      const contact = phoneNumber.trim()
-      if (contact.includes('@')) {
-        params.append('email', contact)
-      } else if (contact) {
-        params.append('phone', contact)
+      const params = buildTrackingParams(phoneNumber, awbNumber)
+
+      const tracked = await trackWithParams(params)
+      if (tracked) {
+        return
       }
-      if (awbNumber.trim()) params.append('awb', awbNumber.trim())
-      
-      const res = await axios.get(`/api/track-order?${params.toString()}`, {
-        validateStatus: (status) => status < 500,
-      })
-      if (res.data.success && res.data.order) {
-        setOrder(res.data.order)
-      } else if (awbNumber.trim() && res.status === 404) {
+
+      if (awbNumber.trim()) {
         const retry = await axios.get(`/api/track-order?carrier=c3xpress&awb=${encodeURIComponent(awbNumber.trim())}`, {
           validateStatus: (status) => status < 500,
         })
         if (retry.data?.success && retry.data?.order) {
           setOrder(retry.data.order)
+          setRelatedOrders([])
           setNotFound(false)
           toast.dismiss()
         } else {
           setNotFound(true)
-          toast.error(retry.data?.message || res.data?.message || 'Order not found')
+          toast.error(retry.data?.message || 'Order not found')
         }
       } else {
         setNotFound(true)
-        toast.error(res.data?.message || 'Order not found')
+        toast.error('Order not found')
       }
     } catch (error) {
       const msg = error?.response?.data?.message
@@ -226,6 +256,37 @@ function TrackOrderPageInner() {
           {/* Order Details */}
           {order && (
             <div className="space-y-6">
+              {relatedOrders.length > 0 && (
+                <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+                  <p className="text-sm font-medium text-blue-900 mb-3">
+                    We found {relatedOrders.length + 1} order(s) for this contact. Showing the most recent below.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {relatedOrders.map((entry) => (
+                      <button
+                        key={entry._id}
+                        type="button"
+                        onClick={async () => {
+                          const nextReference = String(entry.shortOrderNumber || entry._id)
+                          setAwbNumber(nextReference)
+                          setPhoneNumber('')
+                          setLoading(true)
+                          setNotFound(false)
+                          try {
+                            const params = buildTrackingParams('', nextReference)
+                            await trackWithParams(params)
+                          } finally {
+                            setLoading(false)
+                          }
+                        }}
+                        className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm text-blue-800 hover:bg-blue-100"
+                      >
+                        Order {entry.shortOrderNumber || String(entry._id).slice(-8).toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {/* Tracking not ready notice */}
               {!order.trackingId && !order.c3x && (
                 <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-yellow-800 text-sm">

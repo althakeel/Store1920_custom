@@ -10,6 +10,7 @@ import toast from 'react-hot-toast'
 import DashboardSidebar from '@/components/DashboardSidebar'
 import { downloadInvoice } from '@/lib/generateInvoice'
 import DeliveryReviewModal from '@/components/DeliveryReviewModal'
+import { GUEST_ORDERS_LINKED_EVENT, linkGuestOrdersForCurrentUser } from '@/lib/linkGuestOrdersClient'
 
 export default function DashboardOrdersPage() {
   const [user, setUser] = useState(undefined)
@@ -229,6 +230,7 @@ export default function DashboardOrdersPage() {
       try {
         setLoadingOrders(true)
         const token = await auth.currentUser.getIdToken(true)
+        await linkGuestOrdersForCurrentUser(auth.currentUser, token)
         const { data } = await axios.get('/api/orders', {
           headers: { Authorization: `Bearer ${token}` },
         })
@@ -281,6 +283,25 @@ export default function DashboardOrdersPage() {
     }
     loadOrders()
   }, [user])
+
+  useEffect(() => {
+    const handleGuestOrdersLinked = () => {
+      if (!auth.currentUser) return
+      setLoadingOrders(true)
+      auth.currentUser.getIdToken(true).then(async (token) => {
+        await linkGuestOrdersForCurrentUser(auth.currentUser, token)
+        const { data } = await axios.get('/api/orders', {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const list = Array.isArray(data?.orders) ? data.orders : (Array.isArray(data) ? data : [])
+        setOrders(list)
+        setLoadingOrders(false)
+      }).catch(() => setLoadingOrders(false))
+    }
+
+    window.addEventListener(GUEST_ORDERS_LINKED_EVENT, handleGuestOrdersLinked)
+    return () => window.removeEventListener(GUEST_ORDERS_LINKED_EVENT, handleGuestOrdersLinked)
+  }, [])
 
   // Auto-refresh tracking data every 30 seconds for expanded order
   useEffect(() => {

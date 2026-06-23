@@ -2216,7 +2216,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
         </div>
       </div>
 
-      <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 pt-0 max-lg:pb-6 lg:py-6 overflow-x-clip lg:overflow-x-visible">
+      <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 pt-0 max-lg:pb-6 lg:py-6 overflow-x-visible">
         <div className="product-page-grid gap-0 lg:gap-8 items-start">
 
           {/* LEFT: Media gallery */}
@@ -2687,11 +2687,18 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
               </div>
 
               {relatedProducts.length > 0 ? (
-                <div className="mt-2 max-lg:mb-2 lg:hidden" dir={isArabic ? 'rtl' : 'ltr'}>
+                <div className="mt-2 max-lg:mb-2 overflow-visible lg:hidden" dir={isArabic ? 'rtl' : 'ltr'}>
                   <h2 className="mb-2 text-[18px] font-bold text-gray-900">
                     {t('product.relatedProductsTitle')}
                   </h2>
-                  <ProductCarousel products={relatedProducts} priorityCount={6} showArrows={false} compactBottom />
+                  <ProductCarousel
+                    products={relatedProducts}
+                    priorityCount={6}
+                    showArrows={false}
+                    showMobileArrows
+                    edgeBleed
+                    compactBottom
+                  />
                 </div>
               ) : null}
             </div>
@@ -3280,7 +3287,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
       {relatedProducts.length > 0 && (
         <div className="hidden w-full max-w-[1400px] mx-auto px-4 sm:px-6 pb-8 lg:block">
-          <div className="pt-8">
+          <div className="pt-8 overflow-visible">
             <div className="mb-5 flex items-start justify-between gap-4" dir={isArabic ? 'rtl' : 'ltr'}>
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-[18px] sm:text-[20px] font-bold text-gray-900">{t('product.relatedProductsTitle')}</h2>

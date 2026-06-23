@@ -7,6 +7,7 @@ const DEFAULT_SETTINGS = {
   navMenuEnabled: true,
   navActionsVisibility: {
     store: true,
+    orders: true,
     wishlist: true,
     cart: true,
   },
@@ -38,6 +39,7 @@ const normalizeVisibility = (value) => {
   const input = value && typeof value === 'object' ? value : {};
   return {
     store: boolOrDefault(input.store, true),
+    orders: boolOrDefault(input.orders, true),
     wishlist: boolOrDefault(input.wishlist, true),
     cart: boolOrDefault(input.cart, true),
   };

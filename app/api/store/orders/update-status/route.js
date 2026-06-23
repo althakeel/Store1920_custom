@@ -122,9 +122,20 @@ export async function POST(request) {
             console.error('[store/update-status] Email sending failed:', emailError);
         }
 
+        if (normalizedStatus === 'SHIPPED') {
+            try {
+                const { sendOrderShippedWhatsApp } = await import('@/lib/whatsapp/orderNotifications');
+                const orderPayload = order.toObject ? order.toObject() : order;
+                const whatsappResult = await sendOrderShippedWhatsApp(orderPayload);
+                console.log('[store/update-status] WhatsApp shipped result:', whatsappResult);
+            } catch (whatsappError) {
+                console.error('[store/update-status] WhatsApp sending failed:', whatsappError);
+            }
+        }
+
         return NextResponse.json({ 
             success: true, 
-            message: 'Order status updated and email sent',
+            message: 'Order status updated and notifications sent',
             order: {
                 _id: order._id,
                 status: order.status

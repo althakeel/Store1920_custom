@@ -66,7 +66,7 @@ export default function NavbarMenuPage() {
     const [previewMenu, setPreviewMenu] = useState({
         navMenuEnabled: true,
         navMenuItems: [],
-        navActionsVisibility: { wishlist: true, cart: true },
+        navActionsVisibility: { wishlist: true, cart: true, orders: true },
     })
 
     useEffect(() => {
@@ -98,6 +98,7 @@ export default function NavbarMenuPage() {
                     navMenuEnabled: Boolean(settings.navMenuEnabled),
                     navMenuItems: Array.isArray(settings.navMenuItems) ? settings.navMenuItems : [],
                     navActionsVisibility: {
+                        orders: settings?.navActionsVisibility?.orders !== false,
                         wishlist: settings?.navActionsVisibility?.wishlist !== false,
                         cart: settings?.navActionsVisibility?.cart !== false,
                     },

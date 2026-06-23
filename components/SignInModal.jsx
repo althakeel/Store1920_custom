@@ -9,6 +9,7 @@ import GoogleIcon from '../assets/google.png';
 import Imageslider from '../assets/signin/76.webp';
 import axios from 'axios';
 import { countryCodes } from '../assets/countryCodes';
+import { linkGuestOrdersForCurrentUser } from '@/lib/linkGuestOrdersClient';
 
 const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '' }) => {
   const [isRegister, setIsRegister] = useState(false);
@@ -130,6 +131,11 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '' }
     try {
       const token = await user.getIdToken();
       trackLoginLocation(token);
+
+      void linkGuestOrdersForCurrentUser(user, token, {
+        email: emailOverride || user.email || '',
+        phone: user.phoneNumber || '',
+      });
 
       if (isNewUser) {
         axios.post('/api/wallet/bonus', {}, {

@@ -11,9 +11,12 @@ export default function ProductCarousel({
   priorityCount = 4,
   className = '',
   showArrows = true,
+  showMobileArrows = false,
   compactBottom = false,
+  edgeBleed = false,
 }) {
   const [canScrollLeft, setCanScrollLeft] = useState(false)
+  const [canScrollRight, setCanScrollRight] = useState(false)
   const {
     scrollRef,
     handlePointerDown,
@@ -29,13 +32,19 @@ export default function ProductCarousel({
     if (!container) return undefined
 
     const updateScrollState = () => {
-      setCanScrollLeft(container.scrollLeft > 0)
+      const maxScroll = container.scrollWidth - container.clientWidth
+      setCanScrollLeft(container.scrollLeft > 1)
+      setCanScrollRight(container.scrollLeft < maxScroll - 1)
     }
 
     updateScrollState()
     container.addEventListener('scroll', updateScrollState, { passive: true })
+    window.addEventListener('resize', updateScrollState)
 
-    return () => container.removeEventListener('scroll', updateScrollState)
+    return () => {
+      container.removeEventListener('scroll', updateScrollState)
+      window.removeEventListener('resize', updateScrollState)
+    }
   }, [products, scrollRef])
 
   if (!products.length) return null
@@ -44,13 +53,28 @@ export default function ProductCarousel({
     ? trackClassName.replace(' pb-2', ' pb-0')
     : trackClassName
 
+  const arrowsVisible = showArrows || showMobileArrows
+  const arrowVisibilityClass = showMobileArrows && !showArrows
+    ? 'flex lg:hidden'
+    : showArrows
+      ? 'flex'
+      : 'hidden'
+
+  const bleedClass = edgeBleed
+    ? 'max-lg:-mx-4 max-lg:px-4 sm:max-lg:-mx-6 sm:max-lg:px-6'
+    : ''
+
+  const resolvedTrackStyle = edgeBleed
+    ? { ...trackStyle, scrollPaddingInline: '16px' }
+    : trackStyle
+
   return (
-    <div className={`relative w-full min-w-0 overflow-hidden ${className}`.trim()}>
-      {showArrows && canScrollLeft ? (
+    <div className={`relative w-full min-w-0 overflow-visible ${bleedClass} ${className}`.trim()}>
+      {arrowsVisible && canScrollLeft ? (
         <button
           type="button"
           onClick={scrollLeft}
-          className="absolute left-1 top-1/2 z-10 hidden -translate-y-1/2 rounded-full border border-gray-100 bg-white p-2 shadow-xl transition-all hover:bg-gray-50 lg:flex"
+          className={`absolute left-0 top-[38%] z-10 -translate-y-1/2 rounded-full border border-gray-100 bg-white p-2 shadow-lg transition-all hover:bg-gray-50 active:scale-95 ${arrowVisibilityClass}`}
           aria-label="Scroll left"
         >
           <ChevronLeft size={18} className="text-gray-800" />
@@ -63,7 +87,7 @@ export default function ProductCarousel({
         aria-label="Product carousel"
         onPointerDown={handlePointerDown}
         className={resolvedTrackClassName}
-        style={trackStyle}
+        style={resolvedTrackStyle}
       >
         {products.map((product, index) => (
           <ProductCard
@@ -76,11 +100,11 @@ export default function ProductCarousel({
         ))}
       </div>
 
-      {showArrows && products.length > 0 ? (
+      {arrowsVisible && canScrollRight ? (
         <button
           type="button"
           onClick={scrollRight}
-          className="absolute right-1 top-1/2 z-10 hidden -translate-y-1/2 rounded-full border border-gray-100 bg-white p-2 shadow-xl transition-all hover:bg-gray-50 lg:flex"
+          className={`absolute right-0 top-[38%] z-10 -translate-y-1/2 rounded-full border border-gray-100 bg-white p-2 shadow-lg transition-all hover:bg-gray-50 active:scale-95 ${arrowVisibilityClass}`}
           aria-label="Scroll right"
         >
           <ChevronRight size={18} className="text-gray-800" />

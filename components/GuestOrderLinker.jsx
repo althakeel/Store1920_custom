@@ -1,74 +1,62 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import axios from 'axios'
+import { useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { useAuth } from '@/lib/useAuth'
+import { linkGuestOrdersForCurrentUser } from '@/lib/linkGuestOrdersClient'
 
 export default function GuestOrderLinker() {
     const { user, loading, getToken } = useAuth()
     const isSignedIn = !!user
-    const [checked, setChecked] = useState(false)
+    const [checkedUid, setCheckedUid] = useState(null)
+    const linkingRef = useRef(false)
 
     useEffect(() => {
         const controller = new AbortController()
         let active = true
 
         const linkGuestOrders = async () => {
-            // Skip if still loading, not signed in, or already checked
-            if (loading || !isSignedIn || checked) return
+            if (loading || !isSignedIn || !user?.uid) return
+            if (checkedUid === user.uid || linkingRef.current) return
 
             try {
                 const token = await getToken()
-                if (!token) return
+                if (!token || !active) return
 
-                const email = user?.email
-                const phone = user?.phoneNumber
+                linkingRef.current = true
 
-                if (!email && !phone) return
-
-                const { data } = await axios.post('/api/user/link-guest-orders', {
-                    email,
-                    phone
-                }, {
-                    headers: { Authorization: `Bearer ${token}` },
-                    signal: controller.signal,
-                    timeout: 10000
-                })
+                const data = await linkGuestOrdersForCurrentUser(user, token)
 
                 if (!active) return
 
-                if (data.linked && data.count > 0) {
+                if (data?.linked && data.count > 0) {
                     toast.success(`Welcome back! We've linked ${data.count} previous order(s) to your account.`, {
                         duration: 5000
                     })
                 }
 
-                setChecked(true)
+                setCheckedUid(user.uid)
             } catch (error) {
-                if (axios.isCancel(error) || error?.code === 'ERR_CANCELED' || error?.name === 'CanceledError') {
-                    return
-                }
-
-                // Silently fail - this is a background operation
                 if (process.env.NODE_ENV !== 'production') {
                     console.warn('Failed to link guest orders:', error)
                 }
                 if (active) {
-                    setChecked(true)
+                    setCheckedUid(user.uid)
                 }
+            } finally {
+                linkingRef.current = false
             }
         }
 
-        // Run after a short delay to avoid blocking initial page load
-        const timer = setTimeout(linkGuestOrders, 1500)
+        const timer = setTimeout(linkGuestOrders, 300)
 
         return () => {
             active = false
             clearTimeout(timer)
             controller.abort()
+            linkingRef.current = false
         }
-    }, [isSignedIn, user, getToken, loading, checked])
+    }, [isSignedIn, user, getToken, loading, checkedUid])
 
-    return null // This component doesn't render anything
+    return null
 }

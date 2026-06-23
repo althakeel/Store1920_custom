@@ -115,5 +115,7 @@ OrderSchema.index({ storeId: 1, createdAt: -1 });             // Store order his
 OrderSchema.index({ storeId: 1, status: 1, createdAt: -1 }); // Store dashboard filtered by status
 OrderSchema.index({ status: 1, createdAt: -1 });              // Global status queries / admin
 OrderSchema.index({ userId: 1, 'coupon.code': 1 });           // Per-user coupon usage checks
+OrderSchema.index({ isGuest: 1, guestEmail: 1 });             // Link guest orders by email
+OrderSchema.index({ isGuest: 1, guestPhone: 1 });             // Link guest orders by phone
 
 export default mongoose.models.Order || mongoose.model("Order", OrderSchema);

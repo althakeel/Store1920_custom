@@ -34,6 +34,7 @@ const NavbarMenuSettingsSchema = new mongoose.Schema(
     },
     navActionsVisibility: {
       store: { type: Boolean, default: true },
+      orders: { type: Boolean, default: true },
       wishlist: { type: Boolean, default: true },
       cart: { type: Boolean, default: true },
     },
@@ -125,6 +126,7 @@ if (!NavbarMenuSettingsModel.schema.path('navActionsVisibility')) {
   NavbarMenuSettingsModel.schema.add({
     navActionsVisibility: {
       store: { type: Boolean, default: true },
+      orders: { type: Boolean, default: true },
       wishlist: { type: Boolean, default: true },
       cart: { type: Boolean, default: true },
     },

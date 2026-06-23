@@ -1,9 +1,7 @@
 import connectDB from '@/lib/mongodb';
-import GuestUser from '@/models/GuestUser';
-import Order from '@/models/Order';
 import { NextResponse } from "next/server";
 import { getAuth } from '@/lib/firebase-admin';
-import { buildGuestOrderIdentityClauses, normalizeEmail } from '@/lib/orderIdentity';
+import { linkGuestOrdersToUser, resolveContactForGuestLinking } from '@/lib/linkGuestOrders';
 
 function parseAuthHeader(request) {
     const authHeader = request.headers.get('authorization') || request.headers.get('Authorization');
@@ -36,70 +34,30 @@ export async function POST(request) {
             return NextResponse.json({ error: "Not authorized" }, { status: 401 });
         }
 
-    
-        const user = await request.json();
-        const email = normalizeEmail(user?.email || decodedToken.email);
-        const phone = (user?.phone || decodedToken.phone_number || '').toString().trim();
+        const body = await request.json().catch(() => ({}));
+        const { email, phone, phones } = await resolveContactForGuestLinking({
+            decodedToken,
+            body,
+            userId,
+        });
 
-        if (!email && !phone) {
+        if (!email && !phone && !(phones || []).length) {
             return NextResponse.json({ error: "Email or phone required" }, { status: 400 });
         }
 
-        const orderFilter = buildGuestOrderIdentityClauses({ email, phone });
-        if (orderFilter.length === 0) {
+        const result = await linkGuestOrdersToUser(userId, { email, phone, phones });
+
+        if (!result.linked) {
             return NextResponse.json({ 
                 message: "No guest orders found",
                 linked: false 
             });
-        }
-
-        const guestOrders = await Order.find({
-            isGuest: true,
-            $and: [
-                { $or: [{ userId: { $exists: false } }, { userId: null }, { userId: '' }] },
-                { $or: orderFilter }
-            ]
-        }).select('_id').lean();
-
-        if (guestOrders.length === 0) {
-            return NextResponse.json({ 
-                message: "No guest orders found",
-                linked: false 
-            });
-        }
-
-        await Order.updateMany({
-            _id: {
-                $in: guestOrders.map(order => order._id)
-            }
-        }, {
-            $set: {
-                userId,
-                isGuest: false
-            }
-        });
-
-        if (email || phone) {
-            const guestUserFilter = [];
-            if (email) guestUserFilter.push({ email });
-            if (phone) guestUserFilter.push({ phone });
-
-            if (guestUserFilter.length > 0) {
-                await GuestUser.updateMany(
-                    { $or: guestUserFilter },
-                    {
-                        accountCreated: true,
-                        convertedUserId: userId,
-                        convertedAt: new Date()
-                    }
-                ).catch(() => {});
-            }
         }
 
         return NextResponse.json({ 
-            message: `Successfully linked ${guestOrders.length} guest order(s) to your account`,
+            message: `Successfully linked ${result.count} guest order(s) to your account`,
             linked: true,
-            count: guestOrders.length
+            count: result.count
         });
 
     } catch (error) {

@@ -23,8 +23,14 @@ import { useStorefrontMarket } from "@/lib/useStorefrontMarket";
 import { trackCustomerEvent, withOrderTrackingFields } from '@/lib/trackingClient';
 import { getCartEntryProductId, getCartEntryQuantity, isFreeGiftEntry } from "@/lib/freeGiftUtils";
 import { STORE1920_LOGO_PATH } from "@/lib/brandLogo";
+import {
+  getPhoneInputError,
+  getPhoneValidationMessage,
+  isValidPhoneNumber,
+} from '@/lib/phoneValidation';
 import { UAE_EMIRATES, getUaeAreasForEmirate, isUaeCountry } from "@/lib/uaeEmirateAreas";
 import SearchableSelect from "@/components/SearchableSelect";
+import PhoneNumberField from "@/components/PhoneNumberField";
 import Creditimage1 from '../../../assets/creditcards/19 - Copy.webp';
 import Creditimage2 from '../../../assets/creditcards/16 - Copy.webp';
 import Creditimage3 from '../../../assets/creditcards/20.webp';
@@ -37,6 +43,19 @@ const PrepaidUpsellModal = dynamic(() => import("@/components/PrepaidUpsellModal
 function formatDeliveryDays(value, fallback = '2-5') {
   const raw = String(value || fallback).replace(/\s*days?/gi, '').trim();
   return raw ? `${raw} days` : `${fallback} days`;
+}
+
+function resolveGuestCity(values) {
+  return String(values?.district || values?.state || values?.city || '').trim();
+}
+
+function getGuestCountryOptions() {
+  return countryCodes.map((entry) => entry.label.replace(/ \(.*\)/, ''));
+}
+
+function getGuestCountryCode(countryName) {
+  const match = countryCodes.find((entry) => entry.label.replace(/ \(.*\)/, '') === countryName);
+  return match?.code || '+971';
 }
 
 export default function CheckoutPage() {
@@ -82,7 +101,6 @@ export default function CheckoutPage() {
   const [showSignIn, setShowSignIn] = useState(false);
   const [showAddressModal, setShowAddressModal] = useState(false);
   const [editingAddressId, setEditingAddressId] = useState(null);
-  const [showAlternatePhone, setShowAlternatePhone] = useState(false);
   const [abandonSaved, setAbandonSaved] = useState(false);
   const [tabbyCardLoaded, setTabbyCardLoaded] = useState(false);
 
@@ -116,7 +134,7 @@ export default function CheckoutPage() {
   const sanitizePincode = (value) => cleanDigits(value).trim();
   const isZeroOnlyPincode = (value) => /^0+$/.test(String(value || '').trim());
   const isIndiaCountry = (value) => String(value || '').trim().toLowerCase() === 'india';
-  const hasValidPhone = (value) => /^[0-9]{7,15}$/.test(cleanDigits(value));
+  const hasValidPhone = (value, code = form.phoneCode || '+971') => isValidPhoneNumber(value, code);
   const pickValidPincode = (...values) => {
     for (const value of values) {
       const normalized = sanitizePincode(value);
@@ -293,7 +311,7 @@ export default function CheckoutPage() {
               country: form.country,
               state: form.state,
               district: form.district,
-              city: form.city,
+              city: resolveGuestCity(form),
               street: form.street,
               pincode: form.pincode,
             },
@@ -617,7 +635,7 @@ export default function CheckoutPage() {
   const isGuestAddressReady = !!(
     form.name &&
     form.phone &&
-    form.city &&
+    resolveGuestCity(form) &&
     form.state &&
     form.street &&
     (!isUaeCountry(form.country) || form.district)
@@ -785,7 +803,18 @@ export default function CheckoutPage() {
   }, [authLoading, cartItems, router, placingOrder, showPrepaidModal]);
 
   const checkoutSelectClass =
-    'w-full rounded border border-gray-200 bg-white px-4 py-2 text-left text-slate-900 outline-none transition focus:border-gray-400';
+    'w-full rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-left text-sm text-slate-900 outline-none transition focus:border-[#f59e0b] focus:bg-white focus:ring-4 focus:ring-[#fde7c2]';
+
+  const guestFieldClass =
+    'w-full rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#f59e0b] focus:bg-white focus:ring-4 focus:ring-[#fde7c2]';
+
+  const guestLabelClass = 'mb-1.5 block text-sm font-semibold text-slate-700';
+
+  const guestSectionClass =
+    'grid gap-5 rounded-[24px] border border-[#f1e4d3] bg-white/88 p-5 shadow-[0_12px_32px_rgba(15,23,42,0.05)] md:p-6';
+
+  const guestStepBadgeClass =
+    'rounded-full bg-[#fff5db] px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-[#b45309]';
 
   const handleStateSelect = (value) => {
     if (isUaeCountry(form.country)) {
@@ -795,6 +824,17 @@ export default function CheckoutPage() {
       setDistricts(stateObj ? stateObj.districts : []);
     }
     setForm((f) => ({ ...f, state: value, district: '' }));
+  };
+
+  const handleGuestCountryChange = (value) => {
+    setForm((f) => ({
+      ...f,
+      country: value,
+      state: '',
+      district: '',
+      phoneCode: getGuestCountryCode(value),
+    }));
+    setDistricts([]);
   };
 
   const handleChange = (e) => {
@@ -1140,29 +1180,36 @@ export default function CheckoutPage() {
       originalPhone: form.phone,
       cleanedPhone: resolvedPhone,
       cleanedLength: resolvedPhone.length,
-      isValid: /^[0-9]{7,15}$/.test(resolvedPhone)
+      isValid: isValidPhoneNumber(resolvedPhone, form.phoneCode || '+971')
     });
 
-    if (form.alternatePhone && !/^[0-9]{7,15}$/.test(cleanedAlternatePhone)) {
-      setFormError("Alternate number must be 7-15 digits.");
-      return;
+    const phoneCodeForValidation = form.phoneCode || '+971';
+    const altCodeForValidation = form.alternatePhoneCode || phoneCodeForValidation;
+
+    if (form.alternatePhone) {
+      const alternatePhoneError = getPhoneInputError(cleanedAlternatePhone, altCodeForValidation);
+      if (alternatePhoneError) {
+        setFormError(alternatePhoneError);
+        return;
+      }
     }
     
     // Validate main phone number
-    if (!resolvedPhone || resolvedPhone.length < 7 || resolvedPhone.length > 15) {
+    const mainPhoneError = getPhoneInputError(resolvedPhone, phoneCodeForValidation);
+    if (mainPhoneError) {
       console.warn('Phone validation failed:', {
         hasValue: !!resolvedPhone,
         length: resolvedPhone.length
       });
-      setFormError(`Please enter a valid phone number. Got ${resolvedPhone.length} digits, need 7-15.`);
+      setFormError(mainPhoneError);
       return;
     }
     
     // For card payment, use Stripe Checkout
     if (form.payment === 'card') {
       setPlacingOrder(true);
-      if (!resolvedPhone || resolvedPhone.length < 7 || resolvedPhone.length > 15) {
-        setFormError(`Please enter a valid phone number. Got ${resolvedPhone.length} digits, need 7-15.`);
+      if (getPhoneInputError(resolvedPhone, phoneCodeForValidation)) {
+        setFormError(getPhoneInputError(resolvedPhone, phoneCodeForValidation));
         setPlacingOrder(false);
         return;
       }
@@ -1194,7 +1241,7 @@ export default function CheckoutPage() {
             payload.addressId = addressId;
           }
         } else {
-          if (!form.name || !form.email || !resolvedPhone || !form.street || !form.city || !form.state || !resolvedCountry) {
+          if (!form.name || !form.email || !resolvedPhone || !form.street || !resolveGuestCity(form) || !form.state || !resolvedCountry) {
             setFormError("Please fill all required shipping details.");
             setPlacingOrder(false);
             return;
@@ -1208,7 +1255,7 @@ export default function CheckoutPage() {
             alternatePhone: cleanedAlternatePhone || '',
             alternatePhoneCode: form.alternatePhone ? form.alternatePhoneCode || form.phoneCode : '',
             street: form.street,
-            city: form.city,
+            city: resolveGuestCity(form),
             state: form.state,
             country: resolvedCountry,
             pincode: resolvedPincode || '',
@@ -1241,7 +1288,7 @@ export default function CheckoutPage() {
           const addressId = form.addressId || (addressList[0] && addressList[0]._id);
           if (addressId) payload.addressId = addressId;
         } else {
-          if (!form.name || !form.email || !resolvedPhone || !form.street || !form.city || !form.state || !resolvedCountry) {
+          if (!form.name || !form.email || !resolvedPhone || !form.street || !resolveGuestCity(form) || !form.state || !resolvedCountry) {
             setFormError("Please fill all required shipping details.");
             setPlacingOrder(false);
             return;
@@ -1255,7 +1302,7 @@ export default function CheckoutPage() {
             alternatePhone: cleanedAlternatePhone || '',
             alternatePhoneCode: form.alternatePhone ? form.alternatePhoneCode || form.phoneCode : '',
             street: form.street,
-            city: form.city,
+            city: resolveGuestCity(form),
             state: form.state,
             country: resolvedCountry,
             pincode: resolvedPincode || '',
@@ -1288,7 +1335,7 @@ export default function CheckoutPage() {
           const addressId = form.addressId || (addressList[0] && addressList[0]._id);
           if (addressId) payload.addressId = addressId;
         } else {
-          if (!form.name || !form.email || !resolvedPhone || !form.street || !form.city || !form.state || !resolvedCountry) {
+          if (!form.name || !form.email || !resolvedPhone || !form.street || !resolveGuestCity(form) || !form.state || !resolvedCountry) {
             setFormError("Please fill all required shipping details.");
             setPlacingOrder(false);
             return;
@@ -1302,7 +1349,7 @@ export default function CheckoutPage() {
             alternatePhone: cleanedAlternatePhone || '',
             alternatePhoneCode: form.alternatePhone ? form.alternatePhoneCode || form.phoneCode : '',
             street: form.street,
-            city: form.city,
+            city: resolveGuestCity(form),
             state: form.state,
             country: resolvedCountry,
             pincode: resolvedPincode || '',
@@ -1319,8 +1366,8 @@ export default function CheckoutPage() {
     
     // COD and other payment methods - Now supports guest checkout
     // Validate phone number for COD
-    if (!resolvedPhone || resolvedPhone.length < 7 || resolvedPhone.length > 15) {
-      setFormError(`Please enter a valid phone number. Got ${resolvedPhone.length} digits, need 7-15.`);
+    if (getPhoneInputError(resolvedPhone, phoneCodeForValidation)) {
+      setFormError(getPhoneInputError(resolvedPhone, phoneCodeForValidation));
       return;
     }
     
@@ -1394,7 +1441,7 @@ export default function CheckoutPage() {
         // Only add addressId if it exists
         if (addressId || (addressList[0] && addressList[0]._id)) {
           payload.addressId = addressId || addressList[0]._id;
-        } else if (form.street && form.city && form.state && form.country) {
+        } else if (form.street && resolveGuestCity(form) && form.state && form.country) {
           // User is logged in but has no saved address - include address in payload
           payload.addressData = {
             name: form.name || user.displayName || '',
@@ -1404,7 +1451,7 @@ export default function CheckoutPage() {
             alternatePhone: cleanedAlternatePhone || '',
             alternatePhoneCode: form.alternatePhone ? form.alternatePhoneCode || form.phoneCode : '',
             street: form.street,
-            city: form.city,
+            city: resolveGuestCity(form),
             state: form.state,
             country: resolvedCountry,
             zip: resolvedPincode || '',
@@ -1427,7 +1474,7 @@ export default function CheckoutPage() {
             alternatePhone: cleanedAlternatePhone || '',
             alternatePhoneCode: form.alternatePhone ? form.alternatePhoneCode || form.phoneCode : '',
             street: form.street,
-            city: form.city,
+            city: resolveGuestCity(form),
             state: form.state,
             country: resolvedCountry,
             pincode: resolvedPincode || '',
@@ -1906,16 +1953,16 @@ export default function CheckoutPage() {
               
               {/* Guest Checkout Notice */}
               {!user && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                  <div className="flex items-start justify-between">
+                <div className="mb-4 overflow-hidden rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50 to-indigo-50 p-4 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
                     <div>
-                      <h3 className="font-bold text-blue-900 mb-1">{t('checkout.checkoutAsGuest')}</h3>
-                      <p className="text-sm text-blue-800">{t('checkout.guestSubtitle')}</p>
+                      <h3 className="font-bold text-blue-950 mb-1">{t('checkout.checkoutAsGuest')}</h3>
+                      <p className="text-sm text-blue-800/90">{t('checkout.guestSubtitle')}</p>
                     </div>
                     <button
                       type="button"
                       onClick={() => setShowSignIn(true)}
-                      className="text-blue-600 hover:text-blue-700 text-sm font-semibold underline whitespace-nowrap ml-4"
+                      className="shrink-0 rounded-full border border-blue-200 bg-white px-3 py-1.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-50"
                     >
                       {t('checkout.signInInstead')}
                     </button>
@@ -1923,7 +1970,11 @@ export default function CheckoutPage() {
                 </div>
               )}
               
-              <h2 className="text-xl font-bold mb-1 mt-3 text-gray-900">{t('checkout.shippingDetails')}</h2>
+              {!user ? (
+                <p className="mb-4 text-sm text-slate-600">{t('checkout.shippingDetails')}</p>
+              ) : (
+                <h2 className="text-xl font-bold mb-3 mt-1 text-gray-900">{t('checkout.shippingDetails')}</h2>
+              )}
               {/* ...existing code for address/guest form... */}
               {/* Show address fetch error if present */}
               {addressFetchError && (
@@ -2020,39 +2071,18 @@ export default function CheckoutPage() {
                         <p className="text-xs text-yellow-700 mt-1">{t('checkout.phoneRequiredDesc')}</p>
                       </div>
                     </div>
-                    <div className="flex gap-2">
-                      <select
-                        className="border border-yellow-300 bg-white rounded px-2 py-2 focus:border-yellow-400"
-                        name="phoneCode"
-                        value={form.phoneCode}
-                        onChange={handleChange}
-                        style={{ maxWidth: '110px' }}
-                        required
-                      >
-                        {countryCodes.map((c) => (
-                          <option key={c.code} value={c.code}>{c.code}</option>
-                        ))}
-                      </select>
-                      <input
-                        className="border border-yellow-300 bg-white rounded px-4 py-2 flex-1 focus:border-yellow-400 focus:ring-2 focus:ring-yellow-200"
-                        type="tel"
-                        name="phone"
-                        placeholder="Enter phone number"
-                        value={form.phone || ''}
-                        onChange={(e) => {
-                          // Only allow digits
-                          const cleaned = e.target.value.replace(/\D/g, '');
-                          setForm(f => ({ ...f, phone: cleaned }));
-                        }}
-                        pattern="[0-9]{7,15}"
-                        title="Phone number must be 7-15 digits"
-                        maxLength="15"
-                        required
-                      />
-                    </div>
-                    {form.phone && (form.phone.length < 7 || form.phone.length > 15) && (
-                      <div className="text-red-500 text-xs mt-2">Phone number must be 7-15 digits</div>
-                    )}
+                    <PhoneNumberField
+                      phone={form.phone}
+                      phoneCode={form.phoneCode}
+                      onPhoneChange={(value) => setForm((f) => ({ ...f, phone: value }))}
+                      onPhoneCodeChange={handleChange}
+                      countryOptions={countryCodes.map((c) => ({ code: c.code }))}
+                      selectClassName="border border-yellow-300 bg-white rounded px-2 py-2 focus:border-yellow-400"
+                      inputClassName="border border-yellow-300 bg-white rounded px-4 py-2 flex-1 focus:border-yellow-400 focus:ring-2 focus:ring-yellow-200"
+                      errorClassName="text-red-500 text-xs mt-2"
+                      showLabel={false}
+                      showHint={false}
+                    />
                   </div>
                 )}
                 </div>
@@ -2068,205 +2098,173 @@ export default function CheckoutPage() {
                   <span className="text-xl">+</span> Add Delivery Address
                 </button>
               ) : (!user) ? (
-                <div className="flex flex-col gap-3">{/* Guest form starts here */}
-                  {/* ...existing code for guest/inline address form... */}
-                  {/* Name */}
-                  <input
-                    className="border border-gray-200 bg-white rounded px-4 py-2 focus:border-gray-400"
-                    type="text"
-                    name="name"
-                    placeholder="Name"
-                    value={form.name || ''}
-                    onChange={handleChange}
-                    required
-                  />
-                  {/* Phone input */}
-                  <div className="flex gap-2">
-                    <select
-                      className="border border-gray-200 bg-white rounded px-2 py-2 focus:border-gray-400"
-                      name="phoneCode"
-                      value={form.phoneCode}
-                      onChange={handleChange}
-                      style={{ maxWidth: '110px' }}
-                      required
-                    >
-                      {countryCodes.map((c) => (
-                        <option key={c.code} value={c.code}>{c.code}</option>
-                      ))}
-                    </select>
-                    <input
-                      className="border border-gray-200 bg-white rounded px-4 py-2 flex-1 focus:border-gray-400"
-                      type="tel"
-                      name="phone"
-                      placeholder="Phone number"
-                      value={form.phone || ''}
-                      onChange={(e) => {
-                        // Only allow digits
-                        const cleaned = e.target.value.replace(/\D/g, '');
-                        setForm(f => ({ ...f, phone: cleaned }));
-                      }}
-                      pattern="[0-9]{7,15}"
-                      title="Phone number must be 7-15 digits"
-                      maxLength="15"
-                      required
+                <div className="grid gap-5">
+                  <div className={guestSectionClass}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-base font-bold text-slate-900">{t('checkout.contactDetails')}</h3>
+                        <p className="mt-1 text-sm text-slate-500">{t('checkout.contactDetailsHint')}</p>
+                      </div>
+                      <span className={guestStepBadgeClass}>Step 1</span>
+                    </div>
+
+                    <div>
+                      <label htmlFor="guest-name" className={guestLabelClass}>{t('checkout.fullName')}</label>
+                      <input
+                        id="guest-name"
+                        className={guestFieldClass}
+                        type="text"
+                        name="name"
+                        placeholder="Enter your name"
+                        value={form.name || ''}
+                        onChange={handleChange}
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label htmlFor="guest-email" className={guestLabelClass}>{t('checkout.emailAddress')}</label>
+                      <input
+                        id="guest-email"
+                        className={guestFieldClass}
+                        type="email"
+                        name="email"
+                        placeholder={t('checkout.emailAddress')}
+                        value={form.email || ''}
+                        onChange={handleChange}
+                      />
+                    </div>
+
+                    <PhoneNumberField
+                      id="guest-phone"
+                      label={t('checkout.phoneNumber')}
+                      phone={form.phone}
+                      phoneCode={form.phoneCode}
+                      onPhoneChange={(value) => setForm((f) => ({ ...f, phone: value }))}
+                      onPhoneCodeChange={handleChange}
+                      countryOptions={countryCodes.map((c) => ({ code: c.code }))}
                     />
                   </div>
-                  {form.phone && !/^[0-9]{7,15}$/.test(form.phone) && (
-                    <div className="text-red-500 text-sm">Phone number must be 7-15 digits</div>
-                  )}
-                  {/* Alternate phone checkbox */}
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={showAlternatePhone}
-                      onChange={(e) => {
-                        setShowAlternatePhone(e.target.checked);
-                        if (!e.target.checked) {
-                          setForm(f => ({ ...f, alternatePhone: '', alternatePhoneCode: f.phoneCode }));
-                        }
-                      }}
-                      className="w-4 h-4 text-orange-500 border-gray-300 rounded focus:ring-orange-500"
-                    />
-                    <span className="text-sm text-gray-700">Add alternate phone number (optional)</span>
-                  </label>
-                  {/* Alternate phone input - only show when checkbox is ticked */}
-                  {showAlternatePhone && (
-                    <>
-                      <div className="flex gap-2">
-                        <select
-                          className="border border-gray-200 bg-white rounded px-2 py-2 focus:border-gray-400"
-                          name="alternatePhoneCode"
-                          value={form.alternatePhoneCode}
-                          onChange={handleChange}
-                          style={{ maxWidth: '110px' }}
-                        >
-                          {countryCodes.map((c) => (
-                            <option key={c.code} value={c.code}>{c.code}</option>
-                          ))}
-                        </select>
+
+                  <div className={guestSectionClass}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-base font-bold text-slate-900">{t('checkout.deliveryAddress')}</h3>
+                        <p className="mt-1 text-sm text-slate-500">{t('checkout.deliveryAddressHint')}</p>
+                      </div>
+                      <span className={guestStepBadgeClass}>Step 2</span>
+                    </div>
+
+                    <div>
+                      <label htmlFor="guest-street" className={guestLabelClass}>{t('checkout.street')}</label>
+                      <input
+                        id="guest-street"
+                        className={guestFieldClass}
+                        type="text"
+                        name="street"
+                        placeholder={t('checkout.street')}
+                        value={form.street || ''}
+                        onChange={handleChange}
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className={guestLabelClass}>
+                        {isUaeCountry(form.country) ? t('checkout.selectEmirate') : t('checkout.emirateState')}
+                      </label>
+                      {form.country === 'India' ? (
+                        <SearchableSelect
+                          value={form.state}
+                          onChange={handleStateSelect}
+                          options={indiaStatesAndDistricts.map((s) => s.state)}
+                          placeholder={t('checkout.selectState')}
+                          searchPlaceholder="Search state..."
+                          required
+                          triggerClassName={checkoutSelectClass}
+                        />
+                      ) : isUaeCountry(form.country) ? (
+                        <SearchableSelect
+                          value={form.state}
+                          onChange={handleStateSelect}
+                          options={UAE_EMIRATES}
+                          placeholder={t('checkout.selectEmirate')}
+                          searchPlaceholder="Search emirate..."
+                          required
+                          triggerClassName={checkoutSelectClass}
+                        />
+                      ) : (
                         <input
-                          className="border border-gray-200 bg-white rounded px-4 py-2 flex-1 focus:border-gray-400"
-                          type="tel"
-                          name="alternatePhone"
-                          placeholder="Alternate phone (optional)"
-                          value={form.alternatePhone || ''}
-                          onChange={(e) => {
-                            // Only allow digits
-                            const cleaned = e.target.value.replace(/\D/g, '');
-                            setForm(f => ({ ...f, alternatePhone: cleaned }));
-                          }}
-                          pattern="[0-9]{7,15}"
-                          title="Alternate number must be 7-15 digits"
-                          maxLength="15"
+                          className={guestFieldClass}
+                          type="text"
+                          name="state"
+                          placeholder={t('checkout.emirateState')}
+                          value={form.state || ''}
+                          onChange={handleChange}
+                          required
+                        />
+                      )}
+                    </div>
+
+                    {isUaeCountry(form.country) && form.state ? (
+                      <div>
+                        <label className={guestLabelClass}>{t('checkout.selectArea')}</label>
+                        <SearchableSelect
+                          value={form.district}
+                          onChange={(value) => setForm((f) => ({ ...f, district: value }))}
+                          options={districts}
+                          placeholder={t('checkout.selectArea')}
+                          searchPlaceholder="Search area..."
+                          emptyMessage="No areas found"
+                          required
+                          triggerClassName={checkoutSelectClass}
                         />
                       </div>
-                      {form.alternatePhone && !/^[0-9]{7,15}$/.test(form.alternatePhone) && (
-                        <div className="text-red-500 text-sm">Alternate number must be 7-15 digits</div>
-                      )}
-                    </>
-                  )}
-                  {/* Email (optional) */}
-                  <input
-                    className="border border-gray-200 bg-white rounded px-4 py-2 focus:border-gray-400"
-                    type="email"
-                    name="email"
-                    placeholder="Email address "
-                    value={form.email || ''}
-                    onChange={handleChange}
-                  />
-                  <input
-                    className="border border-gray-200 bg-white rounded px-4 py-2 focus:border-gray-400"
-                    type="text"
-                    name="city"
-                    placeholder="City"
-                    value={form.city || ''}
-                    onChange={handleChange}
-                    required
-                  />
-                  {/* Area/District dropdown (UAE + India) */}
-                  {((form.country === 'India' || isUaeCountry(form.country)) && form.state) && (
-                    isUaeCountry(form.country) ? (
+                    ) : form.country === 'India' && form.state ? (
+                      <div>
+                        <label className={guestLabelClass}>{t('checkout.selectDistrict')}</label>
+                        <select
+                          className={guestFieldClass}
+                          name="district"
+                          value={form.district}
+                          onChange={handleChange}
+                          required
+                        >
+                          <option value="">{t('checkout.selectDistrict')}</option>
+                          {districts.map((d) => (
+                            <option key={d} value={d}>{d}</option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : !isUaeCountry(form.country) && form.country !== 'India' ? (
+                      <div>
+                        <label className={guestLabelClass}>{t('checkout.selectDistrict')}</label>
+                        <input
+                          className={guestFieldClass}
+                          type="text"
+                          name="district"
+                          placeholder="Area or district"
+                          value={form.district || ''}
+                          onChange={handleChange}
+                          required
+                        />
+                      </div>
+                    ) : null}
+
+                    <div>
+                      <label className={guestLabelClass}>{t('checkout.country')}</label>
                       <SearchableSelect
-                        value={form.district}
-                        onChange={(value) => setForm((f) => ({ ...f, district: value }))}
-                        options={districts}
-                        placeholder="Select Area"
-                        searchPlaceholder="Search area..."
-                        emptyMessage="No areas found"
+                        value={form.country}
+                        onChange={handleGuestCountryChange}
+                        options={getGuestCountryOptions()}
+                        placeholder="Select Country"
+                        searchPlaceholder="Search country..."
+                        emptyMessage="No countries found"
                         required
                         triggerClassName={checkoutSelectClass}
                       />
-                    ) : (
-                    <select
-                      className="border border-gray-200 bg-white rounded px-4 py-2 focus:border-gray-400"
-                      name="district"
-                      value={form.district}
-                      onChange={handleChange}
-                      required
-                    >
-                      <option value="">Select District</option>
-                      {districts.map((d) => (
-                        <option key={d} value={d}>{d}</option>
-                      ))}
-                    </select>
-                    )
-                  )}
-                  {/* Full Address Line (street) */}
-                  <input
-                    className="border border-gray-200 bg-white rounded px-4 py-2 focus:border-gray-400"
-                    type="text"
-                    name="street"
-                    placeholder="Full Address Line (Street, Building, Apartment)"
-                    value={form.street || ''}
-                    onChange={handleChange}
-                    required
-                  />
-                  {/* State/Emirate */}
-                  {form.country === 'India' ? (
-                    <SearchableSelect
-                      value={form.state}
-                      onChange={handleStateSelect}
-                      options={indiaStatesAndDistricts.map((s) => s.state)}
-                      placeholder="Select State"
-                      searchPlaceholder="Search state..."
-                      required
-                      triggerClassName={checkoutSelectClass}
-                    />
-                  ) : form.country === 'United Arab Emirates' ? (
-                    <SearchableSelect
-                      value={form.state}
-                      onChange={handleStateSelect}
-                      options={UAE_EMIRATES}
-                      placeholder="Select Emirate"
-                      searchPlaceholder="Search emirate..."
-                      required
-                      triggerClassName={checkoutSelectClass}
-                    />
-                  ) : (
-                    <input
-                      className="border border-gray-200 bg-white rounded px-4 py-2 focus:border-gray-400"
-                      type="text"
-                      name="state"
-                      placeholder="Emirate / State"
-                      value={form.state || ''}
-                      onChange={handleChange}
-                      required
-                    />
-                  )}
-                  {/* Country dropdown (default UAE) */}
-                  <select
-                    className="border border-gray-200 bg-white rounded px-4 py-2 focus:border-gray-400"
-                    name="country"
-                    value={form.country}
-                    onChange={handleChange}
-                    required
-                  >
-                    <option value="United Arab Emirates">United Arab Emirates</option>
-                    <option value="India">India</option>
-                    {countryCodes.filter(c => c.label !== 'India' && !c.label.includes('United Arab Emirates')).map((c) => (
-                      <option key={c.label} value={c.label.replace(/ \(.*\)/, '')}>{c.label.replace(/ \(.*\)/, '')}</option>
-                    ))}
-                  </select>
+                    </div>
+                  </div>
                 </div>
               ) : null}
               <h2 className="text-xl font-bold mb-3 mt-4 text-gray-900">{t('checkout.paymentMethods')}</h2>
@@ -2709,6 +2707,12 @@ export default function CheckoutPage() {
         onAddressUpdated={() => {
           dispatch(fetchAddress({ getToken }));
           setEditingAddressId(null);
+        }}
+        onAddressDeleted={(addressId) => {
+          dispatch(fetchAddress({ getToken }));
+          if (form.addressId === addressId) {
+            setForm((f) => ({ ...f, addressId: '' }));
+          }
         }}
         addressList={addressList}
         selectedAddressId={form.addressId}

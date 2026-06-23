@@ -19,6 +19,7 @@ const REFRESH_MS = 10 * 60 * 1000;
 
 const defaultActionsVisibility = {
   store: true,
+  orders: true,
   wishlist: true,
   cart: true,
 };

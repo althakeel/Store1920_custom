@@ -3,6 +3,7 @@ import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import { verifyTamaraWebhookToken, captureTamaraPayment } from '@/lib/tamara';
 import { recordPurchaseFromOrder } from '@/lib/serverCustomerTracking';
+import { sendDeferredPaymentWhatsApp } from '@/lib/whatsapp/orderNotifications';
 
 export async function POST(request) {
     try {
@@ -55,6 +56,13 @@ export async function POST(request) {
                 } catch (captureErr) {
                     console.error('Tamara capture failed:', captureErr.message);
                     // Non-fatal: order is approved, capture can be retried
+                }
+
+                try {
+                    const whatsappResult = await sendDeferredPaymentWhatsApp(order);
+                    console.log('[tamara] WhatsApp paid confirmation:', whatsappResult);
+                } catch (whatsappError) {
+                    console.error('[tamara] WhatsApp failed:', whatsappError);
                 }
             }
         } else if (event_type === 'order_declined' || event_type === 'order_expired') {

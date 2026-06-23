@@ -127,6 +127,7 @@ const Navbar = () => {
   }, [cartItems]);
   const [navActionsVisibility, setNavActionsVisibility] = useState({
     store: true,
+    orders: true,
     wishlist: true,
     cart: true,
   });
@@ -166,6 +167,105 @@ const Navbar = () => {
     const raw = String(user?.displayName || user?.email?.split('@')[0] || '').trim();
     if (!raw) return 'there';
     return raw.length > 16 ? `${raw.slice(0, 16)}…` : raw;
+  };
+
+  const renderAccountMenuTrigger = ({ signedIn, onClick, tone = 'light', variant = 'full', className = '' }) => {
+    const isLightTone = tone === 'light';
+    const iconOnlyClass = isLightTone
+      ? 'text-white hover:bg-white/12'
+      : 'text-gray-800 hover:bg-gray-100';
+
+    const accountIcon = signedIn && firebaseUser?.photoURL ? (
+      <Image
+        src={firebaseUser.photoURL}
+        alt=""
+        width={28}
+        height={28}
+        className="h-7 w-7 rounded-full object-cover"
+      />
+    ) : (
+      <User size={22} strokeWidth={1.85} aria-hidden="true" />
+    );
+
+    if (variant === 'icon') {
+      return (
+        <button
+          type="button"
+          onClick={onClick}
+          className={`inline-flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full transition ${iconOnlyClass} ${className}`.trim()}
+          aria-label={signedIn ? t('navbar.account') : t('navbar.signInRegister')}
+        >
+          {signedIn && firebaseUser?.photoURL ? (
+            <Image
+              src={firebaseUser.photoURL}
+              alt=""
+              width={32}
+              height={32}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <User size={18} strokeWidth={2.25} aria-hidden="true" />
+          )}
+        </button>
+      );
+    }
+
+    const shellClass = isLightTone
+      ? 'text-white hover:opacity-90'
+      : 'text-gray-900 hover:opacity-90';
+
+    const topLine = signedIn
+      ? getUserGreetingName(firebaseUser)
+      : t('navbar.signInRegister');
+
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={`group inline-flex max-w-[128px] items-center gap-2 rounded-md px-1 py-1 text-left transition xl:max-w-[210px] xl:gap-2.5 ${shellClass} ${className}`.trim()}
+        aria-label={signedIn ? t('navbar.ordersAndAccount') : t('navbar.signInRegister')}
+        aria-haspopup="true"
+      >
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center">
+          {accountIcon}
+        </span>
+        <span className="min-w-0 flex flex-col leading-[1.15]">
+          <span className={`truncate text-[13px] font-bold leading-none xl:text-[14px] ${isLightTone ? 'text-white' : 'text-gray-900'}`}>
+            {topLine}
+          </span>
+          <span className={`mt-1 truncate text-[11px] font-normal leading-none ${isLightTone ? 'text-white/85' : 'text-gray-600'}`}>
+            {t('navbar.ordersAndAccount')}
+          </span>
+        </span>
+      </button>
+    );
+  };
+
+  const renderTodaysDealsButton = ({ variant = 'desktop', className = '' }) => {
+    const isDesktop = variant === 'desktop';
+    const useLightText = isDesktop || mobileNavbarUsesBrandColor;
+
+    return (
+      <Link
+        href="/offers"
+        className={`navbar-deals-btn shrink-0 font-extrabold uppercase tracking-[0.06em] transition hover:opacity-90 ${
+          isDesktop
+            ? 'hidden lg:inline-flex h-[44px] shrink-0 items-center px-1 text-[12px] leading-none'
+            : 'inline-flex h-8 max-w-[54px] flex-col items-center justify-center px-1 text-[9px] leading-[1.05]'
+        } ${className}`.trim()}
+      >
+        <span className={`navbar-deals-text-shine ${useLightText ? '' : 'navbar-deals-text-shine-dark'} flex flex-col items-center leading-[1.05]`}>
+        {isDesktop ? (
+          t('navbar.todaysDeals')
+        ) : (
+          <>
+            <span>{t('navbar.todaysDealsTop')}</span>
+            <span>{t('navbar.todaysDealsBottom')}</span>
+          </>
+        )}
+        </span>
+      </Link>
+    );
   };
 
   const [isClient, setIsClient] = useState(false);
@@ -287,6 +387,7 @@ const Navbar = () => {
       if (parsed && typeof parsed === 'object') {
         setNavActionsVisibility({
           store: parsed.store !== false,
+          orders: parsed.orders !== false,
           wishlist: parsed.wishlist !== false,
           cart: parsed.cart !== false,
         });
@@ -299,6 +400,7 @@ const Navbar = () => {
       const detail = event?.detail || {};
       setNavActionsVisibility({
         store: detail.store !== false,
+        orders: detail.orders !== false,
         wishlist: detail.wishlist !== false,
         cart: detail.cart !== false,
       });
@@ -985,6 +1087,70 @@ const Navbar = () => {
     );
   };
 
+  const handleOrdersClick = (e) => {
+    if (!firebaseUser) {
+      e.preventDefault();
+      setSignInMode('login');
+      setSignInOpen(true);
+    }
+  };
+
+  const renderLabeledNavAction = ({
+    href,
+    onClick,
+    icon: Icon,
+    label,
+    badgeCount = 0,
+    ariaLabel,
+    tone = 'light',
+    compact = false,
+    iconOnly = false,
+  }) => {
+    const isLightTone = tone === 'light';
+    const textClass = isLightTone ? 'text-white' : 'text-gray-900';
+    const iconOnlyClass = isLightTone
+      ? 'text-white hover:bg-white/12'
+      : 'text-gray-900 hover:bg-gray-100';
+    const className = iconOnly
+      ? `relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition ${iconOnlyClass}`
+      : `relative inline-flex shrink-0 items-center ${
+          compact ? 'gap-1 px-0.5' : 'gap-2 px-1'
+        } py-1 ${textClass} transition hover:opacity-85`;
+    const iconSize = iconOnly ? 20 : compact ? 18 : 22;
+
+    const content = (
+      <>
+        <span className={`relative inline-flex shrink-0 items-center justify-center ${iconOnly ? '' : ''}`}>
+          <Icon size={iconSize} strokeWidth={1.5} aria-hidden="true" />
+          {badgeCount > 0 ? (
+            <span className="absolute -right-1 -top-1 inline-flex min-h-[16px] min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
+              {badgeCount > 99 ? '99+' : badgeCount}
+            </span>
+          ) : null}
+        </span>
+        {!iconOnly ? (
+          <span className={`${compact ? 'text-[10px]' : 'text-[14px]'} font-normal leading-none whitespace-nowrap`}>
+            {label}
+          </span>
+        ) : null}
+      </>
+    );
+
+    if (onClick && !href) {
+      return (
+        <button type="button" onClick={onClick} className={className} aria-label={ariaLabel || label}>
+          {content}
+        </button>
+      );
+    }
+
+    return (
+      <Link href={href || '#'} onClick={onClick} className={className} aria-label={ariaLabel || label}>
+        {content}
+      </Link>
+    );
+  };
+
   const handleCartClick = (e) => {
     e.preventDefault();
     if (!cartCount || cartCount === 0) {
@@ -1208,11 +1374,11 @@ const Navbar = () => {
           borderColor: 'rgba(15, 23, 42, 0.12)',
         }}
       >
-        <div className="flex items-center gap-2 px-3 py-2.5">
+        <div className="flex min-w-0 items-center gap-1 overflow-hidden px-2 py-2 sm:gap-1.5 sm:px-3 sm:py-2.5">
           <button
             type="button"
             onClick={() => setMobileMenuOpen((prev) => !prev)}
-            className={`inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md ${mobileNavbarControlClass}`}
+            className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${mobileNavbarControlClass}`}
             aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
           >
             {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
@@ -1221,22 +1387,22 @@ const Navbar = () => {
           <Link
             href="/"
             onClick={handleLogoNavigation}
-            className="flex flex-shrink-0 items-center"
+            className="flex shrink-0 items-center"
           >
             <Image
               src={mobileLogoSrc}
               alt={`${STOREFRONT_BRAND_NAME} logo`}
               width={navbarAppearance.logoWidth}
               height={navbarAppearance.logoHeight}
-              className="h-7 w-auto object-contain"
-              style={{ maxHeight: '32px', maxWidth: mobileNavbarUsesBrandColor ? '110px' : '88px' }}
+              className="h-7 w-auto max-w-[72px] object-contain sm:max-w-[96px]"
+              style={{ maxHeight: '32px' }}
               priority
             />
           </Link>
 
           <form onSubmit={handleSearch} className="relative min-w-0 flex-1">
             <div
-              className={`relative flex h-9 items-center rounded-full pl-3 pr-1 ${
+              className={`relative flex h-9 min-w-0 items-center rounded-full pl-2.5 pr-1 sm:pl-3 ${
                 mobileNavbarUsesBrandColor
                   ? 'bg-white shadow-[0_2px_10px_rgba(15,23,42,0.12)]'
                   : 'border border-gray-200 bg-gray-50'
@@ -1257,7 +1423,7 @@ const Navbar = () => {
                 <button
                   type="button"
                   onClick={() => setSearch('')}
-                  className="mr-0.5 inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200/70"
+                  className="mr-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200/70"
                   aria-label="Clear search"
                 >
                   <X size={13} />
@@ -1266,7 +1432,7 @@ const Navbar = () => {
               <button
                 type="submit"
                 aria-label="Search"
-                className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-white transition hover:opacity-90"
+                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white transition hover:opacity-90"
                 style={{ backgroundColor: navbarAppearance.backgroundColor }}
               >
                 <Search size={14} strokeWidth={2.5} />
@@ -1278,18 +1444,44 @@ const Navbar = () => {
             )}
           </form>
 
-          <Link
-            href={firebaseUser ? '/dashboard/wishlist' : '/wishlist'}
-            className={`relative inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full ${mobileNavbarControlClass}`}
-            aria-label="Wishlist"
-          >
-            <HeartIcon size={20} />
-            {wishlistCount > 0 && (
-              <span className="absolute -right-1 -top-1 inline-flex min-h-[16px] min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
-                {wishlistCount > 99 ? '99+' : wishlistCount}
-              </span>
-            )}
-          </Link>
+          <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
+          {firebaseUser ? (
+            renderAccountMenuTrigger({
+              signedIn: true,
+              onClick: () => setMobileMenuOpen(true),
+              tone: mobileNavbarUsesBrandColor ? 'light' : 'dark',
+              variant: 'icon',
+            })
+          ) : (
+            renderAccountMenuTrigger({
+              signedIn: false,
+              onClick: () => {
+                setSignInMode('login');
+                setSignInOpen(true);
+              },
+              tone: mobileNavbarUsesBrandColor ? 'light' : 'dark',
+              variant: 'icon',
+            })
+          )}
+
+          {navActionsVisibility.wishlist && renderLabeledNavAction({
+            href: firebaseUser ? '/dashboard/wishlist' : '/wishlist',
+            icon: HeartIcon,
+            label: t('navbar.wishlist'),
+            badgeCount: wishlistCount,
+            tone: mobileNavbarUsesBrandColor ? 'light' : 'dark',
+            iconOnly: true,
+          })}
+
+          {navActionsVisibility.cart && renderLabeledNavAction({
+            onClick: handleCartClick,
+            icon: ShoppingCart,
+            label: t('navbar.cart'),
+            badgeCount: isClient ? cartCount : 0,
+            tone: mobileNavbarUsesBrandColor ? 'light' : 'dark',
+            iconOnly: true,
+          })}
+          </div>
         </div>
       </nav>
 
@@ -1303,10 +1495,9 @@ const Navbar = () => {
         }}
       >
       <div className={NAVBAR_CONTAINER_CLASS}>
-        <div className="flex items-center justify-between gap-4 overflow-visible py-2.5 lg:grid lg:grid-cols-[1fr_minmax(0,590px)_1fr] lg:items-center">
-
-          {/* Left Side - Hamburger (Mobile) + Logo */}
-          <div className="flex items-center gap-3 shrink-0 min-w-0 lg:justify-self-start">
+        <div className="flex min-w-0 items-center gap-2 py-2.5 lg:gap-3">
+          {/* Left — logo */}
+          <div className="flex min-w-0 shrink-0 items-center gap-2">
             {/* Hamburger Menu - Mobile Only on Home Page */}
             {isHomePage && (
               <button 
@@ -1317,7 +1508,6 @@ const Navbar = () => {
               </button>
             )}
             
-            {/* Logo */}
             <Link
               href="/"
               onClick={handleLogoNavigation}
@@ -1328,8 +1518,8 @@ const Navbar = () => {
                 alt={`${STOREFRONT_BRAND_NAME} logo`}
                 width={navbarAppearance.logoWidth}
                 height={navbarAppearance.logoHeight}
-                className="w-auto object-contain flex-shrink-0"
-                style={{ maxHeight: '50px', maxWidth: '250px' }}
+                className="h-auto w-auto max-w-[88px] object-contain flex-shrink-0 xl:max-w-[180px]"
+                style={{ maxHeight: '50px' }}
                 priority
               />
             </Link>
@@ -1350,10 +1540,16 @@ const Navbar = () => {
             </button>
           </div>
 
-          <div className="relative hidden w-full lg:block lg:justify-self-center">
-            <form onSubmit={handleSearch} className="w-full">
+          {/* Center — today's deals + search */}
+          <div className="relative hidden min-w-0 flex-1 items-center justify-center gap-3 lg:flex xl:gap-4">
+            {renderTodaysDealsButton({ variant: 'desktop' })}
+            <div className="relative min-w-0 w-full max-w-[440px] lg:max-w-[min(48vw,540px)] xl:max-w-[min(44vw,600px)] 2xl:max-w-[640px]">
+            <form
+              onSubmit={handleSearch}
+              className="w-full"
+            >
               <div
-                className="flex h-[44px] w-full items-center overflow-hidden rounded-2xl border px-3 shadow-sm"
+                className="flex h-[44px] w-full min-w-0 items-center overflow-hidden rounded-2xl border px-2 shadow-sm xl:px-3"
                 style={{
                   borderColor: 'rgba(255,255,255,0.92)',
                   backgroundColor: '#ffffff',
@@ -1366,12 +1562,13 @@ const Navbar = () => {
                 >
                   <button
                     type="button"
-                    className="group inline-flex items-center gap-1.5 rounded-xl px-2 py-1 text-[13px] font-medium leading-none text-slate-700 transition hover:bg-slate-50"
+                    className="group inline-flex items-center gap-1 rounded-xl px-1.5 py-1 text-[13px] font-medium leading-none text-slate-700 transition hover:bg-slate-50 xl:gap-1.5 xl:px-2"
                   >
-                    <span>Categories</span>
+                    <span className="hidden xl:inline">Categories</span>
+                    <span className="xl:hidden">Cat</span>
                     <span className="text-[11px] text-slate-400 transition group-hover:translate-y-[1px]">▾</span>
                   </button>
-                  <span className="mx-2 h-5 w-px shrink-0 bg-slate-200" />
+                  <span className="mx-1.5 h-5 w-px shrink-0 bg-slate-200 xl:mx-2" />
                 </div>
                 <input
                   type="text"
@@ -1395,32 +1592,22 @@ const Navbar = () => {
             {renderSearchSuggestionsDropdown(
               'absolute left-0 right-0 top-full z-[60] mt-2 max-h-80 overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-xl',
             )}
+            </div>
           </div>
 
-          {/* Right Side - Support + Icons */}
-          <div className="hidden lg:flex items-center justify-end gap-1.5 flex-shrink-0 text-[12px] text-white lg:justify-self-end">
+          {/* Right — account + actions */}
+          <div className="hidden min-w-0 shrink-0 items-center justify-end gap-1 lg:flex xl:gap-2">
             {firebaseUser ? (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center">
               <div
                 className="relative"
                 ref={userDropdownRef}
               >
-                <button
-                  className="inline-flex items-center gap-2 rounded-full px-2 py-1.5 transition hover:bg-white/10"
-                  aria-label="User menu"
-                  onClick={() => setUserDropdownOpen(prev => !prev)}
-                >
-                  {firebaseUser.photoURL ? (
-                    <Image src={firebaseUser.photoURL} alt="User" width={22} height={22} className="rounded-full object-cover" />
-                  ) : (
-                    <div className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-indigo-700 text-[10px] font-bold text-white">
-                      {(firebaseUser.displayName || firebaseUser.email || '?')[0].toUpperCase()}
-                    </div>
-                  )}
-                  <span className="max-w-[120px] truncate text-[12px] font-medium text-white/95">
-                    Hi, {getUserGreetingName(firebaseUser)}
-                  </span>
-                </button>
+                {renderAccountMenuTrigger({
+                  signedIn: true,
+                  onClick: () => setUserDropdownOpen((prev) => !prev),
+                  tone: 'light',
+                })}
                 {userDropdownOpen && (
                   <div className="absolute right-0 top-12 min-w-[220px] bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-2">
                     {isSeller && (
@@ -1448,90 +1635,46 @@ const Navbar = () => {
               </div>
               </div>
             ) : (
-              <button
-                type="button"
-                onClick={() => {
+              renderAccountMenuTrigger({
+                signedIn: false,
+                onClick: () => {
                   setSignInMode('login');
                   setSignInOpen(true);
-                }}
-                className="inline-flex items-center justify-center rounded-full p-2 transition hover:bg-white/10"
-                aria-label="Sign in"
-              >
-                <User className="w-[18px] h-[18px]" />
-              </button>
+                },
+                tone: 'light',
+              })
             )}
 
-            {navActionsVisibility.wishlist && (
-              <Link href="/dashboard/wishlist" className="relative inline-flex items-center justify-center rounded-full p-2 transition hover:bg-white/10" aria-label="Wishlist">
-                <HeartIcon size={18} />
-                {wishlistCount > 0 && (
-                  <span className="absolute -top-1 -right-1 text-[10px] font-bold text-white bg-blue-600 rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1">
-                    {wishlistCount > 99 ? '99+' : wishlistCount}
-                  </span>
-                )}
-              </Link>
-            )}
+            <span className="mx-1 hidden h-7 w-px shrink-0 bg-white/25 xl:mx-2 xl:block" aria-hidden="true" />
 
-            {navActionsVisibility.cart && (
-              <button
-                onClick={handleCartClick}
-                className="relative inline-flex items-center justify-center rounded-full p-2 transition hover:bg-white/10"
-                aria-label="Cart"
-              >
-                <ShoppingCart size={18} />
-                {isClient && cartCount > 0 && (
-                  <span className="absolute -top-1 -right-1 text-[10px] font-bold text-white bg-blue-600 rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1">
-                    {cartCount}
-                  </span>
-                )}
-              </button>
-            )}
-          </div>
+            <div className="flex min-w-0 shrink-0 items-center gap-3 xl:gap-4">
+            {navActionsVisibility.orders && renderLabeledNavAction({
+              href: '/dashboard/orders',
+              onClick: handleOrdersClick,
+              icon: Package,
+              label: t('navbar.orders'),
+              ariaLabel: t('navbar.orders'),
+              tone: 'light',
+            })}
 
+            {navActionsVisibility.wishlist && renderLabeledNavAction({
+              href: firebaseUser ? '/dashboard/wishlist' : '/wishlist',
+              icon: HeartIcon,
+              label: t('navbar.wishlist'),
+              badgeCount: wishlistCount,
+              ariaLabel: t('navbar.wishlist'),
+              tone: 'light',
+            })}
 
-          {/* Mobile Right Side - Login Icon + Cart */}
-          <div className="lg:hidden flex items-center gap-3">
-            {/* Show user avatar if signed in, else login icon */}
-            {isHomePage && (
-              firebaseUser ? (
-                <button
-                  onClick={() => setMobileMenuOpen(true)}
-                  className="inline-flex items-center gap-2 rounded-full p-1.5 transition hover:bg-white/10"
-                >
-                  {firebaseUser.photoURL ? (
-                    <Image src={firebaseUser.photoURL} alt="User" width={28} height={28} className="rounded-full object-cover" />
-                  ) : (
-                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-700 text-sm font-bold text-white">
-                      {firebaseUser.displayName?.[0]?.toUpperCase() || firebaseUser.email?.[0]?.toUpperCase() || 'U'}
-                    </span>
-                  )}
-                  <span className="max-w-[88px] truncate text-xs font-medium text-white/95">
-                    Hi, {getUserGreetingName(firebaseUser)}
-                  </span>
-                </button>
-              ) : (
-                <button
-                  onClick={() => setSignInOpen(true)}
-                  className="p-2 hover:bg-gray-100 rounded-full transition"
-                >
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#111827" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                    <circle cx="12" cy="7" r="4"></circle>
-                  </svg>
-                </button>
-              )
-            )}
-            
-            {navActionsVisibility.cart && (
-              <button onClick={handleCartClick} className="relative p-2 hover:bg-gray-100 rounded-full transition">
-                <ShoppingCart size={20} className="text-gray-900" />
-                {isClient && cartCount > 0 && (
-                  <span className="absolute -top-1 -right-1 text-[10px] font-bold text-white bg-blue-600 rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
-                    {cartCount}
-                  </span>
-                )}
-              </button>
-            )}
+            {navActionsVisibility.cart && renderLabeledNavAction({
+              onClick: handleCartClick,
+              icon: ShoppingCart,
+              label: t('navbar.cart'),
+              badgeCount: isClient ? cartCount : 0,
+              ariaLabel: t('navbar.cart'),
+              tone: 'light',
+            })}
+            </div>
           </div>
         </div>
       </div>

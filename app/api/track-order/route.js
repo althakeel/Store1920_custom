@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server'
 import connectDB from '@/lib/mongodb'
-import Order from '@/models/Order'
 import { fetchNormalizedC3XTracking, trackByReference, normalizeC3XShipment, trackPickup } from '@/lib/c3xpress'
-import { buildGuestOrderIdentityClauses, normalizeEmail } from '@/lib/orderIdentity'
+import {
+  parseTrackingIdentifiers,
+  findOrderByTrackingIdentifier,
+  findOrdersByContact,
+  enrichOrderWithLiveTracking,
+} from '@/lib/orderTrackingLookup'
 
 const asOrderShape = (normalized, awb = '') => {
   if (!normalized) return null;
@@ -83,27 +87,28 @@ export async function GET(req) {
     await connectDB()
 
     const { searchParams } = new URL(req.url)
-    const phone = searchParams.get('phone')
-    const email = normalizeEmail(searchParams.get('email'))
-    const awbParam = searchParams.get('awb')
-    const orderIdParam = searchParams.get('orderId')
-    // Support either ?awb= or ?orderId= for the same input value
-    const awb = awbParam || orderIdParam
+    const { phone, email, identifier } = parseTrackingIdentifiers({
+      phone: searchParams.get('phone'),
+      email: searchParams.get('email'),
+      awb: searchParams.get('awb'),
+      orderId: searchParams.get('orderId'),
+    })
     const carrier = (searchParams.get('carrier') || '').toLowerCase()
 
-    if (!phone && !email && !awb) {
+    if (!phone && !email && !identifier) {
       return NextResponse.json(
         { success: false, message: 'Mobile number, email, AWB, reference number, or booking number is required' },
         { status: 400 }
       )
     }
 
-    // If explicitly requested, try C3Xpress directly by AWB, reference, or booking number.
-    if (carrier === 'c3xpress' && awb) {
+    if (carrier === 'c3xpress' && identifier) {
       try {
-        const normalized = await lookupC3XByIdentifier(awb.trim())
-        if (!normalized) return NextResponse.json({ success: false, message: 'Shipment not found on C3Xpress' }, { status: 404 })
-        return NextResponse.json({ success: true, order: asOrderShape(normalized, awb.trim()) })
+        const normalized = await lookupC3XByIdentifier(identifier)
+        if (!normalized) {
+          return NextResponse.json({ success: false, message: 'Shipment not found on C3Xpress' }, { status: 404 })
+        }
+        return NextResponse.json({ success: true, order: asOrderShape(normalized, identifier) })
       } catch (e) {
         const msg = (e?.message || '').includes('not configured')
           ? 'C3Xpress not configured.'
@@ -112,86 +117,56 @@ export async function GET(req) {
       }
     }
 
-    let order = null;
-    if (awb) {
-      const awbTrim = awb.trim();
-      // 1. Try by trackingId
-      order = await Order.findOne({ trackingId: awbTrim }).lean()
-        .populate('orderItems.productId')
-        .sort({ createdAt: -1 })
-        .lean();
-      // 2. Try by full orderId (ObjectId)
-      if (!order && /^[a-fA-F0-9]{24}$/.test(awbTrim)) {
-        order = await Order.findOne({ _id: awbTrim }).lean()
-          .populate('orderItems.productId')
-          .lean();
-      }
-      // 3. Try by shortOrderNumber field
-      if (!order && /^\d{1,}$/.test(awbTrim)) {
-        order = await Order.findOne({ shortOrderNumber: Number(awbTrim) }).lean()
-          .populate('orderItems.productId')
-          .lean();
-      }
+    let order = null
+    let relatedOrders = []
+
+    if (identifier) {
+      order = await findOrderByTrackingIdentifier(identifier)
     }
-    // 4. Try by mobile number or email if provided (fallback)
+
     if (!order && (phone || email)) {
-      const contactClauses = buildGuestOrderIdentityClauses({ email, phone })
-      order = contactClauses.length
-        ? await Order.findOne({ $or: contactClauses }).lean()
-        .populate('orderItems.productId')
-        .sort({ createdAt: -1 })
-        .lean()
-        : null;
+      relatedOrders = await findOrdersByContact({ phone, email, limit: 10 })
+      order = relatedOrders[0] || null
     }
+
     if (!order) {
-      // Fallback: try to fetch directly from C3Xpress using AWB, reference, or booking number.
-      if (awb) {
+      if (identifier) {
         try {
-          const normalized = await lookupC3XByIdentifier(awb.trim());
-          const synthetic = asOrderShape(normalized, awb.trim());
+          const normalized = await lookupC3XByIdentifier(identifier)
+          const synthetic = asOrderShape(normalized, identifier)
           if (synthetic) {
-            return NextResponse.json({ success: true, order: synthetic });
+            return NextResponse.json({ success: true, order: synthetic })
           }
         } catch (e) {
-          console.error('C3Xpress fallback failed:', e?.message || e);
+          console.error('C3Xpress fallback failed:', e?.message || e)
         }
       }
+
       return NextResponse.json(
-        { success: false, message: 'Order not found with the provided information' },
+        { success: false, message: 'Order not found with the provided mobile number, email, or tracking reference' },
         { status: 404 }
-      );
+      )
     }
-    
-    // Ensure shortOrderNumber exists (for old orders without it)
-    if (!order.shortOrderNumber && order._id) {
-      const hex = order._id.toString().slice(-6);
-      order.shortOrderNumber = parseInt(hex, 16);
-    }
-    
-    // Fetch live C3Xpress tracking when the order has a C3X tracking ID
-    try {
-      const courier = (order.courier || '').toLowerCase()
-      const trackingId = order.trackingId || order.awb || order.airwayBillNo
 
-      if (trackingId && courier.includes('c3xpress')) {
-        // C3Xpress live tracking
-        const normalized = await fetchNormalizedC3XTracking(trackingId).catch(() => null)
-        if (normalized) {
-          order.c3x = normalized.c3x
-          order.trackingUrl = order.trackingUrl || normalized.trackingUrl
-          order.courier = order.courier || normalized.courier
-          order.trackingId = order.trackingId || normalized.trackingId
-          if (normalized.c3x?.appStatus) {
-            order.status = normalized.c3x.appStatus
+    const enrichedOrder = await enrichOrderWithLiveTracking(order)
+
+    return NextResponse.json({
+      success: true,
+      order: enrichedOrder,
+      ...(relatedOrders.length > 1
+        ? {
+            relatedOrders: relatedOrders.slice(1).map((entry) => ({
+              _id: entry._id,
+              shortOrderNumber: entry.shortOrderNumber,
+              status: entry.status,
+              createdAt: entry.createdAt,
+              trackingId: entry.trackingId,
+              total: entry.total,
+            })),
+            message: `Showing your most recent order. ${relatedOrders.length - 1} more order(s) found for this contact.`,
           }
-        }
-      }
-    } catch (e) {
-      // Don't fail the API if courier call fails; just log
-      console.error('Live tracking fetch failed:', e?.message || e)
-    }
-
-    return NextResponse.json({ success: true, order });
+        : {}),
+    })
   } catch (error) {
     console.error('Track order error:', error && error.stack ? error.stack : error)
     return NextResponse.json(

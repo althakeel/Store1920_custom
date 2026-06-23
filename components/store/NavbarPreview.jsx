@@ -1,6 +1,6 @@
 'use client';
 
-import { Heart, Search, ShoppingCart } from 'lucide-react';
+import { Heart, Search, ShoppingCart, Package, User } from 'lucide-react';
 import ShipXpressBadge from '@/components/ShipXpressBadge';
 
 const DEFAULT_BG = '#9f4b1d';
@@ -12,16 +12,28 @@ export default function NavbarPreview({
   logoHeight = 50,
   navMenuEnabled = true,
   navMenuItems = [],
-  navActionsVisibility = { wishlist: true, cart: true },
+  navActionsVisibility = { orders: true, wishlist: true, cart: true },
   userName = 'store1920',
   searchPlaceholder = 'Search products...',
 }) {
   const bg = backgroundColor || DEFAULT_BG;
   const menuItems = (navMenuItems || []).filter((item) => String(item?.name || '').trim());
-  const greeting = String(userName || 'store1920').trim() || 'store1920';
-  const initial = greeting.charAt(0).toUpperCase();
   const logoW = Math.min(Number(logoWidth) || 50, 250);
   const logoH = Math.min(Number(logoHeight) || 50, 50);
+
+  const renderPreviewAction = (Icon, label, badge) => (
+    <span className="inline-flex items-center gap-2 px-1 py-1.5">
+      <span className="relative inline-flex shrink-0 items-center justify-center">
+        <Icon size={20} strokeWidth={1.5} />
+        {badge ? (
+          <span className="absolute -right-2.5 -top-2 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+            {badge}
+          </span>
+        ) : null}
+      </span>
+      <span className="text-[13px] font-normal leading-none">{label}</span>
+    </span>
+  );
 
   return (
     <div className="w-full overflow-visible rounded-xl border border-slate-200/80 shadow-sm">
@@ -76,33 +88,20 @@ export default function NavbarPreview({
               </div>
             </div>
 
-            <div className="ml-auto flex shrink-0 items-center gap-1.5 text-[12px]">
-              <div className="inline-flex items-center gap-2 rounded-full px-2 py-1.5">
-                <span className="inline-flex h-[22px] w-[22px] items-center justify-center rounded-full bg-indigo-700 text-[10px] font-bold text-white">
-                  {initial}
-                </span>
-                <span className="hidden max-w-[120px] truncate font-medium text-white/95 sm:inline">
-                  Hi, {greeting}
+            <div className="ml-auto flex shrink-0 items-center gap-5 text-[12px]">
+              <span className="mx-1 hidden h-7 w-px bg-white/25 sm:block" aria-hidden="true" />
+
+              <div className="inline-flex items-center gap-2.5 px-1 py-1">
+                <User size={20} strokeWidth={1.85} />
+                <span className="hidden flex-col leading-[1.15] sm:flex">
+                  <span className="text-[13px] font-bold leading-none">Sign In / Register</span>
+                  <span className="mt-1 text-[10px] font-normal leading-none text-white/85">Orders &amp; Account</span>
                 </span>
               </div>
 
-              {navActionsVisibility.wishlist !== false ? (
-                <span className="relative inline-flex items-center justify-center rounded-full p-2">
-                  <Heart size={18} />
-                  <span className="absolute -right-0.5 -top-0.5 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-bold">
-                    1
-                  </span>
-                </span>
-              ) : null}
-
-              {navActionsVisibility.cart !== false ? (
-                <span className="relative inline-flex items-center justify-center rounded-full p-2">
-                  <ShoppingCart size={18} />
-                  <span className="absolute -right-0.5 -top-0.5 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-bold">
-                    2
-                  </span>
-                </span>
-              ) : null}
+              {navActionsVisibility.orders !== false ? renderPreviewAction(Package, 'Orders') : null}
+              {navActionsVisibility.wishlist !== false ? renderPreviewAction(Heart, 'Wishlist', '1') : null}
+              {navActionsVisibility.cart !== false ? renderPreviewAction(ShoppingCart, 'Cart', '2') : null}
             </div>
           </div>
 

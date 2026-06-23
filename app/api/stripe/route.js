@@ -4,6 +4,7 @@ import User from "@/models/User";
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { recordPurchaseFromOrder } from "@/lib/serverCustomerTracking";
+import { sendDeferredPaymentWhatsApp } from '@/lib/whatsapp/orderNotifications';
 
 export async function POST(request){
     try {
@@ -40,6 +41,13 @@ export async function POST(request){
                         })
                     } catch (trackingError) {
                         console.error('Stripe purchase tracking failed for order', orderId, trackingError)
+                    }
+
+                    try {
+                        const whatsappResult = await sendDeferredPaymentWhatsApp(order)
+                        console.log('[stripe] WhatsApp paid confirmation:', whatsappResult)
+                    } catch (whatsappError) {
+                        console.error('[stripe] WhatsApp failed for order', orderId, whatsappError)
                     }
                 }
             }))

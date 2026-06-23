@@ -17,6 +17,7 @@ import {
   Sparkles,
   Store,
   Heart,
+  Package,
 } from 'lucide-react';
 
 const createMenuItem = () => ({
@@ -36,6 +37,7 @@ const defaultSettings = {
   navMenuEnabled: true,
   navActionsVisibility: {
     store: true,
+    orders: true,
     wishlist: true,
     cart: true,
   },
@@ -227,6 +229,7 @@ export default function MenuManagementPage() {
         navMenuEnabled: Boolean(data?.navMenuEnabled),
         navActionsVisibility: {
           store: data?.navActionsVisibility?.store !== false,
+          orders: data?.navActionsVisibility?.orders !== false,
           wishlist: data?.navActionsVisibility?.wishlist !== false,
           cart: data?.navActionsVisibility?.cart !== false,
         },
@@ -603,6 +606,7 @@ export default function MenuManagementPage() {
 
   const actionToggles = [
     { key: 'store', label: 'Store action', icon: Store },
+    { key: 'orders', label: 'Orders action', icon: Package },
     { key: 'wishlist', label: 'Wishlist action', icon: Heart },
     { key: 'cart', label: 'Cart action', icon: ShoppingCart },
   ];
@@ -758,7 +762,7 @@ export default function MenuManagementPage() {
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
             <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
               <h2 className="mb-4 text-sm font-semibold text-slate-900">Navbar actions</h2>
-              <div className="grid gap-2 sm:grid-cols-3">
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                 {actionToggles.map(({ key, label, icon: Icon }) => {
                   const checked = form.navActionsVisibility[key];
                   return (

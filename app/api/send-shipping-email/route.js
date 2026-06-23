@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { sendOrderShippedEmail } from '@/lib/email';
+import { sendOrderShippedWhatsApp } from '@/lib/whatsapp/orderNotifications';
 import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import User from '@/models/User';
@@ -52,9 +53,16 @@ export async function POST(request) {
       courier: order.courier
     });
 
+    try {
+      const whatsappResult = await sendOrderShippedWhatsApp(order);
+      console.log('[send-shipping-email] WhatsApp result:', whatsappResult);
+    } catch (whatsappError) {
+      console.error('[send-shipping-email] WhatsApp failed:', whatsappError);
+    }
+
     return NextResponse.json({ 
       success: true, 
-      message: 'Shipping notification email sent successfully' 
+      message: 'Shipping notification sent successfully' 
     });
   } catch (error) {
     console.error('Error sending shipping email:', error);

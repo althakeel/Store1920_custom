@@ -20,7 +20,9 @@ import { allocateShortOrderNumber } from '@/lib/orderNumber';
 import { fetchNormalizedDelhiveryTracking } from '@/lib/delhivery';
 import { createTamaraSession } from '@/lib/tamara';
 import { createTabbySession } from '@/lib/tabby';
-import { buildGuestOrderIdentityClauses, normalizeEmail } from '@/lib/orderIdentity';
+import { normalizeEmail } from '@/lib/orderIdentity';
+import { linkGuestOrdersToUser, resolveContactForGuestLinking } from '@/lib/linkGuestOrders';
+import { getAuth } from '@/lib/firebase-admin';
 import { recordPurchaseFromOrder, shouldRecordPurchaseOnCreate } from '@/lib/serverCustomerTracking';
 
 const PaymentMethod = {
@@ -529,8 +531,8 @@ export async function POST(request) {
                     orderData.addressId = guestAddress._id.toString();
                     orderData.shippingAddress = {
                         name: guestInfo.name,
-                        email: guestInfo.email,
-                        phone: guestInfo.phone,
+                        email: normalizeEmail(guestInfo.email),
+                        phone: String(guestInfo.phone || '').replace(/\D/g, ''),
                         phoneCode: guestInfo.phoneCode || '+91',
                         alternatePhone: guestInfo.alternatePhone || '',
                         alternatePhoneCode: guestInfo.alternatePhoneCode || guestInfo.phoneCode || '+91',
@@ -545,7 +547,7 @@ export async function POST(request) {
                 orderData.isGuest = true;
                 orderData.guestName = guestInfo.name;
                 orderData.guestEmail = normalizeEmail(guestInfo.email);
-                orderData.guestPhone = guestInfo.phone;
+                orderData.guestPhone = String(guestInfo.phone || '').replace(/\D/g, '');
                 orderData.alternatePhone = guestInfo.alternatePhone || '';
                 orderData.alternatePhoneCode = guestInfo.alternatePhoneCode || guestInfo.phoneCode || '';
 
@@ -1054,6 +1056,28 @@ export async function GET(request) {
                     console.log('GET /api/orders: Order not found');
                     return NextResponse.json({ error: 'Order not found' }, { status: 404 });
                 }
+
+                const authHeader = request.headers.get('authorization');
+                if (authHeader && authHeader.startsWith('Bearer ')) {
+                    const idToken = authHeader.split('Bearer ')[1];
+                    try {
+                        const decodedToken = await getAuth().verifyIdToken(idToken);
+                        const userId = decodedToken.uid;
+                        const contact = await resolveContactForGuestLinking({ decodedToken, userId });
+
+                        await linkGuestOrdersToUser(userId, contact).catch(() => {});
+                        order = await Order.findById(orderId)
+                            .populate({ path: 'orderItems.productId', model: 'Product' })
+                            .populate('addressId')
+                            .lean();
+
+                        if (order?.userId && order.userId !== userId) {
+                            return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+                        }
+                    } catch (e) {
+                        // Guest access without valid auth is still allowed below
+                    }
+                }
                 
                 // Ensure shortOrderNumber exists (for old orders without it)
                 if (!order.shortOrderNumber) {
@@ -1074,31 +1098,11 @@ export async function GET(request) {
         let userId = null;
         if (authHeader && authHeader.startsWith('Bearer ')) {
             const idToken = authHeader.split('Bearer ')[1];
-            const { getAuth } = await import('firebase-admin/auth');
-            const { initializeApp, applicationDefault, getApps } = await import('firebase-admin/app');
-            if (getApps().length === 0) {
-                initializeApp({ credential: applicationDefault() });
-            }
             try {
                 const decodedToken = await getAuth().verifyIdToken(idToken);
                 userId = decodedToken.uid;
-                // Auto-link guest orders matching this user's email or phone
-                const dbUser = await User.findOne({ _id: userId }).select('email phone').lean().catch(() => null);
-                const userEmail = normalizeEmail(decodedToken.email || dbUser?.email);
-                const userPhone = decodedToken.phone_number || dbUser?.phone || null;
-                const orClauses = buildGuestOrderIdentityClauses({ email: userEmail, phone: userPhone });
-                if (orClauses.length > 0) {
-                    await Order.updateMany(
-                        {
-                            isGuest: true,
-                            $and: [
-                                { $or: [{ userId: { $exists: false } }, { userId: null }, { userId: '' }] },
-                                { $or: orClauses }
-                            ]
-                        },
-                        { $set: { userId, isGuest: false } }
-                    ).catch(() => {/* non-fatal */});
-                }
+                const contact = await resolveContactForGuestLinking({ decodedToken, userId });
+                await linkGuestOrdersToUser(userId, contact).catch(() => {/* non-fatal */});
             } catch (e) {
                 // Not signed in, userId remains null
             }

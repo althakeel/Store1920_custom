@@ -128,6 +128,7 @@ You can send either `orderId` or `orderNumber`.
 | `order_paid` | Paid order confirmation | `confirmation_paid_order` |
 | `paid_confirmation` | Paid order confirmation | `confirmation_paid_order` |
 | `order_shipped` | Order shipped notification | `order_shipped` |
+| `order_reminder` | Pending order reminder | `order_reminder_` |
 | `abandoned_checkout` | Abandoned checkout reminder | `cart_reminder_1920` (button → `/checkout`) |
 | `cart_reminder` | Add to cart reminder | `cart_reminder_1920` (button → `/cart`) |
 | `order_delivered` | Reserved for delivered template | — |
@@ -251,7 +252,29 @@ GET https://store1920.store/api/order-confirm-webhook
 
 ---
 
-## 7. Contact
+## 8. Automatic triggers (Store1920 backend)
+
+These WhatsApp templates are sent automatically without calling the webhook:
+
+| Template | When it sends |
+|----------|----------------|
+| `order_confirmation_final` | COD / unpaid order placed |
+| `confirmation_paid_order` | Card, Razorpay, Wallet, or paid order placed; Stripe/Tamara/Tabby after payment webhook |
+| `order_shipped` | Seller sets order status to `SHIPPED` or shipping email API is called |
+| `order_reminder_` | Via webhook event `order_reminder` only (Elastic CRM / campaigns) |
+
+Each template uses its own bearer token env var (see `.env.example`):
+
+```text
+WABA_TOKEN_ORDER_CONFIRMATION   → order_confirmation_final
+WABA_TOKEN_PAID_ORDER           → confirmation_paid_order
+WABA_TOKEN_SHIPPED              → order_shipped
+WABA_TOKEN_REMINDER             → order_reminder_
+```
+
+---
+
+## 9. Contact
 
 Technical contact: Store1920 backend team  
 Support email: support@store1920.com

@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
@@ -8,9 +8,17 @@ import { HOME_SECTION_CLASS } from '@/lib/storefrontCarousel';
 import { HomeCategoryRowSkeleton } from '@/components/home/HomeSectionSkeletons';
 import { cleanDisplayText } from '@/lib/displayText';
 import { normalizeMediaUrl } from '@/lib/mediaUrls';
+import { useHorizontalCarouselDrag } from '@/lib/useHorizontalCarouselDrag';
 
 export default function HomeCategories() {
-  const scrollRef = useRef(null);
+  const {
+    scrollRef,
+    handlePointerDown,
+    handleCardClick,
+    scrollLeft,
+    scrollRight,
+    trackStyle,
+  } = useHorizontalCarouselDrag({ enableSnap: true });
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -121,13 +129,8 @@ export default function HomeCategories() {
     fetchCategories();
   }, []);
 
-  const scrollLeft = () => {
-    if (scrollRef.current) scrollRef.current.scrollBy({ left: -200, behavior: "smooth" });
-  };
-
-  const scrollRight = () => {
-    if (scrollRef.current) scrollRef.current.scrollBy({ left: 200, behavior: "smooth" });
-  };
+  const scrollLeftMobile = () => scrollLeft();
+  const scrollRightMobile = () => scrollRight();
 
   // Determine the link for each category
   const getCategoryLink = (cat) => {
@@ -180,8 +183,10 @@ export default function HomeCategories() {
     <div className={`${HOME_SECTION_CLASS} relative w-full max-w-[1400px] mx-auto px-4 sm:px-6`}>
       {/* Left Arrow */}
       <button
+        type="button"
         className="md:hidden absolute left-2 top-1/2 -translate-y-1/2 bg-white shadow-md rounded-full p-2 z-10 hover:bg-gray-100 transition"
-        onClick={scrollLeft}
+        onClick={scrollLeftMobile}
+        aria-label="Scroll categories left"
       >
         <ChevronLeft size={20} />
       </button>
@@ -189,15 +194,17 @@ export default function HomeCategories() {
       {/* Scrollable Row */}
       <div
         ref={scrollRef}
-        className="flex gap-4 md:gap-6 overflow-x-auto md:overflow-visible scrollbar-hide px-12 md:px-4 md:justify-between"
-        style={{ scrollSnapType: 'x mandatory' }}
+        onPointerDown={handlePointerDown}
+        className="flex gap-4 md:gap-6 overflow-x-auto md:overflow-visible scrollbar-hide overscroll-x-contain snap-x snap-proximity md:snap-none scroll-smooth px-12 md:px-4 md:justify-between"
+        style={trackStyle}
       >
         {categories.map((cat, idx) => (
           <Link
             key={`${cat.name}-${idx}`}
             href={getCategoryLink(cat)}
-            className="flex flex-col items-center flex-shrink-0 w-24 md:flex-1 cursor-pointer hover:scale-105 transition-all duration-200 p-2 md:p-3"
-            style={{ scrollSnapAlign: 'start' }}
+            onClick={handleCardClick}
+            draggable={false}
+            className="flex flex-col items-center flex-shrink-0 w-24 md:flex-1 cursor-pointer hover:scale-105 transition-all duration-200 p-2 md:p-3 snap-start"
           >
             <div className="relative w-20 h-20 md:w-24 md:h-24 rounded-lg overflow-hidden bg-gray-100">
               {cat.image ? (
@@ -235,8 +242,10 @@ export default function HomeCategories() {
 
       {/* Right Arrow */}
       <button
-        onClick={scrollRight}
+        type="button"
+        onClick={scrollRightMobile}
         className="md:hidden absolute right-2 top-1/2 -translate-y-1/2 bg-white shadow-md rounded-full p-2 z-10 hover:bg-gray-100 transition"
+        aria-label="Scroll categories right"
       >
         <ChevronRight size={20} />
       </button>

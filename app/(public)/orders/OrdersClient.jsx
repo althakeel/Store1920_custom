@@ -1,7 +1,7 @@
 
 'use client'
 import PageTitle from "@/components/PageTitle"
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import OrderItem from "@/components/OrderItem";
 import axios from "axios";
 import toast from "react-hot-toast";
@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import Loading from "@/components/Loading";
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { GUEST_ORDERS_LINKED_EVENT, linkGuestOrdersForCurrentUser } from '@/lib/linkGuestOrdersClient';
 
 export default function OrdersClient() {
     const [user, setUser] = useState(undefined);
@@ -22,10 +23,14 @@ export default function OrdersClient() {
         return () => unsub();
     }, []);
 
-    useEffect(() => {
-       const fetchOrders = async () => {
+    const fetchOrders = useCallback(async () => {
         try {
-            const token = await auth.currentUser.getIdToken(true);
+            const currentUser = auth.currentUser;
+            if (!currentUser) return;
+
+            const token = await currentUser.getIdToken(true);
+            await linkGuestOrdersForCurrentUser(currentUser, token);
+
             const { data } = await axios.get('/api/orders', { headers: { Authorization: `Bearer ${token}` } });
             let list = Array.isArray(data?.orders) ? data.orders : (Array.isArray(data) ? data : []);
             
@@ -74,14 +79,28 @@ export default function OrdersClient() {
             toast.error(error?.response?.data?.error || 'Failed to load orders');
             setLoading(false);
         }
-       }
-       if(user === undefined) return;
-       if(user){
+    }, []);
+
+    useEffect(() => {
+        if (user === undefined) return;
+        if (user) {
             fetchOrders();
-        }else{
+        } else {
             setLoading(false);
         }
-    }, [user]);
+    }, [user, fetchOrders]);
+
+    useEffect(() => {
+        const handleGuestOrdersLinked = () => {
+            if (auth.currentUser) {
+                setLoading(true);
+                fetchOrders();
+            }
+        };
+
+        window.addEventListener(GUEST_ORDERS_LINKED_EVENT, handleGuestOrdersLinked);
+        return () => window.removeEventListener(GUEST_ORDERS_LINKED_EVENT, handleGuestOrdersLinked);
+    }, [fetchOrders]);
 
     if(user === undefined || loading){
         return <Loading />
@@ -121,7 +140,7 @@ export default function OrdersClient() {
                     {/* Card-based layout instead of table */}
                     <div className="mt-8 space-y-6">
                         {orders.map((order) => (
-                            <OrderItem order={order} key={order.id} currencySymbol="AED" />
+                            <OrderItem order={order} key={order._id || order.id} currencySymbol="AED" />
                         ))}
                     </div>
                 </div>

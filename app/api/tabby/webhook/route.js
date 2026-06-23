@@ -3,6 +3,7 @@ import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import { captureTabbyPayment, updateTabbyPayment } from '@/lib/tabby';
 import { recordPurchaseFromOrder } from '@/lib/serverCustomerTracking';
+import { sendDeferredPaymentWhatsApp } from '@/lib/whatsapp/orderNotifications';
 
 export async function POST(request) {
     try {
@@ -60,6 +61,13 @@ export async function POST(request) {
                     } catch (captureErr) {
                         console.error('Tabby capture failed:', captureErr.message);
                     }
+                }
+
+                try {
+                    const whatsappResult = await sendDeferredPaymentWhatsApp(order);
+                    console.log('[tabby] WhatsApp paid confirmation:', whatsappResult);
+                } catch (whatsappError) {
+                    console.error('[tabby] WhatsApp failed:', whatsappError);
                 }
             }
         } else if (status === 'rejected' || status === 'expired' || status === 'closed') {

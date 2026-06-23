@@ -5,6 +5,7 @@ import Order from "@/models/Order";
 import Product from "@/models/Product";
 import { verifyAuth } from "@/lib/verifyAuth";
 import { recordPurchaseFromOrder } from "@/lib/serverCustomerTracking";
+import { sendOrderPaidWhatsApp } from '@/lib/whatsapp/orderNotifications';
 
 export async function POST(request) {
   const startTime = Date.now();
@@ -58,6 +59,13 @@ export async function POST(request) {
           existingOrder.isCouponUsed = true;
           existingOrder.coupon = { code: 'PREPAID5', discountType: 'percentage', discount: 5 };
           await existingOrder.save();
+
+          try {
+            const whatsappResult = await sendOrderPaidWhatsApp(existingOrder.toObject ? existingOrder.toObject() : existingOrder);
+            console.log('[Verify] WhatsApp paid confirmation for upsell:', whatsappResult);
+          } catch (whatsappError) {
+            console.error('[Verify] WhatsApp failed for upsell order:', whatsappError);
+          }
 
           try {
             await recordPurchaseFromOrder({
