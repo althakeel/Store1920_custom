@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useLayoutEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { Check, Truck, Zap } from "lucide-react";
 import axios from "axios";
 import { countryCodes } from "@/assets/countryCodes";
@@ -669,7 +669,7 @@ export default function CheckoutPage() {
     !hasValidPhone(user?.phoneNumber || user?.phone);
   const isPincodeError = /pincode/i.test(String(formError || ''));
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (typeof window === 'undefined') return;
 
     const gtmItems = [];
@@ -700,16 +700,16 @@ export default function CheckoutPage() {
     const value = Number(totalAfterWallet || checkoutValue || 0);
     const currencyCode = market.currency || 'AED';
 
-    runTrackedOnce(gtmDedupeKey(GTM_EVENTS.BEGIN_CHECKOUT, orderKey), () => {
+    runTrackedOnce(gtmDedupeKey(GTM_EVENTS.BEGIN_CHECKOUT, orderKey), () =>
       pushGtmEcommerceEvent(GTM_EVENTS.BEGIN_CHECKOUT, {
         currency: currencyCode,
         value,
         items: gtmItems,
-      });
-    });
+      }) !== false,
+    );
 
     runTrackedOnce(gtmDedupeKey('meta_begin_checkout', orderKey), () => {
-      trackInitiateCheckout({
+      const metaOk = trackInitiateCheckout({
         value,
         currency: currencyCode,
         items: gtmItems.map((item) => ({
@@ -719,7 +719,7 @@ export default function CheckoutPage() {
           quantity: item.quantity,
         })),
         numItems: gtmItems.reduce((sum, item) => sum + item.quantity, 0),
-      });
+      }) !== false;
 
       trackCustomerEvent({
         eventType: 'checkout_start',
@@ -734,6 +734,8 @@ export default function CheckoutPage() {
           cartValue: value,
         },
       });
+
+      return metaOk;
     });
   }, [cartItems, products, totalAfterWallet, user?.uid, market.currency]);
 

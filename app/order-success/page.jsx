@@ -1,7 +1,7 @@
 'use client'
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Suspense } from 'react';
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import {
@@ -17,12 +17,7 @@ import {
 } from 'lucide-react';
 import Loading from '@/components/Loading';
 import { useAuth } from '@/lib/useAuth';
-import { trackCustomerEvent } from '@/lib/trackingClient';
-import { trackPurchase } from '@/lib/metaPixelTracking';
-import { runTrackedOnce } from '@/lib/trackingDedupe';
-import { gtmDedupeKey, GTM_EVENTS } from '@/lib/gtmEvents';
-import { fireGtmPurchase } from '@/lib/gtmPurchase';
-import { getMetaPurchaseDedupeKey } from '@/lib/metaPurchase';
+import { trackPurchase } from '@/lib/tracking';
 
 export default function OrderSuccess() {
   return (
@@ -82,48 +77,29 @@ function OrderSuccessContent() {
 
   const order = orders && orders.length > 0 ? orders[0] : null;
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (!order?._id) return;
 
-    const orderId = String(order._id);
-    const metaPurchaseKey = getMetaPurchaseDedupeKey(orderId);
-
-    runTrackedOnce(`purchase:customer:${orderId}`, () => {
-      trackCustomerEvent({
+    trackPurchase(
+      {
+        id: order._id,
+        total: order.total,
+        items: order.orderItems,
+        currency: order.currency,
         storeId: order.storeId,
-        eventType: 'purchase',
-        firebaseUid: user?.uid || order.userId || null,
-        userId: user?.uid || order.userId || null,
-        pageType: 'order_success',
-        pagePath: '/order-success',
-        value: Number(order.total || 0),
-        currency: order.currency || 'AED',
-        metadata: {
-          orderId,
-          orderNumber: order.shortOrderNumber || null,
-          itemCount: Array.isArray(order.orderItems) ? order.orderItems.length : 0,
-          paymentMethod: order.paymentMethod || null,
-        },
-      });
-    });
-
-    if (metaPurchaseKey) {
-      runTrackedOnce(metaPurchaseKey, () => {
-        trackPurchase({
-          orderId: order._id,
-          value: Number(order.total || 0),
-          currency: order.currency || 'AED',
-          items: order.orderItems || [],
-          email: order.shippingAddress?.email || order.guestEmail || user?.email || '',
-          phone: order.shippingAddress?.phone || order.guestPhone || user?.phoneNumber || '',
-        });
-      });
-    }
-
-    runTrackedOnce(gtmDedupeKey(GTM_EVENTS.PURCHASE, orderId), () => {
-      fireGtmPurchase(order);
-    });
-  }, [order, user?.uid]);
+        shortOrderNumber: order.shortOrderNumber,
+        shippingFee: order.shippingFee,
+        tax: order.tax,
+        coupon: order.coupon,
+        paymentMethod: order.paymentMethod,
+        shippingAddress: order.shippingAddress,
+        guestEmail: order.guestEmail,
+        guestPhone: order.guestPhone,
+        userId: order.userId,
+      },
+      { user },
+    );
+  }, [order?._id, user?.uid]);
   function getOrderNumber(orderObj) {
     if (!orderObj) return '';
     return String(orderObj.shortOrderNumber || orderObj._id.slice(0, 8));

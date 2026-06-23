@@ -2,7 +2,7 @@
 "use client";
 
 import { useDispatch, useSelector, useStore } from "react-redux";
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import axios from "axios";
 import Counter from "@/components/Counter";
 import CartSummaryBox from "@/components/CartSummaryBox";
@@ -262,7 +262,7 @@ export default function Cart() {
     const outOfStockCartArray = cartArray.filter((item) => getMaxQty(item) === 0);
     const checkoutDisabled = inStockCartArray.length === 0;
 
-    useLayoutEffect(() => {
+    useEffect(() => {
         if (typeof window === 'undefined') return;
         if (!inStockCartArray.length) return;
 
@@ -271,24 +271,28 @@ export default function Cart() {
             .filter(Boolean);
 
         const cartSignature = `${contentIds.join(',')}_${Number(totalPrice || 0)}`;
+        const cartValue = Number(totalPrice || 0);
+        const gtmItems = inStockCartArray.map((item) => toGtmItem(item));
 
-        runTrackedOnce(gtmDedupeKey(GTM_EVENTS.VIEW_CART, cartSignature), () => {
+        runTrackedOnce(gtmDedupeKey(GTM_EVENTS.VIEW_CART, cartSignature), () =>
+            pushGtmEcommerceEvent(GTM_EVENTS.VIEW_CART, {
+                currency: STORE_CURRENCY,
+                value: cartValue,
+                items: gtmItems,
+            }) !== false,
+        );
+
+        runTrackedOnce(gtmDedupeKey('meta_view_cart', cartSignature), () =>
             trackViewCart({
-                value: Number(totalPrice || 0),
+                value: cartValue,
                 currency: STORE_CURRENCY,
                 items: inStockCartArray.map((item) => ({
                     productId: String(item?._id || item?._cartKey || ''),
                     quantity: Number(item?.quantity || 0),
                 })),
                 numItems: inStockCartArray.reduce((sum, item) => sum + Number(item?.quantity || 0), 0),
-            });
-
-            pushGtmEcommerceEvent(GTM_EVENTS.VIEW_CART, {
-                currency: STORE_CURRENCY,
-                value: Number(totalPrice || 0),
-                items: inStockCartArray.map((item) => toGtmItem(item)),
-            });
-        });
+            }) !== false,
+        );
     }, [inStockCartArray, totalPrice]);
 
     return (

@@ -597,9 +597,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   }, [recommendedProducts, allProducts, product?._id, product?.category, product?.tags]);
 
   const pushDataLayerEvent = (event, ecommerce) => {
-    if (typeof window === 'undefined') return;
-    window.dataLayer = window.dataLayer || [];
-    window.dataLayer.push({ event, ecommerce });
+    pushGtmEcommerceEvent(event, ecommerce);
   };
 
   const trackCustomerBehavior = async (eventType, metadata = {}) => {
