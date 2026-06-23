@@ -125,7 +125,9 @@ export async function POST(request) {
       return sendMail({
         to: recipient.email,
         subject: `New Product Alert: ${product.name}`,
-        html
+        html,
+        fromType: 'marketing',
+        storeId,
       }).then(async (result) => {
         // Save success to history
         console.log('[send-notification] Saving email history for:', recipient.email)

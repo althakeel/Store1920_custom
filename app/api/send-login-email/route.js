@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAuth } from '@/lib/firebase-admin';
 import { emailLogoImg } from '@/lib/brandLogo';
+import { sendMail } from '@/lib/email';
 
 export async function POST(req) {
   try {
@@ -10,28 +11,11 @@ export async function POST(req) {
     }
 
     const auth = getAuth();
-    const decoded = await auth.verifyIdToken(token);
+    await auth.verifyIdToken(token);
     
     const { email, name } = await req.json();
 
-    // Send email using Resend
-    const resendApiKey = process.env.RESEND_API_KEY;
-    if (!resendApiKey) {
-      console.error('RESEND_API_KEY not configured');
-      return NextResponse.json({ error: 'Email service not configured' }, { status: 500 });
-    }
-
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${resendApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: 'Store1920 <noreply@Store1920.com>',
-        to: email,
-        subject: 'Login Alert - Store1920',
-        html: `
+    const html = `
           <!DOCTYPE html>
           <html>
           <head>
@@ -203,18 +187,16 @@ export async function POST(req) {
             </div>
           </body>
           </html>
-        `,
-      }),
+    `;
+
+    const result = await sendMail({
+      to: email,
+      subject: 'Login Alert - Store1920',
+      html,
+      fromType: 'transactional',
     });
 
-    if (!response.ok) {
-      const errorData = await response.text();
-      console.error('Resend API error:', errorData);
-      return NextResponse.json({ error: 'Failed to send email' }, { status: 500 });
-    }
-
-    const data = await response.json();
-    return NextResponse.json({ success: true, emailId: data.id });
+    return NextResponse.json({ success: true, emailId: result?.messageId || result?.id || null });
   } catch (error) {
     console.error('Send login email error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
