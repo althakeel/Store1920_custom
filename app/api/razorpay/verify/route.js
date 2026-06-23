@@ -5,6 +5,7 @@ import Order from "@/models/Order";
 import Product from "@/models/Product";
 import { verifyAuth } from "@/lib/verifyAuth";
 import { recordPurchaseFromOrder } from "@/lib/serverCustomerTracking";
+import { sendMetaPurchaseFromOrder } from '@/lib/metaConversionsApi';
 import { sendOrderPaidWhatsApp } from '@/lib/whatsapp/orderNotifications';
 
 export async function POST(request) {
@@ -65,6 +66,12 @@ export async function POST(request) {
             console.log('[Verify] WhatsApp paid confirmation for upsell:', whatsappResult);
           } catch (whatsappError) {
             console.error('[Verify] WhatsApp failed for upsell order:', whatsappError);
+          }
+
+          try {
+            await sendMetaPurchaseFromOrder(existingOrder, { paymentMethod: 'CARD' });
+          } catch (metaError) {
+            console.error('[Verify] Meta purchase CAPI failed for upsell order:', metaError);
           }
 
           try {

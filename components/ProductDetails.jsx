@@ -20,6 +20,7 @@ import BnplLogo from "./BnplLogo";
 import PayLaterModal from "./PayLaterModal";
 import { useAuth } from '@/lib/useAuth';
 import { trackMetaEvent } from "@/lib/metaPixelClient";
+import { trackViewContent } from "@/lib/metaPixelTracking";
 import { getStorefrontLocale, formatLocalizedNumber } from '@/lib/storefrontMarket';
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
 import { useStorefrontI18n } from '@/lib/useStorefrontI18n';
@@ -675,11 +676,10 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     const eventKey = `meta_viewcontent_sent_${String(product._id)}`;
     if (sessionStorage.getItem(eventKey)) return;
 
-    trackMetaEvent('ViewContent', {
-      content_type: 'product',
-      content_ids: [String(product._id)],
-      content_name: product.name || product.title || 'Product',
-      value: Number(product.price || 0),
+    trackViewContent({
+      productId: product._id,
+      name: product.name || product.title || 'Product',
+      price: Number(product.price || 0),
       currency: 'AED',
     });
 
@@ -1894,6 +1894,8 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
         const payload = {
           productId: product._id, 
           price: effPrice,
+          productName: product.name || product.title || 'Product',
+          quantity: 1,
           variantOptions: {
             color: selectedColor || null,
             size: selectedSize || null,
@@ -1937,6 +1939,8 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       const payload = {
         productId: product._id,
         price: effPrice,
+        productName: product.name || product.title || 'Product',
+        quantity: 1,
         variantOptions: {
           color: selectedColor || null,
           size: selectedSize || null,

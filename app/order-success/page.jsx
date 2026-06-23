@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import Loading from '@/components/Loading';
 import { useAuth } from '@/lib/useAuth';
 import { trackCustomerEvent } from '@/lib/trackingClient';
+import { trackPurchase } from '@/lib/metaPixelTracking';
 
 export default function OrderSuccess() {
   return (
@@ -91,6 +92,19 @@ function OrderSuccessContent() {
         paymentMethod: order.paymentMethod || null,
       },
     });
+
+    const metaEventKey = `meta_purchase_${order._id}`;
+    if (!sessionStorage.getItem(metaEventKey)) {
+      trackPurchase({
+        orderId: order._id,
+        value: Number(order.total || 0),
+        currency: order.currency || 'AED',
+        items: order.orderItems || [],
+        email: order.shippingAddress?.email || order.guestEmail || user?.email || '',
+        phone: order.shippingAddress?.phone || order.guestPhone || user?.phoneNumber || '',
+      });
+      sessionStorage.setItem(metaEventKey, '1');
+    }
 
     sessionStorage.setItem(eventKey, '1');
   }, [order, user?.uid]);

@@ -4,6 +4,7 @@ import Order from '@/models/Order';
 import { verifyTamaraWebhookToken, captureTamaraPayment } from '@/lib/tamara';
 import { recordPurchaseFromOrder } from '@/lib/serverCustomerTracking';
 import { sendDeferredPaymentWhatsApp } from '@/lib/whatsapp/orderNotifications';
+import { sendMetaPurchaseFromOrder } from '@/lib/metaConversionsApi';
 
 export async function POST(request) {
     try {
@@ -63,6 +64,12 @@ export async function POST(request) {
                     console.log('[tamara] WhatsApp paid confirmation:', whatsappResult);
                 } catch (whatsappError) {
                     console.error('[tamara] WhatsApp failed:', whatsappError);
+                }
+
+                try {
+                    await sendMetaPurchaseFromOrder(order, { paymentMethod: 'TAMARA' });
+                } catch (metaError) {
+                    console.error('[tamara] Meta purchase CAPI failed:', metaError);
                 }
             }
         } else if (event_type === 'order_declined' || event_type === 'order_expired') {

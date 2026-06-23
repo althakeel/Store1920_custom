@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { recordPurchaseFromOrder } from "@/lib/serverCustomerTracking";
 import { sendDeferredPaymentWhatsApp } from '@/lib/whatsapp/orderNotifications';
+import { sendMetaPurchaseFromOrder } from '@/lib/metaConversionsApi';
 
 export async function POST(request){
     try {
@@ -48,6 +49,12 @@ export async function POST(request){
                         console.log('[stripe] WhatsApp paid confirmation:', whatsappResult)
                     } catch (whatsappError) {
                         console.error('[stripe] WhatsApp failed for order', orderId, whatsappError)
+                    }
+
+                    try {
+                        await sendMetaPurchaseFromOrder(order, { paymentMethod: order.paymentMethod || 'STRIPE' })
+                    } catch (metaError) {
+                        console.error('[stripe] Meta purchase CAPI failed for order', orderId, metaError)
                     }
                 }
             }))

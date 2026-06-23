@@ -24,6 +24,7 @@ import { normalizeEmail } from '@/lib/orderIdentity';
 import { linkGuestOrdersToUser, resolveContactForGuestLinking } from '@/lib/linkGuestOrders';
 import { getAuth } from '@/lib/firebase-admin';
 import { recordPurchaseFromOrder, shouldRecordPurchaseOnCreate } from '@/lib/serverCustomerTracking';
+import { sendMetaPurchaseFromOrder } from '@/lib/metaConversionsApi';
 
 const PaymentMethod = {
     COD: 'COD',
@@ -692,6 +693,22 @@ export async function POST(request) {
                     });
                 } catch (trackingError) {
                     console.error('Purchase tracking failed for order', order._id, trackingError);
+                }
+
+                try {
+                    const forwardedFor = request.headers.get('x-forwarded-for');
+                    const clientIp = forwardedFor?.split(',')[0]?.trim()
+                        || request.headers.get('x-real-ip')
+                        || null;
+                    await sendMetaPurchaseFromOrder(order, {
+                        clientIp,
+                        userAgent: request.headers.get('user-agent') || null,
+                        isGuest: Boolean(isGuest),
+                        userId,
+                        paymentMethod,
+                    });
+                } catch (metaError) {
+                    console.error('[meta] Purchase CAPI failed for order', order._id, metaError);
                 }
             }
 

@@ -9,8 +9,8 @@ import { useSelector, useDispatch } from "react-redux";
 import { fetchAddress } from "@/lib/features/address/addressSlice";
 import { clearCart, addToCart, removeFromCart, deleteItemFromCart } from "@/lib/features/cart/cartSlice";
 import { fetchShippingSettings, calculateShipping } from "@/lib/shipping";
-import FbqInitiateCheckout from "@/components/FbqInitiateCheckout";
 import { trackMetaEvent } from "@/lib/metaPixelClient";
+import { trackInitiateCheckout } from "@/lib/metaPixelTracking";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/useAuth";
 import dynamic from "next/dynamic";
@@ -691,6 +691,18 @@ export default function CheckoutPage() {
         price: Number(item?._cartPrice ?? item?.price ?? 0),
         quantity: Number(item?.quantity || 0),
       })),
+    });
+
+    trackInitiateCheckout({
+      value: Number(totalAfterWallet || 0),
+      currency: 'AED',
+      items: cartArray.map((item) => ({
+        productId: String(item?._id || item?._cartKey || ''),
+        name: item?.name || 'Product',
+        price: Number(item?._cartPrice ?? item?.price ?? 0),
+        quantity: Number(item?.quantity || 0),
+      })),
+      numItems: cartArray.reduce((sum, item) => sum + Number(item?.quantity || 0), 0),
     });
 
     trackCustomerEvent({
@@ -1747,12 +1759,6 @@ export default function CheckoutPage() {
 
   return (
     <>
-      <FbqInitiateCheckout
-        value={totalAfterWallet}
-        currency={market.currency}
-        contentIds={cartArray.map((item) => String(item?._id || item?._cartKey || '')).filter(Boolean)}
-        numItems={cartArray.reduce((sum, item) => sum + Number(item?.quantity || 0), 0)}
-      />
       <div className="py-10 bg-white md:pb-0 pb-20 min-h-0 md:min-h-[35dvh]">
       <div className="max-w-[1250px] mx-auto grid grid-cols-1 md:grid-cols-3 gap-8" dir={isArabic ? 'rtl' : 'ltr'}>
         {/* Left column: address, form, payment */}

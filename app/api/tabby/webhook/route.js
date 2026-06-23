@@ -4,6 +4,7 @@ import Order from '@/models/Order';
 import { captureTabbyPayment, updateTabbyPayment } from '@/lib/tabby';
 import { recordPurchaseFromOrder } from '@/lib/serverCustomerTracking';
 import { sendDeferredPaymentWhatsApp } from '@/lib/whatsapp/orderNotifications';
+import { sendMetaPurchaseFromOrder } from '@/lib/metaConversionsApi';
 
 export async function POST(request) {
     try {
@@ -68,6 +69,12 @@ export async function POST(request) {
                     console.log('[tabby] WhatsApp paid confirmation:', whatsappResult);
                 } catch (whatsappError) {
                     console.error('[tabby] WhatsApp failed:', whatsappError);
+                }
+
+                try {
+                    await sendMetaPurchaseFromOrder(order, { paymentMethod: 'TABBY' });
+                } catch (metaError) {
+                    console.error('[tabby] Meta purchase CAPI failed:', metaError);
                 }
             }
         } else if (status === 'rejected' || status === 'expired' || status === 'closed') {

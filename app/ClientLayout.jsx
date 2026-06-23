@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { usePathname } from "next/navigation";
 import dynamic from "next/dynamic";
 import ReduxProvider from "@/lib/ReduxProvider";
@@ -8,6 +8,7 @@ import TopBar from "@/components/TopBar";
 import Footer from "@/components/Footer";
 import SupportBar from "@/components/SupportBar";
 import DynamicMetaTags from "@/components/DynamicMetaTags";
+import MetaPixel from "@/components/MetaPixel";
 import { Toaster } from "react-hot-toast";
 
 const SpinWheelWidget = dynamic(() => import("@/components/SpinWheelWidget"), { ssr: false });
@@ -48,6 +49,9 @@ export default function ClientLayout({ children, initialStorefrontLanguage = 'en
 
   return (
     <ReduxProvider>
+      <Suspense fallback={null}>
+        <MetaPixel />
+      </Suspense>
       {!hideStorefrontChrome && (
         <>
           <TopBar initialLanguage={initialStorefrontLanguage} />

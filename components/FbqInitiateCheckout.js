@@ -1,6 +1,6 @@
 "use client";
 import { useEffect } from "react";
-import { trackMetaEvent } from "@/lib/metaPixelClient";
+import { trackInitiateCheckout } from "@/lib/metaPixelTracking";
 
 export default function FbqInitiateCheckout({ value = 0, currency = 'AED', contentIds = [], numItems = 0 }) {
   useEffect(() => {
@@ -13,12 +13,11 @@ export default function FbqInitiateCheckout({ value = 0, currency = 'AED', conte
     const eventKey = `meta_initiate_checkout_${eventSignature}`;
     if (sessionStorage.getItem(eventKey)) return;
 
-    trackMetaEvent('InitiateCheckout', {
-      value: Number(value || 0),
+    trackInitiateCheckout({
+      value,
       currency,
-      content_type: 'product',
-      content_ids: ids,
-      num_items: Number(numItems || 0),
+      contentIds: ids,
+      numItems,
     });
 
     sessionStorage.setItem(eventKey, '1');

@@ -11,7 +11,7 @@ import { deleteItemFromCart, fetchCart, uploadCart } from "@/lib/features/cart/c
 import { PackageIcon, Trash2Icon } from "lucide-react";
 import Image from "next/image";
 import { useAuth } from "@/lib/useAuth";
-import { trackMetaEvent } from "@/lib/metaPixelClient";
+import { trackViewCart } from "@/lib/metaPixelTracking";
 import { STORE_CURRENCY } from "@/lib/storeCurrency";
 import { getCartEntryProductId, getCartEntryQuantity, isFreeGiftEntry } from "@/lib/freeGiftUtils";
 
@@ -262,12 +262,14 @@ export default function Cart() {
         const eventKey = `meta_viewcart_sent_${cartSignature}`;
         if (sessionStorage.getItem(eventKey)) return;
 
-        trackMetaEvent('ViewCart', {
-            content_type: 'product',
-            content_ids: contentIds,
+        trackViewCart({
             value: Number(totalPrice || 0),
             currency: STORE_CURRENCY,
-            num_items: inStockCartArray.reduce((sum, item) => sum + Number(item?.quantity || 0), 0),
+            items: inStockCartArray.map((item) => ({
+                productId: String(item?._id || item?._cartKey || ''),
+                quantity: Number(item?.quantity || 0),
+            })),
+            numItems: inStockCartArray.reduce((sum, item) => sum + Number(item?.quantity || 0), 0),
         });
 
         sessionStorage.setItem(eventKey, '1');
