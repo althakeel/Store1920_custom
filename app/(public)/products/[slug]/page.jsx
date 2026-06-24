@@ -2,7 +2,7 @@ import { cookies, headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { getProductPageData } from "@/lib/productPageData";
 import { resolveStorefrontLanguage } from "@/lib/storefrontLanguage";
-import ProductPageClient from "./ProductPageClient";
+import ProductPageClient from "../../product/[slug]/ProductPageClient";
 
 export const revalidate = 120;
 
@@ -36,7 +36,7 @@ export async function generateMetadata({ params }) {
   };
 }
 
-export default async function ProductPage({ params }) {
+export default async function ProductsSlugProductPage({ params }) {
   const resolvedParams = await params;
   const slug = String(resolvedParams?.slug || "").trim();
 
@@ -51,8 +51,8 @@ export default async function ProductPage({ params }) {
     notFound();
   }
 
-  if (initialData.product.useProductsPath) {
-    redirect(`/products/${slug}`);
+  if (!initialData.product.useProductsPath) {
+    redirect(`/product/${slug}`);
   }
 
   return <ProductPageClient slug={slug} initialData={initialData} />;

@@ -195,7 +195,7 @@ export async function GET(request){
 
         let products = [];
         const listProjection = slim
-            ? 'name nameAr slug price mrp AED images category categories inStock stockQuantity fastDelivery freeShippingEligible imageAspectRatio cardVideoPreviewEnabled cardVideoPreviewDelaySec createdAt'
+            ? 'name nameAr slug price mrp AED images category categories inStock stockQuantity fastDelivery freeShippingEligible useProductsPath imageAspectRatio cardVideoPreviewEnabled cardVideoPreviewDelaySec createdAt'
             : 'name nameAr slug description descriptionAr shortDescription shortDescriptionAr brand brandAr price mrp AED images category categories sku hasVariants variants attributes fastDelivery freeShippingEligible stockQuantity imageAspectRatio cardVideoPreviewEnabled cardVideoPreviewDelaySec createdAt';
         try {
             products = await Product.find(matchStage)

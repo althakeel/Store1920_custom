@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { X } from 'lucide-react'
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket'
 import { getProductThumbnailUrl } from '@/lib/productMedia'
+import { getProductPath } from '@/lib/productUrl'
 
 const SocialProofPopup = () => {
   const [visible, setVisible] = useState(false)
@@ -132,7 +133,7 @@ const SocialProofPopup = () => {
           <X size={14} className="text-slate-600" />
         </button>
 
-        <Link href={`/product/${currentProduct.slug}`} onClick={() => setVisible(false)}>
+        <Link href={getProductPath(currentProduct)} onClick={() => setVisible(false)}>
           <div className="flex gap-3 p-3 hover:bg-slate-50 transition cursor-pointer">
             {/* Product Image */}
             <div className="relative w-16 h-16 flex-shrink-0 bg-slate-100 rounded-lg overflow-hidden">
@@ -194,7 +195,7 @@ const SocialProofPopup = () => {
               )}
             </div>
             <Link 
-              href={`/product/${currentProduct.slug}`}
+              href={getProductPath(currentProduct)}
               onClick={() => setVisible(false)}
               className="bg-white text-green-600 px-3 py-1 rounded-md text-xs font-semibold hover:bg-green-50 transition"
             >

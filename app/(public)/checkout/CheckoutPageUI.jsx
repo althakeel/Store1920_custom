@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Check, Truck, Zap } from "lucide-react";
 import axios from "axios";
 import { countryCodes } from "@/assets/countryCodes";
@@ -21,7 +21,8 @@ import BnplLogo from "@/components/BnplLogo";
 import { useStorefrontI18n } from "@/lib/useStorefrontI18n";
 import { useStorefrontMarket } from "@/lib/useStorefrontMarket";
 import { trackCustomerEvent, withOrderTrackingFields } from '@/lib/trackingClient';
-import { pushGtmEcommerceEvent, toGtmItem } from '@/lib/pushGtmEcommerceEvent';
+import { pushGtmEcommerceEvent } from '@/lib/pushGtmEcommerceEvent';
+import { cartLinesToGtmItems } from '@/lib/gtmEcommerceHelpers';
 import { runTrackedOnce } from '@/lib/trackingDedupe';
 import { GTM_EVENTS, gtmDedupeKey } from '@/lib/gtmEvents';
 import { getCartEntryProductId, getCartEntryQuantity, isFreeGiftEntry } from "@/lib/freeGiftUtils";
@@ -39,7 +40,7 @@ import PhoneNumberField from "@/components/PhoneNumberField";
 import Creditimage1 from '../../../assets/creditcards/19 - Copy.webp';
 import Creditimage2 from '../../../assets/creditcards/16 - Copy.webp';
 import Creditimage3 from '../../../assets/creditcards/20.webp';
-import Creditimage4 from '../../../assets/creditcards/11.webp';
+import { STORE_CURRENCY } from '@/lib/storeCurrency';
 
 const SignInModal = dynamic(() => import("@/components/SignInModal"), { ssr: false });
 const AddressModal = dynamic(() => import("@/components/AddressModal"), { ssr: false });
@@ -118,6 +119,8 @@ export default function CheckoutPage() {
   const [couponLoading, setCouponLoading] = useState(false);
   const [storeId, setStoreId] = useState(null);
   const [formError, setFormError] = useState("");
+  const [checkoutProductsLoaded, setCheckoutProductsLoaded] = useState(false);
+  const beginCheckoutTrackedRef = useRef(false);
   const tabbyPublicKey = process.env.NEXT_PUBLIC_TABBY_PUBLIC_KEY || '';
   const tabbyMerchantCode = process.env.NEXT_PUBLIC_TABBY_MERCHANT_CODE || process.env.TABBY_MERCHANT_CODE || 'Store1920';
   const formatMoney = (amount) => {
@@ -242,14 +245,21 @@ export default function CheckoutPage() {
           return trimmed && trimmed !== 'undefined' && trimmed !== 'null';
         })
     )];
-    if (cartKeys.length === 0) return;
+    if (cartKeys.length === 0) {
+      setCheckoutProductsLoaded(true);
+      return undefined;
+    }
 
     const missingIds = cartKeys.filter(
       (id) => !products?.some((p) => String(p._id) === String(id))
     );
-    if (missingIds.length === 0) return;
+    if (missingIds.length === 0) {
+      setCheckoutProductsLoaded(true);
+      return undefined;
+    }
 
     let ignore = false;
+    setCheckoutProductsLoaded(false);
     const loadCartProducts = async () => {
       try {
         const { data } = await axios.post('/api/products/batch', { productIds: missingIds });
@@ -262,11 +272,13 @@ export default function CheckoutPage() {
         dispatch({ type: 'product/setProduct', payload: merged });
       } catch (e) {
         console.warn('Cart product fetch failed:', e.message);
+      } finally {
+        if (!ignore) setCheckoutProductsLoaded(true);
       }
     };
     loadCartProducts();
     return () => { ignore = true; };
-  }, [cartItems, dispatch]);
+  }, [cartItems, dispatch, products]);
 
   // Capture abandoned checkout (debounced)
   useEffect(() => {
@@ -544,9 +556,6 @@ export default function CheckoutPage() {
     if (typeof product.stockQuantity === 'number' && product.stockQuantity <= 0) return false;
     return true;
   };
-  console.log('Checkout - Cart Items:', cartItems);
-  console.log('Checkout - Products:', products?.map(p => ({ id: p._id, name: p.name })));
-  
   for (const [key, value] of Object.entries(cartItems || {})) {
     const actualProductId = getCartEntryProductId(key, value);
     const product = products?.find((p) => String(p._id) === String(actualProductId));
@@ -556,7 +565,6 @@ export default function CheckoutPage() {
     const isFreeGift = isFreeGiftEntry(value);
     if (product && qty > 0) {
       if (isPurchasableProduct(product)) {
-        console.log('Found purchasable product for key:', key, product.name);
         const pricing = resolveCartLinePricing(product, value, qty);
         const unitPrice = isFreeGift ? 0 : pricing.unitPrice;
         cartArray.push({
@@ -573,12 +581,8 @@ export default function CheckoutPage() {
           _freeGift: freeGift || null,
         });
       }
-    } else {
-      console.log('No product found for key:', key);
     }
   }
-  
-  console.log('Checkout - Final Cart Array:', cartArray);
 
   const subtotal = cartArray.reduce((sum, item) => sum + (item._lineTotal ?? ((item._cartPrice ?? item.price ?? 0) * item.quantity)), 0);
   
@@ -684,37 +688,18 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    if (!checkoutProductsLoaded) return;
+    if (beginCheckoutTrackedRef.current) return;
 
-    const gtmItems = [];
-    for (const [key, value] of Object.entries(cartItems || {})) {
-      if (isFreeGiftEntry(value)) continue;
-      const productId = getCartEntryProductId(key, value);
-      const qty = getCartEntryQuantity(value);
-      if (!productId || qty <= 0) continue;
-
-      const product = products?.find((p) => String(p._id) === String(productId));
-      const pricing = product
-        ? resolveCartLinePricing(product, value, qty)
-        : {
-          unitPrice: Number(typeof value === 'object' ? value?.price : 0) || 0,
-          lineTotal: Number(typeof value === 'object' ? value?.price : 0) || 0,
-          displayQuantity: qty,
-        };
-
-      gtmItems.push(toGtmItem(product || { _id: productId, name: 'Product', price: pricing.unitPrice }, {
-        item_id: productId,
-        item_name: product?.name || 'Product',
-        price: pricing.unitPrice,
-        quantity: pricing.displayQuantity ?? qty,
-      }));
-    }
-
+    const gtmItems = cartLinesToGtmItems(cartArray);
     if (gtmItems.length === 0) return;
 
+    beginCheckoutTrackedRef.current = true;
+
+    const itemsValue = gtmItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const value = Number(totalAfterWallet > 0 ? totalAfterWallet : (subtotal + effectiveShipping) || itemsValue || 0);
+    const currencyCode = market.currency || STORE_CURRENCY || 'AED';
     const orderKey = gtmItems.map((item) => `${item.item_id}:${item.quantity}`).join('|');
-    const checkoutValue = gtmItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    const value = Number(totalAfterWallet || checkoutValue || 0);
-    const currencyCode = market.currency || 'AED';
 
     runTrackedOnce(gtmDedupeKey(GTM_EVENTS.BEGIN_CHECKOUT, orderKey), () =>
       pushGtmEcommerceEvent(GTM_EVENTS.BEGIN_CHECKOUT, {
@@ -753,7 +738,7 @@ export default function CheckoutPage() {
 
       return metaOk;
     });
-  }, [cartItems, products, totalAfterWallet, user?.uid, market.currency]);
+  }, [checkoutProductsLoaded, cartArray, totalAfterWallet, subtotal, effectiveShipping, user?.uid, market.currency]);
 
   useEffect(() => {
     if (hasPersonalizedOfferItem && form.payment === 'cod') {

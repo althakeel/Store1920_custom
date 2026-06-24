@@ -10,6 +10,7 @@ import productGridStyles from './ShopShowcaseSectionProducts.module.css'
 import ShowcaseProductBanners from './ShowcaseProductBanners'
 import { HOME_SECTION_CLASS } from '@/lib/storefrontCarousel'
 import { cleanDisplayText } from '@/lib/displayText'
+import { getProductPath } from '@/lib/productUrl'
 import {
   Baby,
   Bike,
@@ -91,9 +92,7 @@ function getCategoryHref(category) {
 }
 
 function getProductHref(product) {
-  if (product?.slug) return `/product/${product.slug}`
-  if (product?._id) return `/product/${String(product._id)}`
-  return '/shop'
+  return getProductPath(product)
 }
 
 function getProductImage(product) {

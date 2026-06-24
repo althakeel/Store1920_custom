@@ -168,6 +168,10 @@ const readLinkChoice = (link) => {
     return { type: 'product', value: safeDecode(normalized.replace('/product/', '').trim()) };
   }
 
+  if (normalized.startsWith('/products/')) {
+    return { type: 'product', value: safeDecode(normalized.replace('/products/', '').trim()) };
+  }
+
   if (EXISTING_PAGES.includes(normalized)) {
     return { type: 'page', value: normalized };
   }

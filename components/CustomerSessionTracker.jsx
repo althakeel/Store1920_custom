@@ -15,7 +15,7 @@ import {
 } from '@/lib/trackingClient';
 
 const SCROLL_THRESHOLDS = [25, 50, 75, 100];
-const TRACKABLE_LINK_PREFIXES = ['/product/', '/shop', '/cart', '/checkout', '/category/'];
+const TRACKABLE_LINK_PREFIXES = ['/product/', '/products/', '/shop', '/cart', '/checkout', '/category/'];
 const productIdCache = new Map();
 
 function getVisitorLabel(anonymousId) {

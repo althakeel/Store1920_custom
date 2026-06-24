@@ -1,7 +1,7 @@
 'use client'
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Suspense } from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import {
@@ -34,6 +34,7 @@ function OrderSuccessContent() {
   const [loading, setLoading] = useState(true);
   const { user, getToken } = useAuth();
   const [copied, setCopied] = useState(false);
+  const purchaseTrackedRef = useRef(false);
 
   useEffect(() => {
     const fetchOrder = async (orderId) => {
@@ -51,12 +52,18 @@ function OrderSuccessContent() {
         }
         const res = await fetch(`/api/orders?orderId=${orderId}`, fetchOptions);
         const data = await res.json();
+        let loadedOrders = null;
         if (data.orders && Array.isArray(data.orders)) {
-          setOrders(data.orders);
+          loadedOrders = data.orders;
         } else if (data.order) {
-          setOrders([data.order]);
-        } else {
-          setOrders(null);
+          loadedOrders = [data.order];
+        }
+        setOrders(loadedOrders);
+
+        const loadedOrder = loadedOrders?.[0];
+        if (loadedOrder?._id && !purchaseTrackedRef.current) {
+          purchaseTrackedRef.current = true;
+          trackPurchase(loadedOrder, { user });
         }
       } catch (err) {
         setOrders(null);
@@ -76,30 +83,6 @@ function OrderSuccessContent() {
   }, [params, router, user, getToken]);
 
   const order = orders && orders.length > 0 ? orders[0] : null;
-
-  useEffect(() => {
-    if (!order?._id) return;
-
-    trackPurchase(
-      {
-        id: order._id,
-        total: order.total,
-        items: order.orderItems,
-        currency: order.currency,
-        storeId: order.storeId,
-        shortOrderNumber: order.shortOrderNumber,
-        shippingFee: order.shippingFee,
-        tax: order.tax,
-        coupon: order.coupon,
-        paymentMethod: order.paymentMethod,
-        shippingAddress: order.shippingAddress,
-        guestEmail: order.guestEmail,
-        guestPhone: order.guestPhone,
-        userId: order.userId,
-      },
-      { user },
-    );
-  }, [order?._id, user?.uid]);
   function getOrderNumber(orderObj) {
     if (!orderObj) return '';
     return String(orderObj.shortOrderNumber || orderObj._id.slice(0, 8));

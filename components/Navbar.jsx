@@ -30,6 +30,7 @@ import {
   getDirectChildCategories,
 } from '@/lib/categoryNavigation';
 import { getProductThumbnailUrl } from '@/lib/productMedia';
+import { getProductPath } from '@/lib/productUrl';
 
 const NAVBAR_SELECTED_ADDRESS_KEY = 'navbarSelectedAddressId';
 const NAVBAR_APPEARANCE_CACHE_KEY = 'navbarAppearanceCache';
@@ -1043,7 +1044,7 @@ const Navbar = () => {
         {searchSuggestions.map((product) => (
           <Link
             key={product._id || product.slug}
-            href={`/product/${product.slug || product._id}`}
+            href={getProductPath(product)}
             className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-slate-50"
             onClick={() => {
               setSearchFocused(false);

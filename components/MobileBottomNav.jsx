@@ -5,7 +5,7 @@ import { Home, Search, ShoppingCart, User, LayoutGrid } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useSelector } from 'react-redux'
-import { useAuth } from '@/lib/useAuth'
+import { isProductDetailPath } from '@/lib/productUrl'
 
 export default function MobileBottomNav() {
   const [hydrated, setHydrated] = React.useState(false)
@@ -16,7 +16,7 @@ export default function MobileBottomNav() {
   const isSignedIn = !!user;
 
   // Don't show on product pages (will have separate fixed bar)
-  if (pathname?.includes('/product/')) {
+  if (isProductDetailPath(pathname)) {
     return null
   }
 

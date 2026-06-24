@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { getProductThumbnailUrl } from '@/lib/productMedia'
 import { PRODUCT_CARD_GRID_CLASS_4, PRODUCT_CARD_CELL_CLASS } from '@/lib/storefrontCarousel'
+import { getProductPath } from '@/lib/productUrl'
 
 const FALLBACK_IMAGE = 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'
 
@@ -121,7 +122,7 @@ export default function NotFound() {
           ) : products.length > 0 ? (
             <div className={PRODUCT_CARD_GRID_CLASS_4}>
               {products.map((product, index) => {
-                const href = `/product/${product.slug || product._id}`
+                const href = getProductPath(product)
                 const price = getProductPrice(product)
 
                 return (

@@ -5,6 +5,7 @@ import GuestOrderLinker from "@/components/GuestOrderLinker";
 import dynamic from "next/dynamic";
 import { useEffect, Suspense, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
+import { isProductDetailPath } from "@/lib/productUrl";
 
 const UtmTracker = dynamic(() => import("@/components/UtmTracker"), { ssr: false });
 const AdsAttribution = dynamic(() => import("@/components/AdsAttribution"), { ssr: false });
@@ -41,7 +42,7 @@ function PublicLayoutContent({ children }) {
     const isHomePage = pathname === '/';
     const isCheckout = pathname === '/checkout';
     const isCartPage = pathname === '/cart';
-    const isProductPage = pathname?.includes('/product/');
+    const isProductPage = isProductDetailPath(pathname);
 
     return (
         <div className={`flex flex-col ${isCartPage || isProductPage ? '' : 'min-h-screen'}`}>

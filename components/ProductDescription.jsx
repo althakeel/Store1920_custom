@@ -11,6 +11,7 @@ import { useSelector } from "react-redux"
 import { PRODUCT_RICH_CONTENT_CLASS, sanitizeProductRichHtml } from "@/lib/productRichContent"
 import { useStorefrontI18n } from "@/lib/useStorefrontI18n"
 import { useProductWishlist } from "@/lib/useProductWishlist"
+import { getProductAbsoluteUrl } from "@/lib/productUrl"
 
 const formatReviewDate = (dateString) => {
     if (!dateString) return ''
@@ -79,7 +80,7 @@ const ProductDescription = ({ product, reviews = [], loadingReviews = false, onR
         const message = [
             `Report type: ${reasonLabel}`,
             `Product: ${productLabel}`,
-            productRef ? `Product link: ${typeof window !== 'undefined' ? window.location.origin : ''}/product/${productRef}` : '',
+            productRef ? `Product link: ${getProductAbsoluteUrl(product, typeof window !== 'undefined' ? window.location.origin : '')}` : '',
             reportDetails.trim() ? `Details: ${reportDetails.trim()}` : '',
         ].filter(Boolean).join('\n')
 

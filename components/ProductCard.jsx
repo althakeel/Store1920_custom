@@ -24,6 +24,7 @@ import { PRODUCT_CARD_CELL_CLASS, PRODUCT_CARD_SHELL_CLASS } from '@/lib/storefr
 import { pushGtmEcommerceEvent } from '@/lib/pushGtmEcommerceEvent'
 import { GTM_EVENTS } from '@/lib/gtmEvents'
 import { STORE_CURRENCY } from '@/lib/storeCurrency'
+import { getProductPath } from '@/lib/productUrl'
 
 const parseAmount = (value) => {
   const num = Number(String(value ?? '').replace(/[^0-9.]/g, ''))
@@ -297,7 +298,7 @@ const ProductCard = ({
 
   return (
     <Link
-      href={`/product/${product.slug || product._id || ''}`}
+      href={getProductPath(product)}
       draggable={false}
       onDragStart={(event) => event.preventDefault()}
       onClick={onCardClick}

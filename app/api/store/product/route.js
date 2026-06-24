@@ -191,6 +191,7 @@ export async function POST(request) {
         // Fast delivery toggle
         const fastDelivery = String(formData.get("fastDelivery") || "false").toLowerCase() === "true";
         const freeShippingEligible = String(formData.get("freeShippingEligible") || "false").toLowerCase() === "true";
+        const useProductsPath = String(formData.get("useProductsPath") || "false").toLowerCase() === "true";
         const imageAspectRatio = formData.get("imageAspectRatio") || "1:1";
         const cardVideoPreviewEnabled = String(formData.get("cardVideoPreviewEnabled") || "true").toLowerCase() === "true";
         const cardVideoPreviewDelaySec = Math.min(
@@ -353,6 +354,7 @@ export async function POST(request) {
             inStock,
             fastDelivery,
             freeShippingEligible,
+            useProductsPath,
             imageAspectRatio,
             cardVideoPreviewEnabled,
             cardVideoPreviewDelaySec,
@@ -638,6 +640,7 @@ export async function PUT(request) {
         const price = formData.get("price") ? Number(formData.get("price")) : undefined;
         const fastDelivery = String(formData.get("fastDelivery") || "").toLowerCase() === "true";
         const freeShippingEligible = String(formData.get("freeShippingEligible") || "").toLowerCase() === "true";
+        const useProductsPath = String(formData.get("useProductsPath") || "").toLowerCase() === "true";
         const imageAspectRatioRaw = formData.get("imageAspectRatio");
         const cardVideoPreviewEnabledRaw = formData.get("cardVideoPreviewEnabled");
         const cardVideoPreviewDelaySecRaw = formData.get("cardVideoPreviewDelaySec");
@@ -660,7 +663,7 @@ export async function PUT(request) {
         let product;
         try {
                         product = await Product.findById(productId)
-                            .select('_id storeId name slug price AED images description variants attributes inStock shortDescription shortDescriptionAr shortDescription2 specTableEnabled specTableColumns specTableRows imageAspectRatio categories category hasVariants freeShippingEligible fastDelivery stockQuantity sku')
+                            .select('_id storeId name slug price AED images description variants attributes inStock shortDescription shortDescriptionAr shortDescription2 specTableEnabled specTableColumns specTableRows imageAspectRatio categories category hasVariants freeShippingEligible useProductsPath fastDelivery stockQuantity sku')
               .lean();
         } catch (err) {
             console.error('Product.findById error:', err, 'productId:', productId);
@@ -790,6 +793,7 @@ export async function PUT(request) {
             inStock,
             fastDelivery,
             freeShippingEligible,
+            useProductsPath,
             imageAspectRatio,
             cardVideoPreviewEnabled,
             cardVideoPreviewDelaySec,

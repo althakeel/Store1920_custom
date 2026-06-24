@@ -5,6 +5,7 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
+import { getProductPath } from '@/lib/productUrl';
 
 const Chatbot = () => {
     const [isOpen, setIsOpen] = useState(false);
@@ -339,7 +340,7 @@ const Chatbot = () => {
                                                         {msg.searchResults.products.map((product, pIdx) => (
                                                             <Link
                                                                 key={pIdx}
-                                                                href={`/product/${product.slug || product._id}`}
+                                                                href={getProductPath(product)}
                                                                 className="block p-2 mb-2 bg-blue-100 border border-blue-300 rounded-lg hover:bg-blue-200 transition-colors"
                                                             >
                                                                 <div className="flex gap-2">

@@ -9,6 +9,7 @@ import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
 import { pushGtmEvent } from '@/lib/pushGtmEcommerceEvent';
 import { GTM_EVENTS, gtmDedupeKey } from '@/lib/gtmEvents';
 import { PRODUCT_CARD_GRID_CLASS_1_2_3_6, PRODUCT_CARD_CELL_CLASS } from '@/lib/storefrontCarousel';
+import { getProductPath } from '@/lib/productUrl';
 
 function SearchResultsInner() {
   const searchParams = useSearchParams();
@@ -204,7 +205,7 @@ function SearchResultsInner() {
               {recommendedProducts.map((product) => (
                 <Link
                   key={product._id}
-                  href={`/product/${product.slug}`}
+                  href={getProductPath(product)}
                   className={`${PRODUCT_CARD_CELL_CLASS} group h-full bg-white rounded-[2px] shadow-sm hover:shadow-lg transition overflow-hidden`}
                 >
                   <div className="relative h-48 bg-gray-100 overflow-hidden">
@@ -261,7 +262,7 @@ function SearchResultsInner() {
               {products.map((product) => (
                 <Link
                   key={product._id}
-                  href={`/product/${product.slug}`}
+                  href={getProductPath(product)}
                   className={`${PRODUCT_CARD_CELL_CLASS} group h-full bg-white rounded-[2px] shadow-sm hover:shadow-lg transition overflow-hidden`}
                 >
                   {/* Product Image */}
@@ -326,7 +327,7 @@ function SearchResultsInner() {
                   {similarProducts.map((product) => (
                     <Link
                       key={product._id}
-                      href={`/product/${product.slug}`}
+                      href={getProductPath(product)}
                       className={`${PRODUCT_CARD_CELL_CLASS} group h-full bg-white rounded-[2px] shadow-sm hover:shadow-lg transition overflow-hidden`}
                     >
                       <div className="relative h-48 bg-gray-100 overflow-hidden">

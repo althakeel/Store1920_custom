@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useSelector } from 'react-redux';
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
+import { getProductPath } from '@/lib/productUrl';
 
 export default function FeaturedSectionDisplay({ section }) {
   const scrollRef = useRef(null);
@@ -69,7 +70,7 @@ export default function FeaturedSectionDisplay({ section }) {
           {sectionProducts.map(product => (
             <Link
               key={product.id}
-              href={`/product/${product.id}`}
+              href={getProductPath(product)}
               className="flex-shrink-0 w-40 md:w-48 bg-white rounded-lg shadow hover:shadow-lg transition overflow-hidden group"
             >
               {/* Product Image */}

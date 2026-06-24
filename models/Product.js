@@ -34,6 +34,7 @@ const ProductSchema = new mongoose.Schema({
   bulkPricing: { type: Array, default: [] },
   fastDelivery: { type: Boolean, default: false },
   freeShippingEligible: { type: Boolean, default: false },
+  useProductsPath: { type: Boolean, default: false },
   allowReturn: { type: Boolean, default: true },
   allowReplacement: { type: Boolean, default: true },
   imageAspectRatio: { type: String, default: '1:1' },

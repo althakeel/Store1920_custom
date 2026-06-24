@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useDispatch } from "react-redux";
 import { addToCart } from "@/lib/features/cart/cartSlice";
+import { getProductPath } from "@/lib/productUrl";
 import { useStorefrontMarket } from "@/lib/useStorefrontMarket";
 import PageTitle from "@/components/PageTitle";
 import { PRODUCT_CARD_CELL_CLASS, PRODUCT_CARD_GRID_CLASS } from "@/lib/storefrontCarousel";
@@ -38,10 +39,10 @@ const getProduct = (item) => {
   };
 };
 
-const getProductPath = (product) => {
+const resolveWishlistProductPath = (product) => {
   if (!product) return null;
-  if (!product.slug) return null;
-  return `/product/${product.slug}`;
+  const path = getProductPath(product);
+  return path === '/shop' ? null : path;
 };
 
 function WishlistAuthed() {
@@ -191,7 +192,7 @@ function WishlistAuthed() {
   };
 
   const resolveProductPath = async (product) => {
-    const direct = getProductPath(product);
+    const direct = resolveWishlistProductPath(product);
     if (direct) return direct;
 
     const pid = product?._id || product?.productId || product?._pid || product?.id;
@@ -199,8 +200,8 @@ function WishlistAuthed() {
 
     try {
       const { data } = await axios.post('/api/products/batch', { productIds: [pid] });
-      const slug = data?.products?.[0]?.slug;
-      if (slug) return `/product/${slug}`;
+      const fetched = data?.products?.[0];
+      if (fetched) return resolveWishlistProductPath(fetched);
     } catch {
       // ignore
     }

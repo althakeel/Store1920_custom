@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useSelector } from 'react-redux';
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
+import { getProductPath } from '@/lib/productUrl';
 
 export default function CategorySliderDisplay({ slider }) {
   const scrollRef = useRef(null);
@@ -87,7 +88,7 @@ export default function CategorySliderDisplay({ slider }) {
           {sliderProducts.map(product => (
             <Link
               key={product.id}
-              href={`/product/${product.id}`}
+              href={getProductPath(product)}
               className="qf-card"
             >
               {/* Product Image */}

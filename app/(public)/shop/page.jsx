@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/useAuth'
 import axios from 'axios'
 import { SlidersHorizontal, X } from 'lucide-react'
 import ShopPagination from '@/components/ShopPagination'
+import { getProductPath } from '@/lib/productUrl'
 
 const PRODUCTS_PER_PAGE = 100;
 const SHOP_CATALOG_URL = '/api/products?all=true&slim=true&includeOutOfStock=true';
@@ -586,7 +587,7 @@ function ShopContent() {
                                         onClick={() => {
                                             const product = fastSellingProducts[fastSellingIndex];
                                             if (!product) return;
-                                            const target = product.slug ? `/product/${product.slug}` : `/product/${product._id || product.id}`;
+                                            const target = getProductPath(product);
                                             router.push(target);
                                         }}
                                         className="group w-full text-left border border-slate-300 rounded-md overflow-hidden hover:border-slate-500 transition"

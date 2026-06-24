@@ -7,6 +7,7 @@ import ProductDetails from "@/components/ProductDetails";
 import ProductDescription from "@/components/ProductDescription";
 import CountdownTimer from "@/components/CountdownTimer";
 import { Sparkles, Gift, Tag, AlertCircle, X } from "lucide-react";
+import { getProductPath } from "@/lib/productUrl";
 
 function setOfferTokenCookie(value) {
   if (typeof document === 'undefined' || !value) return;
@@ -107,7 +108,7 @@ export default function SpecialOfferBySlugPage() {
       }
 
       setTimeout(() => {
-        router.push(`/product/${data.product.slug}`);
+        router.push(getProductPath(data.product));
       }, 3000);
     }
 
@@ -188,7 +189,7 @@ export default function SpecialOfferBySlugPage() {
     toast.error("Offer has expired! Redirecting to normal product page...");
     setTimeout(() => {
       if (product?.slug) {
-        router.push(`/product/${product.slug}`);
+        router.push(getProductPath(product));
       }
     }, 3000);
   };

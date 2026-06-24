@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
+import { getProductPath } from '@/lib/productUrl';
 import Image from 'next/image';
 import {
   Activity,
@@ -410,7 +411,7 @@ function VisitorDetailModal({
                           </p>
                           {product.slug ? (
                             <a
-                              href={`/product/${product.slug}`}
+                              href={getProductPath(product)}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-amber-700 hover:text-amber-900"

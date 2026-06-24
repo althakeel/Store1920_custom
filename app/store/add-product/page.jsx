@@ -457,7 +457,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
         const [isSlugManuallyEdited, setIsSlugManuallyEdited] = useState(false);
         const [images, setImages] = useState({ "1": null, "2": null, "3": null, "4": null, "5": null, "6": null, "7": null, "8": null });
         const [productInfo, setProductInfo] = useState({
-            name: '', nameAr: '', slug: '', brand: '', brandAr: '', shortDescription: '', shortDescriptionAr: '', shortDescription2: '', shortDescription2Ar: '', specTableEnabled: false, specTableTitle: 'Product information', specTableTitleAr: 'مواصفات المنتج', specTableColumns: ['Property', 'Value'], specTableColumnsAr: ['الخاصية', 'القيمة'], specTableRows: [['', '']], specTableRowsAr: [['', '']], description: '', descriptionAr: '', AED: '', price: '', priceAr: '', AEDAr: '', category: '', sku: '', stockQuantity: 50, colors: [], sizes: [], fastDelivery: false, freeShippingEligible: false, allowReturn: true, allowReplacement: true, reviews: [], badges: [], imageAspectRatio: '1:1', cardVideoPreviewEnabled: true, cardVideoPreviewDelaySec: 24, tags: [], seoTitle: '', seoDescription: '', seoKeywords: [], deliveredBy: '', soldBy: '', paymentInfo: ''
+            name: '', nameAr: '', slug: '', brand: '', brandAr: '', shortDescription: '', shortDescriptionAr: '', shortDescription2: '', shortDescription2Ar: '', specTableEnabled: false, specTableTitle: 'Product information', specTableTitleAr: 'مواصفات المنتج', specTableColumns: ['Property', 'Value'], specTableColumnsAr: ['الخاصية', 'القيمة'], specTableRows: [['', '']], specTableRowsAr: [['', '']], description: '', descriptionAr: '', AED: '', price: '', priceAr: '', AEDAr: '', category: '', sku: '', stockQuantity: 50, colors: [], sizes: [], fastDelivery: false, freeShippingEligible: false, useProductsPath: false, allowReturn: true, allowReplacement: true, reviews: [], badges: [], imageAspectRatio: '1:1', cardVideoPreviewEnabled: true, cardVideoPreviewDelaySec: 24, tags: [], seoTitle: '', seoDescription: '', seoKeywords: [], deliveredBy: '', soldBy: '', paymentInfo: ''
         });
         const [tagInput, setTagInput] = useState('');
         const [seoKeywordInput, setSeoKeywordInput] = useState('');
@@ -741,6 +741,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 sizes: product.sizes || [],
                 fastDelivery: product.fastDelivery || false,
                 freeShippingEligible: product.freeShippingEligible || false,
+                useProductsPath: product.useProductsPath || false,
                 allowReturn: product.allowReturn !== undefined ? product.allowReturn : true,
                 allowReplacement: product.allowReplacement !== undefined ? product.allowReplacement : true,
                 reviews: product.reviews || [],
@@ -1615,6 +1616,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 sizes: productInfo.sizes || [],
                 fastDelivery: Boolean(productInfo.fastDelivery),
                 freeShippingEligible: Boolean(productInfo.freeShippingEligible),
+                useProductsPath: Boolean(productInfo.useProductsPath),
                 imageAspectRatio: productInfo.imageAspectRatio || '1:1',
                 cardVideoPreviewEnabled: productInfo.cardVideoPreviewEnabled !== false,
                 cardVideoPreviewDelaySec: Number(productInfo.cardVideoPreviewDelaySec) || 24,
@@ -1804,6 +1806,23 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                     <div>
                         <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Slug <span className="normal-case text-green-500">(auto)</span></label>
                         <input name="slug" value={productInfo.slug} onChange={onChangeHandler} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-600 outline-none" placeholder="Auto-generated" />
+                        <p className="mt-1 text-[11px] text-gray-500">
+                          Store URL: <span className="font-mono text-gray-700">/{productInfo.useProductsPath ? 'products' : 'product'}/{productInfo.slug || 'your-slug'}</span>
+                        </p>
+                    </div>
+                    <div className="flex items-end">
+                        <label className="flex w-full items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-xs cursor-pointer group">
+                          <span>
+                            <span className="block font-semibold text-gray-700 group-hover:text-indigo-700">Use /products/ URL</span>
+                            <span className="mt-0.5 block text-[11px] text-gray-500">Off = /product/slug (default). On = /products/slug for this product only.</span>
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(productInfo.useProductsPath)}
+                            onChange={(e) => setProductInfo((p) => ({ ...p, useProductsPath: e.target.checked }))}
+                            className="accent-indigo-500 h-4 w-4 shrink-0"
+                          />
+                        </label>
                     </div>
                     <div>
                         <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Brand</label>

@@ -33,7 +33,7 @@ export async function POST(req) {
         }
 
         const products = await Product.find({ _id: { $in: validProductIds } })
-            .select('name nameAr slug price mrp AED images externalImages category categories inStock fastDelivery freeShippingEligible imageAspectRatio shortDescription shortDescriptionAr sku hasVariants variants allowReturn allowReplacement createdAt')
+            .select('name nameAr slug price mrp AED images externalImages category categories inStock fastDelivery freeShippingEligible useProductsPath imageAspectRatio shortDescription shortDescriptionAr sku hasVariants variants allowReturn allowReplacement createdAt')
             .lean();
 
         const productMap = new Map(products.map((product) => [String(product._id), product]));

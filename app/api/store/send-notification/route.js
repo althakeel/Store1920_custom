@@ -4,6 +4,7 @@ import EmailHistory from '@/models/EmailHistory'
 import authSeller from '@/middlewares/authSeller'
 import { NextResponse } from 'next/server'
 import { sendMail } from '@/lib/email'
+import { getProductAbsoluteUrl } from '@/lib/productUrl'
 
 export async function POST(request) {
   try {
@@ -111,7 +112,7 @@ export async function POST(request) {
             }
             
             <div style="text-align: center; margin: 30px 0;">
-              <a href="https://Store1920.com/product/${product.slug || product.id}" style="background: #667eea; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">Shop Now</a>
+              <a href="${getProductAbsoluteUrl(product, 'https://Store1920.com')}" style="background: #667eea; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">Shop Now</a>
             </div>
             
             <p style="font-size: 12px; color: #999; margin: 20px 0 0 0; border-top: 1px solid #e0e0e0; padding-top: 20px;">
