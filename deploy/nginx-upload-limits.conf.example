@@ -10,14 +10,14 @@ Edit your nginx site config (often `/etc/nginx/nginx.conf` or `/etc/nginx/sites-
 ```nginx
 http {
     # Allow large product/media uploads (default is often 1m)
-    client_max_body_size 100M;
+    client_max_body_size 200M;
 }
 
 server {
     listen 443 ssl;
     server_name your-domain.com;
 
-    client_max_body_size 100M;
+    client_max_body_size 200M;
 
     location / {
         proxy_pass http://127.0.0.1:3000;

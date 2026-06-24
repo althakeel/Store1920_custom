@@ -15,6 +15,7 @@ import {
 } from '@/lib/storeProductPicker';
 import { NextResponse } from "next/server";
 import { getAuth } from '@/lib/firebase-admin';
+import { createProductFromJson, updateProductFromJson } from '@/lib/productJsonSave';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -127,6 +128,21 @@ export async function POST(request) {
         }
         const storeId = await authSeller(userId);
         if (!storeId) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
+
+        const contentType = request.headers.get('content-type')?.toLowerCase() || '';
+        if (contentType.includes('application/json')) {
+            try {
+                const body = await request.json();
+                const product = await createProductFromJson(body, storeId);
+                return NextResponse.json({ message: "Product added successfully", product });
+            } catch (error) {
+                const message = error?.message || 'Failed to save product';
+                const status = message.includes('Slug already exists') || message.includes('Missing') || message.includes('required')
+                    ? 400
+                    : 500;
+                return NextResponse.json({ error: message }, { status });
+            }
+        }
 
         // Try FormData first (most common case for product creation with images)
         let formData;
@@ -552,33 +568,40 @@ export async function PUT(request) {
         const contentType = request.headers.get('content-type')?.toLowerCase() || '';
         if (contentType.includes('application/json')) {
             const body = await request.json();
-            const { productId, images } = body || {};
 
-            if (!productId || typeof productId !== 'string' || !productId.match(/^[a-fA-F0-9]{24}$/)) {
-                return NextResponse.json({ error: "Product ID required or invalid format" }, { status: 400 });
+            // Legacy: images-only quick update
+            if (body?.productId && Array.isArray(body?.images) && body?.name === undefined && body?.description === undefined) {
+                const { productId, images } = body || {};
+                if (!productId || typeof productId !== 'string' || !productId.match(/^[a-fA-F0-9]{24}$/)) {
+                    return NextResponse.json({ error: "Product ID required or invalid format" }, { status: 400 });
+                }
+
+                const product = await Product.findById(productId)
+                    .select('_id storeId images')
+                    .lean();
+                if (!product || String(product.storeId) !== String(storeId)) {
+                    return NextResponse.json({ error: "Not authorized" }, { status: 401 });
+                }
+
+                const updated = await Product.findByIdAndUpdate(
+                    productId,
+                    { images: images.filter(Boolean) },
+                    { new: true }
+                ).lean();
+
+                invalidateStorefrontProductCaches();
+                return NextResponse.json({ message: "Product updated successfully", product: updated });
             }
 
-                        const product = await Product.findById(productId)
-                            .select('_id storeId images')
-              .lean();
-                        if (!product || String(product.storeId) !== String(storeId)) {
-                return NextResponse.json({ error: "Not authorized" }, { status: 401 });
+            try {
+                const updated = await updateProductFromJson(body, storeId);
+                return NextResponse.json({ message: "Product updated successfully", product: updated });
+            } catch (error) {
+                const message = error?.message || 'Failed to update product';
+                const status = message.includes('Not authorized') ? 401
+                    : (message.includes('Slug') || message.includes('required') || message.includes('invalid') ? 400 : 500);
+                return NextResponse.json({ error: message }, { status });
             }
-
-            let imagesUrl = product.images;
-            if (Array.isArray(images)) {
-                imagesUrl = images.filter(Boolean);
-            }
-
-            const updated = await Product.findByIdAndUpdate(
-                productId,
-                { images: imagesUrl },
-                { new: true }
-            ).lean();
-
-            invalidateStorefrontProductCaches();
-
-            return NextResponse.json({ message: "Product updated successfully", product: updated });
         }
 
         const formData = await request.formData();

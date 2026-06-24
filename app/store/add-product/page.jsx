@@ -26,6 +26,7 @@ import { formatStorefrontMoney } from '@/lib/storefrontMarket';
 import { getProductImageAspectRatioClass } from '@/lib/productMedia';
 import { compressImageForUpload, getUploadErrorMessage } from '@/lib/compressImageForUpload';
 import { uploadStoreImage } from '@/lib/uploadStoreImage';
+import { sanitizeRichTextMedia } from '@/lib/sanitizeRichTextMedia';
 
 const toArabicPriceDisplay = (amount) => {
     const numeric = Number(amount);
@@ -291,20 +292,15 @@ function RichTextDescriptionEditor({
 
                             try {
                                 toast.loading('Uploading video...')
-                                const formData = new FormData()
-                                formData.append('image', file)
-
                                 const token = await getAuthTokenOrThrow()
-                                const { data } = await axios.post('/api/store/upload-image', formData, {
-                                    headers: { Authorization: `Bearer ${token}` }
-                                })
+                                const data = await uploadStoreImage(file, { token, compress: false })
 
                                 editor?.chain().focus().setVideo({ src: data.url }).run()
                                 toast.dismiss()
                                 toast.success('Video uploaded!')
                             } catch (error) {
                                 toast.dismiss()
-                                toast.error('Failed to upload video')
+                                toast.error(getUploadErrorMessage(error))
                             }
                             e.target.value = ''
                         }}
@@ -1527,43 +1523,50 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
             }
 
             setLoading(true)
-            const formData = new FormData()
-
-            Object.entries(productInfo).forEach(([key, value]) => {
-                if (["colors", "sizes"].includes(key)) {
-                    formData.append(key, JSON.stringify(value))
-                } else if (["tags", "seoKeywords", "specTableColumns", "specTableRows", "specTableColumnsAr", "specTableRowsAr"].includes(key)) {
-                    formData.append(key, JSON.stringify(value || []))
-                } else if (key === 'reviews') {
-                    const cleanReviews = value.map(({ name, rating, comment }) => ({ name, rating, comment }))
-                    formData.append('reviews', JSON.stringify(cleanReviews))
-                } else if (key === 'slug') {
-                    formData.append('slug', value.trim())
-                } else if (key === 'category') {
-                    // Skip - we'll use categories array instead
-                    // formData.append('category', value)
-                } else {
-                    formData.append(key, value)
-                }
+            const token = await getAuthTokenOrThrow(true)
+            const uploadMedia = (file) => uploadStoreImage(file, {
+                token,
+                compress: !isVideoSource(file?.name) && String(file?.type || '').indexOf('video/') !== 0,
             })
+            const uploadEmbedded = (file) => uploadStoreImage(file, { token })
 
-            // Add selected categories - this is the ONLY source of category data
-            formData.append('categories', JSON.stringify(dedupeCategoryIds(selectedCategories)))
-            
-            console.log('========== FORM SUBMISSION DEBUG ==========')
-            console.log('Is editing product?', !!product)
-            console.log('Product ID:', product?._id)
-            console.log('Form submission - selectedCategories:', selectedCategories)
-            console.log('Form submission - selectedCategories count:', selectedCategories.length)
-            console.log('Form submission - categories JSON:', JSON.stringify(selectedCategories))
-            console.log('Form data categories value:', formData.get('categories'))
-            
-            // Verify it was added
-            const allEntries = Array.from(formData.entries());
-            const categoriesEntry = allEntries.find(([key]) => key === 'categories');
-            console.log('Verified categories in formData:', categoriesEntry);
+            const imageUrls = []
+            for (const key of Object.keys(images)) {
+                const img = images[key]
+                if (!img) continue
+                if (typeof img === 'string') {
+                    imageUrls.push(img)
+                    continue
+                }
+                if (img.file) {
+                    const uploaded = await uploadMedia(img.file)
+                    imageUrls.push(uploaded.url)
+                }
+            }
 
-            // Attributes bucket for extra details
+            const description = await sanitizeRichTextMedia(productInfo.description, uploadEmbedded)
+            const descriptionAr = await sanitizeRichTextMedia(productInfo.descriptionAr, uploadEmbedded)
+
+            let variantsToSend = variants
+            let hasVariantsFlag = hasVariants
+            if (bulkEnabled) {
+                variantsToSend = bulkOptions
+                    .filter(b => Number(b.qty) > 0 && Number(b.price) > 0)
+                    .map(b => ({
+                        options: {
+                            bundleQty: Number(b.qty),
+                            title: (b.title || undefined),
+                            tag: b.tag || undefined,
+                            ...(b.image ? { image: b.image } : {}),
+                            ...(b.imageSlot ? { imageSlot: b.imageSlot } : {}),
+                        },
+                        price: Number(b.price),
+                        AED: Number(b.AED || b.price),
+                        stock: Number(b.stock || 0),
+                    }))
+                hasVariantsFlag = variantsToSend.length > 0
+            }
+
             const attributes = {
                 brand: productInfo.brand,
                 brandAr: productInfo.brandAr || '',
@@ -1587,75 +1590,63 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 additionalDetails: aiAdditionalDetails || '',
                 variantType: bulkEnabled ? 'bulk_bundles' : '',
             }
-            formData.append('attributes', JSON.stringify(attributes))
 
-            // Variants
-            let variantsToSend = variants
-            let hasVariantsFlag = hasVariants
-            if (bulkEnabled) {
-                // project bulkOptions -> variants array in common shape
-                variantsToSend = bulkOptions
-                    .filter(b => Number(b.qty) > 0 && Number(b.price) > 0)
-                    .map(b => ({
-                        options: {
-                            bundleQty: Number(b.qty),
-                            title: (b.title || undefined),
-                            tag: b.tag || undefined,
-                            ...(b.image ? { image: b.image } : {}),
-                            ...(b.imageSlot ? { imageSlot: b.imageSlot } : {}),
-                        },
-                        price: Number(b.price),
-                        AED: Number(b.AED || b.price),
-                        stock: Number(b.stock || 0),
-                    }))
-                hasVariantsFlag = variantsToSend.length > 0
-                
-                // Ensure base price/AED are set from the first bulk option for API validation
-                if (variantsToSend.length > 0 && (!productInfo.price || !productInfo.AED)) {
-                    formData.set('price', String(variantsToSend[0].price))
-                    formData.set('AED', String(variantsToSend[0].AED))
-                }
-            }
-            formData.append('hasVariants', String(hasVariantsFlag))
-            if (hasVariantsFlag) {
-                formData.append('variants', JSON.stringify(variantsToSend))
-            }
-
-            const token = await getAuthTokenOrThrow(true)
-
-            for (const key of Object.keys(images)) {
-                const img = images[key]
-                if (!img) continue
-                if (typeof img === 'string') {
-                    formData.append('images', img)
-                    continue
-                }
-                if (img.file) {
-                    const uploaded = await uploadStoreImage(img.file, { token })
-                    formData.append('images', uploaded.url)
-                }
+            const payload = {
+                name: productInfo.name,
+                nameAr: productInfo.nameAr || '',
+                slug: productInfo.slug?.trim() || '',
+                brand: productInfo.brand || '',
+                brandAr: productInfo.brandAr || '',
+                shortDescription: productInfo.shortDescription || '',
+                shortDescriptionAr: productInfo.shortDescriptionAr || '',
+                shortDescription2: productInfo.shortDescription2 || '',
+                shortDescription2Ar: productInfo.shortDescription2Ar || '',
+                description,
+                descriptionAr,
+                price: bulkEnabled && variantsToSend.length > 0
+                    ? Number(variantsToSend[0].price)
+                    : Number(productInfo.price),
+                AED: bulkEnabled && variantsToSend.length > 0
+                    ? Number(variantsToSend[0].AED)
+                    : Number(productInfo.AED),
+                sku: productInfo.sku || '',
+                stockQuantity: Number(productInfo.stockQuantity) || 0,
+                colors: productInfo.colors || [],
+                sizes: productInfo.sizes || [],
+                fastDelivery: Boolean(productInfo.fastDelivery),
+                freeShippingEligible: Boolean(productInfo.freeShippingEligible),
+                imageAspectRatio: productInfo.imageAspectRatio || '1:1',
+                cardVideoPreviewEnabled: productInfo.cardVideoPreviewEnabled !== false,
+                cardVideoPreviewDelaySec: Number(productInfo.cardVideoPreviewDelaySec) || 24,
+                tags: productInfo.tags || [],
+                seoTitle: productInfo.seoTitle || '',
+                seoDescription: productInfo.seoDescription || '',
+                seoKeywords: productInfo.seoKeywords || [],
+                specTableEnabled: Boolean(productInfo.specTableEnabled),
+                specTableColumns: productInfo.specTableColumns || ['Property', 'Value'],
+                specTableRows: productInfo.specTableRows || [],
+                categories: dedupeCategoryIds(selectedCategories),
+                attributes,
+                hasVariants: hasVariantsFlag,
+                variants: hasVariantsFlag ? variantsToSend : [],
+                images: imageUrls,
+                ...(product?._id ? { productId: String(product._id) } : {}),
             }
 
-            productInfo.reviews.forEach((rev, index) => {
-                if (rev.image) formData.append(`reviewImages_${index}`, rev.image)
-            })
+            console.log('Submitting product JSON payload, images:', imageUrls.length)
 
-            // Add productId for edit mode
-            if (product?._id) {
-                formData.append('productId', String(product._id))
-            }
-
-            console.log('Submitting product with token:', token);
             const apiCall = product?._id
-                ? axios.put(`/api/store/product`, formData, { 
-                    headers: { 
-                        'Authorization': `Bearer ${token}`
-                    } 
+                ? axios.put('/api/store/product', payload, {
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                    },
                 })
-                : axios.post('/api/store/product', formData, { 
-                    headers: { 
-                        'Authorization': `Bearer ${token}`
-                    } 
+                : axios.post('/api/store/product', payload, {
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                    },
                 })
 
             const { data } = await apiCall
