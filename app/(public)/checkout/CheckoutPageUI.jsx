@@ -40,6 +40,7 @@ import PhoneNumberField from "@/components/PhoneNumberField";
 import Creditimage1 from '../../../assets/creditcards/19 - Copy.webp';
 import Creditimage2 from '../../../assets/creditcards/16 - Copy.webp';
 import Creditimage3 from '../../../assets/creditcards/20.webp';
+import Creditimage4 from '../../../assets/creditcards/11.webp';
 import { STORE_CURRENCY } from '@/lib/storeCurrency';
 
 const SignInModal = dynamic(() => import("@/components/SignInModal"), { ssr: false });
