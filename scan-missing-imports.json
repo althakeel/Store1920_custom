@@ -1,0 +1,34 @@
+[
+  {
+    "file": "app/(public)/create-store/page.jsx",
+    "id": "Logo"
+  },
+  {
+    "file": "app/store/menu-management/page.jsx",
+    "id": "Logo"
+  },
+  {
+    "file": "components/admin/AdminSidebar.jsx",
+    "id": "Logo"
+  },
+  {
+    "file": "components/Navbar.jsx",
+    "id": "Logo"
+  },
+  {
+    "file": "components/ProductDetails.jsx",
+    "id": "Logo"
+  },
+  {
+    "file": "components/store/NavbarPreview.jsx",
+    "id": "Logo"
+  },
+  {
+    "file": "lib/email.js",
+    "id": "Logo"
+  },
+  {
+    "file": "lib/generateInvoice.js",
+    "id": "Logo"
+  }
+]

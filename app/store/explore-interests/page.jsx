@@ -6,7 +6,7 @@ import axios from 'axios'
 import { toast } from 'react-hot-toast'
 import Image from 'next/image'
 import PageSkeleton from '@/components/PageSkeleton'
-import { getProductThumbnailUrl, normalizeProductImages } from '@/lib/productMedia'
+import { getProductThumbnailUrl, normalizeProductImages, isRenderableMediaUrl } from '@/lib/productMedia'
 import { PLACEHOLDER_IMAGE } from '@/lib/mediaUrls'
 import {
   Save,
@@ -47,7 +47,7 @@ function ProductThumb({ product, size = 72 }) {
     { ...product, images: mergedImages },
     { fallback: PLACEHOLDER_IMAGE }
   )
-  const showImage = imageSrc && imageSrc !== PLACEHOLDER_IMAGE && !failed
+  const showImage = imageSrc && imageSrc !== PLACEHOLDER_IMAGE && isRenderableMediaUrl(imageSrc) && !failed
 
   if (!showImage) {
     return (
@@ -77,7 +77,7 @@ function ProductThumb({ product, size = 72 }) {
 }
 
 export default function ExploreInterestsPage() {
-  const { getToken } = useAuth()
+  const { getToken, user, loading: authLoading } = useAuth()
   const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || 'AED'
   const [selectedProducts, setSelectedProducts] = useState([])
   const [enabled, setEnabled] = useState(true)
@@ -156,6 +156,8 @@ export default function ExploreInterestsPage() {
     try {
       if (!silent) setProductsLoading(true)
       const token = await getToken()
+      if (!token) return
+
       const { data } = await axios.get('/api/store/product', {
         params: {
           page,
@@ -190,48 +192,69 @@ export default function ExploreInterestsPage() {
   }, [cachePreviewProducts, debouncedSearch, getToken, sortBy, pageSize])
 
   const fetchInitialData = async () => {
+    const token = await getToken()
+    if (!token) {
+      toast.error('Please sign in to manage Explore Interests')
+      setLoading(false)
+      return
+    }
+
     try {
       setLoading(true)
-      const token = await getToken()
+      let settingsLoaded = false
+      let initialSelected = []
 
-      const [settingsResponse, productsResponse] = await Promise.all([
-        axios.get('/api/store/explore-interests', {
+      try {
+        const { data: settingsData } = await axios.get('/api/store/explore-interests', {
           headers: { Authorization: `Bearer ${token}` },
-        }),
-        axios.get('/api/store/product', {
+        })
+        initialSelected = (settingsData?.productIds || []).map(normalizeProductId)
+        setSelectedProducts(initialSelected)
+        setEnabled(typeof settingsData?.enabled === 'boolean' ? settingsData.enabled : true)
+        settingsLoaded = true
+      } catch (error) {
+        console.error(error)
+        toast.error('Failed to load Explore Interests settings')
+      }
+
+      try {
+        const { data: productsResponse } = await axios.get('/api/store/product', {
           params: { page: 1, limit: pageSize, sort: sortBy },
           headers: { Authorization: `Bearer ${token}` },
-        }),
-      ])
+        })
 
-      const settingsData = settingsResponse.data || {}
-      const initialSelected = (settingsData.productIds || []).map(normalizeProductId)
+        const initialProducts = productsResponse?.products || []
+        setProducts(initialProducts)
+        cachePreviewProducts(initialProducts)
+        setPreviewProducts(buildPreviewFromSelection(initialSelected, initialProducts))
+        setPagination(productsResponse?.pagination || {
+          page: 1,
+          limit: pageSize,
+          total: initialProducts.length,
+          totalPages: 1,
+        })
+        skipNextProductsFetchRef.current = true
+      } catch (error) {
+        console.error(error)
+        toast.error('Failed to load products')
+      }
 
-      setSelectedProducts(initialSelected)
-      setEnabled(typeof settingsData.enabled === 'boolean' ? settingsData.enabled : true)
-
-      const initialProducts = productsResponse.data?.products || []
-      setProducts(initialProducts)
-      cachePreviewProducts(initialProducts)
-      setPreviewProducts(buildPreviewFromSelection(initialSelected, initialProducts))
-      setPagination(productsResponse.data?.pagination || {
-        page: 1,
-        limit: pageSize,
-        total: initialProducts.length,
-        totalPages: 1,
-      })
-      skipNextProductsFetchRef.current = true
-    } catch (error) {
-      toast.error('Failed to load Explore Interests settings')
-      console.error(error)
+      if (!settingsLoaded) {
+        setPreviewProducts([])
+      }
     } finally {
       setLoading(false)
     }
   }
 
   useEffect(() => {
+    if (authLoading) return
+    if (!user) {
+      setLoading(false)
+      return
+    }
     fetchInitialData()
-  }, [])
+  }, [authLoading, user?.uid])
 
   useEffect(() => {
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current)
@@ -425,8 +448,16 @@ export default function ExploreInterestsPage() {
     )
   }
 
-  if (loading) {
+  if (authLoading || loading) {
     return <PageSkeleton />
+  }
+
+  if (!user) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center px-4 text-center">
+        <p className="text-sm text-slate-600">Please sign in to manage Explore Your Interests.</p>
+      </div>
+    )
   }
 
   return (

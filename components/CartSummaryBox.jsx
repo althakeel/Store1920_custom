@@ -3,8 +3,66 @@ import { useRouter } from "next/navigation";
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
 import { useStorefrontI18n } from '@/lib/useStorefrontI18n';
 
-export default function CartSummaryBox({ subtotal, shipping, total, checkoutDisabled = false, checkoutNote = "", showShipping = true }) {
+export function CartSummaryActions({
+  checkoutDisabled = false,
+  className = '',
+  layout = 'stacked',
+}) {
   const router = useRouter();
+  const { t } = useStorefrontI18n();
+
+  const continueButton = (
+    <button
+      type="button"
+      className="w-full rounded-xl border border-slate-300 py-3 text-sm font-semibold text-slate-800 transition hover:bg-slate-50"
+      onClick={() => router.push('/products')}
+    >
+      {t('cart.continueShopping')}
+    </button>
+  );
+
+  const checkoutButton = (
+    <button
+      type="button"
+      className={`w-full rounded-xl py-3 text-sm font-bold text-white transition ${
+        checkoutDisabled ? 'cursor-not-allowed bg-slate-400' : 'bg-red-600 hover:bg-red-700'
+      }`}
+      onClick={() => {
+        if (checkoutDisabled) return;
+        router.push('/checkout');
+      }}
+      disabled={checkoutDisabled}
+    >
+      {checkoutDisabled ? t('cart.checkoutUnavailable') : t('cart.checkout')}
+    </button>
+  );
+
+  if (layout === 'row') {
+    return (
+      <div className={`flex gap-2 ${className}`}>
+        <div className="flex-1">{continueButton}</div>
+        <div className="flex-1">{checkoutButton}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={className}>
+      <div className="mb-3">{continueButton}</div>
+      {checkoutButton}
+    </div>
+  );
+}
+
+export default function CartSummaryBox({
+  subtotal,
+  shipping,
+  total,
+  checkoutDisabled = false,
+  checkoutNote = "",
+  showShipping = true,
+  hideMobileActions = false,
+}) {
   const { market, formatAmount } = useStorefrontMarket();
   const { t } = useStorefrontI18n();
   const tabbyPublicKey = process.env.NEXT_PUBLIC_TABBY_PUBLIC_KEY || '';
@@ -47,7 +105,7 @@ export default function CartSummaryBox({ subtotal, shipping, total, checkoutDisa
   }, [total, tabbyPublicKey, tabbyMerchantCode]);
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 w-full">
+    <div className="w-full rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <div className="mb-4">
         <div className="flex justify-between text-sm text-gray-500 mb-2">
           <span>{t('cart.items')}</span>
@@ -73,22 +131,9 @@ export default function CartSummaryBox({ subtotal, shipping, total, checkoutDisa
       {checkoutNote && (
         <p className="text-xs text-red-600 mb-3">{checkoutNote}</p>
       )}
-      <button
-        className="w-full border border-gray-300 rounded-md py-2 font-semibold text-gray-800 mb-3 hover:bg-gray-100 transition"
-        onClick={() => router.push("/products")}
-      >
-        {t('cart.continueShopping')}
-      </button>
-      <button
-        className={`w-full text-white font-bold py-2 rounded-md transition ${checkoutDisabled ? 'bg-gray-400 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700'}`}
-        onClick={() => {
-          if (checkoutDisabled) return;
-          router.push("/checkout");
-        }}
-        disabled={checkoutDisabled}
-      >
-        {checkoutDisabled ? t('cart.checkoutUnavailable') : t('cart.checkout')}
-      </button>
+      <div className={hideMobileActions ? 'hidden lg:block' : ''}>
+        <CartSummaryActions checkoutDisabled={checkoutDisabled} />
+      </div>
     </div>
   );
 }

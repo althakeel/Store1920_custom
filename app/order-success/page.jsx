@@ -18,6 +18,7 @@ import {
 import Loading from '@/components/Loading';
 import { useAuth } from '@/lib/useAuth';
 import { trackPurchase } from '@/lib/tracking';
+import { getDisplayOrderNumber } from '@/lib/orderDisplay';
 
 export default function OrderSuccess() {
   return (
@@ -86,11 +87,7 @@ function OrderSuccessContent() {
 
   const order = orders && orders.length > 0 ? orders[0] : null;
   function getOrderNumber(orderObj) {
-    if (!orderObj) return '';
-    const short = orderObj.shortOrderNumber;
-    if (short != null && String(short).trim()) return String(short);
-    const id = String(orderObj._id || orderObj.id || '').trim();
-    return id ? id.slice(0, 8) : '';
+    return getDisplayOrderNumber(orderObj);
   }
   // Calculate totals
   const products = order ? order.orderItems : [];

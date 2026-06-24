@@ -24,6 +24,7 @@ const ProductSchema = new mongoose.Schema({
   category: { type: String, ref: 'Category' },
   categories: { type: [String], default: [] }, // Multiple categories support
   sku: String,
+  published: { type: Boolean, default: true },
   inStock: { type: Boolean, default: true },
   stockQuantity: { type: Number, default: 0 },
   stockUpdatedAt: { type: Date, default: null },
@@ -54,6 +55,7 @@ const ProductSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // Add indexes for better query performance
+ProductSchema.index({ published: 1, createdAt: -1 });
 ProductSchema.index({ inStock: 1, createdAt: -1 });
 ProductSchema.index({ storeId: 1, stockUpdatedAt: -1 });
 ProductSchema.index({ category: 1, inStock: 1 }); // For category filtering

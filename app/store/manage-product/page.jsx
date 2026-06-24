@@ -192,6 +192,21 @@ export default function StoreManageProducts() {
         return data.message
     }
 
+    const isProductOnline = (product) => product?.published !== false
+
+    const togglePublished = async (productId) => {
+        const token = await getToken()
+        const { data } = await axios.post('/api/store/product/publish-toggle', { productId }, {
+            headers: { Authorization: `Bearer ${token}` },
+        })
+        setProducts((prevProducts) => prevProducts.map((product) => (
+            product._id === productId
+                ? { ...product, published: data?.published ?? !isProductOnline(product) }
+                : product
+        )))
+        return data.message
+    }
+
     const handleEdit = async (product) => {
         try {
             const token = await getToken()
@@ -770,6 +785,7 @@ export default function StoreManageProducts() {
                         <th className="px-4 py-3">Price</th>
                         <th className="px-4 py-3 hidden sm:table-cell">Fast Delivery</th>
                             <th className="px-4 py-3 hidden sm:table-cell">Frequently</th>
+                        <th className="px-4 py-3 hidden sm:table-cell">Online</th>
                         <th className="px-4 py-3">Stock</th>
                         <th className="px-4 py-3">Actions</th>
                     </tr>
@@ -866,6 +882,27 @@ export default function StoreManageProducts() {
                             </td>
                             <td className="px-4 py-3 hidden sm:table-cell text-sm text-slate-700">
                                 {product.enableFBT ? 'Enabled' : 'Disabled'}
+                            </td>
+                            <td className="px-4 py-3 hidden sm:table-cell">
+                                <div className="flex flex-col gap-1">
+                                    <label className="relative inline-flex items-center cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            className="sr-only peer"
+                                            onChange={() => toast.promise(togglePublished(product._id), {
+                                                loading: 'Updating...',
+                                                success: (message) => message || 'Visibility updated',
+                                                error: (error) => error?.response?.data?.error || error?.message || 'Failed to update visibility',
+                                            })}
+                                            checked={isProductOnline(product)}
+                                        />
+                                        <div className="w-9 h-5 bg-slate-300 rounded-full peer peer-checked:bg-emerald-600 transition-colors duration-200"></div>
+                                        <span className="dot absolute left-1 top-1 w-3 h-3 bg-white rounded-full transition-transform duration-200 ease-in-out peer-checked:translate-x-4"></span>
+                                    </label>
+                                    <span className={`text-[11px] font-medium ${isProductOnline(product) ? 'text-emerald-700' : 'text-slate-500'}`}>
+                                        {isProductOnline(product) ? 'Online' : 'Offline'}
+                                    </span>
+                                </div>
                             </td>
                             <td className="px-4 py-3">
                                 <label className="relative inline-flex items-center cursor-pointer">

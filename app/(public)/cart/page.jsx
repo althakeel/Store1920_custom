@@ -4,12 +4,13 @@
 import { useDispatch, useSelector, useStore } from "react-redux";
 import { useEffect, useState } from "react";
 import axios from "axios";
-import Counter from "@/components/Counter";
-import CartSummaryBox from "@/components/CartSummaryBox";
+import CartLineItem from "@/components/CartLineItem";
+import CartSummaryBox, { CartSummaryActions } from "@/components/CartSummaryBox";
+import CartRemoveConfirm from "@/components/CartRemoveConfirm";
 import ProductCard from "@/components/ProductCard";
 import { deleteItemFromCart, fetchCart, uploadCart } from "@/lib/features/cart/cartSlice";
-import { PackageIcon, Trash2Icon } from "lucide-react";
-import Image from "next/image";
+import { decrementCartItem } from "@/lib/bundleCartActions";
+import { PackageIcon } from "lucide-react";
 import { useAuth } from "@/lib/useAuth";
 import { trackViewCart } from "@/lib/metaPixelTracking";
 import { pushGtmEcommerceEvent, toGtmItem } from "@/lib/pushGtmEcommerceEvent";
@@ -38,6 +39,7 @@ export default function Cart() {
     const [loadingOrders, setLoadingOrders] = useState(true);
     const shippingFee = 0;
     const [deletingKeys, setDeletingKeys] = useState({});
+    const [pendingRemove, setPendingRemove] = useState(null);
 
 
     // Load only cart product IDs via batch API (never download full catalog)
@@ -264,6 +266,45 @@ export default function Cart() {
     const outOfStockCartArray = cartArray.filter((item) => getMaxQty(item) === 0);
     const checkoutDisabled = inStockCartArray.length === 0;
 
+    const needsLastItemRemoveConfirm = (cartKey) => {
+        if (inStockCartArray.length !== 1) return false;
+        const onlyItem = inStockCartArray[0];
+        const key = String(onlyItem?._cartKey || onlyItem?._id || '');
+        if (key !== String(cartKey || '')) return false;
+        const qty = Number(onlyItem?.quantity || getCartEntryQuantity(cartItems?.[cartKey]) || 0);
+        return qty <= 1;
+    };
+
+    const handleRequestRemove = (cartKey) => {
+        if (needsLastItemRemoveConfirm(cartKey)) {
+            const item = inStockCartArray.find((entry) => String(entry._cartKey || entry._id) === String(cartKey));
+            setPendingRemove({
+                cartKey: String(cartKey),
+                productName: item?.name || 'this item',
+            });
+            return;
+        }
+        handleDeleteItemFromCart(cartKey);
+    };
+
+    const handleRequestDecrease = (cartKey, item) => {
+        if (needsLastItemRemoveConfirm(cartKey)) {
+            setPendingRemove({
+                cartKey: String(cartKey),
+                productName: item?.name || 'this item',
+            });
+            return;
+        }
+        const entry = cartItems?.[cartKey];
+        decrementCartItem(dispatch, { productId: cartKey, entry, product: item });
+    };
+
+    const handleConfirmRemove = () => {
+        if (!pendingRemove?.cartKey) return;
+        handleDeleteItemFromCart(pendingRemove.cartKey);
+        setPendingRemove(null);
+    };
+
     useEffect(() => {
         if (typeof window === 'undefined') return;
         if (!inStockCartArray.length) return;
@@ -298,146 +339,55 @@ export default function Cart() {
     }, [inStockCartArray, totalPrice]);
 
     return (
-        <div className="min-h-[40dvh]">
-            <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-6">
+        <div className="min-h-[40dvh] bg-slate-50/60 pb-28 lg:pb-0">
+            <div className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6">
                 {!productsLoaded ? (
-                    <div className="text-center py-16 text-gray-400">Loading cart…</div>
+                    <div className="py-16 text-center text-slate-400">Loading cart…</div>
                 ) : cartArray.length > 0 ? (
                     <>
                         <div className="mb-6">
-                            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Cart ({cartArray.length})</h1>
+                            <h1 className="text-2xl font-bold text-slate-900 md:text-3xl">Your cart</h1>
+                            <p className="mt-1 text-sm text-slate-500">
+                                {inStockCartArray.length} item{inStockCartArray.length === 1 ? '' : 's'} ready for checkout
+                                {outOfStockCartArray.length > 0
+                                    ? ` · ${outOfStockCartArray.length} out of stock`
+                                    : ''}
+                            </p>
                         </div>
 
                         <div className="flex gap-6 max-lg:flex-col" dir="ltr">
                             <div className="flex-1 space-y-4">
                                 {inStockCartArray.map((item, index) => (
-                                    <div key={item._cartKey || index} className="rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow" style={{ background: "inherit" }}>
-                                        {(() => {
-                                            const maxQty = getMaxQty(item);
-                                            return (
-                                        <div className="flex gap-4">
-                                            <div className="w-24 h-24 flex-shrink-0 bg-gray-100 rounded-lg overflow-hidden">
-                                                <Image
-                                                    src={item.images[0]}
-                                                    alt={item.name}
-                                                    width={96}
-                                                    height={96}
-                                                    className="w-full h-full object-contain p-2"
-                                                />
-                                            </div>
-
-                                            <div className="flex-1 min-w-0">
-                                                <h3 className="font-semibold text-gray-900 text-sm md:text-base line-clamp-2 mb-1">{item.name}</h3>
-                                                <p className="text-xs text-gray-500 mb-1">{item.category}</p>
-                                                {item._isFreeGift ? (
-                                                    <p className="text-xs font-semibold text-green-600 mb-2">Free gift{item._freeGiftTitle ? ` • ${item._freeGiftTitle}` : ''}</p>
-                                                ) : null}
-                                                <div className="flex items-center justify-between mt-3">
-                                                    <div>
-                                                        <p className="text-lg font-bold text-orange-600">{item._isFreeGift ? 'FREE' : `${currency} ${(item._cartPrice ?? item.price ?? 0).toLocaleString()}`}</p>
-                                                    </div>
-                                                    <div className="flex items-center gap-3">
-                                                        {item._isFreeGift ? (
-                                                            <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-semibold text-green-700">Qty 1 gift</span>
-                                                        ) : (
-                                                            <Counter productId={item._cartKey || item._id} maxQty={maxQty} product={item} />
-                                                        )}
-                                                    </div>
-                                                </div>
-
-                                                <div className="flex items-center justify-between mt-3 md:hidden">
-                                                    <p className="text-sm font-semibold text-gray-900">Total: {item._isFreeGift ? 'FREE' : `${currency}${(item._lineTotal ?? ((item._cartPrice ?? item.price ?? 0) * item.quantity)).toLocaleString()}`}</p>
-                                                    {!item._isFreeGift ? (
-                                                        <button
-                                                            onClick={() => handleDeleteItemFromCart(item._cartKey || item._id)}
-                                                            disabled={!!deletingKeys[item._cartKey]}
-                                                            type="button"
-                                                            className="text-red-500 hover:text-red-700 text-sm font-medium"
-                                                        >
-                                                            {deletingKeys[item._cartKey] ? 'REMOVING...' : 'REMOVE'}
-                                                        </button>
-                                                    ) : <span className="text-xs font-medium text-green-700">AUTO-ADDED</span>}
-                                                </div>
-                                            </div>
-
-                                            <div className="hidden md:flex flex-col items-end justify-between">
-                                                {!item._isFreeGift ? (
-                                                    <button
-                                                        onClick={() => handleDeleteItemFromCart(item._cartKey || item._id)}
-                                                        disabled={!!deletingKeys[item._cartKey]}
-                                                        type="button"
-                                                        className="text-gray-400 hover:text-red-500 transition-colors"
-                                                    >
-                                                        <Trash2Icon size={20} />
-                                                    </button>
-                                                ) : <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-semibold text-green-700">AUTO-ADDED</span>}
-                                                <p className="text-lg font-bold text-gray-900">{item._isFreeGift ? 'FREE' : `${currency}${(item._lineTotal ?? ((item._cartPrice ?? item.price ?? 0) * item.quantity)).toLocaleString()}`}</p>
-                                            </div>
-                                        </div>
-                                            );
-                                        })()}
-                                    </div>
+                                    <CartLineItem
+                                        key={item._cartKey || index}
+                                        item={item}
+                                        maxQty={getMaxQty(item)}
+                                        currency={currency}
+                                        onRemove={handleRequestRemove}
+                                        onDecrease={handleRequestDecrease}
+                                        isRemoving={!!deletingKeys[item._cartKey]}
+                                    />
                                 ))}
 
                                 {outOfStockCartArray.length > 0 && (
                                     <>
-                                        <div className="pt-2 mt-2 border-t border-gray-200">
-                                            <h2 className="text-lg md:text-xl font-bold text-red-600">Out of Stock Products</h2>
-                                            <p className="text-xs text-gray-500 mt-1">These items are kept in cart but excluded from checkout.</p>
+                                        <div className="border-t border-slate-200 pt-6 mt-2">
+                                            <h2 className="text-lg font-bold text-red-600 md:text-xl">Unavailable items</h2>
+                                            <p className="mt-1 text-xs text-slate-500">
+                                                Kept in your cart but excluded from checkout until back in stock.
+                                            </p>
                                         </div>
                                         {outOfStockCartArray.map((item, index) => (
-                                            <div key={`oos-${item._cartKey || index}`} className="rounded-lg p-4 shadow-sm border border-red-100 bg-red-50/40">
-                                                <div className="flex gap-4">
-                                                    <div className="w-24 h-24 flex-shrink-0 bg-white rounded-lg overflow-hidden">
-                                                        <Image
-                                                            src={item.images[0]}
-                                                            alt={item.name}
-                                                            width={96}
-                                                            height={96}
-                                                            className="w-full h-full object-contain p-2"
-                                                        />
-                                                    </div>
-
-                                                    <div className="flex-1 min-w-0">
-                                                        <h3 className="font-semibold text-gray-900 text-sm md:text-base line-clamp-2 mb-1">{item.name}</h3>
-                                                        <p className="text-xs text-gray-500 mb-1">{item.category}</p>
-                                                        <p className="text-xs font-semibold text-red-600 mb-2">Out of Stock</p>
-
-                                                        <div className="flex items-center justify-between mt-3">
-                                                            <div>
-                                                                <p className="text-lg font-bold text-orange-600">{currency} {(item._cartPrice ?? item.price ?? 0).toLocaleString()}</p>
-                                                            </div>
-                                                            <div className="flex items-center gap-3">
-                                                                <Counter productId={item._cartKey || item._id} maxQty={0} />
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="flex items-center justify-between mt-3 md:hidden">
-                                                            <p className="text-sm font-semibold text-gray-900">Total: {currency}{(item._lineTotal ?? ((item._cartPrice ?? item.price ?? 0) * item.quantity)).toLocaleString()}</p>
-                                                            <button
-                                                                onClick={() => handleDeleteItemFromCart(item._cartKey || item._id)}
-                                                                disabled={!!deletingKeys[item._cartKey]}
-                                                                type="button"
-                                                                className="text-red-500 hover:text-red-700 text-sm font-medium"
-                                                            >
-                                                                {deletingKeys[item._cartKey] ? 'REMOVING...' : 'REMOVE'}
-                                                            </button>
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="hidden md:flex flex-col items-end justify-between">
-                                                        <button
-                                                            onClick={() => handleDeleteItemFromCart(item._cartKey || item._id)}
-                                                            disabled={!!deletingKeys[item._cartKey]}
-                                                            type="button"
-                                                            className="text-gray-400 hover:text-red-500 transition-colors"
-                                                        >
-                                                            <Trash2Icon size={20} />
-                                                        </button>
-                                                        <p className="text-lg font-bold text-gray-900">{currency}{(item._lineTotal ?? ((item._cartPrice ?? item.price ?? 0) * item.quantity)).toLocaleString()}</p>
-                                                    </div>
-                                                </div>
-                                            </div>
+                                            <CartLineItem
+                                                key={`oos-${item._cartKey || index}`}
+                                                item={item}
+                                                maxQty={0}
+                                                currency={currency}
+                                                onRemove={handleRequestRemove}
+                                                onDecrease={handleRequestDecrease}
+                                                isRemoving={!!deletingKeys[item._cartKey]}
+                                                isOutOfStock
+                                            />
                                         ))}
                                     </>
                                 )}
@@ -452,14 +402,30 @@ export default function Cart() {
                                         showShipping={false}
                                         checkoutDisabled={checkoutDisabled}
                                         checkoutNote={outOfStockCartArray.length > 0 ? `${outOfStockCartArray.length} out-of-stock item(s) are excluded from checkout.` : ''}
+                                        hideMobileActions
                                     />
                                 </div>
                             </div>
                         </div>
+
+                        <div className="fixed bottom-16 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 px-4 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur supports-[backdrop-filter]:bg-white/90 lg:hidden">
+                            <CartSummaryActions
+                                checkoutDisabled={checkoutDisabled}
+                                layout="row"
+                            />
+                        </div>
+
+                        <CartRemoveConfirm
+                            open={Boolean(pendingRemove)}
+                            productName={pendingRemove?.productName}
+                            isRemoving={pendingRemove ? !!deletingKeys[pendingRemove.cartKey] : false}
+                            onCancel={() => setPendingRemove(null)}
+                            onConfirm={handleConfirmRemove}
+                        />
                     </>
                 ) : (
-                    <div className="flex flex-col justify-center items-center py-20">
-                        <div className="bg-white shadow-lg rounded-lg p-8 text-center max-w-md">
+                    <div className="flex flex-col items-center justify-center py-20">
+                        <div className="max-w-md rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
                             <div className="w-14 h-14 rounded-full bg-orange-50 text-orange-500 flex items-center justify-center mx-auto mb-4">
                                 <PackageIcon className="w-8 h-8" />
                             </div>

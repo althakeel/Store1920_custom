@@ -1,4 +1,5 @@
 'use client'
+import { Minus, Plus, Trash2 } from 'lucide-react';
 import { useDispatch, useSelector } from "react-redux";
 import {
   adjustBundleCartTier,
@@ -8,7 +9,7 @@ import {
 } from '@/lib/bulkBundleCart';
 import { decrementCartItem, incrementCartItem } from '@/lib/bundleCartActions';
 
-const Counter = ({ productId, maxQty, product }) => {
+const Counter = ({ productId, maxQty, product, variant = 'default', onDecrease }) => {
 
     const { cartItems } = useSelector(state => state.cart);
 
@@ -25,6 +26,7 @@ const Counter = ({ productId, maxQty, product }) => {
     const canIncrement = isBundle
       ? Boolean(adjustBundleCartTier(entry, product, 'up'))
       : (normalizedMaxQty === null ? true : quantity < normalizedMaxQty);
+    const showTrashOnDecrease = !isBundle && quantity <= 1;
 
     const addToCartHandler = () => {
         incrementCartItem(dispatch, {
@@ -37,14 +39,46 @@ const Counter = ({ productId, maxQty, product }) => {
     }
 
     const removeFromCartHandler = () => {
+        if (typeof onDecrease === 'function') {
+            onDecrease();
+            return;
+        }
         decrementCartItem(dispatch, { productId, entry, product });
     }
 
+    if (variant === 'cart') {
+        return (
+            <div className="inline-flex h-10 shrink-0 items-stretch overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                <button
+                    type="button"
+                    onClick={removeFromCartHandler}
+                    className="inline-flex w-10 items-center justify-center text-slate-600 transition hover:bg-slate-50"
+                    aria-label={showTrashOnDecrease ? 'Remove from cart' : 'Decrease quantity'}
+                >
+                    {showTrashOnDecrease ? <Trash2 size={15} className="text-red-500" /> : <Minus size={15} />}
+                </button>
+                <span className="flex min-w-[2.5rem] items-center justify-center border-x border-slate-200 bg-slate-50 px-2 text-sm font-semibold tabular-nums text-slate-900">
+                    {displayQuantity}
+                </span>
+                <button
+                    type="button"
+                    onClick={addToCartHandler}
+                    disabled={!canIncrement}
+                    className="inline-flex w-10 items-center justify-center text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    aria-label="Increase quantity"
+                >
+                    <Plus size={15} />
+                </button>
+            </div>
+        );
+    }
+
     return (
-        <div className="inline-flex items-center gap-1 sm:gap-3 px-3 py-1 rounded border border-slate-200 max-sm:text-sm text-slate-600">
-            <button onClick={removeFromCartHandler} className="p-1 select-none">-</button>
-            <p className="p-1">{displayQuantity}</p>
+        <div className="inline-flex shrink-0 items-center gap-1 rounded border border-slate-200 px-3 py-1 max-sm:text-sm text-slate-600">
+            <button type="button" onClick={removeFromCartHandler} className="p-1 select-none">-</button>
+            <p className="min-w-[1.75rem] p-1 text-center tabular-nums">{displayQuantity}</p>
             <button
+                type="button"
                 onClick={addToCartHandler}
                 disabled={!canIncrement}
                 className={`p-1 select-none ${!canIncrement ? 'opacity-40 cursor-not-allowed' : ''}`}

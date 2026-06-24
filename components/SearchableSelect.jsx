@@ -7,6 +7,7 @@ const fieldClassName =
   'w-full rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-left text-slate-900 outline-none transition focus:border-[#f59e0b] focus:bg-white focus:ring-4 focus:ring-[#fde7c2]';
 
 export default function SearchableSelect({
+  id,
   value = '',
   onChange,
   options = [],
@@ -14,6 +15,7 @@ export default function SearchableSelect({
   searchPlaceholder = 'Search...',
   required = false,
   disabled = false,
+  hasError = false,
   className = '',
   triggerClassName = '',
   emptyMessage = 'No matches found',
@@ -69,22 +71,24 @@ export default function SearchableSelect({
     setQuery('');
   };
 
+  const errorClass = hasError ? 'border-red-400 ring-4 ring-red-100' : '';
   const openStateClass = triggerClassName
     ? (open ? 'border-gray-400 bg-white' : '')
     : (open ? 'border-[#f59e0b] bg-white ring-4 ring-[#fde7c2]' : '');
 
   return (
-    <div ref={rootRef} className={`relative ${className}`.trim()}>
+    <div ref={rootRef} id={id} className={`relative ${className}`.trim()}>
       <button
         type="button"
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={listId}
+        aria-invalid={hasError || undefined}
         onClick={() => {
           if (!disabled) setOpen((prev) => !prev);
         }}
-        className={`${triggerClassName || fieldClassName} flex items-center justify-between gap-3 disabled:cursor-not-allowed disabled:opacity-60 ${openStateClass}`}
+        className={`${triggerClassName || fieldClassName} flex items-center justify-between gap-3 disabled:cursor-not-allowed disabled:opacity-60 ${errorClass} ${openStateClass}`}
       >
         <span className={value ? 'truncate' : 'truncate text-slate-400'}>
           {value || placeholder}

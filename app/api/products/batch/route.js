@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { localizeRecord, resolveStorefrontLanguage } from "@/lib/storefrontLanguage";
 import { getProductThumbnailUrl } from "@/lib/productMedia";
 import { PLACEHOLDER_IMAGE } from "@/lib/mediaUrls";
+import { isProductPublished } from '@/lib/productVisibility';
 
 function hasDisplayableImage(product) {
   const thumbnail = getProductThumbnailUrl(product, { fallback: PLACEHOLDER_IMAGE });
@@ -33,14 +34,14 @@ export async function POST(req) {
         }
 
         const products = await Product.find({ _id: { $in: validProductIds } })
-            .select('name nameAr slug price mrp AED images externalImages category categories inStock fastDelivery freeShippingEligible useProductsPath imageAspectRatio shortDescription shortDescriptionAr sku hasVariants variants allowReturn allowReplacement createdAt')
+            .select('name nameAr slug price mrp AED images externalImages brand brandAr category categories inStock fastDelivery freeShippingEligible useProductsPath imageAspectRatio shortDescription shortDescriptionAr shortDescription2 sku hasVariants variants allowReturn allowReplacement createdAt')
             .lean();
 
         const productMap = new Map(products.map((product) => [String(product._id), product]));
         const orderedProducts = validProductIds
             .map((id) => productMap.get(id))
-            .filter((product) => product && product.name && product.slug && hasDisplayableImage(product))
-            .map((product) => localizeRecord(product, language, ['name', 'shortDescription']))
+            .filter((product) => product && isProductPublished(product) && product.name && product.slug && hasDisplayableImage(product))
+            .map((product) => localizeRecord(product, language, ['name', 'shortDescription', 'brand']))
             .filter(Boolean);
 
         return NextResponse.json({ products: orderedProducts }, {

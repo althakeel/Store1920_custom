@@ -35,6 +35,8 @@ export default function ProductBulkImportPanel({
   const importControlRef = useRef({ cancelled: false, abortController: null })
   const pollIntervalRef = useRef(null)
   const completedJobNotifiedRef = useRef(null)
+  const pollInFlightRef = useRef(false)
+  const tickInFlightRef = useRef(false)
 
   const resetImportSession = () => {
     importControlRef.current = { cancelled: false, abortController: null }
@@ -84,13 +86,22 @@ export default function ProductBulkImportPanel({
   }
 
   const runBackgroundJobTick = async () => {
-    const token = await getToken()
-    if (!token) return null
-    const { data } = await axios.post('/api/store/product/remirror-images/job/tick', {}, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    setBackgroundJob(data?.job || null)
-    return data
+    if (tickInFlightRef.current) return null
+    tickInFlightRef.current = true
+    try {
+      const token = await getToken()
+      if (!token) return null
+      const { data } = await axios.post('/api/store/product/remirror-images/job/tick', {}, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      setBackgroundJob(data?.job || null)
+      return data
+    } catch (error) {
+      console.error('Background image job tick failed:', error)
+      return null
+    } finally {
+      tickInFlightRef.current = false
+    }
   }
 
   const startBackgroundImageMigration = async ({ silent = false } = {}) => {
@@ -152,26 +163,32 @@ export default function ProductBulkImportPanel({
     }
 
     const poll = async () => {
-      const status = await refreshBackgroundJob()
-      if (status?.active && !status?.job?.usesServerWorker) {
-        await runBackgroundJobTick()
-      }
-      if (status?.job && ['completed', 'failed', 'cancelled'].includes(status.job.status)) {
-        if (completedJobNotifiedRef.current !== status.job.id) {
-          completedJobNotifiedRef.current = status.job.id
-          await fetchImageMirrorStats()
-          await onImportComplete?.()
-          if (status.job.status === 'completed') {
-            toast.success(status.job.message || 'Background S3 transfer completed')
-          } else if (status.job.status === 'failed') {
-            toast.error(status.job.error || status.job.message || 'Background S3 transfer failed')
+      if (pollInFlightRef.current) return
+      pollInFlightRef.current = true
+      try {
+        const status = await refreshBackgroundJob()
+        if (status?.active && !status?.job?.usesServerWorker) {
+          await runBackgroundJobTick()
+        }
+        if (status?.job && ['completed', 'failed', 'cancelled'].includes(status.job.status)) {
+          if (completedJobNotifiedRef.current !== status.job.id) {
+            completedJobNotifiedRef.current = status.job.id
+            await fetchImageMirrorStats()
+            await onImportComplete?.()
+            if (status.job.status === 'completed') {
+              toast.success(status.job.message || 'Background S3 transfer completed')
+            } else if (status.job.status === 'failed') {
+              toast.error(status.job.error || status.job.message || 'Background S3 transfer failed')
+            }
           }
         }
+      } finally {
+        pollInFlightRef.current = false
       }
     }
 
     poll()
-    pollIntervalRef.current = setInterval(poll, 2500)
+    pollIntervalRef.current = setInterval(poll, 5000)
 
     return () => {
       if (pollIntervalRef.current) {

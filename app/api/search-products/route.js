@@ -15,8 +15,14 @@ export async function GET(request) {
     const category = searchParams.get('category') || '';
     const excludeId = searchParams.get('excludeId') || '';
     const includeOutOfStock = searchParams.get('includeOutOfStock') === 'true';
+    const fetchAll = searchParams.get('all') === 'true';
     const limitParam = Number(searchParams.get('limit') || '24');
-    const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 100) : 24;
+    const limit = fetchAll
+        ? null
+        : (Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 500) : 24);
+    const pageParam = Number.parseInt(searchParams.get('page') || '1', 10);
+    const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
+    const offset = fetchAll ? 0 : (page - 1) * (limit || 0);
 
     await dbConnect();
 
@@ -33,17 +39,27 @@ export async function GET(request) {
         categoryQuery._id = { $ne: excludeId };
       }
 
-      const products = await Product.find(categoryQuery)
+      const total = await Product.countDocuments(categoryQuery);
+      let query = Product.find(categoryQuery)
         .select(PRODUCT_SEARCH_SELECT_FIELDS)
         .sort({ inStock: -1, createdAt: -1 })
-        .limit(limit)
-        .lean();
+        .skip(offset);
+
+      if (limit != null) {
+        query = query.limit(limit);
+      }
+
+      const products = await query.lean();
 
       return NextResponse.json({
         keyword: '',
         products: products.map(mapSearchProduct),
         resultCount: products.length,
-        message: products.length === 0 ? 'No products found' : `Found ${products.length} product${products.length !== 1 ? 's' : ''}`,
+        total,
+        page,
+        limit,
+        totalPages: fetchAll ? 1 : Math.max(1, Math.ceil(total / (limit || total || 1))),
+        message: total === 0 ? 'No products found' : `Found ${total} product${total !== 1 ? 's' : ''}`,
       });
     }
 
@@ -56,32 +72,44 @@ export async function GET(request) {
     }
 
     const searchFilter = buildProductSearchFilter(keyword, { includeOutOfStock });
-    let products = await Product.find(searchFilter)
+    const total = await Product.countDocuments(searchFilter);
+
+    let productsQuery = Product.find(searchFilter)
       .select(PRODUCT_SEARCH_SELECT_FIELDS)
       .sort({ inStock: -1, createdAt: -1 })
-      .limit(limit)
-      .lean();
+      .skip(offset);
+
+    if (limit != null) {
+      productsQuery = productsQuery.limit(limit);
+    }
+
+    let products = await productsQuery.lean();
 
     // Supplement with MongoDB text search for multi-word queries when regex returns few hits.
-    if (products.length < limit) {
+    const resultCap = limit ?? total;
+    if (products.length < resultCap && page === 1) {
       const existingIds = new Set(products.map((product) => String(product._id)));
       const textFilter = includeOutOfStock
         ? { $text: { $search: keyword } }
         : { $text: { $search: keyword }, inStock: true };
 
       try {
-        const textMatches = await Product.find(textFilter, { score: { $meta: 'textScore' } })
+        const textQuery = Product.find(textFilter, { score: { $meta: 'textScore' } })
           .select(PRODUCT_SEARCH_SELECT_FIELDS)
-          .sort({ score: { $meta: 'textScore' }, inStock: -1 })
-          .limit(limit)
-          .lean();
+          .sort({ score: { $meta: 'textScore' }, inStock: -1 });
+
+        if (limit != null) {
+          textQuery.limit(limit);
+        }
+
+        const textMatches = await textQuery.lean();
 
         for (const product of textMatches) {
           const id = String(product._id);
           if (existingIds.has(id)) continue;
           products.push(product);
           existingIds.add(id);
-          if (products.length >= limit) break;
+          if (limit != null && products.length >= limit) break;
         }
       } catch {
         // Text index may be unavailable in some environments; regex results are enough.
@@ -92,7 +120,11 @@ export async function GET(request) {
       keyword,
       products: products.map(mapSearchProduct),
       resultCount: products.length,
-      message: products.length === 0 ? 'No products found' : `Found ${products.length} product${products.length !== 1 ? 's' : ''}`,
+      total,
+      page,
+      limit,
+      totalPages: fetchAll ? 1 : Math.max(1, Math.ceil(total / (limit || total || 1))),
+      message: total === 0 ? 'No products found' : `Found ${total} product${total !== 1 ? 's' : ''}`,
     });
   } catch (error) {
     console.error('Search products error:', error);

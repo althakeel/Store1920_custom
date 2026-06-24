@@ -906,6 +906,7 @@ export async function POST(request) {
           },
           stockQuantity: resolvedStockQuantity,
           inStock: resolvedInStock,
+          published,
           hasVariants: variants.length > 0,
           variants,
           attributes: compactObject({

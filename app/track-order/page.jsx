@@ -7,6 +7,7 @@ import TrackingTimeline from "@/components/TrackingTimeline";
 import AnimatedProgressTracker from "@/components/AnimatedProgressTracker";
 import styles from "./tracking.module.css";
 import { CheckCircle2, Clock3, PackageSearch, RefreshCw, SearchCheck } from "lucide-react";
+import { getDisplayOrderNumber, getDisplayOrderLabel } from "@/lib/orderDisplay";
 
 function buildTrackingParams(phoneNumber, awbNumber) {
   const params = new URLSearchParams();
@@ -241,7 +242,7 @@ function TrackOrderPageInner() {
                   placeholder="Enter AWB, reference number, booking number, or order no"
                   className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
-                <p className="text-xs text-slate-500 mt-1">You can use your C3X AWB, shipper reference number, booking number, full Order ID, short Order No, mobile number, or email.</p>
+                <p className="text-xs text-slate-500 mt-1">You can use your C3X AWB, shipper reference number, booking number, Order No, mobile number, or email.</p>
               </div>
               <button
                 type="submit"
@@ -290,7 +291,7 @@ function TrackOrderPageInner() {
                         key={entry._id}
                         type="button"
                         onClick={async () => {
-                          const nextReference = String(entry.shortOrderNumber || entry._id)
+                          const nextReference = getDisplayOrderNumber(entry) || String(entry.shortOrderNumber || '')
                           setAwbNumber(nextReference)
                           setPhoneNumber('')
                           setLoading(true)
@@ -304,7 +305,7 @@ function TrackOrderPageInner() {
                         }}
                         className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm text-blue-800 hover:bg-blue-100"
                       >
-                        Order {entry.shortOrderNumber || String(entry._id).slice(-8).toUpperCase()}
+                        Order {getDisplayOrderNumber(entry) || 'Pending'}
                       </button>
                     ))}
                   </div>
@@ -322,7 +323,9 @@ function TrackOrderPageInner() {
                   <div>
                     <p className="text-xs font-bold uppercase tracking-wider text-blue-600">Current Status</p>
                     <h2 className="mt-1 text-xl font-semibold text-slate-900">
-                      {order.trackingId ? `Tracking ID: ${order.trackingId}` : `Order ID: ${order._id || order.id || 'Pending'}`}
+                      {order.trackingId
+                        ? `Tracking ID: ${order.trackingId}`
+                        : getDisplayOrderLabel(order)}
                     </h2>
                     {order.createdAt && !Number.isNaN(new Date(order.createdAt).getTime()) && (
                       <p className="mt-1 text-sm text-slate-600">Placed on {new Date(order.createdAt).toLocaleDateString()}</p>
@@ -518,7 +521,7 @@ function TrackOrderPageInner() {
                   <div>
                     <h3 className="text-sm font-semibold text-slate-900">What you can enter</h3>
                     <p className="mt-1 text-sm leading-6 text-slate-600">
-                      Mobile number, email, C3X AWB, reference number, booking number, full Order ID, or short Order No.
+                      Mobile number, email, C3X AWB, reference number, booking number, or Order No.
                     </p>
                   </div>
                 </div>

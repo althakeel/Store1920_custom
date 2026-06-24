@@ -24,6 +24,7 @@ const ProductImageMigrationJobSchema = new mongoose.Schema({
   },
   message: { type: String, default: '' },
   error: { type: String, default: null },
+  tickLeaseUntil: { type: Date, default: null },
   startedAt: { type: Date, default: Date.now },
   completedAt: { type: Date, default: null },
   updatedAt: { type: Date, default: Date.now },

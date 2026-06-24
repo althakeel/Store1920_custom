@@ -11,6 +11,7 @@ import DashboardSidebar from '@/components/DashboardSidebar'
 import { downloadInvoice } from '@/lib/generateInvoice'
 import DeliveryReviewModal from '@/components/DeliveryReviewModal'
 import { GUEST_ORDERS_LINKED_EVENT, linkGuestOrdersForCurrentUser } from '@/lib/linkGuestOrdersClient'
+import { getDisplayOrderNumber } from '@/lib/orderDisplay'
 
 export default function DashboardOrdersPage() {
   const [user, setUser] = useState(undefined)
@@ -158,7 +159,7 @@ export default function DashboardOrdersPage() {
 
       const token = await auth.currentUser.getIdToken(true)
       const itemName = item?.name || item?.productId?.name || 'Order item'
-      const orderNo = order?.shortOrderNumber || String(orderId).slice(0, 8).toUpperCase()
+      const orderNo = getDisplayOrderNumber(order) || 'Pending'
 
       const { data } = await axios.post('/api/tickets', {
         subject: `Order Support - #${orderNo}`,
@@ -622,17 +623,22 @@ export default function DashboardOrdersPage() {
                       <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
                         <div className="flex flex-wrap items-center gap-4">
                           <div>
-                            <p className="text-xs text-slate-500">Order #</p>
+                            <p className="text-xs text-slate-500">Order No</p>
                             <div className="flex items-center gap-2">
-                              <p className="font-semibold text-slate-800">{order.shortOrderNumber || orderId.substring(0, 8).toUpperCase()}</p>
+                              <p className="font-semibold text-slate-800">{getDisplayOrderNumber(order) || 'Pending'}</p>
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                  navigator.clipboard.writeText(orderId)
-                                  toast.success('Order ID copied!')
+                                  const orderNo = getDisplayOrderNumber(order)
+                                  if (!orderNo) {
+                                    toast.error('Order number not available yet')
+                                    return
+                                  }
+                                  navigator.clipboard.writeText(orderNo)
+                                  toast.success('Order number copied!')
                                 }}
                                 className="p-1 hover:bg-slate-100 rounded transition"
-                                title="Copy full order ID"
+                                title="Copy order number"
                               >
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                   <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
@@ -1439,7 +1445,7 @@ export default function DashboardOrdersPage() {
                 </div>
 
                 <div className="mb-4 text-sm text-slate-600">
-                  You are cancelling order <span className="font-semibold text-slate-800">#{cancelOrderTarget.shortOrderNumber || (cancelOrderTarget._id || cancelOrderTarget.id || '').toString().slice(0, 8).toUpperCase()}</span>.
+                  You are cancelling order <span className="font-semibold text-slate-800">#{getDisplayOrderNumber(cancelOrderTarget) || 'Pending'}</span>.
                 </div>
 
                 <div className="mb-5">

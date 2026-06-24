@@ -5,6 +5,7 @@ import Product from "@/models/Product";
 import Coupon from "@/models/Coupon";
 import Order from "@/models/Order";
 import { getExpectedTAT, checkPincodeServiceability, fetchNormalizedDelhiveryTracking } from "@/lib/delhivery";
+import { getDisplayOrderNumber } from "@/lib/orderDisplay";
 
 // Validate API key exists
 if (!process.env.GEMINI_API_KEY) {
@@ -218,7 +219,7 @@ export async function POST(request) {
             const order = lookup.order;
             const itemsCount = Array.isArray(order?.orderItems) ? order.orderItems.length : 0;
             return `Order found.
-- Order ID: ${order?._id || 'N/A'}
+- Order No: ${getDisplayOrderNumber(order) || 'N/A'}
 - Short Order Number: ${order?.shortOrderNumber || 'N/A'}
 - Status: ${order?.status || 'N/A'}
 - Payment: ${order?.paymentMethod || 'N/A'} | Paid: ${order?.isPaid ? 'Yes' : 'No'}
@@ -294,7 +295,7 @@ export async function POST(request) {
 
         if (isOrderQuery && !hasTrackingInputs) {
             return NextResponse.json({
-                message: `Absolutely — I can track it for you 🚚\n\nPlease fill the input with any ONE detail:\n• Order ID\n• Tracking ID / AWB\n• Registered Email\n• Registered Phone Number\n\nExample: Track my order | Email: yourname@gmail.com`,
+                message: `Absolutely — I can track it for you 🚚\n\nPlease fill the input with any ONE detail:\n• Order No\n• Tracking ID / AWB\n• Registered Email\n• Registered Phone Number\n\nExample: Track my order | Email: yourname@gmail.com`,
                 timestamp: new Date().toISOString(),
                 requiresTrackingInput: true
             });
@@ -491,7 +492,7 @@ export async function POST(request) {
 **ORDER TRACKING RULES (VERY IMPORTANT):**
 - If customer asks about order tracking/status, use the "LIVE ORDER LOOKUP" section first.
 - If live lookup has an order, provide exact order status, payment status, tracking ID, and next step.
-- Accept tracking using any of: Order ID, short order number, tracking ID, registered phone number, or email.
+- Accept tracking using any of: Order No, tracking ID, registered phone number, or email.
 - If user asks tracking but hasn't provided valid details, ask them to fill input with email / phone / order ID / tracking ID.
 - If phone/email returns multiple possible matches, prefer the latest order and ask customer to share order ID for exact verification.
 - If contact verification fails for provided email/phone, ask customer to re-check contact details.
@@ -721,7 +722,7 @@ IMPORTANT: Use ALL this information to answer customer questions accurately. If 
                         const o = liveOrderLookup.order;
                         const itemsCount = Array.isArray(o.orderItems) ? o.orderItems.length : 0;
                         return NextResponse.json({
-                            message: `I found your order.\n\nOrder ID: ${o._id}\nStatus: ${o.status || 'N/A'}\nPayment: ${o.paymentMethod || 'N/A'} (${o.isPaid ? 'Paid' : 'Pending'})\nTracking ID: ${o.trackingId || 'Not assigned yet'}\nCourier: ${o.courier || 'N/A'}\nItems: ${itemsCount}\nTotal: AED${Number(o.total || 0)}\nMatched by: ${liveOrderLookup.matchedBy || 'N/A'}\n\n${liveOrderLookup.liveTrackingNote || 'I can also help you with return/cancellation for this order.'}`,
+                            message: `I found your order.\n\nOrder No: ${getDisplayOrderNumber(o) || 'Pending'}\nStatus: ${o.status || 'N/A'}\nPayment: ${o.paymentMethod || 'N/A'} (${o.isPaid ? 'Paid' : 'Pending'})\nTracking ID: ${o.trackingId || 'Not assigned yet'}\nCourier: ${o.courier || 'N/A'}\nItems: ${itemsCount}\nTotal: AED${Number(o.total || 0)}\nMatched by: ${liveOrderLookup.matchedBy || 'N/A'}\n\n${liveOrderLookup.liveTrackingNote || 'I can also help you with return/cancellation for this order.'}`,
                             timestamp: new Date().toISOString(),
                             isFallback: true
                         });
@@ -729,7 +730,7 @@ IMPORTANT: Use ALL this information to answer customer questions accurately. If 
 
                     if (liveOrderLookup?.contactMismatch) {
                         return NextResponse.json({
-                            message: "I found an order, but the provided email/phone doesn't match that order. Please re-check your contact details or share the exact Order ID.",
+                            message: "I found an order, but the provided email/phone doesn't match that order. Please re-check your contact details or share your Order No.",
                             timestamp: new Date().toISOString(),
                             isFallback: true
                         });
@@ -737,14 +738,14 @@ IMPORTANT: Use ALL this information to answer customer questions accurately. If 
 
                     if (!liveOrderLookup?.identifier && !liveOrderLookup?.email && !liveOrderLookup?.phone) {
                         return NextResponse.json({
-                            message: "Sure — I can track your order. Please share any one of these: Order ID, short order number, Tracking ID (AWB), registered phone number, or email.",
+                            message: "Sure — I can track your order. Please share any one of these: Order No, Tracking ID (AWB), registered phone number, or email.",
                             timestamp: new Date().toISOString(),
                             isFallback: true
                         });
                     }
 
                     return NextResponse.json({
-                        message: `I couldn't find an order with the details provided${liveOrderLookup.identifier ? ` (ID: \"${liveOrderLookup.identifier}\")` : ''}. Please re-check Order ID / Tracking ID / phone / email and send again.`,
+                        message: `I couldn't find an order with the details provided${liveOrderLookup.identifier ? ` (reference: \"${liveOrderLookup.identifier}\")` : ''}. Please re-check your Order No / Tracking ID / phone / email and send again.`,
                         timestamp: new Date().toISOString(),
                         isFallback: true
                     });

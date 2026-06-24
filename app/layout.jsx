@@ -2,14 +2,13 @@ import "./globals.css";
 import Script from "next/script";
 import React from "react";
 import { cookies, headers } from "next/headers";
-import { GoogleTagManager } from "@next/third-parties/google";
 import ClientLayout from "./ClientLayout";
 import StorefrontLanguageInitScript from "@/components/StorefrontLanguageInitScript";
 import {
   STOREFRONT_LANGUAGE_COOKIE,
   detectLanguageFromAcceptLanguage,
 } from "@/lib/storefrontLanguage";
-import { GTM_ID, getGtmNoscriptSrc } from "@/lib/gtm";
+import { GTM_ID, getGtmHeadScript, getGtmNoscriptSrc } from "@/lib/gtm";
 import { META_PIXEL_ID, getMetaPixelBootstrapScript } from "@/lib/metaPixelConfig";
 
 export const metadata = {
@@ -56,7 +55,6 @@ export default async function RootLayout({ children }) {
       dir={isArabic ? 'rtl' : 'ltr'}
       suppressHydrationWarning
     >
-      <GoogleTagManager gtmId={GTM_ID} />
       <head>
         {/* S3 media preconnect */}
         {s3Origin && (
@@ -75,6 +73,13 @@ export default async function RootLayout({ children }) {
         <link rel="preconnect" href="https://www.googletagmanager.com" crossOrigin="anonymous" />
       </head>
       <body className="overflow-x-clip antialiased" suppressHydrationWarning>
+        <Script
+          id="google-tag-manager"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{
+            __html: getGtmHeadScript(GTM_ID),
+          }}
+        />
         {/* Google Tag Manager (noscript) */}
         <noscript>
           <iframe

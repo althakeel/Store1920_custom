@@ -40,6 +40,7 @@ export async function POST(request) {
 
     return NextResponse.json({
       done: result.done,
+      busy: Boolean(result.busy),
       job: serializeImageMigrationJob(result.job),
     })
   } catch (error) {

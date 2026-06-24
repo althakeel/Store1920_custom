@@ -17,6 +17,7 @@ import FreeGiftCampaign from '@/models/FreeGiftCampaign';
 import { sendOrderConfirmationEmail, sendGuestAccountCreationEmail } from '@/lib/email';
 import { sendOrderCreatedWhatsApp } from '@/lib/whatsapp/orderNotifications';
 import { allocateShortOrderNumber } from '@/lib/orderNumber';
+import { ensurePersistedShortOrderNumber, ensurePersistedShortOrderNumbers } from '@/lib/orderDisplayServer';
 import { fetchNormalizedDelhiveryTracking } from '@/lib/delhivery';
 import { createTamaraSession } from '@/lib/tamara';
 import { createTabbySession } from '@/lib/tabby';
@@ -1113,11 +1114,7 @@ export async function GET(request) {
                     }
                 }
                 
-                // Ensure shortOrderNumber exists (for old orders without it)
-                if (!order.shortOrderNumber) {
-                    const hex = order._id.toString().slice(-6);
-                    order.shortOrderNumber = parseInt(hex, 16);
-                }
+                order = await ensurePersistedShortOrderNumber(order);
                 
                 console.log('GET /api/orders: Order found, isGuest:', order.isGuest);
                 return NextResponse.json({ order });
@@ -1179,12 +1176,7 @@ export async function GET(request) {
         .lean();
 
         // Ensure all orders have shortOrderNumber calculated
-        const enrichedOrders = orders.map(order => {
-            if (!order.shortOrderNumber) {
-                const hex = order._id.toString().slice(-6);
-                order.shortOrderNumber = parseInt(hex, 16);
-            }
-
+        const enrichedOrders = await ensurePersistedShortOrderNumbers(orders.map((order) => {
             const paymentMethod = String(order?.paymentMethod || '').toUpperCase();
             const status = String(order?.status || '').toUpperCase();
             const paymentStatus = String(order?.paymentStatus || '').toUpperCase();
@@ -1201,7 +1193,7 @@ export async function GET(request) {
             }
 
             return order;
-        });
+        }));
 
         return NextResponse.json({ orders: enrichedOrders });
     } catch (error) {

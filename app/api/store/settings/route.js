@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import NavbarMenuSettings from '@/models/NavbarMenuSettings';
 import { getAuth } from '@/lib/firebase-admin';
+import { deleteCacheKey } from '@/lib/cache';
 
 const DEFAULT_SETTINGS = {
   navMenuEnabled: true,
@@ -264,6 +265,8 @@ export async function PUT(request) {
         [userId]: next,
       },
     };
+
+    deleteCacheKey('server:homepage:v3');
 
     return NextResponse.json({ success: true, ...next }, { status: 200 });
   } catch (error) {

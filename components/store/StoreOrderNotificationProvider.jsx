@@ -26,6 +26,7 @@ import {
   STORE_ORDERS_IMPORT_END_EVENT,
   STORE_ORDERS_IMPORT_START_EVENT,
 } from '@/lib/storeOrderNotifications';
+import { getDisplayOrderNumber } from '@/lib/orderDisplay';
 
 const ALERT_SOUND_SRC = '/sound/alert.mp3';
 const BATCH_TOAST_THRESHOLD = 2;
@@ -66,9 +67,10 @@ export function useStoreOrderNotifications() {
 }
 
 function formatOrderLabel(order) {
-  const orderNumber = order.shortOrderNumber ? `#${order.shortOrderNumber}` : `#${String(order.orderId || '').slice(-6)}`;
+  const orderNumber = getDisplayOrderNumber(order);
+  const label = orderNumber ? `#${orderNumber}` : '#Pending';
   const total = Number(order.total || 0).toLocaleString();
-  return `${orderNumber} · AED ${total}`;
+  return `${label} · AED ${total}`;
 }
 
 function OrderToastShell({ toastInstance, title, children, onDismissAll = false }) {

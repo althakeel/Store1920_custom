@@ -10,6 +10,7 @@ import Link from "next/link";
 import axios from "axios";
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
 import { getProductThumbnailUrl } from '@/lib/productMedia';
+import { getDisplayOrderNumber } from '@/lib/orderDisplay';
 
 const OrderItem = ({ order: initialOrder }) => {
 
@@ -100,8 +101,8 @@ const OrderItem = ({ order: initialOrder }) => {
                 <div className="p-6 border-b border-slate-200 bg-slate-50">
                     <div className="flex items-center justify-between flex-wrap gap-4">
                         <div>
-                            <p className="text-sm text-slate-500">Order ID</p>
-                            <p className="font-semibold text-slate-800">{order.id || order._id}</p>
+                            <p className="text-sm text-slate-500">Order No</p>
+                            <p className="font-semibold text-slate-800">{getDisplayOrderNumber(order) || 'Pending'}</p>
                         </div>
                         <div>
                             <p className="text-sm text-slate-500">Date</p>

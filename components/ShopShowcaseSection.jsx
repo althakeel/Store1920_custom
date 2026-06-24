@@ -186,14 +186,18 @@ export default function ShopShowcaseSection({
   skipInitialFetch = false,
 }) {
   const hasInitialData = Boolean(initialShowcaseData);
+  const useParentCategoriesInitially = Boolean(initialStoreSettings?.navMenuUseParentCategories);
   const [loading, setLoading] = useState(!hasInitialData && !skipInitialFetch);
   const [data, setData] = useState(initialShowcaseData || { config: null, sectionProducts: [], products: [], categories: [] });
-  const [storeMenuItems, setStoreMenuItems] = useState(
-    Array.isArray(initialStoreSettings?.navMenuItems) ? initialStoreSettings.navMenuItems : []
-  );
-  const [navMenuUseParentCategories, setNavMenuUseParentCategories] = useState(
-    Boolean(initialStoreSettings?.navMenuUseParentCategories),
-  );
+  const [storeMenuItems, setStoreMenuItems] = useState(() => {
+    if (useParentCategoriesInitially) {
+      return Array.isArray(initialStoreSettings?.resolvedNavMenuItems)
+        ? initialStoreSettings.resolvedNavMenuItems
+        : [];
+    }
+    return Array.isArray(initialStoreSettings?.navMenuItems) ? initialStoreSettings.navMenuItems : [];
+  });
+  const [navMenuUseParentCategories, setNavMenuUseParentCategories] = useState(useParentCategoriesInitially);
   const [catalogCategories, setCatalogCategories] = useState([]);
   const [menuStyle, setMenuStyle] = useState({
     showcaseFlyoutBackgroundColor: '#ffffff',
@@ -257,23 +261,9 @@ export default function ShopShowcaseSection({
   }
 
   useEffect(() => {
-    if (skipInitialFetch && initialShowcaseData) {
-      const advancedItems = resolveStoreNavMenuItems(
-        {
-          navMenuUseParentCategories: Boolean(initialStoreSettings?.navMenuUseParentCategories),
-          navMenuItems: initialStoreSettings?.navMenuItems,
-        },
-        Array.isArray(initialShowcaseData?.categories) ? initialShowcaseData.categories : [],
-      );
-      if (advancedItems.length) {
-        setStoreMenuItems(advancedItems);
-      }
-      setNavMenuUseParentCategories(Boolean(initialStoreSettings?.navMenuUseParentCategories));
-      if (Array.isArray(initialShowcaseData?.categories)) {
-        setCatalogCategories(initialShowcaseData.categories);
-      }
-      const resolvedMenuStyle = initialStoreSettings?.navMenuStyle && typeof initialStoreSettings.navMenuStyle === 'object'
-        ? initialStoreSettings.navMenuStyle
+    const applyMenuStyle = (settings = {}) => {
+      const resolvedMenuStyle = settings?.navMenuStyle && typeof settings.navMenuStyle === 'object'
+        ? settings.navMenuStyle
         : {};
       setMenuStyle((prev) => ({
         ...prev,
@@ -283,90 +273,101 @@ export default function ShopShowcaseSection({
         showcaseFlyoutHoverColor: String(resolvedMenuStyle.showcaseFlyoutHoverColor || prev.showcaseFlyoutHoverColor),
         showcaseFlyoutBorderColor: String(resolvedMenuStyle.showcaseFlyoutBorderColor || prev.showcaseFlyoutBorderColor),
       }));
-      setLoading(false);
-    }
+    };
+
+    const applyNavigation = (settings = {}, catalog = [], legacyItems = []) => {
+      const useParentCategories = Boolean(settings?.navMenuUseParentCategories);
+      setNavMenuUseParentCategories(useParentCategories);
+      setCatalogCategories(catalog);
+
+      const resolvedItems = resolveStoreNavMenuItems(
+        {
+          navMenuUseParentCategories: useParentCategories,
+          navMenuItems: settings?.navMenuItems,
+        },
+        catalog,
+      );
+
+      if (useParentCategories) {
+        setStoreMenuItems(resolvedItems);
+        return;
+      }
+
+      if (resolvedItems.length) {
+        setStoreMenuItems(resolvedItems);
+        return;
+      }
+
+      setStoreMenuItems(legacyItems);
+    };
+
+    const loadNavigation = async () => {
+      const [settingsRes, navbarRes, categoriesRes] = await Promise.all([
+        axios.get('/api/store/settings').catch(() => ({ data: {} })),
+        axios.get('/api/store/navbar-menu').catch(() => ({ data: {} })),
+        axios.get('/api/categories').catch(() => ({ data: { categories: [] } })),
+      ]);
+
+      const parsedCategories = Array.isArray(categoriesRes.data?.categories)
+        ? categoriesRes.data.categories
+        : [];
+      const legacyItems = Array.isArray(navbarRes.data?.items)
+        ? navbarRes.data.items.map((item) => ({
+            name: String(item?.name || item?.label || '').trim(),
+            link: String(item?.link || item?.url || '#').trim() || '#',
+            icon: String(item?.icon || '').trim(),
+            hasDropdown: false,
+            categoryId: String(item?.categoryId || '').trim(),
+            megaMenu: { linkColumns: 1, links: [], images: [] },
+          }))
+        : [];
+
+      applyNavigation(settingsRes.data || {}, parsedCategories, legacyItems);
+      applyMenuStyle(settingsRes.data || {});
+    };
 
     const load = async () => {
       try {
-        const [showcaseRes, settingsRes, navbarRes, categoriesRes] = await Promise.all([
+        const [showcaseRes] = await Promise.all([
           initialShowcaseData
             ? Promise.resolve({ data: initialShowcaseData })
             : axios.get('/api/public/shop-showcase'),
-          axios.get('/api/store/settings').catch(() => ({ data: {} })),
-          axios.get('/api/store/navbar-menu').catch(() => ({ data: {} })),
-          axios.get('/api/categories').catch(() => ({ data: { categories: [] } })),
-        ])
+          loadNavigation(),
+        ]);
 
-        const showcaseData = showcaseRes.data || { config: null, sectionProducts: [], products: [], categories: [] }
-        setData(showcaseData)
-
-        const parsedCategories = Array.isArray(categoriesRes.data?.categories)
-          ? categoriesRes.data.categories
-          : [];
-        setCatalogCategories(parsedCategories);
+        const showcaseData = showcaseRes.data || { config: null, sectionProducts: [], products: [], categories: [] };
+        setData(showcaseData);
 
         if (!showcaseData.config || showcaseData.config.enabled === false) {
-          setStoreMenuItems([])
-          return
+          setStoreMenuItems([]);
         }
-
-        const useParentCategories = Boolean(settingsRes.data?.navMenuUseParentCategories);
-        setNavMenuUseParentCategories(useParentCategories);
-
-        const advancedItems = resolveStoreNavMenuItems(
-          {
-            navMenuUseParentCategories: useParentCategories,
-            navMenuItems: settingsRes.data?.navMenuItems,
-          },
-          parsedCategories,
-        );
-        const legacyItems = Array.isArray(navbarRes.data?.items)
-          ? navbarRes.data.items.map((item) => ({
-              name: String(item?.name || item?.label || '').trim(),
-              link: String(item?.link || item?.url || '#').trim() || '#',
-              icon: String(item?.icon || '').trim(),
-              hasDropdown: false,
-              categoryId: String(item?.categoryId || '').trim(),
-              megaMenu: { linkColumns: 1, links: [], images: [] },
-            }))
-          : []
-
-        setStoreMenuItems(
-          useParentCategories
-            ? advancedItems
-            : (advancedItems.length ? advancedItems : legacyItems),
-        )
-        const resolvedMenuStyle = settingsRes.data?.navMenuStyle && typeof settingsRes.data.navMenuStyle === 'object'
-          ? settingsRes.data.navMenuStyle
-          : {}
-        setMenuStyle((prev) => ({
-          ...prev,
-          showcaseFlyoutBackgroundColor: String(resolvedMenuStyle.showcaseFlyoutBackgroundColor || prev.showcaseFlyoutBackgroundColor),
-          showcaseFlyoutTitleColor: String(resolvedMenuStyle.showcaseFlyoutTitleColor || prev.showcaseFlyoutTitleColor),
-          showcaseFlyoutLinkColor: String(resolvedMenuStyle.showcaseFlyoutLinkColor || prev.showcaseFlyoutLinkColor),
-          showcaseFlyoutHoverColor: String(resolvedMenuStyle.showcaseFlyoutHoverColor || prev.showcaseFlyoutHoverColor),
-          showcaseFlyoutBorderColor: String(resolvedMenuStyle.showcaseFlyoutBorderColor || prev.showcaseFlyoutBorderColor),
-        }))
       } catch {
-        setData({ config: null, sectionProducts: [], products: [], categories: [] })
-        setStoreMenuItems([])
+        setData({ config: null, sectionProducts: [], products: [], categories: [] });
+        setStoreMenuItems([]);
       } finally {
-        setLoading(false)
+        setLoading(false);
       }
-    }
-    const handleMenuUpdated = () => {
-      load()
-    }
-    window.addEventListener('navMenuUpdated', handleMenuUpdated)
+    };
 
-    if (!(skipInitialFetch && initialShowcaseData)) {
-      load()
+    const handleMenuUpdated = () => {
+      loadNavigation().catch(() => {});
+    };
+
+    window.addEventListener('navMenuUpdated', handleMenuUpdated);
+
+    if (skipInitialFetch && initialShowcaseData) {
+      applyMenuStyle(initialStoreSettings || {});
+      loadNavigation()
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    } else {
+      load();
     }
 
     return () => {
-      window.removeEventListener('navMenuUpdated', handleMenuUpdated)
-    }
-  }, [initialShowcaseData, initialStoreSettings, skipInitialFetch])
+      window.removeEventListener('navMenuUpdated', handleMenuUpdated);
+    };
+  }, [initialShowcaseData, initialStoreSettings, skipInitialFetch]);
 
   const config = data.config
   const categoryMenuItems = useMemo(() => {

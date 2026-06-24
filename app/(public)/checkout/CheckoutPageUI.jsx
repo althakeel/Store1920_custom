@@ -42,6 +42,9 @@ import Creditimage2 from '../../../assets/creditcards/16 - Copy.webp';
 import Creditimage3 from '../../../assets/creditcards/20.webp';
 import Creditimage4 from '../../../assets/creditcards/11.webp';
 import { STORE_CURRENCY } from '@/lib/storeCurrency';
+import { getProductSubtitle } from '@/lib/productDisplay';
+import { collectCheckoutValidationIssues, scrollToCheckoutField } from '@/lib/checkoutValidation';
+import CheckoutValidationAlert from '@/components/CheckoutValidationAlert';
 
 const SignInModal = dynamic(() => import("@/components/SignInModal"), { ssr: false });
 const AddressModal = dynamic(() => import("@/components/AddressModal"), { ssr: false });
@@ -64,6 +67,8 @@ function getGuestCountryCode(countryName) {
   const match = countryCodes.find((entry) => entry.label.replace(/ \(.*\)/, '') === countryName);
   return match?.code || '+971';
 }
+
+const CHECKOUT_ORDER_PREVIEW_LIMIT = 4;
 
 export default function CheckoutPage() {
   const { user, loading: authLoading, getToken } = useAuth();
@@ -107,6 +112,7 @@ export default function CheckoutPage() {
   const [shippingMethod, setShippingMethod] = useState('standard'); // 'standard' or 'express'
   const [showSignIn, setShowSignIn] = useState(false);
   const [showAddressModal, setShowAddressModal] = useState(false);
+  const [showAllOrderItemsModal, setShowAllOrderItemsModal] = useState(false);
   const [editingAddressId, setEditingAddressId] = useState(null);
   const [abandonSaved, setAbandonSaved] = useState(false);
   const [tabbyCardLoaded, setTabbyCardLoaded] = useState(false);
@@ -120,6 +126,9 @@ export default function CheckoutPage() {
   const [couponLoading, setCouponLoading] = useState(false);
   const [storeId, setStoreId] = useState(null);
   const [formError, setFormError] = useState("");
+  const [validationAlertOpen, setValidationAlertOpen] = useState(false);
+  const [validationIssues, setValidationIssues] = useState([]);
+  const [invalidFieldIds, setInvalidFieldIds] = useState(() => new Set());
   const [checkoutProductsLoaded, setCheckoutProductsLoaded] = useState(false);
   const beginCheckoutTrackedRef = useRef(false);
   const tabbyPublicKey = process.env.NEXT_PUBLIC_TABBY_PUBLIC_KEY || '';
@@ -647,20 +656,12 @@ export default function CheckoutPage() {
   const isPaymentMissing = needsPaymentSelection && !form.payment;
   const isInvalidPaymentSelection = form.payment === 'cod' && isCODDisabledForOrder;
   const isPlaceOrderDisabled = placingOrder || isPaymentMissing || isInvalidPaymentSelection;
-  const isGuestAddressReady = !!(
-    form.name &&
-    form.phone &&
-    resolveGuestCity(form) &&
-    form.state &&
-    form.street &&
-    (!isUaeCountry(form.country) || form.district)
-  );
+  const isCheckoutSubmitDisabled = isPlaceOrderDisabled;
   const placeOrderButtonActiveColors = 'bg-red-600 hover:bg-red-700';
-  const placeOrderButtonColors = isPlaceOrderDisabled
+  const placeOrderButtonColors = isCheckoutSubmitDisabled
     ? 'bg-gray-400 cursor-not-allowed opacity-75'
     : placeOrderButtonActiveColors;
-  const mobilePlaceOrderDisabled = (!form.addressId && !isGuestAddressReady) || isPlaceOrderDisabled;
-  const mobilePlaceOrderButtonColors = mobilePlaceOrderDisabled
+  const mobilePlaceOrderButtonColors = isCheckoutSubmitDisabled
     ? 'bg-gray-400 cursor-not-allowed opacity-75'
     : placeOrderButtonActiveColors;
   const renderPayByMethodLabel = (methodKey) => (
@@ -842,12 +843,73 @@ export default function CheckoutPage() {
   const guestLabelClass = 'mb-1.5 block text-sm font-semibold text-slate-700';
 
   const guestSectionClass =
-    'grid gap-5 rounded-[24px] border border-[#f1e4d3] bg-white/88 p-5 shadow-[0_12px_32px_rgba(15,23,42,0.05)] md:p-6';
+    'grid w-full min-w-0 gap-5 rounded-[24px] border border-[#f1e4d3] bg-white/88 p-5 shadow-[0_12px_32px_rgba(15,23,42,0.05)] sm:p-6';
 
   const guestStepBadgeClass =
     'rounded-full bg-[#fff5db] px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-[#b45309]';
 
+  const fieldHasError = (fieldId) => invalidFieldIds.has(fieldId);
+  const fieldErrorClass = (fieldId) =>
+    fieldHasError(fieldId) ? 'border-red-400 ring-4 ring-red-100 focus:border-red-400 focus:ring-red-100' : '';
+  const fieldRequiredHint = (fieldId) =>
+    fieldHasError(fieldId) ? (
+      <p className="mt-1 text-xs font-medium text-red-600">
+        {isArabic ? 'هذا الحقل مطلوب' : 'This field is required'}
+      </p>
+    ) : null;
+
+  const handleValidationIssueClick = (fieldId) => {
+    setValidationAlertOpen(false);
+    scrollToCheckoutField(fieldId);
+  };
+
+  const getValidationLabel = (issue) => {
+    const labelMap = {
+      'Full name': t('checkout.fullName'),
+      'Email address': t('checkout.emailAddress'),
+      'Valid email address': t('checkout.emailAddress'),
+      'Phone number': t('checkout.phoneNumber'),
+      'Street address': t('checkout.street'),
+      'Emirate': t('checkout.selectEmirate'),
+      'State': t('checkout.selectState'),
+      'State / Emirate': t('checkout.emirateState'),
+      'Country': t('checkout.country'),
+      'Area': t('checkout.selectArea'),
+      'District': t('checkout.selectDistrict'),
+      'Pincode': 'Pincode',
+      'Payment method': t('checkout.paymentMethods'),
+      'Delivery address': t('checkout.deliveryAddress'),
+    };
+    return labelMap[issue.label] || issue.label;
+  };
+
+  const runCheckoutFormValidation = (resolvedPhone, resolvedCountry, resolvedPincode) => {
+    const rawIssues = collectCheckoutValidationIssues({
+      user,
+      form,
+      addressList,
+      resolvedPhone,
+      resolvedCountry,
+      resolvedPincode,
+      needsPaymentSelection,
+    });
+
+    if (!rawIssues.length) {
+      setInvalidFieldIds(new Set());
+      return true;
+    }
+
+    const issues = rawIssues.map((issue) => ({ ...issue, label: getValidationLabel(issue) }));
+    setValidationIssues(issues);
+    setInvalidFieldIds(new Set(rawIssues.map((issue) => issue.id)));
+    setValidationAlertOpen(true);
+    scrollToCheckoutField(issues[0]?.id);
+    return false;
+  };
+
   const handleStateSelect = (value) => {
+    setInvalidFieldIds(new Set());
+    setValidationAlertOpen(false);
     if (isUaeCountry(form.country)) {
       setDistricts(getUaeAreasForEmirate(value));
     } else {
@@ -869,6 +931,8 @@ export default function CheckoutPage() {
   };
 
   const handleChange = (e) => {
+    setInvalidFieldIds(new Set());
+    setValidationAlertOpen(false);
     const { name, value } = e.target;
     if (name === 'state') {
       handleStateSelect(value);
@@ -1198,13 +1262,12 @@ export default function CheckoutPage() {
           setForm((f) => ({ ...f, pincode: fallbackPincode }));
         }
       }
-
-      if (resolvedPincode && resolvedPincode.length !== 6) {
-        setFormError('Please enter a valid 6-digit Indian pincode.');
-        return;
-      }
     } else {
       resolvedPincode = '';
+    }
+
+    if (!runCheckoutFormValidation(resolvedPhone, resolvedCountry, resolvedPincode)) {
+      return;
     }
 
     console.log('Checkout validation - Phone details:', {
@@ -1288,6 +1351,7 @@ export default function CheckoutPage() {
             street: form.street,
             city: resolveGuestCity(form),
             state: form.state,
+            district: form.district || '',
             country: resolvedCountry,
             pincode: resolvedPincode || '',
           };
@@ -1335,6 +1399,7 @@ export default function CheckoutPage() {
             street: form.street,
             city: resolveGuestCity(form),
             state: form.state,
+            district: form.district || '',
             country: resolvedCountry,
             pincode: resolvedPincode || '',
           };
@@ -1382,6 +1447,7 @@ export default function CheckoutPage() {
             street: form.street,
             city: resolveGuestCity(form),
             state: form.state,
+            district: form.district || '',
             country: resolvedCountry,
             pincode: resolvedPincode || '',
           };
@@ -1484,6 +1550,7 @@ export default function CheckoutPage() {
             street: form.street,
             city: resolveGuestCity(form),
             state: form.state,
+            district: form.district || '',
             country: resolvedCountry,
             zip: resolvedPincode || '',
             district: form.district || ''
@@ -1507,6 +1574,7 @@ export default function CheckoutPage() {
             street: form.street,
             city: resolveGuestCity(form),
             state: form.state,
+            district: form.district || '',
             country: resolvedCountry,
             pincode: resolvedPincode || '',
           }
@@ -1776,81 +1844,112 @@ export default function CheckoutPage() {
     );
   }
 
+  const checkoutOrderPreviewItems = cartArray.slice(0, CHECKOUT_ORDER_PREVIEW_LIMIT);
+  const checkoutOrderHiddenCount = Math.max(0, cartArray.length - CHECKOUT_ORDER_PREVIEW_LIMIT);
+
+  const renderCheckoutOrderItem = (item) => (
+    <div key={item._cartKey || item._id} className="flex items-center bg-gray-50 border border-gray-200 rounded-lg p-3 gap-3">
+      <img src={item.image || item.images?.[0] || '/placeholder.png'} alt={item.name} className="w-14 h-14 object-cover rounded-md border shrink-0" />
+      <div className="flex-1 min-w-0">
+        <div className="font-semibold text-gray-900 truncate">{item.name}</div>
+        <div className="text-xs text-gray-500 truncate">{getProductSubtitle(item) || ''}</div>
+        {item._isFreeGift ? (
+          <div className="text-xs font-semibold text-green-600">Free gift</div>
+        ) : null}
+        <div className="text-xs text-gray-400">{item._isFreeGift ? 'FREE' : formatMoney(item._cartPrice ?? item.price ?? 0)}</div>
+      </div>
+      <div className="flex flex-col items-center gap-1 shrink-0">
+        {item._isFreeGift ? (
+          <div className="rounded-full bg-green-50 px-3 py-1 text-xs font-semibold text-green-700">AUTO-ADDED</div>
+        ) : (
+          <>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                className="px-2 py-0.5 rounded bg-gray-200 text-gray-700 hover:bg-gray-300 active:bg-gray-400"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const cartKey = item._cartKey || item._id;
+                  const entry = cartItems?.[cartKey];
+                  decrementCartItem(dispatch, {
+                    productId: cartKey,
+                    entry,
+                    product: item,
+                  });
+                }}
+              >
+                -
+              </button>
+              <span className="px-2 text-sm">{item._displayQuantity ?? item.quantity}</span>
+              <button
+                type="button"
+                className="px-2 py-0.5 rounded bg-gray-200 text-gray-700 hover:bg-gray-300 active:bg-gray-400"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const cartKey = item._cartKey || item._id;
+                  const entry = cartItems?.[cartKey];
+                  incrementCartItem(dispatch, {
+                    productId: cartKey,
+                    entry,
+                    product: item,
+                    price: item._cartPrice ?? item.price,
+                  });
+                }}
+              >
+                +
+              </button>
+            </div>
+            <button
+              type="button"
+              className="text-xs text-red-500 hover:text-red-700 hover:underline mt-1 active:text-red-800"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dispatch(deleteItemFromCart({ productId: item._cartKey || item._id }));
+              }}
+            >
+              {t('checkout.remove')}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <>
-      <div className="py-10 bg-white md:pb-0 pb-20 min-h-0 md:min-h-[35dvh]">
+      <div className="py-10 bg-white pb-24 md:pb-14 min-h-0 md:min-h-[35dvh]">
       <div className="max-w-[1250px] mx-auto grid grid-cols-1 md:grid-cols-3 gap-8" dir={isArabic ? 'rtl' : 'ltr'}>
         {/* Left column: address, form, payment */}
         <div className="md:col-span-2">
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8">
             {/* Cart Items Section */}
             <div className="mb-6">
-              <h2 className="text-xl font-bold mb-2 text-gray-900">{t('checkout.yourOrder')}</h2>
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-xl font-bold text-gray-900">{t('checkout.yourOrder')}</h2>
+                {checkoutOrderHiddenCount > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllOrderItemsModal(true)}
+                    className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-sm font-semibold text-slate-700 transition hover:border-[#f59e0b] hover:text-[#b45309]"
+                  >
+                    {isArabic ? `عرض الكل (${cartArray.length})` : `View All (${cartArray.length})`}
+                  </button>
+                ) : null}
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {cartArray.map((item) => (
-                  <div key={item._cartKey || item._id} className="flex items-center bg-gray-50 border border-gray-200 rounded-lg p-3 gap-3">
-                    <img src={item.image || item.images?.[0] || '/placeholder.png'} alt={item.name} className="w-14 h-14 object-cover rounded-md border" />
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-gray-900 truncate">{item.name}</div>
-                      <div className="text-xs text-gray-500 truncate">{item.brand || ''}</div>
-                      {item._isFreeGift ? (
-                        <div className="text-xs font-semibold text-green-600">Free gift</div>
-                      ) : null}
-                      <div className="text-xs text-gray-400">{item._isFreeGift ? 'FREE' : formatMoney(item._cartPrice ?? item.price ?? 0)}</div>
-                    </div>
-                    <div className="flex flex-col items-center gap-1">
-                      {item._isFreeGift ? (
-                        <div className="rounded-full bg-green-50 px-3 py-1 text-xs font-semibold text-green-700">AUTO-ADDED</div>
-                      ) : (
-                        <>
-                          <div className="flex items-center gap-1">
-                            <button 
-                              type="button" 
-                              className="px-2 py-0.5 rounded bg-gray-200 text-gray-700 hover:bg-gray-300 active:bg-gray-400" 
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                const cartKey = item._cartKey || item._id;
-                                const entry = cartItems?.[cartKey];
-                                decrementCartItem(dispatch, {
-                                  productId: cartKey,
-                                  entry,
-                                  product: item,
-                                });
-                              }}
-                            >-</button>
-                            <span className="px-2 text-sm">{item._displayQuantity ?? item.quantity}</span>
-                            <button 
-                              type="button" 
-                              className="px-2 py-0.5 rounded bg-gray-200 text-gray-700 hover:bg-gray-300 active:bg-gray-400" 
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                const cartKey = item._cartKey || item._id;
-                                const entry = cartItems?.[cartKey];
-                                incrementCartItem(dispatch, {
-                                  productId: cartKey,
-                                  entry,
-                                  product: item,
-                                  price: item._cartPrice ?? item.price,
-                                });
-                              }}
-                            >+</button>
-                          </div>
-                          <button 
-                            type="button" 
-                            className="text-xs text-red-500 hover:text-red-700 hover:underline mt-1 active:text-red-800" 
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              dispatch(deleteItemFromCart({ productId: item._cartKey || item._id }));
-                            }}
-                          >{t('checkout.remove')}</button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                {checkoutOrderPreviewItems.map(renderCheckoutOrderItem)}
+                {checkoutOrderHiddenCount > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllOrderItemsModal(true)}
+                    className="flex min-h-[88px] items-center justify-center rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 p-3 text-slate-700 transition hover:border-[#f59e0b] hover:bg-amber-50 hover:text-[#b45309]"
+                  >
+                    <span className="text-lg font-bold">+{checkoutOrderHiddenCount}</span>
+                  </button>
+                ) : null}
               </div>
             </div>
             {/* Shipping Method Section */}
@@ -2021,9 +2120,9 @@ export default function CheckoutPage() {
                 </div>
               )}
               {addressList.length > 0 && !addressFetchError ? (
-                <div>
+                <div id="checkout-address">
                   {/* Shipping Address Section - Noon.com Style */}
-                  <div className="bg-white rounded-lg border border-gray-200">
+                  <div className={`bg-white rounded-lg border ${fieldHasError('checkout-address') ? 'border-red-300 ring-2 ring-red-100' : 'border-gray-200'}`}>
                     <div className="px-4 py-3 border-b border-gray-200">
                       <div className="flex items-center justify-between">
                         <span className="text-sm font-semibold text-gray-700">{t('checkout.address')}</span>
@@ -2092,6 +2191,7 @@ export default function CheckoutPage() {
                       </div>
                     )}
                   </div>
+                {fieldRequiredHint('checkout-address')}
                 
                 {/* Phone Number Section - Show for logged-in users if missing from address */}
                 {shouldShowPhoneRequired && (
@@ -2132,68 +2232,79 @@ export default function CheckoutPage() {
                   <span className="text-xl">+</span> Add Delivery Address
                 </button>
               ) : (!user) ? (
-                <div className="grid gap-5">
+                <div className="grid w-full min-w-0 gap-5">
                   <div className={guestSectionClass}>
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="min-w-0">
                         <h3 className="text-base font-bold text-slate-900">{t('checkout.contactDetails')}</h3>
                         <p className="mt-1 text-sm text-slate-500">{t('checkout.contactDetailsHint')}</p>
                       </div>
                       <span className={guestStepBadgeClass}>Step 1</span>
                     </div>
 
-                    <div>
-                      <label htmlFor="guest-name" className={guestLabelClass}>{t('checkout.fullName')}</label>
-                      <input
-                        id="guest-name"
-                        className={guestFieldClass}
-                        type="text"
-                        name="name"
-                        placeholder="Enter your name"
-                        value={form.name || ''}
-                        onChange={handleChange}
-                        required
-                      />
+                    <div className="grid gap-5 sm:grid-cols-2">
+                      <div className="min-w-0">
+                        <label htmlFor="guest-name" className={guestLabelClass}>{t('checkout.fullName')}</label>
+                        <input
+                          id="guest-name"
+                          className={`${guestFieldClass} ${fieldErrorClass('guest-name')}`}
+                          type="text"
+                          name="name"
+                          placeholder="Enter your name"
+                          value={form.name || ''}
+                          onChange={handleChange}
+                          required
+                        />
+                        {fieldRequiredHint('guest-name')}
+                      </div>
+
+                      <div className="min-w-0">
+                        <label htmlFor="guest-email" className={guestLabelClass}>{t('checkout.emailAddress')}</label>
+                        <input
+                          id="guest-email"
+                          className={`${guestFieldClass} ${fieldErrorClass('guest-email')}`}
+                          type="email"
+                          name="email"
+                          placeholder={t('checkout.emailAddress')}
+                          value={form.email || ''}
+                          onChange={handleChange}
+                        />
+                        {fieldRequiredHint('guest-email')}
+                      </div>
                     </div>
 
-                    <div>
-                      <label htmlFor="guest-email" className={guestLabelClass}>{t('checkout.emailAddress')}</label>
-                      <input
-                        id="guest-email"
-                        className={guestFieldClass}
-                        type="email"
-                        name="email"
-                        placeholder={t('checkout.emailAddress')}
-                        value={form.email || ''}
-                        onChange={handleChange}
+                    <div id="guest-phone" className="min-w-0">
+                      <PhoneNumberField
+                        label={t('checkout.phoneNumber')}
+                        phone={form.phone}
+                        phoneCode={form.phoneCode}
+                        onPhoneChange={(value) => {
+                          setInvalidFieldIds(new Set());
+                          setValidationAlertOpen(false);
+                          setForm((f) => ({ ...f, phone: value }));
+                        }}
+                        onPhoneCodeChange={handleChange}
+                        countryOptions={countryCodes.map((c) => ({ code: c.code }))}
+                        inputClassName={`flex-1 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#f59e0b] focus:bg-white focus:ring-4 focus:ring-[#fde7c2] ${fieldErrorClass('guest-phone')}`}
                       />
+                      {fieldRequiredHint('guest-phone')}
                     </div>
-
-                    <PhoneNumberField
-                      id="guest-phone"
-                      label={t('checkout.phoneNumber')}
-                      phone={form.phone}
-                      phoneCode={form.phoneCode}
-                      onPhoneChange={(value) => setForm((f) => ({ ...f, phone: value }))}
-                      onPhoneCodeChange={handleChange}
-                      countryOptions={countryCodes.map((c) => ({ code: c.code }))}
-                    />
                   </div>
 
                   <div className={guestSectionClass}>
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="min-w-0">
                         <h3 className="text-base font-bold text-slate-900">{t('checkout.deliveryAddress')}</h3>
                         <p className="mt-1 text-sm text-slate-500">{t('checkout.deliveryAddressHint')}</p>
                       </div>
                       <span className={guestStepBadgeClass}>Step 2</span>
                     </div>
 
-                    <div>
+                    <div className="min-w-0">
                       <label htmlFor="guest-street" className={guestLabelClass}>{t('checkout.street')}</label>
                       <input
                         id="guest-street"
-                        className={guestFieldClass}
+                        className={`${guestFieldClass} ${fieldErrorClass('guest-street')}`}
                         type="text"
                         name="street"
                         placeholder={t('checkout.street')}
@@ -2201,64 +2312,78 @@ export default function CheckoutPage() {
                         onChange={handleChange}
                         required
                       />
+                      {fieldRequiredHint('guest-street')}
                     </div>
 
-                    <div>
-                      <label className={guestLabelClass}>
-                        {isUaeCountry(form.country) ? t('checkout.selectEmirate') : t('checkout.emirateState')}
-                      </label>
-                      {form.country === 'India' ? (
-                        <SearchableSelect
-                          value={form.state}
-                          onChange={handleStateSelect}
-                          options={indiaStatesAndDistricts.map((s) => s.state)}
-                          placeholder={t('checkout.selectState')}
-                          searchPlaceholder="Search state..."
-                          required
-                          triggerClassName={checkoutSelectClass}
-                        />
-                      ) : isUaeCountry(form.country) ? (
-                        <SearchableSelect
-                          value={form.state}
-                          onChange={handleStateSelect}
-                          options={UAE_EMIRATES}
-                          placeholder={t('checkout.selectEmirate')}
-                          searchPlaceholder="Search emirate..."
-                          required
-                          triggerClassName={checkoutSelectClass}
-                        />
-                      ) : (
-                        <input
-                          className={guestFieldClass}
-                          type="text"
-                          name="state"
-                          placeholder={t('checkout.emirateState')}
-                          value={form.state || ''}
-                          onChange={handleChange}
-                          required
-                        />
-                      )}
-                    </div>
-
-                    {isUaeCountry(form.country) && form.state ? (
-                      <div>
-                        <label className={guestLabelClass}>{t('checkout.selectArea')}</label>
-                        <SearchableSelect
-                          value={form.district}
-                          onChange={(value) => setForm((f) => ({ ...f, district: value }))}
-                          options={districts}
-                          placeholder={t('checkout.selectArea')}
-                          searchPlaceholder="Search area..."
-                          emptyMessage="No areas found"
-                          required
-                          triggerClassName={checkoutSelectClass}
-                        />
+                    <div className={`grid min-w-0 gap-5 ${isUaeCountry(form.country) && form.state ? 'sm:grid-cols-2' : ''}`}>
+                      <div id="guest-state" className="min-w-0">
+                        <label className={guestLabelClass}>
+                          {isUaeCountry(form.country) ? t('checkout.selectEmirate') : t('checkout.emirateState')}
+                        </label>
+                        {form.country === 'India' ? (
+                          <SearchableSelect
+                            value={form.state}
+                            onChange={handleStateSelect}
+                            options={indiaStatesAndDistricts.map((s) => s.state)}
+                            placeholder={t('checkout.selectState')}
+                            searchPlaceholder="Search state..."
+                            required
+                            hasError={fieldHasError('guest-state')}
+                            triggerClassName={checkoutSelectClass}
+                          />
+                        ) : isUaeCountry(form.country) ? (
+                          <SearchableSelect
+                            value={form.state}
+                            onChange={handleStateSelect}
+                            options={UAE_EMIRATES}
+                            placeholder={t('checkout.selectEmirate')}
+                            searchPlaceholder="Search emirate..."
+                            required
+                            hasError={fieldHasError('guest-state')}
+                            triggerClassName={checkoutSelectClass}
+                          />
+                        ) : (
+                          <input
+                            className={`${guestFieldClass} ${fieldErrorClass('guest-state')}`}
+                            type="text"
+                            name="state"
+                            placeholder={t('checkout.emirateState')}
+                            value={form.state || ''}
+                            onChange={handleChange}
+                            required
+                          />
+                        )}
+                        {fieldRequiredHint('guest-state')}
                       </div>
-                    ) : form.country === 'India' && form.state ? (
-                      <div>
+
+                      {isUaeCountry(form.country) && form.state ? (
+                        <div id="guest-area" className="min-w-0">
+                          <label className={guestLabelClass}>{t('checkout.selectArea')}</label>
+                          <SearchableSelect
+                            value={form.district}
+                            onChange={(value) => {
+                              setInvalidFieldIds(new Set());
+                              setValidationAlertOpen(false);
+                              setForm((f) => ({ ...f, district: value }));
+                            }}
+                            options={districts}
+                            placeholder={t('checkout.selectArea')}
+                            searchPlaceholder="Search area..."
+                            emptyMessage="No areas found"
+                            required
+                            hasError={fieldHasError('guest-area')}
+                            triggerClassName={checkoutSelectClass}
+                          />
+                          {fieldRequiredHint('guest-area')}
+                        </div>
+                      ) : null}
+                    </div>
+
+                    {form.country === 'India' && form.state ? (
+                      <div id="guest-district" className="min-w-0">
                         <label className={guestLabelClass}>{t('checkout.selectDistrict')}</label>
                         <select
-                          className={guestFieldClass}
+                          className={`${guestFieldClass} ${fieldErrorClass('guest-district')}`}
                           name="district"
                           value={form.district}
                           onChange={handleChange}
@@ -2269,9 +2394,10 @@ export default function CheckoutPage() {
                             <option key={d} value={d}>{d}</option>
                           ))}
                         </select>
+                        {fieldRequiredHint('guest-district')}
                       </div>
                     ) : !isUaeCountry(form.country) && form.country !== 'India' ? (
-                      <div>
+                      <div className="min-w-0">
                         <label className={guestLabelClass}>{t('checkout.selectDistrict')}</label>
                         <input
                           className={guestFieldClass}
@@ -2285,25 +2411,50 @@ export default function CheckoutPage() {
                       </div>
                     ) : null}
 
-                    <div>
+                    {form.country === 'India' ? (
+                      <div id="guest-pincode" className="min-w-0 sm:max-w-xs">
+                        <label htmlFor="guest-pincode-input" className={guestLabelClass}>Pincode</label>
+                        <input
+                          id="guest-pincode-input"
+                          className={`${guestFieldClass} ${fieldErrorClass('guest-pincode')}`}
+                          type="text"
+                          name="pincode"
+                          inputMode="numeric"
+                          placeholder="6-digit pincode"
+                          value={form.pincode || ''}
+                          onChange={handleChange}
+                          maxLength={6}
+                        />
+                        {fieldRequiredHint('guest-pincode')}
+                      </div>
+                    ) : null}
+
+                    <div id="guest-country" className="min-w-0">
                       <label className={guestLabelClass}>{t('checkout.country')}</label>
                       <SearchableSelect
                         value={form.country}
-                        onChange={handleGuestCountryChange}
+                        onChange={(value) => {
+                          setInvalidFieldIds(new Set());
+                          setValidationAlertOpen(false);
+                          handleGuestCountryChange(value);
+                        }}
                         options={getGuestCountryOptions()}
                         placeholder="Select Country"
                         searchPlaceholder="Search country..."
                         emptyMessage="No countries found"
                         required
+                        hasError={fieldHasError('guest-country')}
                         triggerClassName={checkoutSelectClass}
                       />
+                      {fieldRequiredHint('guest-country')}
                     </div>
                   </div>
                 </div>
               ) : null}
               <h2 className="text-xl font-bold mb-3 mt-4 text-gray-900">{t('checkout.paymentMethods')}</h2>
+              {fieldRequiredHint('checkout-payment')}
 
-              <div className="flex flex-col gap-2 mb-4">
+              <div id="checkout-payment" className={`flex flex-col gap-2 mb-4 ${fieldHasError('checkout-payment') ? 'rounded-2xl ring-2 ring-red-100' : ''}`}>
                 {/* Credit Card Option */}
                 <label className="flex items-center gap-3 p-4 border-2 rounded-lg transition-all cursor-pointer border-gray-200 hover:border-blue-400 hover:bg-blue-50/30 has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50">
                   <input
@@ -2471,7 +2622,7 @@ export default function CheckoutPage() {
               )}
               
               {!user && !hasPersonalizedOfferItem && (
-                <div className="mt-4 text-sm text-gray-600 bg-green-50 border border-green-200 rounded-lg p-3">
+                <div className="mt-4 mb-8 text-sm text-gray-600 bg-green-50 border border-green-200 rounded-lg p-3">
                   <span className="font-semibold text-green-900">✓ Guest Checkout Available:</span> You can place COD orders without creating an account. Your order will be processed instantly!
                 </div>
               )}
@@ -2587,7 +2738,7 @@ export default function CheckoutPage() {
             type="submit"
             form="checkout-form"
             className={`mt-4 hidden md:flex relative w-full items-center justify-center text-white py-3.5 rounded-lg text-base transition shadow-md hover:shadow-lg ${placeOrderButtonColors} ${placingOrder ? 'animate-bounce' : ''}`}
-            disabled={isPlaceOrderDisabled}
+            disabled={isCheckoutSubmitDisabled}
             aria-busy={placingOrder}
           >
             {placingOrder ? (
@@ -2672,18 +2823,11 @@ export default function CheckoutPage() {
       {/* Sticky Footer - Only Total and Place Order on Mobile */}
       <div className="fixed bottom-0 left-0 right-0 md:hidden bg-white border-t border-gray-200 shadow-lg z-40 p-4">
         <div className="max-w-6xl mx-auto">
-          {/* Address validation message */}
-          {!form.addressId && !isGuestAddressReady && (
-            <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm p-3 rounded mb-3">
-              Please fill the address to continue
-            </div>
-          )}
-          
           <button
             type="submit"
             form="checkout-form"
             className={`relative w-full text-white py-4 rounded-lg text-base transition shadow-md hover:shadow-lg flex items-center justify-between px-6 ${mobilePlaceOrderButtonColors} ${placingOrder ? 'animate-bounce' : ''}`}
-            disabled={(!form.addressId && !isGuestAddressReady) || isPlaceOrderDisabled}
+            disabled={isCheckoutSubmitDisabled}
             aria-busy={placingOrder}
           >
             <span className="text-lg font-bold">{formatMoney(totalAfterWallet)}</span>
@@ -2709,6 +2853,51 @@ export default function CheckoutPage() {
         </div>
       </div>
       </div>
+
+      <CheckoutValidationAlert
+        open={validationAlertOpen}
+        issues={validationIssues}
+        title={isArabic ? 'يرجى إكمال هذه الحقول' : 'Please complete these fields'}
+        hint={isArabic ? 'اضغط على الحقل للانتقال إليه' : 'Tap a field below to go there'}
+        confirmLabel={isArabic ? 'حسناً' : 'OK'}
+        onClose={() => setValidationAlertOpen(false)}
+        onIssueClick={handleValidationIssueClick}
+      />
+
+      {showAllOrderItemsModal ? (
+        <div className="fixed inset-0 z-[70] flex items-end justify-center p-4 sm:items-center">
+          <button
+            type="button"
+            className="absolute inset-0 bg-slate-900/40 backdrop-blur-[1px]"
+            aria-label="Close all order items"
+            onClick={() => setShowAllOrderItemsModal(false)}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="checkout-all-items-title"
+            className="relative flex max-h-[85vh] w-full max-w-2xl flex-col rounded-2xl border border-slate-200 bg-white shadow-xl"
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+              <h3 id="checkout-all-items-title" className="text-lg font-semibold text-slate-900">
+                {t('checkout.yourOrder')} ({cartArray.length})
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowAllOrderItemsModal(false)}
+                className="rounded-full px-3 py-1 text-sm font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+              >
+                {isArabic ? 'إغلاق' : 'Close'}
+              </button>
+            </div>
+            <div className="overflow-y-auto px-5 py-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {cartArray.map(renderCheckoutOrderItem)}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <AddressModal 
         open={showAddressModal} 

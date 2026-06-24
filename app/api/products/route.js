@@ -5,6 +5,12 @@ import Category from "@/models/Category";
 import { NextResponse } from "next/server";
 import { getCachedData, setCachedData, generateCacheKey, invalidateCachePattern } from "@/lib/cache";
 import { localizeRecord, resolveStorefrontLanguage } from "@/lib/storefrontLanguage";
+import {
+  applyCategoriesFilter,
+  applyStorefrontVisibilityFilters,
+  buildProductListSort,
+  buildShopMatchStage,
+} from '@/lib/shopProductQuery';
 
 function isMongoConnectionError(error) {
     const message = error?.message || '';
@@ -19,10 +25,11 @@ function isMongoConnectionError(error) {
     );
 }
 
-function createProductsResponse(products, headers = {}) {
+function createProductsResponse(payload, headers = {}) {
     const isDev = process.env.NODE_ENV !== 'production';
+    const body = Array.isArray(payload) ? { products: payload } : payload;
     return NextResponse.json(
-        { products },
+        body,
         {
             headers: {
                 'Cache-Control': isDev ? 'no-store' : 'public, s-maxage=600, stale-while-revalidate=1200',
@@ -102,25 +109,49 @@ export async function POST(request) {
 export async function GET(request){
     const language = resolveStorefrontLanguage(request);
     const { searchParams } = new URL(request.url);
-    const sortBy = searchParams.get('sortBy');
+    const sortBy = searchParams.get('sortBy') || searchParams.get('sort') || 'newest';
     const fetchAll = searchParams.get('all') === 'true';
+    const parsedPage = parseInt(searchParams.get('page') || '1', 10);
+    const page = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
     const parsedLimit = parseInt(searchParams.get('limit') || '20', 10);
     const parsedOffset = parseInt(searchParams.get('offset') || '0', 10);
-    const limit = fetchAll ? 500 : Math.min(Number.isFinite(parsedLimit) ? parsedLimit : 20, 300);
-    const offset = Number.isFinite(parsedOffset) ? parsedOffset : 0;
+    const paginated = !fetchAll && (searchParams.get('paginated') === 'true' || searchParams.has('page'));
+    const limit = fetchAll
+        ? null
+        : Math.min(Number.isFinite(parsedLimit) ? parsedLimit : (paginated ? 24 : 20), paginated ? 48 : 300);
+    const offset = paginated
+        ? (page - 1) * limit
+        : (Number.isFinite(parsedOffset) ? parsedOffset : 0);
     const fastDelivery = searchParams.get('fastDelivery');
     const categoryParam = searchParams.get('category');
+    const categoriesParam = String(searchParams.get('categories') || '').trim();
+    const selectedCategories = categoriesParam
+        ? categoriesParam.split(',').map((slug) => slug.trim()).filter(Boolean)
+        : (categoryParam ? [categoryParam] : []);
     const includeOutOfStock = searchParams.get('includeOutOfStock') === 'true';
+    const inStockOnly = searchParams.get('inStockOnly') === 'true';
+    const bestSellerOnly = searchParams.get('bestSeller') === 'true';
+    const priceFilter = searchParams.get('priceFilter') || 'all';
+    const minPrice = searchParams.get('minPrice') || '';
+    const maxPrice = searchParams.get('maxPrice') || '';
     const slim = searchParams.get('slim') === 'true' || (!fetchAll && limit <= 50);
     const cacheKey = generateCacheKey('products', {
         limit,
         offset,
+        page: paginated ? String(page) : '',
+        sortBy,
         fastDelivery: fastDelivery || 'false',
         fetchAll: fetchAll ? 'true' : 'false',
-        category: categoryParam || '',
+        category: selectedCategories.join(','),
         includeOutOfStock: includeOutOfStock ? 'true' : 'false',
+        inStockOnly: inStockOnly ? 'true' : 'false',
+        bestSellerOnly: bestSellerOnly ? 'true' : 'false',
+        priceFilter,
+        minPrice,
+        maxPrice,
         slim: slim ? 'true' : 'false',
         language,
+        paginated: paginated ? 'true' : 'false',
     });
 
     try {
@@ -152,68 +183,50 @@ export async function GET(request){
         }
 
         // OPTIMIZED: Use simple find with field selection (aggregation was causing errors)
-        const matchStage = includeOutOfStock ? {} : { inStock: true };
-        if (fastDelivery === 'true') {
-            matchStage.fastDelivery = true;
+        const matchStage = applyStorefrontVisibilityFilters(buildShopMatchStage({
+            includeOutOfStock,
+            fastDelivery: fastDelivery === 'true',
+            inStockOnly,
+            bestSellerOnly,
+            priceFilter,
+            minPrice,
+            maxPrice,
+        }));
+
+        if (selectedCategories.length > 0) {
+            await applyCategoriesFilter(matchStage, selectedCategories, Category);
         }
 
-        // Optional category filter (by slug/name)
-        if (categoryParam) {
-            const normalizedName = categoryParam.replace(/-/g, ' ').trim();
-            const slugWords = categoryParam
-                .split(/[-\s]+/)
-                .filter(Boolean)
-                .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-            const separator = '(?:\\s*&\\s*|\\s+|\\s+and\\s+)';
-            const categoryRegex = new RegExp(slugWords.join(separator), 'i');
-
-            const escapedName = normalizedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const categoryDoc = await Category.findOne({
-                $or: [
-                    { slug: categoryParam },
-                    { name: new RegExp(`^${escapedName}$`, 'i') },
-                    { nameAr: new RegExp(`^${escapedName}$`, 'i') }
-                ]
-            }).select('_id name nameAr slug').lean();
-
-            matchStage.$or = [
-                // ObjectId matches (in case category is stored as ObjectId)
-                ...(categoryDoc?._id ? [{ category: categoryDoc._id }, { categories: categoryDoc._id }] : []),
-                // Exact string matches
-                ...(categoryDoc?.name ? [{ category: categoryDoc.name }, { categories: categoryDoc.name }] : []),
-                ...(categoryDoc?.nameAr ? [{ category: categoryDoc.nameAr }, { categories: categoryDoc.nameAr }] : []),
-                ...(categoryDoc?.slug ? [{ category: categoryDoc.slug }, { categories: categoryDoc.slug }] : []),
-                { category: categoryParam },
-                { categories: categoryParam },
-                { category: normalizedName },
-                { categories: normalizedName },
-                // Flexible regex matches for '&'/'and' separators
-                { category: categoryRegex },
-                { categories: categoryRegex }
-            ];
-        }
+        const sortStage = buildProductListSort(sortBy);
+        const total = (paginated || fetchAll) ? await Product.countDocuments(matchStage) : null;
 
         let products = [];
         const listProjection = slim
             ? 'name nameAr slug price mrp AED images category categories inStock stockQuantity fastDelivery freeShippingEligible useProductsPath imageAspectRatio cardVideoPreviewEnabled cardVideoPreviewDelaySec createdAt'
             : 'name nameAr slug description descriptionAr shortDescription shortDescriptionAr brand brandAr price mrp AED images category categories sku hasVariants variants attributes fastDelivery freeShippingEligible stockQuantity imageAspectRatio cardVideoPreviewEnabled cardVideoPreviewDelaySec createdAt';
         try {
-            products = await Product.find(matchStage)
+            let query = Product.find(matchStage)
                 .select(listProjection)
-                .sort({ createdAt: -1 })
-                .skip(offset)
-                .limit(limit)
-                .lean()
-                .exec();
+                .sort(sortStage)
+                .skip(fetchAll ? 0 : offset);
+
+            if (!fetchAll && limit != null) {
+                query = query.limit(limit);
+            }
+
+            products = await query.lean().exec();
         } catch (populateError) {
             console.error('Products query error:', populateError);
-            products = await Product.find(matchStage)
+            let query = Product.find(matchStage)
                 .select(listProjection)
-                .sort({ createdAt: -1 })
-                .skip(offset)
-                .limit(limit)
-                .lean()
-                .exec();
+                .sort(sortStage)
+                .skip(fetchAll ? 0 : offset);
+
+            if (!fetchAll && limit != null) {
+                query = query.limit(limit);
+            }
+
+            products = await query.lean().exec();
         }
 
         // Normalize category/categories and calculate discount
@@ -308,15 +321,25 @@ export async function GET(request){
             }
         });
 
+        const responsePayload = (paginated || fetchAll)
+            ? {
+                products: enrichedProducts,
+                total: total ?? enrichedProducts.length,
+                page: fetchAll ? 1 : page,
+                limit: fetchAll ? enrichedProducts.length : limit,
+                totalPages: fetchAll ? 1 : Math.max(1, Math.ceil((total || 0) / limit)),
+            }
+            : enrichedProducts;
+
         // CACHE RESULTS - Store in memory for 10 minutes (with error handling)
         try {
-            setCachedData(cacheKey, enrichedProducts, 600);
+            setCachedData(cacheKey, responsePayload, 600);
         } catch (cacheErr) {
             console.error('Cache set error:', cacheErr.message);
             // Continue without cache if cache fails
         }
 
-        return createProductsResponse(enrichedProducts);
+        return createProductsResponse(responsePayload);
     } catch (error) {
         console.error('Error in products API:', error);
         if (error instanceof Error && error.stack) {

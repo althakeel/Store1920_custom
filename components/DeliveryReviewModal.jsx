@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import toast from 'react-hot-toast';
+import { getDisplayOrderNumber } from '@/lib/orderDisplay';
 
 export default function DeliveryReviewModal({ isOpen, onClose, order, onSubmit, isSubmitting }) {
   const [rating, setRating] = useState(5);
@@ -92,7 +93,7 @@ export default function DeliveryReviewModal({ isOpen, onClose, order, onSubmit, 
         <div className="p-6 space-y-6">
           {/* Order Info */}
           <div className="bg-slate-50 rounded-lg p-4">
-            <p className="text-sm text-slate-600">Order #{order._id?.slice(0, 8)}</p>
+            <p className="text-sm text-slate-600">Order #{getDisplayOrderNumber(order) || 'Pending'}</p>
             <p className="font-semibold text-slate-900">{order.orderItems?.length || 0} item(s)</p>
           </div>
 

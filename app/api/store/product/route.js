@@ -1,6 +1,4 @@
 
-import { uploadToS3 } from '@/lib/storage';
-import { optimizeUploadBuffer } from '@/lib/optimizeUploadBuffer';
 import connectDB from '@/lib/mongodb';
 import Product from '@/models/Product';
 import Category from '@/models/Category';
@@ -81,8 +79,13 @@ const isVideoFile = (file) => {
     return VIDEO_EXTENSIONS.some((ext) => fileName.endsWith(ext))
 }
 
-// Helper: Upload media (images/videos) to S3
+// Helper: Upload media (images/videos) to S3 — lazy-loaded so GET/list routes do not require sharp.
 const uploadMedia = async (files) => {
+    const [{ uploadToS3 }, { optimizeUploadBuffer }] = await Promise.all([
+        import('@/lib/storage'),
+        import('@/lib/optimizeUploadBuffer'),
+    ]);
+
     return Promise.all(
         files.map(async (file) => {
             const buffer = Buffer.from(await file.arrayBuffer());
@@ -539,8 +542,11 @@ export async function GET(request) {
             }
         );
     } catch (error) {
-        console.error(error);
-        return NextResponse.json({ error: error.code || error.message }, { status: 400 });
+        console.error('[GET /api/store/product]', error);
+        return NextResponse.json(
+            { error: error?.message || 'Failed to load products' },
+            { status: 500 },
+        );
     }
 }
 

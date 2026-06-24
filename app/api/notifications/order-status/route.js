@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { sendMail } from "@/lib/email";
+import { getDisplayOrderNumber } from "@/lib/orderDisplay";
 
 // Email notification for order status updates
 export async function POST(request) {
     try {
         const { 
             orderId, 
+            shortOrderNumber,
             email, 
             customerName, 
             status, 
@@ -20,17 +22,19 @@ export async function POST(request) {
             return NextResponse.json({ error: 'Email and order ID are required' }, { status: 400 });
         }
 
+        const displayOrderNumber = getDisplayOrderNumber({ shortOrderNumber }) || 'Pending';
+
         // Prepare email content based on status
         let emailSubject = '';
         let emailBody = '';
 
         // If only tracking info is provided without status, send tracking update email
         if (trackingId && !status) {
-            emailSubject = `Tracking Information Added - #${orderId.slice(0, 8).toUpperCase()}`;
+            emailSubject = `Tracking Information Added - #${displayOrderNumber}`;
             emailBody = `
                 <h2>Great news, ${customerName}! 📦</h2>
                 <p>Tracking information has been added to your order.</p>
-                <div class="order-id">#${orderId.slice(0, 8).toUpperCase()}</div>
+                <div class="order-id">#${displayOrderNumber}</div>
                 <div class="tracking-box" style="background: #eff6ff; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #3b82f6;">
                     <h3 style="color: #1e40af; margin-top: 0;">📦 Tracking Information</h3>
                     <p style="margin: 8px 0;"><strong>Tracking ID:</strong> <code style="background: #dbeafe; padding: 4px 8px; border-radius: 4px; font-size: 14px;">${trackingId}</code></p>
@@ -45,26 +49,26 @@ export async function POST(request) {
         } else {
             switch(status) {
                 case 'ORDER_PLACED':
-                    emailSubject = `Order Confirmed - #${orderId.slice(0, 8).toUpperCase()}`;
+                    emailSubject = `Order Confirmed - #${displayOrderNumber}`;
                     emailBody = `
                         <h2>Thank you for your order, ${customerName}! 🎉</h2>
                         <p>Your order has been successfully placed and is being processed.</p>
-                        <div class="order-id">#${orderId.slice(0, 8).toUpperCase()}</div>
+                        <div class="order-id">#${displayOrderNumber}</div>
                     `;
                     break;
                 case 'PROCESSING':
-                    emailSubject = `Order Processing - #${orderId.slice(0, 8).toUpperCase()}`;
+                    emailSubject = `Order Processing - #${displayOrderNumber}`;
                     emailBody = `
                         <h2>Your order is being processed, ${customerName}! ⚙️</h2>
                         <p>We're working on getting your items ready for shipment.</p>
-                        <div class="order-id">#${orderId.slice(0, 8).toUpperCase()}</div>
+                        <div class="order-id">#${displayOrderNumber}</div>
                     `;
                     break;
                 case 'SHIPPED':
-                    emailSubject = `Order Shipped - #${orderId.slice(0, 8).toUpperCase()}`;
+                    emailSubject = `Order Shipped - #${displayOrderNumber}`;
                     emailBody = `
                         <h2>Great news, ${customerName}! Your order has been shipped! 🚚</h2>
-                        <div class="order-id">#${orderId.slice(0, 8).toUpperCase()}</div>
+                        <div class="order-id">#${displayOrderNumber}</div>
                         ${trackingId ? `
                             <div class="tracking-box" style="background: #eff6ff; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #3b82f6;">
                                 <h3 style="color: #1e40af; margin-top: 0;">📦 Tracking Information</h3>
@@ -80,19 +84,19 @@ export async function POST(request) {
                     `;
                     break;
                 case 'DELIVERED':
-                    emailSubject = `Order Delivered - #${orderId.slice(0, 8).toUpperCase()}`;
+                    emailSubject = `Order Delivered - #${displayOrderNumber}`;
                     emailBody = `
                         <h2>Your order has been delivered, ${customerName}! ✅</h2>
                         <p>We hope you enjoy your purchase. Thank you for shopping with us!</p>
-                        <div class="order-id">#${orderId.slice(0, 8).toUpperCase()}</div>
+                        <div class="order-id">#${displayOrderNumber}</div>
                     `;
                     break;
                 default:
-                    emailSubject = `Order Update - #${orderId.slice(0, 8).toUpperCase()}`;
+                    emailSubject = `Order Update - #${displayOrderNumber}`;
                     emailBody = `
                         <h2>Order Update for ${customerName}</h2>
                         <p>Your order status has been updated.</p>
-                        <div class="order-id">#${orderId.slice(0, 8).toUpperCase()}</div>
+                        <div class="order-id">#${displayOrderNumber}</div>
                         <p><strong>Status:</strong> ${status}</p>
                         ${trackingId ? `
                             <div class="tracking-box" style="background: #eff6ff; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #3b82f6;">

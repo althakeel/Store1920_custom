@@ -3,6 +3,7 @@ import Product from "@/models/Product";
 import { NextResponse } from "next/server";
 import { localizeRecord, resolveStorefrontLanguage } from "@/lib/storefrontLanguage";
 import { getCachedData, setCachedData } from "@/lib/cache";
+import { isProductPublished } from '@/lib/productVisibility';
 
 const CACHE_TTL_SECONDS = 300;
 
@@ -42,7 +43,7 @@ export async function GET(request) {
             .lean();
     }
 
-    if (!product) {
+    if (!product || !isProductPublished(product)) {
         return NextResponse.json({ error: "Product not found" }, { status: 404 });
     }
 

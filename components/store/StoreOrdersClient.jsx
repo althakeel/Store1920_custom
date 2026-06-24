@@ -20,6 +20,7 @@ import {
     getOrderExpectedDeliveryDate,
     summarizeDeliveryBuckets,
 } from '@/lib/storeOrderInsights';
+import { getDisplayOrderNumber } from '@/lib/orderDisplay';
 
 function normalizeOrderSearchQuery(value = '') {
     return String(value || '').trim().toLowerCase();
@@ -881,7 +882,7 @@ export default function StoreOrders() {
             if (suppressLiveAlertsRef.current || incoming.length === 0) return;
             if (incoming.length === 1) {
                 const order = incoming[0];
-                const label = order.shortOrderNumber ? `#${order.shortOrderNumber}` : 'A new order';
+                const label = getDisplayOrderNumber(order) ? `#${getDisplayOrderNumber(order)}` : 'A new order';
                 setLiveOrderAlert(`${label} just arrived · AED ${Number(order.total || 0).toLocaleString()}`);
             } else if (incoming.length > 1) {
                 setLiveOrderAlert(`${incoming.length} new orders just arrived`);
@@ -1885,11 +1886,11 @@ export default function StoreOrders() {
                                             checked={selectedOrderIds.includes(String(order._id))}
                                             onChange={() => toggleOrderSelection(order._id)}
                                             className="h-4 w-4 rounded border-gray-300"
-                                            aria-label={`Select order ${order.shortOrderNumber || order._id}`}
+                                            aria-label={`Select order ${getDisplayOrderNumber(order) || 'pending'}`}
                                         />
                                     </td>
                                     <td className="pl-6 text-green-600 font-medium">{(safeCurrentPage - 1) * ordersPerPage + index + 1}</td>
-                                    <td className="px-4 py-3 font-mono text-xs text-slate-700">{order.shortOrderNumber || order._id.slice(0, 8)}</td>
+                                    <td className="px-4 py-3 font-mono text-xs text-slate-700">{getDisplayOrderNumber(order) || 'Pending'}</td>
                                     <td className="px-4 py-3">
                                         <div className="flex flex-col gap-1">
                                             <span className="font-medium text-slate-800">
@@ -1989,7 +1990,7 @@ export default function StoreOrders() {
                             <div className="flex justify-between items-center">
                                 <div>
                                     <h2 className="text-2xl font-bold mb-1">Order Details</h2>
-                                    <p className="text-blue-100 text-xs">Order ID: {String(selectedOrder._id).slice(0, 8).toUpperCase()} &nbsp;|&nbsp; Order No: <span className='font-mono text-white'>{selectedOrder.shortOrderNumber || selectedOrder._id.slice(0, 8)}</span></p>
+                                    <p className="text-blue-100 text-xs">Order No: <span className='font-mono text-white'>{getDisplayOrderNumber(selectedOrder) || 'Pending'}</span></p>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <button

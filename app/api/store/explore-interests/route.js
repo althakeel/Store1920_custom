@@ -3,6 +3,7 @@ import connectDB from '@/lib/mongodb'
 import Store from '@/models/Store'
 import authSeller from '@/middlewares/authSeller'
 import { invalidateCachePattern } from '@/lib/cache'
+import { getAuth } from '@/lib/firebase-admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,9 +11,6 @@ async function getUserIdFromRequest(request) {
   const authHeader = request.headers.get('authorization')
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null
   const idToken = authHeader.split(' ')[1]
-  const { getAuth } = await import('firebase-admin/auth')
-  const { initializeApp, getApps } = await import('firebase-admin/app')
-  if (getApps().length === 0) initializeApp()
   try {
     const decoded = await getAuth().verifyIdToken(idToken)
     return decoded.uid
@@ -35,8 +33,7 @@ export async function GET(request) {
     if (!storeId) return NextResponse.json({ error: 'Not authorized' }, { status: 401 })
 
     await connectDB()
-    // Read the exact same document the public API reads so values match.
-    const store = await Store.findOne()
+    const store = await Store.findById(storeId)
       .select('exploreInterestsEnabled exploreInterestsProductIds')
       .lean()
 
@@ -46,7 +43,7 @@ export async function GET(request) {
     })
   } catch (error) {
     console.error('[explore interests GET] error:', error)
-    return NextResponse.json({ enabled: true, productIds: [] })
+    return NextResponse.json({ error: 'Failed to load Explore Interests settings' }, { status: 500 })
   }
 }
 
@@ -62,17 +59,20 @@ export async function POST(request) {
     const productIds = normalizeIds(body.productIds)
 
     await connectDB()
-    // Write to the FIRST store document — the same one both GET routes always read.
-    // This guarantees read/write consistency on single-store deployments.
-    const updated = await Store.findOneAndUpdate(
-      {},
+    const updated = await Store.findByIdAndUpdate(
+      storeId,
       { $set: { exploreInterestsEnabled: enabled, exploreInterestsProductIds: productIds } },
       { new: true }
     )
-    invalidateCachePattern('public:explore-interests')
-    console.log('[explore interests POST] wrote to first store:', updated?._id, 'ids:', productIds.length, 'requested storeId was:', storeId)
 
-    return NextResponse.json({ message: 'Saved', enabled, productIds, _storeId: updated?._id ? String(updated._id) : storeId })
+    invalidateCachePattern('public:explore-interests')
+
+    return NextResponse.json({
+      message: 'Saved',
+      enabled,
+      productIds,
+      _storeId: updated?._id ? String(updated._id) : storeId,
+    })
   } catch (error) {
     console.error('[explore interests POST] error:', error)
     return NextResponse.json({ error: 'Failed to save' }, { status: 500 })

@@ -7,17 +7,24 @@ import { useAuth } from '@/lib/useAuth'
 import axios from 'axios'
 
 export default function ExploreInterestsCustomizeCard() {
-  const { getToken } = useAuth()
+  const { getToken, user, loading: authLoading } = useAuth()
   const [loading, setLoading] = useState(true)
   const [enabled, setEnabled] = useState(true)
   const [productCount, setProductCount] = useState(0)
 
   useEffect(() => {
+    if (authLoading) return
+    if (!user) {
+      setLoading(false)
+      return
+    }
+
     let active = true
 
     const load = async () => {
       try {
         const token = await getToken()
+        if (!token || !active) return
         const { data } = await axios.get('/api/store/explore-interests', {
           headers: { Authorization: `Bearer ${token}` },
         })
@@ -37,7 +44,7 @@ export default function ExploreInterestsCustomizeCard() {
     return () => {
       active = false
     }
-  }, [getToken])
+  }, [authLoading, user?.uid, getToken])
 
   return (
     <Link
