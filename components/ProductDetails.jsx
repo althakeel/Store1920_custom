@@ -11,7 +11,8 @@ import axios from "axios";
 import { useDispatch, useSelector } from "react-redux";
 
 import { addToCart, removeFromCart, deleteItemFromCart, setCartItemQuantity, setCartEntry, uploadCart } from "@/lib/features/cart/cartSlice";
-import { buildBundleCartEntry } from "@/lib/bulkBundleCart";
+import { buildBundleCartEntry, resolveCartLinePricing, adjustBundleCartTier } from "@/lib/bulkBundleCart";
+import { decrementCartItem, incrementCartItem } from "@/lib/bundleCartActions";
 import MobileProductActions from "./MobileProductActions";
 import ProductShareButton from "./ProductShareButton";
 import ProductCard from "./ProductCard";
@@ -568,13 +569,13 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
   const cartItems = useSelector((state) => state.cart.cartItems);
   const cartProductId = String(product?._id || product?.id || '');
+  const cartEntry = cartItems?.[cartProductId] ?? null;
 
   // Always read qty directly from Redux so product page matches sidebar
   const cartQty = (() => {
-    const entry = cartItems?.[cartProductId];
-    if (!entry) return 0;
-    if (typeof entry === 'number') return entry;
-    return Number(entry?.quantity || 0);
+    if (!cartEntry) return 0;
+    if (typeof cartEntry === 'number') return cartEntry;
+    return Number(cartEntry?.quantity || 0);
   })();
 
   const relatedProducts = useMemo(() => {
@@ -822,8 +823,8 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     [bulkVariants]
   );
   const isBulkBundleProduct = bulkBundleTiers.length > 0;
-  const BUNDLE_UI_MAX_QTY = 3;
-  const isBundleModeActive = isBulkBundleProduct && quantity <= BUNDLE_UI_MAX_QTY;
+  const isBundleTierQty = (qty) => isBulkBundleProduct && bulkBundleTiers.includes(Number(qty));
+  const isBundleModeActive = isBundleTierQty(quantity);
   const showBundleOptions = isBundleModeActive;
   const variantColors = [...new Set(variants.filter((v) => !isBulkBundleVariant(v)).map((v) => v.options?.color).filter(Boolean))];
   const variantSizes = [...new Set(variants.filter((v) => !isBulkBundleVariant(v)).map((v) => v.options?.size).filter(Boolean))];
@@ -835,16 +836,28 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
   const selectBulkBundleTier = useCallback((tier) => {
     const qty = Number(tier) || 1;
-    if (!bulkBundleTiers.includes(qty) || qty > BUNDLE_UI_MAX_QTY) return;
+    if (!bulkBundleTiers.includes(qty)) return;
     setSelectedBundleQty(qty);
     setQuantity(qty);
   }, [bulkBundleTiers]);
 
+  const cartLinePricing = useMemo(() => {
+    if (!cartEntry || cartQty <= 0) {
+      return { displayQuantity: cartQty, isBulkBundle: false, bundleTier: null };
+    }
+    return resolveCartLinePricing(product, cartEntry, cartQty);
+  }, [cartEntry, cartQty, product]);
+
+  const cartDisplayQty = cartLinePricing.displayQuantity ?? cartQty;
+  const isCartBundleLine = Boolean(cartLinePricing.isBulkBundle);
+  const cartBundleTier = Number(cartLinePricing.bundleTier) || null;
+  const minBundleTier = bulkBundleTiers.length ? Math.min(...bulkBundleTiers) : 1;
+  const canIncreaseCartBundle = isCartBundleLine && Boolean(adjustBundleCartTier(cartEntry, product, 'up'));
+  const canDecreaseCartBundle = isCartBundleLine && cartBundleTier > minBundleTier;
+
   const selectedVariant = (isBulkBundleProduct
     ? bulkVariants.find((v) => {
-        const tier = isBundleModeActive && bulkBundleTiers.includes(quantity)
-          ? quantity
-          : 1;
+        const tier = isBundleModeActive ? quantity : 1;
         return Number(v.options?.bundleQty) === Number(tier);
       })
     : variants.find(v => {
@@ -902,7 +915,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   }
   
   const availableStock = useMemo(() => {
-    if (isBulkBundleProduct && quantity <= BUNDLE_UI_MAX_QTY && bulkBundleTiers.includes(quantity)) {
+    if (isBundleTierQty(quantity)) {
       const bundleVariant = bulkVariants.find((v) => Number(v.options?.bundleQty) === Number(quantity));
       if (typeof bundleVariant?.stock === 'number') {
         return Math.max(0, bundleVariant.stock);
@@ -941,9 +954,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
   const upsertProductCartLines = useCallback((requestedQty) => {
     const normalizedQty = Math.max(1, Number(requestedQty) || 1);
-    const useBundleLine = isBulkBundleProduct
-      && normalizedQty <= BUNDLE_UI_MAX_QTY
-      && bulkBundleTiers.includes(normalizedQty);
+    const useBundleLine = isBundleTierQty(normalizedQty);
     const safeMax = Math.max(0, maxOrderQty);
     if (safeMax <= 0) return 0;
 
@@ -1005,17 +1016,17 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     const next = Math.max(1, Math.min(maxOrderQty || 1, Number(value) || 1));
     setQuantity(next);
     if (isBulkBundleProduct) {
-      if (next <= BUNDLE_UI_MAX_QTY && bulkBundleTiers.includes(next)) {
+      if (bulkBundleTiers.includes(next)) {
         setSelectedBundleQty(next);
-      } else if (next > BUNDLE_UI_MAX_QTY) {
-        setSelectedBundleQty(1);
+      } else {
+        setSelectedBundleQty(bulkBundleTiers[0] ?? 1);
       }
     }
   }, [maxOrderQty, isBulkBundleProduct, bulkBundleTiers]);
 
   const getBundleQuantityOptionLabel = useCallback((qty) => {
     const val = Number(qty) || 1;
-    if (!isBulkBundleProduct || val > BUNDLE_UI_MAX_QTY || !bulkBundleTiers.includes(val)) {
+    if (!isBulkBundleProduct || !bulkBundleTiers.includes(val)) {
       return formatCount(val);
     }
     const variant = bulkVariants.find((v) => Number(v.options?.bundleQty) === val);
@@ -1067,7 +1078,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
         </p>
         {bulkVariants
           .slice()
-          .filter((v) => Number(v.options?.bundleQty) <= BUNDLE_UI_MAX_QTY)
+          .filter((v) => bulkBundleTiers.includes(Number(v.options?.bundleQty)))
           .sort((a, b) => Number(a.options.bundleQty) - Number(b.options.bundleQty))
           .map((v, idx) => {
             const qty = Number(v.options.bundleQty) || 1;
@@ -1990,9 +2001,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     if (!isSelectionInStock || maxOrderQty <= 0) return;
 
     upsertProductCartLines(quantity);
-    const useBundleLine = isBulkBundleProduct
-      && quantity <= BUNDLE_UI_MAX_QTY
-      && bulkBundleTiers.includes(quantity);
+    const useBundleLine = isBundleTierQty(quantity);
     const gtmQty = useBundleLine ? 1 : Math.min(Math.max(1, Number(quantity) || 1), maxOrderQty);
 
     pushGtmEcommerceEvent(GTM_EVENTS.ADD_TO_CART, {
@@ -2030,6 +2039,16 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     }
     // Only reset quantity when switching product or color/size — not on every render.
   }, [product?._id, selectedColor, selectedSize]);
+
+  useEffect(() => {
+    if (!addedToCart || cartQty <= 0) return;
+    if (isCartBundleLine && cartBundleTier) {
+      setQuantity(cartBundleTier);
+      setSelectedBundleQty(cartBundleTier);
+      return;
+    }
+    setQuantity(cartQty);
+  }, [addedToCart, product?._id, cartQty, isCartBundleLine, cartBundleTier]);
 
   // Keep addedToCart in sync with actual cart state (do not override manual quantity before add-to-cart)
   useEffect(() => {
@@ -3162,8 +3181,8 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                     </span>
                     <p className="text-sm font-medium text-emerald-900">
                       {t('product.addedToCartSummary', {
-                        count: cartQty,
-                        items: cartQty === 1 ? t('product.itemSingular') : t('product.itemPlural'),
+                        count: cartDisplayQty,
+                        items: cartDisplayQty === 1 ? t('product.itemSingular') : t('product.itemPlural'),
                       })}
                     </p>
                   </div>
@@ -3173,32 +3192,49 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                       <button
                         type="button"
                         onClick={async () => {
-                          const pid = String(product._id || '');
-                          if (cartQty <= 1) {
+                          const pid = cartProductId;
+                          if (isCartBundleLine) {
+                            if (canDecreaseCartBundle) {
+                              decrementCartItem(dispatch, { productId: pid, entry: cartEntry, product });
+                            } else {
+                              dispatch(deleteItemFromCart({ productId: pid }));
+                            }
+                          } else if (cartQty <= 1) {
                             dispatch(deleteItemFromCart({ productId: pid }));
-                            if (isSignedIn) { try { await dispatch(uploadCart()).unwrap(); } catch (_) {} }
                           } else {
                             dispatch(removeFromCart({ productId: pid }));
-                            if (isSignedIn) { try { await dispatch(uploadCart()).unwrap(); } catch (_) {} }
                           }
+                          if (isSignedIn) { try { await dispatch(uploadCart()).unwrap(); } catch (_) {} }
                         }}
                         className="flex h-11 items-center justify-center border-r border-gray-200 text-gray-700 transition hover:bg-gray-50"
-                        aria-label={cartQty <= 1 ? 'Remove from cart' : 'Decrease quantity'}
+                        aria-label={(isCartBundleLine ? !canDecreaseCartBundle : cartQty <= 1) ? 'Remove from cart' : 'Decrease quantity'}
                       >
-                        {cartQty <= 1 ? <Trash2 size={16} className="text-red-500" /> : <MinusIcon size={16} />}
+                        {(isCartBundleLine ? !canDecreaseCartBundle : cartQty <= 1)
+                          ? <Trash2 size={16} className="text-red-500" />
+                          : <MinusIcon size={16} />}
                       </button>
 
                       <div className="flex min-w-[88px] flex-col items-center justify-center border-r border-gray-200 bg-gray-50 px-4">
                         <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
-                          {t('product.qty')}
+                          {isCartBundleLine ? t('product.bundleAndSave') : t('product.qty')}
                         </span>
-                        <span className="text-lg font-bold leading-none text-gray-900">{cartQty}</span>
+                        <span className="text-lg font-bold leading-none text-gray-900">
+                          {formatCount(cartDisplayQty)}
+                        </span>
                       </div>
 
                       <button
                         type="button"
                         onClick={async () => {
-                          if (cartQty < Math.max(1, maxOrderQty)) {
+                          if (isCartBundleLine) {
+                            if (!canIncreaseCartBundle) return;
+                            incrementCartItem(dispatch, {
+                              productId: cartProductId,
+                              entry: cartEntry,
+                              product,
+                              price: effPrice,
+                            });
+                          } else if (cartQty < Math.max(1, maxOrderQty)) {
                             const payload = {
                               productId: cartProductId,
                               price: effPrice,
@@ -3210,12 +3246,12 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                               payload.discountPercent = product.specialOffer.discountPercent;
                             }
                             dispatch(addToCart(payload));
-                            if (isSignedIn) { try { await dispatch(uploadCart()).unwrap(); } catch (_) {} }
                           }
+                          if (isSignedIn) { try { await dispatch(uploadCart()).unwrap(); } catch (_) {} }
                         }}
                         className="flex h-11 items-center justify-center text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
                         aria-label="Increase quantity"
-                        disabled={cartQty >= Math.max(1, maxOrderQty)}
+                        disabled={isCartBundleLine ? !canIncreaseCartBundle : cartQty >= Math.max(1, maxOrderQty)}
                       >
                         <PlusIcon size={16} />
                       </button>
