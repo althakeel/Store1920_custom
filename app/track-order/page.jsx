@@ -313,7 +313,7 @@ function TrackOrderPageInner() {
               {/* Tracking not ready notice */}
               {!order.trackingId && !order.c3x && (
                 <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-yellow-800 text-sm">
-                  Shipment hasn\'t been created yet. You\'ll see live tracking here once the courier AWB is generated.
+                  Shipment hasn't been created yet. You\'ll see live tracking here once the courier AWB is generated.
                 </div>
               )}
               {/* Order Status */}

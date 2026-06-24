@@ -145,9 +145,8 @@ export default function Cart() {
     };
 
     useEffect(() => {
-        if (products.length > 0) {
-            createCartArray();
-        }
+        if (!productsLoaded) return;
+        createCartArray();
     }, [cartItems, products, productsLoaded]);
 
     const fetchRecentOrders = async () => {

@@ -2,6 +2,7 @@
 
 import { StarIcon, HeartIcon, MinusIcon, PlusIcon, ShoppingCartIcon, Trash2, Check, ChevronLeft, ChevronRight, ChevronDown, X, Truck } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { createPortal } from "react-dom";
 
@@ -566,10 +567,11 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const allProducts = useSelector((state) => state.product.list || []);
 
   const cartItems = useSelector((state) => state.cart.cartItems);
+  const cartProductId = String(product?._id || product?.id || '');
 
   // Always read qty directly from Redux so product page matches sidebar
   const cartQty = (() => {
-    const entry = cartItems?.[String(product?._id || '')];
+    const entry = cartItems?.[cartProductId];
     if (!entry) return 0;
     if (typeof entry === 'number') return entry;
     return Number(entry?.quantity || 0);
@@ -1908,11 +1910,11 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
             discountPercent: product.specialOffer.discountPercent,
           } : {}),
         }, product, bundleTier);
-        dispatch(setCartEntry({ productId: product._id, entry }));
+        dispatch(setCartEntry({ productId: cartProductId, entry }));
       } else {
         for (let i = 0; i < qty; i++) {
           const payload = {
-            productId: product._id, 
+            productId: cartProductId, 
             price: effPrice,
             productName: product.name || product.title || 'Product',
             quantity: 1,
@@ -1967,11 +1969,11 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
           discountPercent: product.specialOffer.discountPercent,
         } : {}),
       }, product, bundleTier);
-      dispatch(setCartEntry({ productId: product._id, entry }));
+      dispatch(setCartEntry({ productId: cartProductId, entry }));
     } else {
       for (let i = 0; i < qty; i++) {
         const payload = {
-          productId: product._id,
+          productId: cartProductId,
           price: effPrice,
           productName: product.name || product.title || 'Product',
           quantity: 1,
@@ -2112,7 +2114,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
     // Add main product
     dispatch(addToCart({
-      productId: product._id,
+      productId: cartProductId,
       price: effPrice,
       variantOptions: {
         color: selectedColor || null,
@@ -3195,7 +3197,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                           if (cartQty < Math.max(1, maxOrderQty)) {
                             setQuantity((q) => q + 1);
                             const payload = {
-                              productId: product._id,
+                              productId: cartProductId,
                               price: effPrice,
                               variantOptions: { color: selectedColor || null, size: selectedSize || null, bundleQty: selectedBundleQty || null }
                             };
@@ -3372,9 +3374,9 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
           </div>
           <div>
             <p className="font-semibold text-gray-900">{t('product.addedToCartToast')}</p>
-            <a href="/cart" className="text-sm text-orange-500 hover:underline">
+            <Link href="/cart" className="text-sm text-orange-500 hover:underline">
               {t('product.viewCart')}
-            </a>
+            </Link>
           </div>
         </div>
       )}
