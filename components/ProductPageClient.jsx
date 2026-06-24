@@ -1,12 +1,11 @@
 "use client";
 
-import dynamic from "next/dynamic";
-import { useEffect, useRef, useState } from "react";
+import { Component, useEffect, useRef, useState } from "react";
 import axios from "axios";
 import { useStorefrontI18n } from "@/lib/useStorefrontI18n";
-import ProductPageSkeleton from "@/components/ProductPageSkeleton";
+import ProductDetails from "@/components/ProductDetails";
 
-function ProductDetailsLoadError({ onRetry }) {
+function ProductDetailsLoadError({ onRetry, detail }) {
   return (
     <div className="mx-auto max-w-lg px-4 py-16 text-center">
       <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-xl text-amber-700">
@@ -16,6 +15,11 @@ function ProductDetailsLoadError({ onRetry }) {
       <p className="mt-2 text-sm text-slate-600">
         The product page failed to load. This can happen after a site update — try reloading.
       </p>
+      {detail ? (
+        <p className="mt-3 break-words rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-xs text-slate-500">
+          {detail}
+        </p>
+      ) : null}
       <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
         <button
           type="button"
@@ -36,20 +40,37 @@ function ProductDetailsLoadError({ onRetry }) {
   );
 }
 
-const ProductDetails = dynamic(
-  () => import("@/components/ProductDetails").catch((error) => {
-    console.error("[ProductPageClient] ProductDetails chunk failed:", error);
-    return {
-      default: function ProductDetailsFallback() {
-        return <ProductDetailsLoadError onRetry={() => window.location.reload()} />;
-      },
-    };
-  }),
-  {
-    loading: () => <ProductPageSkeleton />,
-    ssr: false,
-  },
-);
+class ProductDetailsErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidCatch(error) {
+    console.error("[ProductPageClient] ProductDetails render error:", error);
+  }
+
+  render() {
+    if (this.state.error) {
+      const message = String(this.state.error?.message || "");
+      return (
+        <ProductDetailsLoadError
+          detail={message}
+          onRetry={() => {
+            this.setState({ error: null });
+            window.location.reload();
+          }}
+        />
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 export default function ProductPageClient({ slug, initialData }) {
   const { language } = useStorefrontI18n();
@@ -183,19 +204,21 @@ export default function ProductPageClient({ slug, initialData }) {
     <div className="w-full">
       {refreshingLanguage ? (
         <div className="pointer-events-none mx-auto w-full max-w-[1400px] px-4 py-6 pb-8 opacity-60 sm:px-6">
-          <ProductPageSkeleton />
+          <div className="h-96 animate-pulse rounded-xl bg-slate-100" />
         </div>
       ) : (
-        <ProductDetails
-          product={product}
-          reviews={reviews}
-          loadingReviews={false}
-          reviewsPreloaded
-          onReviewAdded={refetchReviews}
-          recommendedProducts={recommendedProducts}
-          initialFbt={fbt}
-          fbtPreloaded
-        />
+        <ProductDetailsErrorBoundary>
+          <ProductDetails
+            product={product}
+            reviews={reviews}
+            loadingReviews={false}
+            reviewsPreloaded
+            onReviewAdded={refetchReviews}
+            recommendedProducts={recommendedProducts}
+            initialFbt={fbt}
+            fbtPreloaded
+          />
+        </ProductDetailsErrorBoundary>
       )}
     </div>
   );
