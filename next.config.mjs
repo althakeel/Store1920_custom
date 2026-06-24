@@ -173,6 +173,15 @@ const nextConfig = {
                 ],
             },
             {
+                source: '/products/:slug*',
+                headers: [
+                    {
+                        key: 'Cache-Control',
+                        value: 'public, s-maxage=120, stale-while-revalidate=600',
+                    },
+                ],
+            },
+            {
                 source: '/shop',
                 headers: [
                     {

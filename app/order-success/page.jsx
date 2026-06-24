@@ -51,6 +51,10 @@ function OrderSuccessContent() {
           }
         }
         const res = await fetch(`/api/orders?orderId=${orderId}`, fetchOptions);
+        if (!res.ok) {
+          setOrders(null);
+          return;
+        }
         const data = await res.json();
         let loadedOrders = null;
         if (data.orders && Array.isArray(data.orders)) {
@@ -73,9 +77,7 @@ function OrderSuccessContent() {
     };
 
     const orderId = params.get('orderId');
-    console.log('OrderSuccessContent: orderId from params:', orderId);
     if (!orderId) {
-      console.error('OrderSuccessContent: orderId missing, redirecting to home.');
       router.replace('/');
       return;
     }
@@ -85,7 +87,10 @@ function OrderSuccessContent() {
   const order = orders && orders.length > 0 ? orders[0] : null;
   function getOrderNumber(orderObj) {
     if (!orderObj) return '';
-    return String(orderObj.shortOrderNumber || orderObj._id.slice(0, 8));
+    const short = orderObj.shortOrderNumber;
+    if (short != null && String(short).trim()) return String(short);
+    const id = String(orderObj._id || orderObj.id || '').trim();
+    return id ? id.slice(0, 8) : '';
   }
   // Calculate totals
   const products = order ? order.orderItems : [];
