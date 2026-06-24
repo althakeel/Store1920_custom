@@ -93,6 +93,9 @@ export async function GET(request) {
 
     const { searchParams } = new URL(request.url);
     const range = searchParams.get('range') || 'week';
+    const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit') || 25)));
+    const productsPage = Math.max(1, Number(searchParams.get('productsPage') || 1));
+    const searchesPage = Math.max(1, Number(searchParams.get('searchesPage') || 1));
     const startDate = getStartDate(range);
     const storeIdString = String(storeId);
 
@@ -200,7 +203,7 @@ export async function GET(request) {
     const productNameMap = new Map(products.map((product) => [String(product._id), product]));
     const productSlugMap = new Map(products.map((product) => [String(product.slug), product]));
 
-    const topProducts = Array.from(productStats.values())
+    const allTopProducts = Array.from(productStats.values())
       .map((item) => {
         const product = item.productId
           ? productNameMap.get(item.productId)
@@ -218,13 +221,25 @@ export async function GET(request) {
           name: product?.name || item.productSlug || item.key,
         };
       })
-      .sort((a, b) => (b.views + b.addToCarts) - (a.views + a.addToCarts))
-      .slice(0, 20);
+      .sort((a, b) => (b.views + b.addToCarts) - (a.views + a.addToCarts));
 
-    const topSearches = Array.from(searchStats.entries())
+    const allTopSearches = Array.from(searchStats.entries())
       .map(([term, count]) => ({ term, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 20);
+      .sort((a, b) => b.count - a.count);
+
+    const paginate = (rows, page) => {
+      const total = rows.length;
+      const totalPages = Math.max(1, Math.ceil(total / limit));
+      const safePage = Math.min(page, totalPages);
+      const offset = (safePage - 1) * limit;
+      return {
+        items: rows.slice(offset, offset + limit),
+        pagination: { page: safePage, limit, total, totalPages },
+      };
+    };
+
+    const paginatedProducts = paginate(allTopProducts, productsPage);
+    const paginatedSearches = paginate(allTopSearches, searchesPage);
 
     const revenue = orders.reduce((sum, order) => sum + Number(order.total || 0), 0);
     const orderCount = orders.length;
@@ -243,8 +258,10 @@ export async function GET(request) {
         checkoutStarts: funnelCounts.checkout_start || 0,
       },
       funnel,
-      topProducts,
-      topSearches,
+      topProducts: paginatedProducts.items,
+      topProductsPagination: paginatedProducts.pagination,
+      topSearches: paginatedSearches.items,
+      topSearchesPagination: paginatedSearches.pagination,
     });
   } catch (error) {
     console.error('[marketing-analytics GET]', error);

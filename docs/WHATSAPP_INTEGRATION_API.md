@@ -261,7 +261,8 @@ These WhatsApp templates are sent automatically without calling the webhook:
 | `order_confirmation_final` | COD / unpaid order placed |
 | `confirmation_paid_order` | Card, Razorpay, Wallet, or paid order placed; Stripe/Tamara/Tabby after payment webhook |
 | `order_shipped` | Seller sets order status to `SHIPPED` or shipping email API is called |
-| `order_reminder_` | Via webhook event `order_reminder` only (Elastic CRM / campaigns) |
+| `order_reminder_` | Store dashboard → Orders → order detail → **Order reminder**, or webhook event `order_reminder` |
+| `cart_reminder_1920` | Store dashboard → Abandoned checkout → **Send WhatsApp reminder**, or webhook event `cart_reminder` |
 
 Each template uses its own bearer token env var (see `.env.example`):
 
@@ -270,6 +271,19 @@ WABA_TOKEN_ORDER_CONFIRMATION   → order_confirmation_final
 WABA_TOKEN_PAID_ORDER           → confirmation_paid_order
 WABA_TOKEN_SHIPPED              → order_shipped
 WABA_TOKEN_REMINDER             → order_reminder_
+WABA_TOKEN_CART_REMINDER        → cart_reminder_1920
+```
+
+### Store dashboard manual send API
+
+```http
+POST /api/store/whatsapp/send
+Authorization: Bearer <firebase_seller_token>
+Content-Type: application/json
+
+{ "template": "cart_reminder", "cartId": "..." }
+{ "template": "order_reminder", "orderId": "..." }
+{ "template": "order_confirmation" | "order_paid" | "order_shipped", "orderId": "..." }
 ```
 
 ---

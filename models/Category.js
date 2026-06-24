@@ -42,13 +42,37 @@ const categorySchema = new mongoose.Schema({
     type: String,
     ref: 'Category',
     default: null
-  }
+  },
+  level: {
+    type: Number,
+    default: 1,
+    min: 1,
+    max: 3,
+  },
+  metaTitle: {
+    type: String,
+    default: '',
+  },
+  metaDescription: {
+    type: String,
+    default: '',
+  },
+  isActive: {
+    type: Boolean,
+    default: true,
+  },
+  sortOrder: {
+    type: Number,
+    default: 0,
+  },
 }, {
   timestamps: true
 });
 
 categorySchema.index({ parentId: 1, name: 1 });
-categorySchema.index({ slug: 1 });
+categorySchema.index({ parentId: 1, sortOrder: 1 });
+categorySchema.index({ level: 1, sortOrder: 1 });
+categorySchema.index({ isActive: 1, level: 1 });
 
 const Category = mongoose.models.Category || mongoose.model('Category', categorySchema);
 

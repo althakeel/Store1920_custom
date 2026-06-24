@@ -4,6 +4,7 @@ import {
   STOREFRONT_LANGUAGE_COOKIE,
   detectLanguageFromAcceptLanguage,
 } from '@/lib/storefrontLanguage';
+import { resolveLegacyCategoryRedirect } from '@/lib/categoryRedirects';
 
 // Only protect API routes
 const apiProtectedRoutes = [
@@ -56,6 +57,11 @@ export async function proxy(request: NextRequest) {
     || request.headers.get('Next-Router-Prefetch') === '1'
   ) {
     return NextResponse.next();
+  }
+
+  const categoryRedirect = resolveLegacyCategoryRedirect(request.nextUrl);
+  if (categoryRedirect) {
+    return NextResponse.redirect(new URL(categoryRedirect, request.url), 301);
   }
 
   // Large CSV uploads are authenticated in the route handler; skip proxy buffering.

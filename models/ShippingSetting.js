@@ -1,5 +1,27 @@
 import mongoose from "mongoose";
 
+const ShippingOptionSchema = new mongoose.Schema({
+  id: { type: String, required: true },
+  name: { type: String, trim: true, required: true },
+  enabled: { type: Boolean, default: true },
+  isDefault: { type: Boolean, default: false },
+  estimatedDays: { type: String, default: "3-5" },
+  shippingType: {
+    type: String,
+    enum: ["FLAT_RATE", "PER_ITEM", "WEIGHT_BASED", "FREE"],
+    default: "FLAT_RATE",
+  },
+  flatRate: { type: Number, default: 0 },
+  perItemFee: { type: Number, default: 0 },
+  maxItemFee: Number,
+  weightUnit: { type: String, default: "kg" },
+  baseWeight: { type: Number, default: 1 },
+  baseWeightFee: { type: Number, default: 0 },
+  additionalWeightFee: { type: Number, default: 0 },
+  availableStates: [{ type: String, trim: true }],
+  sortOrder: { type: Number, default: 0 },
+}, { _id: false });
+
 const ShippingSettingSchema = new mongoose.Schema({
   storeId: { type: mongoose.Schema.Types.ObjectId, ref: "Store", required: true, unique: true },
   enabled: { type: Boolean, default: true },
@@ -32,7 +54,8 @@ const ShippingSettingSchema = new mongoose.Schema({
       state: { type: String, trim: true },
       fee: { type: Number, default: 0 }
     }
-  ]
+  ],
+  shippingOptions: [ShippingOptionSchema],
 }, { timestamps: true });
 
 export default mongoose.models.ShippingSetting || mongoose.model("ShippingSetting", ShippingSettingSchema);

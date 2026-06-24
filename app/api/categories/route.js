@@ -24,9 +24,9 @@ export async function GET(req) {
 
         await connectDB();
 
-        const allCategories = await Category.find({})
-            .select('name nameAr slug image parentId description descriptionAr legacySourceId')
-            .sort({ name: 1 })
+        const allCategories = await Category.find({ isActive: { $ne: false } })
+            .select('name nameAr slug image parentId description descriptionAr legacySourceId level url sortOrder metaTitle metaDescription')
+            .sort({ level: 1, sortOrder: 1, name: 1 })
             .lean();
 
         const categoryIdAliases = new Map();
@@ -68,7 +68,8 @@ export async function GET(req) {
 
         const categoriesWithChildren = allCategories.map((category) => {
             const children = (childrenByParent.get(String(category._id)) || [])
-                .sort((first, second) => String(first.name || '').localeCompare(String(second.name || '')))
+                .sort((first, second) => (first.sortOrder || 0) - (second.sortOrder || 0)
+                    || String(first.name || '').localeCompare(String(second.name || '')))
                 .map((child) => localizeRecord(sanitizeCategoryFields(child), language, ['name', 'description']));
 
             return localizeRecord(sanitizeCategoryFields({

@@ -1,6 +1,11 @@
 import dbConnect from "@/lib/mongodb";
 import ShippingSetting from "@/models/ShippingSetting";
 import authSeller from "@/middlewares/authSeller";
+import {
+  resolveShippingOptions,
+  sanitizeShippingOptionsPayload,
+  syncLegacyFieldsFromOptions,
+} from "@/lib/shippingOptions";
 
 import { NextResponse } from "next/server";
 
@@ -26,9 +31,13 @@ export async function GET(request) {
     
     console.log('Retrieved setting - maxCODAmount:', setting?.maxCODAmount, 'codFee:', setting?.codFee);
     console.log('Full setting:', JSON.stringify(setting));
+
+    const normalizedSetting = setting
+      ? { ...setting, shippingOptions: resolveShippingOptions(setting) }
+      : null;
     
     return NextResponse.json({
-      setting: setting || {
+      setting: normalizedSetting || {
         enabled: false,
         shippingType: "FLAT_RATE",
         flatRate: 0,
@@ -50,7 +59,8 @@ export async function GET(request) {
         enableExpressShipping: false,
         expressShippingFee: 0,
         expressEstimatedDays: "1-2",
-        stateCharges: []
+        stateCharges: [],
+        shippingOptions: resolveShippingOptions(null),
       }
     }, {
       headers: {
@@ -91,6 +101,8 @@ export async function PUT(request) {
     if (!storeId) return NextResponse.json({ error: "not authorized" }, { status: 401 });
 
     const body = await request.json();
+    const shippingOptions = sanitizeShippingOptionsPayload(body.shippingOptions);
+    const legacyFromOptions = syncLegacyFieldsFromOptions(shippingOptions);
     
     console.log('=== SHIPPING API PUT ===');
     console.log('Received body.maxCODAmount:', body.maxCODAmount, 'Type:', typeof body.maxCODAmount);
@@ -100,17 +112,19 @@ export async function PUT(request) {
     const data = {
       storeId,  // Associate settings with the seller's store
       enabled: Boolean(body.enabled ?? true),
-      shippingType: body.shippingType || "FLAT_RATE",
+      shippingType: legacyFromOptions.shippingType || body.shippingType || "FLAT_RATE",
       // Flat Rate
-      flatRate: Number(body.flatRate ?? 5),
+      flatRate: Number(legacyFromOptions.flatRate ?? body.flatRate ?? 5),
       // Per Item
-      perItemFee: Number(body.perItemFee ?? 2),
-      maxItemFee: body.maxItemFee ? Number(body.maxItemFee) : null,
+      perItemFee: Number(legacyFromOptions.perItemFee ?? body.perItemFee ?? 2),
+      maxItemFee: (legacyFromOptions.maxItemFee ?? body.maxItemFee)
+        ? Number(legacyFromOptions.maxItemFee ?? body.maxItemFee)
+        : null,
       // Weight Based
-      weightUnit: body.weightUnit || "kg",
-      baseWeight: Number(body.baseWeight ?? 1),
-      baseWeightFee: Number(body.baseWeightFee ?? 5),
-      additionalWeightFee: Number(body.additionalWeightFee ?? 2),
+      weightUnit: legacyFromOptions.weightUnit || body.weightUnit || "kg",
+      baseWeight: Number(legacyFromOptions.baseWeight ?? body.baseWeight ?? 1),
+      baseWeightFee: Number(legacyFromOptions.baseWeightFee ?? body.baseWeightFee ?? 5),
+      additionalWeightFee: Number(legacyFromOptions.additionalWeightFee ?? body.additionalWeightFee ?? 2),
       // Free Shipping
       freeShippingMin: Number(body.freeShippingMin ?? 499),
       enableProductSpecificFreeShipping: Boolean(body.enableProductSpecificFreeShipping ?? false),
@@ -122,15 +136,20 @@ export async function PUT(request) {
       localDeliveryFee: body.localDeliveryFee ? Number(body.localDeliveryFee) : null,
       regionalDeliveryFee: body.regionalDeliveryFee ? Number(body.regionalDeliveryFee) : null,
       // Delivery Time
-      estimatedDays: body.estimatedDays || "2-5",
+      estimatedDays: legacyFromOptions.estimatedDays || body.estimatedDays || "2-5",
       // COD
       enableCOD: Boolean(body.enableCOD ?? true),
       codFee: Number(body.codFee ?? 0),
       maxCODAmount: Number(body.maxCODAmount ?? 0),
-      // Express
-      enableExpressShipping: Boolean(body.enableExpressShipping ?? false),
-      expressShippingFee: Number(body.expressShippingFee ?? 20),
-      expressEstimatedDays: body.expressEstimatedDays || "1-2",
+      // Express (legacy sync from options)
+      enableExpressShipping: Boolean(
+        legacyFromOptions.enableExpressShipping ?? body.enableExpressShipping ?? false,
+      ),
+      expressShippingFee: Number(
+        legacyFromOptions.expressShippingFee ?? body.expressShippingFee ?? 20,
+      ),
+      expressEstimatedDays:
+        legacyFromOptions.expressEstimatedDays || body.expressEstimatedDays || "1-2",
       stateCharges: Array.isArray(body.stateCharges)
         ? body.stateCharges
             .map((entry) => ({
@@ -138,7 +157,8 @@ export async function PUT(request) {
               fee: Number(entry?.fee || 0)
             }))
             .filter((entry) => entry.state)
-        : []
+        : [],
+      shippingOptions,
     };
     
     console.log('Data to save - maxCODAmount:', data.maxCODAmount, 'codFee:', data.codFee);

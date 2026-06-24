@@ -8,7 +8,7 @@ import PageSkeleton from "@/components/PageSkeleton";
 import { readPageCache, writePageCache } from "@/lib/storePageCache";
 import axios from "axios";
 import toast from "react-hot-toast";
-import { Package, Truck, X, Download, Printer, RefreshCw, MapPin, Trash2, CalendarClock, AlertTriangle, Search } from "lucide-react";
+import { Package, Truck, X, Download, Printer, RefreshCw, MapPin, Trash2, CalendarClock, AlertTriangle, Search, MessageCircle } from "lucide-react";
 import { downloadInvoice, printInvoice } from "@/lib/generateInvoice";
 import { schedulePickup } from '@/lib/delhivery';
 import { STORE_ORDER_NOTIFICATION_EVENT, STORE_ORDER_TOAST_ID, dispatchStoreOrdersImportEnd, dispatchStoreOrdersImportStart } from '@/lib/storeOrderNotifications';
@@ -161,6 +161,7 @@ export default function StoreOrders() {
     const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false);
     const [schedulingPickup, setSchedulingPickup] = useState(false);
     const [sendingToC3xpress, setSendingToC3xpress] = useState(false);
+    const [sendingWhatsAppTemplate, setSendingWhatsAppTemplate] = useState('');
     const [c3xConfig, setC3xConfig] = useState({
         product: 'DOM',
         serviceType: 'NOR'
@@ -1498,6 +1499,42 @@ export default function StoreOrders() {
         }
     };
 
+    const sendWhatsAppForOrder = async (template) => {
+        if (!selectedOrder?._id) return;
+
+        const phone = selectedOrder.shippingAddress?.phone || selectedOrder.guestPhone;
+        if (!phone) {
+            toast.error('No customer phone on this order');
+            return;
+        }
+
+        setSendingWhatsAppTemplate(template);
+        try {
+            const token = await getToken();
+            const { data } = await axios.post('/api/store/whatsapp/send', {
+                template,
+                orderId: selectedOrder._id,
+            }, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+
+            if (data?.whatsapp?.success) {
+                toast.success('WhatsApp message queued');
+                return;
+            }
+
+            toast.error(data?.whatsapp?.reason || data?.whatsapp?.error || data?.error || 'WhatsApp could not be sent');
+        } catch (error) {
+            toast.error(error?.response?.data?.error || 'Failed to send WhatsApp message');
+        } finally {
+            setSendingWhatsAppTemplate('');
+        }
+    };
+
+    const selectedOrderHasPhone = Boolean(
+        selectedOrder?.shippingAddress?.phone || selectedOrder?.guestPhone
+    );
+
 
     if (authLoading || (loading && !orders.length)) return <PageSkeleton rows={8} />;
 
@@ -2431,6 +2468,50 @@ export default function StoreOrders() {
                                         <p className="font-medium text-slate-900">{selectedOrder.shippingAddress?.country || '—'}</p>
                                     </div>
                                 </div>
+
+                                {selectedOrderHasPhone ? (
+                                    <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+                                        <p className="mb-3 text-sm font-semibold text-emerald-900">WhatsApp notifications</p>
+                                        <div className="flex flex-wrap gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => sendWhatsAppForOrder('order_reminder')}
+                                                disabled={Boolean(sendingWhatsAppTemplate)}
+                                                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
+                                            >
+                                                <MessageCircle size={14} />
+                                                {sendingWhatsAppTemplate === 'order_reminder' ? 'Sending...' : 'Order reminder'}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => sendWhatsAppForOrder('order_confirmation')}
+                                                disabled={Boolean(sendingWhatsAppTemplate)}
+                                                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
+                                            >
+                                                <MessageCircle size={14} />
+                                                {sendingWhatsAppTemplate === 'order_confirmation' ? 'Sending...' : 'Order confirmation'}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => sendWhatsAppForOrder('order_paid')}
+                                                disabled={Boolean(sendingWhatsAppTemplate)}
+                                                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
+                                            >
+                                                <MessageCircle size={14} />
+                                                {sendingWhatsAppTemplate === 'order_paid' ? 'Sending...' : 'Paid confirmation'}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => sendWhatsAppForOrder('order_shipped')}
+                                                disabled={Boolean(sendingWhatsAppTemplate)}
+                                                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
+                                            >
+                                                <MessageCircle size={14} />
+                                                {sendingWhatsAppTemplate === 'order_shipped' ? 'Sending...' : 'Shipped update'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : null}
                             </div>
 
                             {/* Products */}

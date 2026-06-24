@@ -188,178 +188,239 @@
     button {
         cursor: pointer;
     }
-    
-    /* Tiptap Editor Styles */
-    .ProseMirror {
-        outline: none;
-    }
-    
-    .ProseMirror p.is-editor-empty:first-child::before {
-        color: #9ca3af;
-        content: attr(data-placeholder);
-        float: left;
-        height: 0;
-        pointer-events: none;
-    }
-    
-    .ProseMirror > * + * {
-        margin-top: 0.75em;
-    }
-    
-    .ProseMirror h1 {
-        font-size: 2em;
-        font-weight: bold;
-        line-height: 1.2;
-    }
-    
-    .ProseMirror h2 {
-        font-size: 1.5em;
-        font-weight: bold;
-        line-height: 1.3;
-    }
-    
-    .ProseMirror h3 {
-        font-size: 1.25em;
-        font-weight: bold;
-        line-height: 1.4;
-    }
-    
-    .ProseMirror p {
-        margin: 0.5em 0;
-    }
-    
-    .ProseMirror ul,
-    .ProseMirror ol {
-        padding-left: 1.5em;
-        margin: 0.5em 0;
-    }
-    
-    .ProseMirror ul {
-        list-style-type: disc;
-    }
-    
-    .ProseMirror ol {
-        list-style-type: decimal;
-    }
-    
-    .ProseMirror img {
-        max-width: 100%;
-        height: auto;
-        border-radius: 0.5rem;
-        margin: 1em 0;
-        display: inline-block;
-        cursor: pointer;
-    }
-    
-    .ProseMirror img.ProseMirror-selectednode {
-        outline: 3px solid #2563eb;
-    }
-    
-    .ProseMirror table {
-        border-collapse: collapse;
-        table-layout: fixed;
-        width: 100%;
-        margin: 1em 0;
-        overflow: hidden;
-    }
-    
-    .ProseMirror td,
-    .ProseMirror th {
-        min-width: 1em;
-        border: 2px solid #cbd5e1;
-        padding: 0.5em 0.75em;
-        vertical-align: top;
-        box-sizing: border-box;
-        position: relative;
-    }
-    
-    .ProseMirror th {
-        font-weight: bold;
-        text-align: left;
-        background-color: #f1f5f9;
+}
+
+/* Shop showcase (homepage) — bundled in globals to avoid extra render-blocking CSS chunk */
+@layer components {
+    .shop-showcase-left-menu-scroll {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        border-top: 1px solid #e5e7eb;
+        scrollbar-width: thin;
+        scrollbar-color: #e5e7eb #fff;
     }
 
-    /* Product page rich text (description, about, etc.) */
-    .product-rich-content table {
-        width: 100%;
-        border-collapse: collapse;
-        table-layout: fixed;
-        margin: 1rem 0;
-        border: 1px solid #e5e7eb;
+    .shop-showcase-left-menu-scroll::-webkit-scrollbar {
+        width: 1px;
         background: #fff;
     }
 
-    .product-rich-content th,
-    .product-rich-content td {
-        padding: 0.75rem 1rem;
-        text-align: left;
-        vertical-align: top;
-        border-bottom: 1px solid #e5e7eb;
-        word-break: break-word;
-        font-size: 14px;
-        line-height: 1.5;
+    .shop-showcase-left-menu-scroll::-webkit-scrollbar-thumb {
+        background: #e5e7eb;
+        border-radius: 4px;
     }
 
-    .product-rich-content thead th {
-        background: #f9fafb;
-        font-weight: 600;
-        color: #111827;
+    .shop-showcase-banner-grid {
+        display: grid;
+        grid-template-rows: auto auto;
+        gap: 0.75rem;
+        align-content: start;
     }
 
-    .product-rich-content tbody tr:last-child th,
-    .product-rich-content tbody tr:last-child td {
-        border-bottom: none;
+    .shop-showcase-banner-row {
+        position: relative;
+        min-height: 0;
     }
 
-    .product-rich-content tbody th[scope="row"],
-    .product-rich-content tbody td:first-child {
-        width: 42%;
-        background: #f9fafb;
-        font-weight: 600;
-        color: #111827;
+    .shop-showcase-banner-row:first-child {
+        aspect-ratio: 3054 / 1080;
     }
 
-    .product-rich-content tbody td:not(:first-child) {
-        color: #374151;
-        border-left: 1px solid #f3f4f6;
+    .shop-showcase-banner-row:nth-child(2) {
+        aspect-ratio: 3054 / 370;
     }
-    
-    .ProseMirror .selectedCell:after {
+
+    @media (max-width: 1023px) {
+        .shop-showcase-banner-grid {
+            grid-template-rows: auto;
+            height: auto;
+        }
+
+        .shop-showcase-banner-row:first-child {
+            aspect-ratio: 2.8 / 1;
+        }
+
+        .shop-showcase-banner-row:nth-child(2) {
+            aspect-ratio: 6 / 1;
+        }
+
+        .shop-showcase-banner-grid .shop-showcase-banner-row:nth-child(2) {
+            display: none;
+        }
+    }
+
+    .shop-showcase-product-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.5rem;
+        margin-top: 0.5rem;
+        width: 100%;
+    }
+
+    @media (max-width: 1024px) {
+        .shop-showcase-product-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
+
+    .shop-showcase-product-mobile-carousel {
+        position: relative;
+        width: 100%;
+        overflow: hidden;
+        margin-top: 0.5rem;
+    }
+
+    .shop-showcase-product-mobile-track {
+        display: flex;
+        width: 100%;
+        transition: transform 700ms ease-in-out;
+        will-change: transform;
+    }
+
+    .shop-showcase-product-mobile-slide {
+        flex: 0 0 100%;
+        width: 100%;
+        min-width: 100%;
+    }
+
+    .shop-showcase-product-mobile-card {
+        width: 100%;
+    }
+
+    .shop-showcase-product-mobile-dots {
+        position: absolute;
+        inset-inline: 0;
+        bottom: 0.65rem;
         z-index: 2;
-        position: absolute;
-        content: "";
-        left: 0; right: 0;
-        top: 0; bottom: 0;
-        background: rgba(37, 99, 235, 0.1);
+        display: flex;
+        justify-content: center;
+        gap: 0.4rem;
         pointer-events: none;
     }
-    
-    .ProseMirror .column-resize-handle {
-        position: absolute;
-        right: -2px;
-        top: 0;
-        bottom: -2px;
-        width: 4px;
-        background-color: #2563eb;
-        pointer-events: none;
-    }
-    
-    .ProseMirror a {
-        color: #2563eb;
-        text-decoration: underline;
+
+    .shop-showcase-product-mobile-dot {
+        pointer-events: auto;
+        height: 0.45rem;
+        width: 0.45rem;
+        border: 0;
+        border-radius: 9999px;
+        background: rgba(255, 255, 255, 0.45);
         cursor: pointer;
+        padding: 0;
+        transition: background-color 200ms ease, transform 200ms ease;
     }
-    
-    .ProseMirror a:hover {
-        color: #1d4ed8;
+
+    .shop-showcase-product-mobile-dot-active {
+        background: #fff;
+        transform: scale(1.15);
     }
-    
-    .ProseMirror code {
-        background-color: #f3f4f6;
-        padding: 0.125em 0.25em;
-        border-radius: 0.25rem;
-        font-family: monospace;
-        font-size: 0.875em;
+
+    .shop-showcase-product-card {
+        position: relative;
+        background: #fff;
+        border-radius: 2px;
+        overflow: hidden;
+        box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.04);
+        border: 1px solid #eee;
+        display: block;
+        padding: 0;
+        min-height: 0;
+        aspect-ratio: 1225 / 639;
+        text-decoration: none;
+        color: inherit;
+    }
+
+    .shop-showcase-product-image {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: center;
+    }
+
+    .shop-showcase-product-overlay {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(90deg, rgba(0, 0, 0, 0.08) 0%, rgba(0, 0, 0, 0.18) 100%);
+    }
+
+    .shop-showcase-product-content {
+        position: relative;
+        z-index: 1;
+        height: 100%;
+        padding: 1rem 1.1rem 1rem 52%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: flex-start;
+        text-align: left;
+    }
+
+    .shop-showcase-product-title {
+        font-size: 1.15rem;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+        line-height: 1.05;
+        color: #fff;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+    }
+
+    .shop-showcase-product-subtitle {
+        font-size: 0.95rem;
+        font-weight: 400;
+        margin-bottom: 1rem;
+        color: rgba(255, 255, 255, 0.96);
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    }
+
+    .shop-showcase-product-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: #d32f2f;
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        padding: 0.5rem 1.5rem;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.2s;
+        width: fit-content;
+    }
+
+    .shop-showcase-product-button:hover {
+        background: #b71c1c;
+    }
+
+    @media (max-width: 640px) {
+        .shop-showcase-product-card {
+            aspect-ratio: 1225 / 639;
+            min-height: 0;
+            border-radius: 0;
+            border-inline: 0;
+        }
+
+        .shop-showcase-product-content {
+            padding: 1rem 1rem 1rem 48%;
+        }
+
+        .shop-showcase-product-title {
+            font-size: 1rem;
+            line-height: 1.15;
+        }
+
+        .shop-showcase-product-subtitle {
+            font-size: 0.875rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .shop-showcase-product-button {
+            padding: 0.45rem 1rem;
+            font-size: 0.875rem;
+        }
     }
 }
 
@@ -387,12 +448,6 @@
     background: #64748b;
 }
 
-/* Store sidebar scroll styling */
-.store-sidebar-scroll {
-    scrollbar-width: thin;
-    scrollbar-color: #d1d5db #f8fafc;
-}
-
 /* Compress page content when fixed cart sidebar is visible (desktop/tablet only) */
 @media (min-width: 768px) {
     body {
@@ -409,23 +464,6 @@
         padding-left: 175px;
         padding-right: 0;
     }
-}
-
-.store-sidebar-scroll::-webkit-scrollbar {
-    width: 1px;
-}
-
-.store-sidebar-scroll::-webkit-scrollbar-track {
-    background: #f8fafc;
-}
-
-.store-sidebar-scroll::-webkit-scrollbar-thumb {
-    background: #d1d5db;
-    border-radius: 9999px;
-}
-
-.store-sidebar-scroll::-webkit-scrollbar-thumb:hover {
-    background: #9ca3af;
 }
 
 .no-scrollbar::-webkit-scrollbar {
@@ -544,4 +582,23 @@ body::-webkit-scrollbar-thumb {
     font-weight: 700;
     letter-spacing: -0.02em;
     line-height: 1;
+}
+
+@keyframes storefrontToastIn {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.storefront-toaster {
+    pointer-events: none;
+}
+
+.storefront-toaster > div {
+    pointer-events: auto;
 }

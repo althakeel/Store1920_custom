@@ -54,6 +54,11 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ error: seller.error }, { status: seller.status });
     }
 
+    const { id } = await params;
+    if (!id) {
+      return NextResponse.json({ error: 'Giveaway ID is required' }, { status: 400 });
+    }
+
     const body = await request.json();
     const payload = sanitizeUpdate(body, seller.storeId);
     if (payload.endsAt && payload.startsAt && payload.endsAt < payload.startsAt) {
@@ -61,7 +66,7 @@ export async function PUT(request, { params }) {
     }
 
     const campaign = await FreeGiftCampaign.findOneAndUpdate(
-      { _id: params.id, storeId: seller.storeId },
+      { _id: id, storeId: seller.storeId },
       { $set: payload },
       { new: true }
     ).lean();
@@ -85,7 +90,12 @@ export async function DELETE(request, { params }) {
       return NextResponse.json({ error: seller.error }, { status: seller.status });
     }
 
-    const deleted = await FreeGiftCampaign.findOneAndDelete({ _id: params.id, storeId: seller.storeId }).lean();
+    const { id } = await params;
+    if (!id) {
+      return NextResponse.json({ error: 'Giveaway ID is required' }, { status: 400 });
+    }
+
+    const deleted = await FreeGiftCampaign.findOneAndDelete({ _id: id, storeId: seller.storeId }).lean();
     if (!deleted) {
       return NextResponse.json({ error: 'Giveaway not found' }, { status: 404 });
     }

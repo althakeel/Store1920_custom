@@ -14,6 +14,8 @@ import Wallet from '@/models/Wallet';
 import PersonalizedOffer from '@/models/PersonalizedOffer';
 import StorePreference from '@/models/StorePreference';
 import FreeGiftCampaign from '@/models/FreeGiftCampaign';
+import AbandonedCart from '@/models/AbandonedCart';
+import { cartItemsMatchAbandoned, findActiveRecoveryCart } from '@/lib/abandonedCartRecoveryOffer';
 import { sendOrderConfirmationEmail, sendGuestAccountCreationEmail } from '@/lib/email';
 import { sendOrderCreatedWhatsApp } from '@/lib/whatsapp/orderNotifications';
 import { allocateShortOrderNumber } from '@/lib/orderNumber';
@@ -78,6 +80,7 @@ export async function POST(request) {
             razorpaySignature,
             trackingContext,
             attribution,
+            recoveryToken: recoveryTokenInput,
         } = body;
         let userId = null;
         let isPlusMember = false;
@@ -214,6 +217,21 @@ export async function POST(request) {
                 { status: 400 }
             );
         }
+
+        const recoveryToken = String(recoveryTokenInput || '').trim();
+        let recoveryContext = null;
+        if (recoveryToken) {
+            recoveryContext = await findActiveRecoveryCart(AbandonedCart, recoveryToken);
+            if (!recoveryContext.valid) {
+                return NextResponse.json({ error: recoveryContext.error || 'Invalid recovery offer' }, { status: 400 });
+            }
+        }
+        const recoveryPriceByProduct = recoveryContext?.valid
+            ? new Map((recoveryContext.discountedItems || []).map((item) => [
+                String(item.productId || item.id),
+                Number(item.price || 0),
+            ]))
+            : null;
 
         // Used to ensure referral reward is only applied for a customer's first purchase.
         let existingOrderCountBeforeCheckout = 0;
@@ -365,6 +383,15 @@ export async function POST(request) {
                 }
             }
 
+            if (
+                recoveryPriceByProduct?.has(String(item.id))
+                && !item.offerToken
+                && !item.freeGift?.campaignId
+                && !isBundleOrder
+            ) {
+                finalPrice = recoveryPriceByProduct.get(String(item.id));
+            }
+
             if (isBundleOrder) {
                 const bundleVariant = findBulkBundleVariant(product, item.variantOptions.bundleQty) || variantMatch;
                 if (bundleVariant?.price != null) {
@@ -384,6 +411,30 @@ export async function POST(request) {
                 appliedOffer: appliedOffer 
             });
             grandSubtotal += Number(finalPrice) * Number(orderQty);
+        }
+
+        if (recoveryContext?.valid) {
+            if (!cartItemsMatchAbandoned(items, recoveryContext.cart.items || [])) {
+                return NextResponse.json({
+                    error: 'Recovery offer does not match the current cart items',
+                }, { status: 400 });
+            }
+
+            const recoveryStoreId = String(recoveryContext.cart.storeId || '');
+            const recoveryItems = ordersByStore.get(recoveryStoreId) || [];
+            if (!recoveryItems.length) {
+                return NextResponse.json({
+                    error: 'Recovery offer store items not found in cart',
+                }, { status: 400 });
+            }
+
+            const recoverySubtotal = recoveryItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+            const expectedSubtotal = Number(recoveryContext.offerTotal || 0);
+            if (Math.abs(recoverySubtotal - expectedSubtotal) > 0.05) {
+                return NextResponse.json({
+                    error: 'Recovery offer pricing is no longer valid for this cart',
+                }, { status: 400 });
+            }
         }
 
         // Shipping: use from payload, fallback to 0
@@ -995,6 +1046,15 @@ export async function POST(request) {
         // Clear cart for logged-in users
         if (userId) {
             await User.findByIdAndUpdate(userId, { cart: {} });
+        }
+
+        if (recoveryContext?.valid && orderIds.length > 0) {
+            await AbandonedCart.findByIdAndUpdate(recoveryContext.cart._id, {
+                $set: {
+                    linkedOrderId: String(orderIds[0]),
+                    recoveryLinkExpiresAt: new Date(),
+                },
+            });
         }
 
         // Referral reward: inviter gets wallet credit when invited customer places first purchase.

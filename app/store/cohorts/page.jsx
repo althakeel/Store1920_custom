@@ -7,7 +7,10 @@ import { Users } from 'lucide-react';
 import { useAuth } from '@/lib/useAuth';
 import PageSkeleton from '@/components/PageSkeleton';
 import Loading from '@/components/Loading';
+import StorePagination from '@/components/store/StorePagination';
 import { readPageCache, writePageCache } from '@/lib/storePageCache';
+
+const PAGE_SIZE = 25;
 
 function retentionColor(rate = 0) {
   if (rate >= 50) return 'bg-emerald-600 text-white';
@@ -107,9 +110,10 @@ export default function StoreCohortsPage() {
   const [period, setPeriod] = useState('month');
   const [channel, setChannel] = useState('all');
   const [view, setView] = useState('retention');
+  const [page, setPage] = useState(1);
   const [data, setData] = useState(null);
 
-  const cacheKey = `cohorts:${period}:${channel}`;
+  const cacheKey = `cohorts:${period}:${channel}:${view}:${page}`;
 
   useEffect(() => {
     const cached = readPageCache(cacheKey);
@@ -128,7 +132,7 @@ export default function StoreCohortsPage() {
       let token = await getToken(false);
       if (!token) token = await getToken(true);
 
-      const params = new URLSearchParams({ period, channel });
+      const params = new URLSearchParams({ period, channel, view, page: String(page), limit: String(PAGE_SIZE) });
       const response = await axios.get(`/api/store/cohorts?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -141,7 +145,7 @@ export default function StoreCohortsPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [cacheKey, channel, getToken, period]);
+  }, [cacheKey, channel, getToken, page, period, view]);
 
   useEffect(() => {
     loadCohorts({ silent: Boolean(readPageCache(cacheKey)) });
@@ -150,6 +154,7 @@ export default function StoreCohortsPage() {
   if (loading && !data) return <PageSkeleton />;
 
   const summary = data?.summary || {};
+  const pagination = data?.pagination || { page: 1, limit: PAGE_SIZE, total: 0, totalPages: 1, view };
 
   return (
     <div className="space-y-4 sm:space-y-5">
@@ -167,7 +172,10 @@ export default function StoreCohortsPage() {
         <div className="flex flex-wrap gap-2">
           <select
             value={period}
-            onChange={(event) => setPeriod(event.target.value)}
+            onChange={(event) => {
+              setPage(1);
+              setPeriod(event.target.value);
+            }}
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
           >
             <option value="month">Monthly cohorts</option>
@@ -175,7 +183,10 @@ export default function StoreCohortsPage() {
           </select>
           <select
             value={channel}
-            onChange={(event) => setChannel(event.target.value)}
+            onChange={(event) => {
+              setPage(1);
+              setChannel(event.target.value);
+            }}
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
           >
             <option value="all">All channels</option>
@@ -222,7 +233,10 @@ export default function StoreCohortsPage() {
           <button
             key={id}
             type="button"
-            onClick={() => setView(id)}
+            onClick={() => {
+              setPage(1);
+              setView(id);
+            }}
             className={`rounded-lg px-3 py-2 text-sm font-medium ${
               view === id
                 ? 'bg-blue-600 text-white'
@@ -237,14 +251,31 @@ export default function StoreCohortsPage() {
       {refreshing ? <Loading inline /> : null}
 
       {!refreshing && view === 'retention' ? (
-        <RetentionTable rows={data?.retention || []} periodLabels={data?.periodLabels || []} />
+        <>
+          <RetentionTable rows={data?.retention || []} periodLabels={data?.periodLabels || []} />
+          <StorePagination
+            pagination={pagination}
+            itemLabel="cohorts"
+            disabled={refreshing}
+            onPageChange={setPage}
+          />
+        </>
       ) : null}
 
       {!refreshing && view === 'ltv' ? (
-        <LtvTable rows={data?.ltv || []} periodLabels={data?.periodLabels || []} />
+        <>
+          <LtvTable rows={data?.ltv || []} periodLabels={data?.periodLabels || []} />
+          <StorePagination
+            pagination={pagination}
+            itemLabel="cohorts"
+            disabled={refreshing}
+            onPageChange={setPage}
+          />
+        </>
       ) : null}
 
       {!refreshing && view === 'channels' ? (
+        <>
         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
           <table className="min-w-full text-sm">
             <thead>
@@ -275,6 +306,13 @@ export default function StoreCohortsPage() {
             </tbody>
           </table>
         </div>
+        <StorePagination
+          pagination={pagination}
+          itemLabel="channels"
+          disabled={refreshing}
+          onPageChange={setPage}
+        />
+        </>
       ) : null}
 
       <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900">

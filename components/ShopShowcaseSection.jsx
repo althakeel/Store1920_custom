@@ -1,12 +1,9 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import styles from './ShopShowcaseSection.module.css'
-import { resolveStoreNavMenuItems } from '@/lib/categoryNavigation'
-import axios from 'axios'
 import Link from 'next/link'
-import bannerStyles from './ShopShowcaseSectionBanners.module.css'
-import productGridStyles from './ShopShowcaseSectionProducts.module.css'
+import axios from 'axios'
+import { resolveStoreNavMenuItems, buildCategoryShopLink } from '@/lib/categoryNavigation'
 import ShowcaseProductBanners from './ShowcaseProductBanners'
 import { HOME_SECTION_CLASS } from '@/lib/storefrontCarousel'
 import { cleanDisplayText } from '@/lib/displayText'
@@ -85,10 +82,8 @@ function useNavbarBackgroundColor() {
   return navbarBg
 }
 
-function getCategoryHref(category) {
-  if (category?.slug) return `/shop?category=${encodeURIComponent(category.slug)}`
-  if (category?._id) return `/shop?category=${encodeURIComponent(String(category._id))}`
-  return '/shop'
+function getCategoryHref(category, allCategories = []) {
+  return buildCategoryShopLink(category, allCategories)
 }
 
 function getProductHref(product) {
@@ -124,7 +119,7 @@ function ShopShowcaseSkeleton({ navbarBg = DEFAULT_NAVBAR_BG }) {
               </div>
               <div className="h-3 w-3 rounded-[2px] bg-white/25" />
             </div>
-            <div className={`${styles.leftMenuScroll} animate-pulse`}>
+            <div className="shop-showcase-left-menu-scroll animate-pulse">
               {Array.from({ length: 10 }).map((_, index) => (
                 <div key={index} className="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
                   <div className="h-4 w-4 rounded-[2px] bg-slate-200" />
@@ -136,8 +131,8 @@ function ShopShowcaseSkeleton({ navbarBg = DEFAULT_NAVBAR_BG }) {
           </aside>
         </div>
 
-        <div className={bannerStyles.bannerGrid}>
-          <div className={`${bannerStyles.bannerRow} relative overflow-hidden rounded-[2px] border border-slate-200 bg-slate-100 shadow-sm`}>
+        <div className="shop-showcase-banner-grid">
+          <div className="shop-showcase-banner-row relative overflow-hidden rounded-[2px] border border-slate-200 bg-slate-100 shadow-sm">
             <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-slate-100 via-slate-200 to-slate-100" />
             <div className="absolute inset-0 flex items-center px-8">
               <div className="space-y-3">
@@ -148,7 +143,7 @@ function ShopShowcaseSkeleton({ navbarBg = DEFAULT_NAVBAR_BG }) {
             </div>
           </div>
 
-          <div className={`${bannerStyles.bannerRow} relative overflow-hidden rounded-[2px] border border-slate-200 bg-slate-100 shadow-sm`}>
+          <div className="shop-showcase-banner-row relative overflow-hidden rounded-[2px] border border-slate-200 bg-slate-100 shadow-sm">
             <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-slate-100 via-slate-200 to-slate-100" />
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="h-5 w-56 rounded-[2px] bg-white/65" />
@@ -378,7 +373,7 @@ export default function ShopShowcaseSection({
       .slice(0, 12)
       .map((category) => ({
         title: cleanDisplayText(String(category.name || '').trim()),
-        href: getCategoryHref(category),
+        href: getCategoryHref(category, categories),
         iconImage: String(category?.icon || category?.image || category?.iconUrl || '').trim(),
         icon: getCategoryIconByName(category?.name),
       }))
@@ -524,7 +519,7 @@ export default function ShopShowcaseSection({
 
             <div
               ref={menuScrollRef}
-              className={styles.leftMenuScroll}
+              className="shop-showcase-left-menu-scroll"
               onMouseEnter={(event) => {
                 if (event.target === event.currentTarget) {
                   clearFlyoutCloseTimer()
@@ -662,7 +657,7 @@ export default function ShopShowcaseSection({
           ) : null}
         </div>
 
-        <div className={bannerStyles.bannerGrid}>
+        <div className="shop-showcase-banner-grid">
           {bannerBlocks.map((banner, index) => (
             (() => {
               const bannerImage = getOriginalImageUrl(banner.image)
@@ -672,7 +667,7 @@ export default function ShopShowcaseSection({
             <Link
               key={`${banner.title}-${index}`}
               href={banner.href}
-              className={`group relative overflow-hidden rounded-xl border border-slate-200 bg-slate-900 shadow-sm ${bannerStyles.bannerRow}`}
+              className="group relative overflow-hidden rounded-xl border border-slate-200 bg-slate-900 shadow-sm shop-showcase-banner-row"
               style={index === 0 ? { gridRow: '1 / 2' } : { gridRow: '2 / 3' }}
             >
               {hasImage ? (
@@ -723,7 +718,7 @@ export default function ShopShowcaseSection({
         </div>
 
         {/* 4-grid product/banner section below main banners */}
-        <div className={`${productGridStyles.showcaseProductGrid} lg:col-span-2`}>
+        <div className="shop-showcase-product-grid lg:col-span-2">
           {[0,1,2,3].map((i) => (
             (() => {
               const banner = data.config?.productBanners?.[i] || {}
@@ -734,27 +729,27 @@ export default function ShopShowcaseSection({
                 <Card
                   key={i}
                   href={link || undefined}
-                  className={productGridStyles.showcaseProductCard}
+                  className="shop-showcase-product-card"
                 >
               <img
-                className={productGridStyles.showcaseProductImage}
+                className="shop-showcase-product-image"
                 src={banner.image || '/assets/placeholder.png'}
                 alt={banner.title || 'Product'}
               />
-              <div className={productGridStyles.showcaseProductOverlay} />
-              <div className={productGridStyles.showcaseProductContent}>
+              <div className="shop-showcase-product-overlay" />
+              <div className="shop-showcase-product-content">
                 {String(banner.title || '').trim() ? (
-                  <div className={productGridStyles.showcaseProductTitle}>
+                  <div className="shop-showcase-product-title">
                     {banner.title}
                   </div>
                 ) : null}
                 {String(banner.subtitle || '').trim() ? (
-                  <div className={productGridStyles.showcaseProductSubtitle}>
+                  <div className="shop-showcase-product-subtitle">
                     {banner.subtitle}
                   </div>
                 ) : null}
                 {String(banner.buttonText || '').trim() ? (
-                  <span className={productGridStyles.showcaseProductButton}>
+                  <span className="shop-showcase-product-button">
                     {banner.buttonText}
                   </span>
                 ) : null}

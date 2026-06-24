@@ -19,6 +19,17 @@ async function getStoreIdFromRequest(request) {
   return authSeller(decodedToken.uid);
 }
 
+function paginateRows(rows, page, limit) {
+  const total = rows.length;
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const safePage = Math.min(page, totalPages);
+  const offset = (safePage - 1) * limit;
+  return {
+    items: rows.slice(offset, offset + limit),
+    pagination: { page: safePage, limit, total, totalPages },
+  };
+}
+
 export async function GET(request) {
   try {
     const storeId = await getStoreIdFromRequest(request);
@@ -29,6 +40,9 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const range = searchParams.get('range') || 'week';
     const pagePath = searchParams.get('pagePath') || '';
+    const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit') || 25)));
+    const elementsPage = Math.max(1, Number(searchParams.get('elementsPage') || 1));
+    const pagesPage = Math.max(1, Number(searchParams.get('pagesPage') || 1));
     const startDate = getHeatmapStartDate(range);
 
     await connectDB();
@@ -56,12 +70,18 @@ export async function GET(request) {
       .lean();
 
     const aggregated = aggregateHeatmapClicks(eventsForPage);
+    const paginatedPages = paginateRows(pages, pagesPage, limit);
+    const paginatedElements = paginateRows(aggregated.topElements || [], elementsPage, limit);
 
     return NextResponse.json({
       range,
       pagePath: selectedPagePath,
-      pages,
+      pageOptions: pages,
+      pages: paginatedPages.items,
+      pagesPagination: paginatedPages.pagination,
       ...aggregated,
+      topElements: paginatedElements.items,
+      topElementsPagination: paginatedElements.pagination,
     });
   } catch (error) {
     console.error('[store/heatmap GET]', error);

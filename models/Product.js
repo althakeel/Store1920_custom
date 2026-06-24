@@ -23,6 +23,7 @@ const ProductSchema = new mongoose.Schema({
   imageImportStatus: { type: Object, default: {} },
   category: { type: String, ref: 'Category' },
   categories: { type: [String], default: [] }, // Multiple categories support
+  needsReview: { type: Boolean, default: false },
   sku: String,
   published: { type: Boolean, default: true },
   inStock: { type: Boolean, default: true },

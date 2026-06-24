@@ -478,6 +478,7 @@ export async function GET(request) {
             const sort = searchParams.get('sort') || 'newest';
             const category = String(searchParams.get('category') || '').trim();
             const manage = searchParams.get('manage') === 'true';
+            const media = searchParams.get('media') === 'true';
             const pickerResult = await fetchPickerPage(Product, {
                 storeId,
                 page,
@@ -485,7 +486,7 @@ export async function GET(request) {
                 search,
                 sort,
                 category,
-                mode: manage ? 'manage' : 'picker',
+                mode: manage ? 'manage' : media ? 'media' : 'picker',
             });
 
             if (manage) {

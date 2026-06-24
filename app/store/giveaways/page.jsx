@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { GiftIcon, PlusIcon, PencilIcon, Trash2Icon } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { useAuth } from '@/lib/useAuth';
 
 const initialForm = {
@@ -24,6 +25,8 @@ export default function StoreGiveawaysPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const [formData, setFormData] = useState(initialForm);
 
   const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || 'AED';
@@ -71,7 +74,7 @@ export default function StoreGiveawaysPage() {
   };
 
   const startEdit = (campaign) => {
-    setEditingId(campaign._id);
+    setEditingId(String(campaign._id || ''));
     setFormData({
       title: campaign.title || '',
       description: campaign.description || '',
@@ -115,43 +118,62 @@ export default function StoreGiveawaysPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        alert(data.error || 'Failed to save giveaway');
+        toast.error(data.error || 'Failed to save giveaway');
         return;
       }
 
+      toast.success(editingId ? 'Giveaway updated' : 'Giveaway created');
       await reloadCampaigns();
       setShowForm(false);
       resetForm();
     } catch (error) {
       console.error('Failed to save giveaway:', error);
-      alert('Failed to save giveaway');
+      toast.error('Failed to save giveaway');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleDelete = async (campaignId) => {
-    if (!window.confirm('Delete this giveaway campaign?')) return;
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+
+    const campaignId = String(deleteTarget._id || '');
+    if (!campaignId || campaignId === 'undefined') {
+      toast.error('Invalid giveaway ID');
+      return;
+    }
+
+    setDeleting(true);
     try {
       const token = await getToken();
-      const res = await fetch(`/api/store/giveaways/${campaignId}`, {
+      const res = await fetch(`/api/store/giveaways/${encodeURIComponent(campaignId)}`, {
         method: 'DELETE',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       const data = await res.json();
       if (!res.ok) {
-        alert(data.error || 'Failed to delete giveaway');
+        toast.error(data.error || 'Failed to delete giveaway');
         return;
+      }
+
+      toast.success('Giveaway deleted');
+      setDeleteTarget(null);
+      if (editingId === campaignId) {
+        setShowForm(false);
+        resetForm();
       }
       await reloadCampaigns();
     } catch (error) {
       console.error('Failed to delete giveaway:', error);
-      alert('Failed to delete giveaway');
+      toast.error('Failed to delete giveaway');
+    } finally {
+      setDeleting(false);
     }
   };
 
   const giftLabel = (campaign) => {
-    return productOptions.find((product) => product.id === String(campaign.giftProductId))?.name || 'Unknown product';
+    const giftId = String(campaign.giftProductId || '');
+    return productOptions.find((product) => product.id === giftId)?.name || 'Unknown product';
   };
 
   if (loading) {
@@ -350,7 +372,7 @@ export default function StoreGiveawaysPage() {
                   <button type="button" onClick={() => startEdit(campaign)} className="rounded-lg border border-gray-200 p-2 text-gray-600 hover:bg-gray-50">
                     <PencilIcon size={16} />
                   </button>
-                  <button type="button" onClick={() => handleDelete(campaign._id)} className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50">
+                  <button type="button" onClick={() => setDeleteTarget(campaign)} className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50">
                     <Trash2Icon size={16} />
                   </button>
                 </div>
@@ -374,6 +396,44 @@ export default function StoreGiveawaysPage() {
           ))}
         </div>
       )}
+
+      {deleteTarget ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-giveaway-title"
+            className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
+          >
+            <h2 id="delete-giveaway-title" className="text-lg font-semibold text-gray-900">
+              Delete giveaway?
+            </h2>
+            <p className="mt-2 text-sm text-gray-600">
+              This will permanently remove{' '}
+              <span className="font-medium text-gray-900">{deleteTarget.title || 'this campaign'}</span>.
+              This action cannot be undone.
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleting}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleting}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {deleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

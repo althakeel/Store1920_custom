@@ -6,7 +6,10 @@ import Link from 'next/link';
 import { AlertTriangle, RefreshCw, ShieldAlert } from 'lucide-react';
 import { useAuth } from '@/lib/useAuth';
 import PageSkeleton from '@/components/PageSkeleton';
+import Loading from '@/components/Loading';
 import { readPageCache, writePageCache } from '@/lib/storePageCache';
+
+const PAGE_SIZE = 25;
 
 const RISK_STYLES = {
   healthy: 'bg-emerald-100 text-emerald-800',
@@ -56,9 +59,10 @@ export default function StoreChurnScoresPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [risk, setRisk] = useState('all');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
   const [data, setData] = useState(null);
 
-  const cacheKey = `churn:${risk}:${search.trim()}`;
+  const cacheKey = `churn:${risk}:${search.trim()}:${page}`;
 
   useEffect(() => {
     const cached = readPageCache(cacheKey, 24 * 60 * 60 * 1000);
@@ -78,7 +82,7 @@ export default function StoreChurnScoresPage() {
       let token = await getToken(false);
       if (!token) token = await getToken(true);
 
-      const params = new URLSearchParams({ risk, limit: '100' });
+      const params = new URLSearchParams({ risk, limit: String(PAGE_SIZE), page: String(page) });
       if (search.trim()) params.set('q', search.trim());
       if (forceRefresh) params.set('refresh', 'true');
 
@@ -94,14 +98,14 @@ export default function StoreChurnScoresPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [cacheKey, getToken, risk, search]);
+  }, [cacheKey, getToken, page, risk, search]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
       loadScores(false);
     }, search ? 300 : 0);
     return () => clearTimeout(timer);
-  }, [loadScores, search, risk]);
+  }, [loadScores, page, risk, search]);
 
   const handleRefresh = async () => {
     const token = await getToken();
@@ -121,6 +125,14 @@ export default function StoreChurnScoresPage() {
 
   const summary = data?.summary || {};
   const customers = data?.customers || [];
+  const pagination = data?.pagination || { page: 1, limit: PAGE_SIZE, total: 0, totalPages: 1 };
+  const visiblePageStart = Math.max(1, Math.min(pagination.page - 2, pagination.totalPages - 4));
+  const visiblePageNumbers = Array.from(
+    { length: Math.min(5, pagination.totalPages) },
+    (_, index) => visiblePageStart + index,
+  ).filter((pageNumber) => pageNumber <= pagination.totalPages);
+  const rangeStart = pagination.total ? (pagination.page - 1) * pagination.limit + 1 : 0;
+  const rangeEnd = Math.min(pagination.page * pagination.limit, pagination.total);
 
   return (
     <div className="space-y-4 sm:space-y-5">
@@ -180,13 +192,19 @@ export default function StoreChurnScoresPage() {
         <input
           type="search"
           value={search}
-          onChange={(event) => setSearch(event.target.value)}
+          onChange={(event) => {
+            setPage(1);
+            setSearch(event.target.value);
+          }}
           placeholder="Search by name or email"
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm sm:max-w-xs"
         />
         <select
           value={risk}
-          onChange={(event) => setRisk(event.target.value)}
+          onChange={(event) => {
+            setPage(1);
+            setRisk(event.target.value);
+          }}
           className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
         >
           <option value="all">All risk levels</option>
@@ -206,6 +224,7 @@ export default function StoreChurnScoresPage() {
       ) : null}
 
       {!loading && customers.length > 0 ? (
+        <>
         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
           <table className="min-w-full text-sm">
             <thead>
@@ -251,6 +270,48 @@ export default function StoreChurnScoresPage() {
             </tbody>
           </table>
         </div>
+
+        {pagination.totalPages > 1 ? (
+          <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-slate-500">
+              Showing {rangeStart}–{rangeEnd} of {pagination.total} customers · Page {pagination.page} of {pagination.totalPages}
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={pagination.page <= 1 || loading || refreshing}
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Previous
+              </button>
+              {visiblePageNumbers.map((pageNumber) => (
+                <button
+                  key={pageNumber}
+                  type="button"
+                  disabled={loading || refreshing}
+                  onClick={() => setPage(pageNumber)}
+                  className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
+                    pagination.page === pageNumber
+                      ? 'bg-slate-900 text-white'
+                      : 'border border-slate-200 text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  {pageNumber}
+                </button>
+              ))}
+              <button
+                type="button"
+                disabled={pagination.page >= pagination.totalPages || loading || refreshing}
+                onClick={() => setPage((current) => Math.min(pagination.totalPages, current + 1))}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        ) : null}
+        </>
       ) : null}
 
       <div className="rounded-xl border border-rose-100 bg-rose-50 p-4 text-sm text-rose-950">

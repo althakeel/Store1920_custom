@@ -31,7 +31,9 @@ export async function GET(req) {
 
         await connectDB();
 
-        const allCategories = await Category.find({}).sort({ name: 1 }).lean();
+        const allCategories = await Category.find({ isActive: { $ne: false } })
+            .sort({ level: 1, sortOrder: 1, name: 1 })
+            .lean();
 
         const childrenByParent = new Map();
         for (const category of allCategories) {
@@ -45,7 +47,8 @@ export async function GET(req) {
 
         const categoriesWithChildren = allCategories.map((category) => {
             const children = (childrenByParent.get(String(category._id)) || [])
-                .sort((first, second) => String(first.name || '').localeCompare(String(second.name || '')))
+                .sort((first, second) => (first.sortOrder || 0) - (second.sortOrder || 0)
+                    || String(first.name || '').localeCompare(String(second.name || '')))
                 .map((child) => localizeRecord(sanitizeCategoryFields(child), language, ['name', 'description']));
 
             return localizeRecord(sanitizeCategoryFields({

@@ -3,7 +3,7 @@
 import { Search, ShoppingCart, Menu, X, HeartIcon, StarIcon, ArrowLeft, LogOut, User, MapPin, Package } from "lucide-react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { auth } from '../lib/firebase';
 import { getAuth } from "firebase/auth";
@@ -28,13 +28,13 @@ import {
   getCategoryRecordId,
   filterParentCategories,
   getDirectChildCategories,
+  buildCategoryShopLink,
 } from '@/lib/categoryNavigation';
 import { getProductThumbnailUrl } from '@/lib/productMedia';
 import { getProductPath } from '@/lib/productUrl';
 
 const NAVBAR_SELECTED_ADDRESS_KEY = 'navbarSelectedAddressId';
 const NAVBAR_APPEARANCE_CACHE_KEY = 'navbarAppearanceCache';
-const DEFAULT_CATEGORY_IMAGE = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1' y1='0' y2='1'%3E%3Cstop stop-color='%23f8fafc'/%3E%3Cstop offset='1' stop-color='%23e2e8f0'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='120' height='120' rx='60' fill='url(%23g)'/%3E%3Ccircle cx='60' cy='48' r='20' fill='%23cbd5e1'/%3E%3Cpath d='M28 92c8-15 23-24 32-24s24 9 32 24' fill='%23cbd5e1'/%3E%3C/svg%3E";
 
 import { STORE1920_LOGO_PATH } from '@/lib/brandLogo';
 
@@ -84,16 +84,6 @@ const getContrastColor = (hexColor) => {
   const blue = parseInt(hex.slice(4, 6), 16);
   const luminance = (0.299 * red + 0.587 * green + 0.114 * blue) / 255;
   return luminance > 0.65 ? '#111827' : '#ffffff';
-};
-
-const getCategoryImage = (category) => {
-  const candidate = String(category?.image || category?.icon || category?.iconUrl || category?.url || '').trim();
-  return candidate || DEFAULT_CATEGORY_IMAGE;
-};
-
-const getCategoryHref = (category) => {
-  const value = String(category?.slug || category?._id || '').trim();
-  return value ? `/shop?category=${encodeURIComponent(value)}` : '/shop';
 };
 
 const getCategoryId = (category) => getCategoryRecordId(category);
@@ -318,6 +308,11 @@ const Navbar = () => {
   const activeSubcategories = useMemo(() => (
     getDirectChildCategories(Array.isArray(categories) ? categories : [], activeCategory)
   ), [activeCategory, categories]);
+
+  const getCategoryHref = useCallback(
+    (category) => buildCategoryShopLink(category, categories),
+    [categories],
+  );
 
   const selectedDeliveryLabel = useMemo(() => {
     if (!firebaseUser) return t('navbar.signInToChoose');
@@ -1323,27 +1318,34 @@ const Navbar = () => {
 
             <div className="category-dropdown-scroll min-h-0 flex-1 overflow-y-auto px-6 py-5">
               {activeSubcategories.length > 0 ? (
-                <div className="grid grid-cols-5 gap-x-6 gap-y-8">
-                  {activeSubcategories.map((subcategory) => (
-                    <Link
-                      key={getCategoryId(subcategory) || subcategory?.slug || subcategory?.name}
-                      href={getCategoryHref(subcategory)}
-                      className="group flex flex-col items-center text-center transition"
-                    >
-                      <span className="relative h-[98px] w-[98px] overflow-hidden rounded-full border border-slate-200 bg-slate-100 shadow-sm transition group-hover:-translate-y-0.5 group-hover:shadow-md">
-                        <Image
-                          src={getCategoryImage(subcategory)}
-                          alt={getCategoryDisplayName(subcategory) || 'Category'}
-                          fill
-                          sizes="98px"
-                          className="object-cover"
-                        />
-                      </span>
-                      <span className="mt-3 line-clamp-2 min-h-[44px] text-[13px] font-medium leading-tight text-slate-700 group-hover:text-slate-900">
-                        {getCategoryDisplayName(subcategory)}
-                      </span>
-                    </Link>
-                  ))}
+                <div className="grid grid-cols-2 gap-x-10 gap-y-6 sm:grid-cols-3">
+                  {activeSubcategories.map((subcategory) => {
+                    const childCategories = getDirectChildCategories(categories, subcategory);
+                    return (
+                      <div key={getCategoryId(subcategory) || subcategory?.slug || subcategory?.name}>
+                        <Link
+                          href={getCategoryHref(subcategory)}
+                          className="block text-sm font-semibold text-slate-900 transition hover:text-rose-600"
+                        >
+                          {getCategoryDisplayName(subcategory)}
+                        </Link>
+                        {childCategories.length > 0 ? (
+                          <ul className="mt-2 space-y-1">
+                            {childCategories.map((child) => (
+                              <li key={getCategoryId(child) || child?.slug || child?.name}>
+                                <Link
+                                  href={getCategoryHref(child)}
+                                  className="block text-sm text-slate-600 transition hover:text-rose-600"
+                                >
+                                  {getCategoryDisplayName(child)}
+                                </Link>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-sm text-slate-600">

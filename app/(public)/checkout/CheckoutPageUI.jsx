@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { Check, Truck, Zap } from "lucide-react";
+import { Check, Tag, Truck, Zap } from "lucide-react";
 import axios from "axios";
 import { countryCodes } from "@/assets/countryCodes";
 import { indiaStatesAndDistricts } from "@/assets/indiaStatesAndDistricts";
@@ -9,6 +9,11 @@ import { useSelector, useDispatch } from "react-redux";
 import { fetchAddress } from "@/lib/features/address/addressSlice";
 import { clearCart, deleteItemFromCart } from "@/lib/features/cart/cartSlice";
 import { fetchShippingSettings, calculateShipping } from "@/lib/shipping";
+import {
+  getAvailableShippingOptions,
+  getDefaultShippingOption,
+  getShippingOptionById,
+} from '@/lib/shippingOptions';
 import { trackMetaEvent } from "@/lib/metaPixelClient";
 import { trackInitiateCheckout } from "@/lib/metaPixelTracking";
 import { useRouter } from "next/navigation";
@@ -45,6 +50,7 @@ import { STORE_CURRENCY } from '@/lib/storeCurrency';
 import { getProductSubtitle } from '@/lib/productDisplay';
 import { collectCheckoutValidationIssues, scrollToCheckoutField } from '@/lib/checkoutValidation';
 import CheckoutValidationAlert from '@/components/CheckoutValidationAlert';
+import toast from 'react-hot-toast';
 
 const SignInModal = dynamic(() => import("@/components/SignInModal"), { ssr: false });
 const AddressModal = dynamic(() => import("@/components/AddressModal"), { ssr: false });
@@ -109,7 +115,7 @@ export default function CheckoutPage() {
   const [navigatingToSuccess, setNavigatingToSuccess] = useState(false);
   const [shippingSetting, setShippingSetting] = useState(null);
   const [shipping, setShipping] = useState(0);
-  const [shippingMethod, setShippingMethod] = useState('standard'); // 'standard' or 'express'
+  const [shippingMethod, setShippingMethod] = useState('');
   const [showSignIn, setShowSignIn] = useState(false);
   const [showAddressModal, setShowAddressModal] = useState(false);
   const [showAllOrderItemsModal, setShowAllOrderItemsModal] = useState(false);
@@ -126,6 +132,7 @@ export default function CheckoutPage() {
   const [couponLoading, setCouponLoading] = useState(false);
   const [storeId, setStoreId] = useState(null);
   const [formError, setFormError] = useState("");
+  const [sidebarPayError, setSidebarPayError] = useState("");
   const [validationAlertOpen, setValidationAlertOpen] = useState(false);
   const [validationIssues, setValidationIssues] = useState([]);
   const [invalidFieldIds, setInvalidFieldIds] = useState(() => new Set());
@@ -608,12 +615,12 @@ export default function CheckoutPage() {
   const totalAfterWallet = total;
   const cartItemCount = cartArray.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
   const hasFreeShippingProduct = cartArray.some((item) => Boolean(item?.freeShippingEligible));
-  const summaryDeliveryDays = shippingMethod === 'express'
-    ? formatDeliveryDays(shippingSetting?.expressEstimatedDays, '1-2')
-    : formatDeliveryDays(shippingSetting?.estimatedDays, '2-5');
-  const summaryDeliveryLabel = shippingMethod === 'express'
-    ? t('checkout.expressDelivery')
-    : t('checkout.standardDelivery');
+  const availableShippingOptions = getAvailableShippingOptions(shippingSetting, form.state);
+  const selectedShippingOption =
+    getShippingOptionById(shippingSetting, shippingMethod)
+    || getDefaultShippingOption(shippingSetting, form.state);
+  const summaryDeliveryDays = formatDeliveryDays(selectedShippingOption?.estimatedDays, '2-5');
+  const summaryDeliveryLabel = selectedShippingOption?.name || t('checkout.standardDelivery');
   const totalSavings = couponDiscount + shippingDiscount;
   const needsPaymentSelection = totalAfterWallet > 0;
   const paymentMethodSummary = (() => {
@@ -655,15 +662,24 @@ export default function CheckoutPage() {
     (maxCODAmount > 0 && totalAfterWallet > maxCODAmount);
   const isPaymentMissing = needsPaymentSelection && !form.payment;
   const isInvalidPaymentSelection = form.payment === 'cod' && isCODDisabledForOrder;
-  const isPlaceOrderDisabled = placingOrder || isPaymentMissing || isInvalidPaymentSelection;
+  const isPlaceOrderDisabled = placingOrder || payingNow;
+  const hasCheckoutFormBlockers = isPaymentMissing || isInvalidPaymentSelection;
   const isCheckoutSubmitDisabled = isPlaceOrderDisabled;
   const placeOrderButtonActiveColors = 'bg-red-600 hover:bg-red-700';
-  const placeOrderButtonColors = isCheckoutSubmitDisabled
+  const placeOrderButtonColors = isPlaceOrderDisabled
     ? 'bg-gray-400 cursor-not-allowed opacity-75'
-    : placeOrderButtonActiveColors;
-  const mobilePlaceOrderButtonColors = isCheckoutSubmitDisabled
+    : hasCheckoutFormBlockers
+      ? 'bg-amber-600 hover:bg-amber-700'
+      : placeOrderButtonActiveColors;
+  const mobilePlaceOrderButtonColors = isPlaceOrderDisabled
     ? 'bg-gray-400 cursor-not-allowed opacity-75'
-    : placeOrderButtonActiveColors;
+    : hasCheckoutFormBlockers
+      ? 'bg-amber-600 hover:bg-amber-700'
+      : placeOrderButtonActiveColors;
+  const isGuestAreaMissing = !user
+    && isUaeCountry(form.country)
+    && String(form.state || '').trim()
+    && !String(form.district || '').trim();
   const renderPayByMethodLabel = (methodKey) => (
     <span className="font-normal">
       {t('checkout.payBy')}{' '}
@@ -793,32 +809,34 @@ export default function CheckoutPage() {
     loadShipping();
   }, [products]); // Refetch when products load
 
-  // Calculate dynamic shipping based on settings
-  // Reset shipping method if express is selected but state is not Kerala
   useEffect(() => {
-    if (shippingMethod === 'express' && shippingSetting?.enableExpressShipping) {
-      const normalizedState = String(form.state || '').trim().toLowerCase();
-      if (normalizedState !== 'kerala') {
-        setShippingMethod('standard');
-      }
+    if (!shippingSetting) return;
+    const available = getAvailableShippingOptions(shippingSetting, form.state);
+    if (!available.length) return;
+
+    const stillValid = available.some((option) => option.id === shippingMethod);
+    if (!stillValid) {
+      const defaultOption = available.find((option) => option.isDefault) || available[0];
+      if (defaultOption) setShippingMethod(defaultOption.id);
+    } else if (!shippingMethod) {
+      const defaultOption = available.find((option) => option.isDefault) || available[0];
+      if (defaultOption) setShippingMethod(defaultOption.id);
     }
-  }, [form.state, shippingSetting?.enableExpressShipping]);
+  }, [shippingSetting, form.state, shippingMethod]);
 
   useEffect(() => {
     if (shippingSetting && cartArray.length > 0) {
-      const calculatedShipping = calculateShipping({ 
-        cartItems: cartArray, 
+      const option =
+        getShippingOptionById(shippingSetting, shippingMethod)
+        || getDefaultShippingOption(shippingSetting, form.state);
+      const calculatedShipping = calculateShipping({
+        cartItems: cartArray,
         shippingSetting,
+        shippingOption: option,
         paymentMethod: form.payment === 'cod' ? 'COD' : 'CARD',
-        shippingState: form.state
+        shippingState: form.state,
       });
-      let finalShipping = calculatedShipping;
-      // Add express fee if express shipping is selected
-      if (shippingMethod === 'express' && shippingSetting?.enableExpressShipping) {
-        finalShipping += Number(shippingSetting.expressShippingFee || 0);
-      }
-      setShipping(finalShipping);
-      console.log('Calculated shipping:', finalShipping, 'Base:', calculatedShipping, 'Method:', shippingMethod, 'Settings:', shippingSetting, 'Payment:', form.payment);
+      setShipping(calculatedShipping);
     } else {
       setShipping(0);
     }
@@ -851,10 +869,26 @@ export default function CheckoutPage() {
   const fieldHasError = (fieldId) => invalidFieldIds.has(fieldId);
   const fieldErrorClass = (fieldId) =>
     fieldHasError(fieldId) ? 'border-red-400 ring-4 ring-red-100 focus:border-red-400 focus:ring-red-100' : '';
+  const getFieldRequiredMessage = (fieldId) => {
+    const messageMap = {
+      'guest-area': t('checkout.selectAreaRequired'),
+      'guest-district': t('checkout.selectDistrict'),
+      'guest-state': t('checkout.selectEmirate'),
+      'guest-country': t('checkout.country'),
+      'guest-name': t('checkout.fullName'),
+      'guest-email': t('checkout.emailAddress'),
+      'guest-phone': t('checkout.phoneNumber'),
+      'guest-street': t('checkout.street'),
+      'guest-pincode': 'Pincode',
+      'checkout-payment': t('checkout.selectPaymentRequired'),
+      'checkout-address': t('checkout.fillAddress'),
+    };
+    return messageMap[fieldId] || (isArabic ? 'هذا الحقل مطلوب' : 'This field is required');
+  };
   const fieldRequiredHint = (fieldId) =>
     fieldHasError(fieldId) ? (
       <p className="mt-1 text-xs font-medium text-red-600">
-        {isArabic ? 'هذا الحقل مطلوب' : 'This field is required'}
+        {getFieldRequiredMessage(fieldId)}
       </p>
     ) : null;
 
@@ -883,6 +917,37 @@ export default function CheckoutPage() {
     return labelMap[issue.label] || issue.label;
   };
 
+  const resolveCheckoutValidationContext = () => {
+    const cleanedPhone = cleanDigits(form.phone);
+    const selectedAddr = (form.addressId && addressList.find((a) => a._id === form.addressId)) || null;
+    const resolvedPhone =
+      cleanedPhone || cleanDigits(selectedAddr?.phone) || cleanDigits(user?.phoneNumber || user?.phone);
+    const resolvedCountry = form.country || selectedAddr?.country || 'United Arab Emirates';
+    const resolvedPincode = isIndiaCountry(resolvedCountry) ? sanitizePincode(form.pincode) : '';
+    return { resolvedPhone, resolvedCountry, resolvedPincode };
+  };
+
+  const showCheckoutValidationFeedback = (rawIssues) => {
+    const issues = rawIssues.map((issue) => ({ ...issue, label: getValidationLabel(issue) }));
+    setValidationIssues(issues);
+    setInvalidFieldIds(new Set(rawIssues.map((issue) => issue.id)));
+    setValidationAlertOpen(true);
+    scrollToCheckoutField(issues[0]?.id);
+
+    const areaIssue = rawIssues.find((issue) => issue.id === 'guest-area');
+    const message = areaIssue
+      ? t('checkout.selectAreaRequired')
+      : t('checkout.pleaseCompleteField').replace('{field}', issues[0]?.label || '');
+
+    setFormError(message);
+    setSidebarPayError(message);
+    toast.error(message, {
+      duration: 6000,
+      position: 'top-center',
+      style: { zIndex: 99999, fontWeight: 600 },
+    });
+  };
+
   const runCheckoutFormValidation = (resolvedPhone, resolvedCountry, resolvedPincode) => {
     const rawIssues = collectCheckoutValidationIssues({
       user,
@@ -896,20 +961,41 @@ export default function CheckoutPage() {
 
     if (!rawIssues.length) {
       setInvalidFieldIds(new Set());
+      setSidebarPayError('');
       return true;
     }
 
-    const issues = rawIssues.map((issue) => ({ ...issue, label: getValidationLabel(issue) }));
-    setValidationIssues(issues);
-    setInvalidFieldIds(new Set(rawIssues.map((issue) => issue.id)));
-    setValidationAlertOpen(true);
-    scrollToCheckoutField(issues[0]?.id);
+    showCheckoutValidationFeedback(rawIssues);
     return false;
+  };
+
+  const handlePlaceOrderClick = (event) => {
+    if (placingOrder || payingNow) {
+      event.preventDefault();
+      return;
+    }
+
+    const { resolvedPhone, resolvedCountry, resolvedPincode } = resolveCheckoutValidationContext();
+    const rawIssues = collectCheckoutValidationIssues({
+      user,
+      form,
+      addressList,
+      resolvedPhone,
+      resolvedCountry,
+      resolvedPincode,
+      needsPaymentSelection,
+    });
+
+    if (rawIssues.length > 0) {
+      event.preventDefault();
+      showCheckoutValidationFeedback(rawIssues);
+    }
   };
 
   const handleStateSelect = (value) => {
     setInvalidFieldIds(new Set());
     setValidationAlertOpen(false);
+    setSidebarPayError('');
     if (isUaeCountry(form.country)) {
       setDistricts(getUaeAreasForEmirate(value));
     } else {
@@ -933,6 +1019,7 @@ export default function CheckoutPage() {
   const handleChange = (e) => {
     setInvalidFieldIds(new Set());
     setValidationAlertOpen(false);
+    setSidebarPayError('');
     const { name, value } = e.target;
     if (name === 'state') {
       handleStateSelect(value);
@@ -1229,6 +1316,26 @@ export default function CheckoutPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setFormError("");
+    setSidebarPayError("");
+
+    if (isPaymentMissing) {
+      setInvalidFieldIds(new Set(['checkout-payment']));
+      toast.error(t('checkout.selectPaymentRequired'), { id: 'checkout-validation' });
+      scrollToCheckoutField('checkout-payment');
+      return;
+    }
+
+    if (isInvalidPaymentSelection) {
+      const codMessage = hasPersonalizedOfferItem
+        ? 'COD is not available for personalized offer products. Please use online payment.'
+        : shippingSetting?.enableCOD === false
+          ? 'Cash on Delivery is not available.'
+          : `COD is not available for orders above ${formatMoney(maxCODAmount)}.`;
+      setFormError(codMessage);
+      toast.error(codMessage, { id: 'checkout-validation' });
+      return;
+    }
+
     // Validate required fields
     if (cartArray.length === 0) {
       setFormError("All items in your cart are currently out of stock. Please remove them to continue.");
@@ -1507,6 +1614,9 @@ export default function CheckoutPage() {
 
       // Build order payload
       let payload;
+      const recoveryToken = typeof window !== 'undefined'
+        ? sessionStorage.getItem('abandonedCartRecoveryToken')
+        : null;
       
       console.log('Checkout - User state:', user ? 'logged in' : 'guest');
       console.log('Checkout - User object:', user);
@@ -1590,6 +1700,10 @@ export default function CheckoutPage() {
             description: appliedCoupon.description,
           };
         }
+      }
+
+      if (recoveryToken) {
+        payload.recoveryToken = recoveryToken;
       }
       
       console.log('Submitting order:', payload);
@@ -1957,105 +2071,66 @@ export default function CheckoutPage() {
               <h2 className="mb-1 text-xl font-bold text-gray-900">{t('checkout.deliveryMethod')}</h2>
               <p className="mb-4 text-sm text-slate-500">Choose how fast you want your order delivered.</p>
               <div className="space-y-3">
-                {(() => {
-                  const baseShip = calculateShipping({
+                {availableShippingOptions.map((option) => {
+                  const optionFee = calculateShipping({
                     cartItems: cartArray,
                     shippingSetting,
+                    shippingOption: option,
                     paymentMethod: form.payment === 'cod' ? 'COD' : 'CARD',
                     shippingState: form.state,
                   });
-                  const standardDays = formatDeliveryDays(shippingSetting?.estimatedDays, '2-5');
-                  const isStandardSelected = shippingMethod === 'standard';
+                  const optionDays = formatDeliveryDays(option.estimatedDays, '3-5');
+                  const isSelected = shippingMethod === option.id;
+                  const isExpressLike = /express/i.test(option.name);
 
                   return (
                     <button
+                      key={option.id}
                       type="button"
-                      onClick={() => setShippingMethod('standard')}
+                      onClick={() => setShippingMethod(option.id)}
                       className={`w-full rounded-xl border-2 p-4 text-left transition-colors ${
-                        isStandardSelected
+                        isSelected
                           ? 'border-emerald-300 bg-white'
                           : 'border-slate-200 bg-white hover:border-slate-300'
                       }`}
                     >
                       <div className="flex items-center gap-4">
                         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
-                          <Truck className="h-5 w-5" strokeWidth={2} />
+                          {isExpressLike ? (
+                            <Zap className="h-5 w-5" strokeWidth={2} />
+                          ) : (
+                            <Truck className="h-5 w-5" strokeWidth={2} />
+                          )}
                         </div>
 
                         <div className="min-w-0 flex-1">
-                          <span className="font-semibold text-slate-900">{t('checkout.standardDelivery')}</span>
+                          <span className="font-semibold text-slate-900">{option.name}</span>
                           <p className="mt-0.5 text-sm text-slate-500">
-                            {t('checkout.deliveredIn', { days: standardDays })}
+                            {t('checkout.deliveredIn', { days: optionDays })}
                           </p>
                         </div>
 
                         <div className="flex shrink-0 items-center gap-3">
                           <span className={`text-sm font-semibold ${
-                            baseShip === 0 ? 'text-emerald-600' : 'text-slate-900'
+                            optionFee === 0 ? 'text-emerald-600' : 'text-slate-900'
                           }`}>
-                            {baseShip === 0 ? t('cart.free') : formatMoney(baseShip)}
+                            {optionFee === 0 ? t('cart.free') : formatMoney(optionFee)}
                           </span>
                           <span className={`flex h-5 w-5 items-center justify-center rounded-full border-2 ${
-                            isStandardSelected ? 'border-emerald-400 bg-emerald-400' : 'border-slate-300 bg-white'
+                            isSelected ? 'border-emerald-400 bg-emerald-400' : 'border-slate-300 bg-white'
                           }`}>
-                            {isStandardSelected ? <Check className="h-3 w-3 text-white" strokeWidth={3} /> : null}
+                            {isSelected ? <Check className="h-3 w-3 text-white" strokeWidth={3} /> : null}
                           </span>
                         </div>
                       </div>
                     </button>
                   );
-                })()}
-
-                {shippingSetting?.enableExpressShipping && String(form.state || '').trim().toLowerCase() === 'kerala' && (() => {
-                  const baseShip = calculateShipping({
-                    cartItems: cartArray,
-                    shippingSetting,
-                    paymentMethod: form.payment === 'cod' ? 'COD' : 'CARD',
-                    shippingState: form.state,
-                  });
-                  const expressTotal = baseShip + Number(shippingSetting.expressShippingFee || 0);
-                  const expressDays = formatDeliveryDays(shippingSetting?.expressEstimatedDays, '1-2');
-                  const isExpressSelected = shippingMethod === 'express';
-
-                  return (
-                    <button
-                      type="button"
-                      onClick={() => setShippingMethod('express')}
-                      className={`w-full rounded-xl border-2 p-4 text-left transition-colors ${
-                        isExpressSelected
-                          ? 'border-emerald-300 bg-white'
-                          : 'border-slate-200 bg-white hover:border-slate-300'
-                      }`}
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
-                          <Zap className="h-5 w-5" strokeWidth={2} />
-                        </div>
-
-                        <div className="min-w-0 flex-1">
-                          <span className="font-semibold text-slate-900">{t('checkout.expressDelivery')}</span>
-                          <p className="mt-0.5 text-sm text-slate-500">
-                            {t('checkout.expressDeliveredIn', { days: expressDays })}
-                          </p>
-                          <p className="mt-0.5 text-xs text-slate-500">
-                            {t('checkout.expressExtra', { amount: formatMoney(shippingSetting?.expressShippingFee || 0) })}
-                          </p>
-                        </div>
-
-                        <div className="flex shrink-0 items-center gap-3">
-                          <span className="text-sm font-semibold text-slate-900">
-                            {formatMoney(expressTotal)}
-                          </span>
-                          <span className={`flex h-5 w-5 items-center justify-center rounded-full border-2 ${
-                            isExpressSelected ? 'border-emerald-400 bg-emerald-400' : 'border-slate-300 bg-white'
-                          }`}>
-                            {isExpressSelected ? <Check className="h-3 w-3 text-white" strokeWidth={3} /> : null}
-                          </span>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })()}
+                })}
+                {!availableShippingOptions.length ? (
+                  <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    No delivery options are available for the selected location.
+                  </p>
+                ) : null}
               </div>
               
               {/* State-wise charge note */}
@@ -2364,6 +2439,7 @@ export default function CheckoutPage() {
                             onChange={(value) => {
                               setInvalidFieldIds(new Set());
                               setValidationAlertOpen(false);
+                              setSidebarPayError('');
                               setForm((f) => ({ ...f, district: value }));
                             }}
                             options={districts}
@@ -2371,10 +2447,15 @@ export default function CheckoutPage() {
                             searchPlaceholder="Search area..."
                             emptyMessage="No areas found"
                             required
-                            hasError={fieldHasError('guest-area')}
+                            hasError={fieldHasError('guest-area') || isGuestAreaMissing}
                             triggerClassName={checkoutSelectClass}
                           />
                           {fieldRequiredHint('guest-area')}
+                          {isGuestAreaMissing && !fieldHasError('guest-area') ? (
+                            <p className="mt-1 text-xs font-medium text-red-600">
+                              {t('checkout.selectAreaRequired')}
+                            </p>
+                          ) : null}
                         </div>
                       ) : null}
                     </div>
@@ -2638,6 +2719,55 @@ export default function CheckoutPage() {
             </p>
           </div>
 
+          {!appliedCoupon ? (
+            <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <div className="mb-2 flex items-center gap-2">
+                <Tag size={16} className="text-slate-500" />
+                <span className="text-sm font-semibold text-slate-800">{t('checkout.applyCoupon')}</span>
+              </div>
+              <form onSubmit={handleApplyCoupon} className="flex gap-2">
+                <input
+                  type="text"
+                  value={coupon}
+                  onChange={(e) => {
+                    setCoupon(e.target.value);
+                    if (couponError) setCouponError('');
+                  }}
+                  placeholder="Enter coupon code"
+                  className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                />
+                <button
+                  type="submit"
+                  disabled={couponLoading || form.payment !== 'card'}
+                  className="shrink-0 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {couponLoading ? '...' : 'Apply'}
+                </button>
+              </form>
+              {couponError ? (
+                <p className="mt-2 text-xs text-red-600">{couponError}</p>
+              ) : null}
+              {form.payment !== 'card' ? (
+                <p className="mt-2 text-xs text-amber-700">
+                  Select <strong>Card</strong> payment to use a coupon.
+                </p>
+              ) : !user ? (
+                <p className="mt-2 text-xs text-slate-600">
+                  Sign in to apply a coupon code.
+                </p>
+              ) : null}
+              {availableCoupons.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setShowCouponModal(true)}
+                  className="mt-2 text-xs font-semibold text-orange-600 hover:text-orange-700"
+                >
+                  View {availableCoupons.length} available coupon{availableCoupons.length === 1 ? '' : 's'}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
           {/* Price breakdown */}
           <div className="mb-4 space-y-3 border-b border-emerald-100 pb-4">
             <div className="flex items-center justify-between text-sm">
@@ -2734,9 +2864,22 @@ export default function CheckoutPage() {
               </p>
             ) : null}
           </div>
+          {sidebarPayError ? (
+            <p
+              role="alert"
+              className="mt-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2.5 text-sm font-semibold text-red-700 shadow-sm"
+            >
+              {sidebarPayError}
+            </p>
+          ) : isGuestAreaMissing ? (
+            <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+              {t('checkout.selectAreaRequired')}
+            </p>
+          ) : null}
           <button
             type="submit"
             form="checkout-form"
+            onClick={handlePlaceOrderClick}
             className={`mt-4 hidden md:flex relative w-full items-center justify-center text-white py-3.5 rounded-lg text-base transition shadow-md hover:shadow-lg ${placeOrderButtonColors} ${placingOrder ? 'animate-bounce' : ''}`}
             disabled={isCheckoutSubmitDisabled}
             aria-busy={placingOrder}
@@ -2823,9 +2966,22 @@ export default function CheckoutPage() {
       {/* Sticky Footer - Only Total and Place Order on Mobile */}
       <div className="fixed bottom-0 left-0 right-0 md:hidden bg-white border-t border-gray-200 shadow-lg z-40 p-4">
         <div className="max-w-6xl mx-auto">
+          {sidebarPayError ? (
+            <p
+              role="alert"
+              className="mb-2 rounded-lg border border-red-300 bg-red-50 px-3 py-2.5 text-sm font-semibold text-red-700 shadow-sm"
+            >
+              {sidebarPayError}
+            </p>
+          ) : isGuestAreaMissing ? (
+            <p className="mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+              {t('checkout.selectAreaRequired')}
+            </p>
+          ) : null}
           <button
             type="submit"
             form="checkout-form"
+            onClick={handlePlaceOrderClick}
             className={`relative w-full text-white py-4 rounded-lg text-base transition shadow-md hover:shadow-lg flex items-center justify-between px-6 ${mobilePlaceOrderButtonColors} ${placingOrder ? 'animate-bounce' : ''}`}
             disabled={isCheckoutSubmitDisabled}
             aria-busy={placingOrder}

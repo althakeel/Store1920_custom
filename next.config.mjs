@@ -59,8 +59,9 @@ const nextConfig = {
         qualities: [75, 85, 90, 100]
     },
     compress: true,
-    proxyClientMaxBodySize: '200mb',
     experimental: {
+        inlineCss: true,
+        proxyClientMaxBodySize: '200mb',
         serverActions: {
             bodySizeLimit: '200mb'
         },
@@ -192,6 +193,15 @@ const nextConfig = {
             },
             {
                 source: '/categories',
+                headers: [
+                    {
+                        key: 'Cache-Control',
+                        value: 'public, s-maxage=300, stale-while-revalidate=900',
+                    },
+                ],
+            },
+            {
+                source: '/category/:path*',
                 headers: [
                     {
                         key: 'Cache-Control',

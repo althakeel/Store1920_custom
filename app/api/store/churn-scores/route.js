@@ -99,7 +99,8 @@ export async function GET(request) {
     const refresh = searchParams.get('refresh') === 'true';
     const risk = searchParams.get('risk') || 'all';
     const q = String(searchParams.get('q') || '').trim().toLowerCase();
-    const limit = Math.min(200, Math.max(1, Number(searchParams.get('limit') || 100)));
+    const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit') || 25)));
+    const page = Math.max(1, Number(searchParams.get('page') || 1));
 
     await connectDB();
 
@@ -128,10 +129,21 @@ export async function GET(request) {
       ? new Date(new Date(computedAt).getTime() + CHURN_CACHE_TTL_MS).toISOString()
       : null;
 
+    const total = filtered.length;
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const safePage = Math.min(page, totalPages);
+    const offset = (safePage - 1) * limit;
+
     return NextResponse.json({
       summary,
-      customers: filtered.slice(0, limit),
-      total: filtered.length,
+      customers: filtered.slice(offset, offset + limit),
+      total,
+      pagination: {
+        page: safePage,
+        limit,
+        total,
+        totalPages,
+      },
       cacheStatus,
       computedAt,
       nextRefreshAt,

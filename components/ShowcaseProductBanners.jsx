@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import styles from './ShopShowcaseSectionProducts.module.css'
 
 const MOBILE_AUTO_SCROLL_MS = 3500
 
@@ -18,9 +17,9 @@ function ProductBannerCard({ banner, className = '' }) {
       String(banner?.buttonText || '').trim())
 
   return (
-    <Card href={link || undefined} className={`${styles.showcaseProductCard} ${className}`.trim()}>
+    <Card href={link || undefined} className={`shop-showcase-product-card ${className}`.trim()}>
       <img
-        className={styles.showcaseProductImage}
+        className="shop-showcase-product-image"
         src={image || '/assets/placeholder.png'}
         alt={banner?.title || 'Promotional banner'}
         loading="lazy"
@@ -28,16 +27,16 @@ function ProductBannerCard({ banner, className = '' }) {
       />
       {hasTextOverlay ? (
         <>
-          <div className={styles.showcaseProductOverlay} />
-          <div className={styles.showcaseProductContent}>
+          <div className="shop-showcase-product-overlay" />
+          <div className="shop-showcase-product-content">
             {String(banner?.title || '').trim() ? (
-              <div className={styles.showcaseProductTitle}>{banner.title}</div>
+              <div className="shop-showcase-product-title">{banner.title}</div>
             ) : null}
             {String(banner?.subtitle || '').trim() ? (
-              <div className={styles.showcaseProductSubtitle}>{banner.subtitle}</div>
+              <div className="shop-showcase-product-subtitle">{banner.subtitle}</div>
             ) : null}
             {String(banner?.buttonText || '').trim() ? (
-              <span className={styles.showcaseProductButton}>{banner.buttonText}</span>
+              <span className="shop-showcase-product-button">{banner.buttonText}</span>
             ) : null}
           </div>
         </>
@@ -86,27 +85,27 @@ export default function ShowcaseProductBanners({ banners = [] }) {
 
   if (isMobile) {
     return (
-      <div className={styles.showcaseProductMobileCarousel} aria-roledescription="carousel">
+      <div className="shop-showcase-product-mobile-carousel" aria-roledescription="carousel">
         <div
-          className={styles.showcaseProductMobileTrack}
+          className="shop-showcase-product-mobile-track"
           style={{ transform: `translate3d(-${activeIndex * 100}%, 0, 0)` }}
         >
           {visibleBanners.map((banner, index) => (
-            <div key={`mobile-showcase-banner-${index}`} className={styles.showcaseProductMobileSlide}>
-              <ProductBannerCard banner={banner} className={styles.showcaseProductMobileCard} />
+            <div key={`mobile-showcase-banner-${index}`} className="shop-showcase-product-mobile-slide">
+              <ProductBannerCard banner={banner} className="shop-showcase-product-mobile-card" />
             </div>
           ))}
         </div>
 
         {visibleBanners.length > 1 ? (
-          <div className={styles.showcaseProductMobileDots}>
+          <div className="shop-showcase-product-mobile-dots">
             {visibleBanners.map((_, index) => (
               <button
                 key={`mobile-showcase-dot-${index}`}
                 type="button"
                 aria-label={`Go to banner ${index + 1}`}
-                className={`${styles.showcaseProductMobileDot} ${
-                  index === activeIndex ? styles.showcaseProductMobileDotActive : ''
+                className={`shop-showcase-product-mobile-dot ${
+                  index === activeIndex ? 'shop-showcase-product-mobile-dot-active' : ''
                 }`}
                 onClick={() => setActiveIndex(index)}
               />
@@ -118,7 +117,7 @@ export default function ShowcaseProductBanners({ banners = [] }) {
   }
 
   return (
-    <div className={styles.showcaseProductGrid}>
+    <div className="shop-showcase-product-grid">
       {visibleBanners.map((banner, index) => (
         <ProductBannerCard key={`desktop-showcase-banner-${index}`} banner={banner} />
       ))}

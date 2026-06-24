@@ -75,7 +75,7 @@ export default async function RootLayout({ children }) {
       <body className="overflow-x-clip antialiased" suppressHydrationWarning>
         <Script
           id="google-tag-manager"
-          strategy="beforeInteractive"
+          strategy="afterInteractive"
           dangerouslySetInnerHTML={{
             __html: getGtmHeadScript(GTM_ID),
           }}

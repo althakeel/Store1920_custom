@@ -5,11 +5,18 @@ import User from '@/models/User';
 import authSeller from '@/middlewares/authSeller';
 import { getAuth } from '@/lib/firebase-admin';
 import { enrichAbandonedCarts, getAbandonedCartTotal, isPlaceholderName } from '@/lib/abandonedCartUtils';
-import { getConversionPaymentMethodLabel, resolveConversionPaymentLink } from '@/lib/abandonedCartRecoveryPayment';
-import { sendAbandonedCartConversionEmail } from '@/lib/email';
+import { getConversionPaymentMethodLabel, resolveConversionPaymentLink, conversionRequiresPaymentConfirmation } from '@/lib/abandonedCartRecoveryPayment';
+import { sendAbandonedCartConversionEmail, sendAbandonedCartRecoveryLinkEmail } from '@/lib/email';
 import Store from '@/models/Store';
 import { resolveDashboardAccess } from '@/lib/storeAccessControl';
 import authAdmin from '@/middlewares/authAdmin';
+import {
+  applyRecoveryPricingToItems,
+  buildRecoveryLink,
+  computeRecoveryOfferTotal,
+  generateRecoveryToken,
+} from '@/lib/abandonedCartRecoveryOffer';
+import { sendAbandonedCartWhatsAppReminder } from '@/lib/whatsapp/abandonedCartMessaging';
 
 async function resolveAbandonedCheckoutAccess(request) {
   const authHeader = request.headers.get('authorization');
@@ -128,7 +135,13 @@ export async function PATCH(request) {
       conversionPaymentMethod,
       conversionPaymentLink,
       customerEmail: customerEmailInput,
+      customerPhone: customerPhoneInput,
       sendCustomerEmail = true,
+      recoveryDiscountType,
+      recoveryDiscountValue,
+      recoveryOfferTotal,
+      sendRecoveryEmail = true,
+      sendWhatsApp = true,
     } = body || {};
 
     if (!cartId) {
@@ -210,6 +223,199 @@ export async function PATCH(request) {
       }
     }
 
+    if (action === 'send-recovery-link') {
+      const cart = await AbandonedCart.findOne({ _id: cartId, storeId }).lean();
+      if (!cart) {
+        return NextResponse.json({ error: 'Abandoned cart not found' }, { status: 404 });
+      }
+      if (cart.status === 'converted') {
+        return NextResponse.json({ error: 'This cart is already converted' }, { status: 409 });
+      }
+
+      const cartTotalMax = getAbandonedCartTotal(cart);
+      const discountType = ['none', 'amount', 'percent', 'custom'].includes(recoveryDiscountType)
+        ? recoveryDiscountType
+        : 'percent';
+
+      let offerTotal = Number(recoveryOfferTotal);
+      if (!Number.isFinite(offerTotal)) {
+        const computed = computeRecoveryOfferTotal(
+          cartTotalMax,
+          discountType,
+          recoveryDiscountValue ?? '',
+          recoveryDiscountValue ?? '',
+        );
+        if (computed.error || computed.final === null) {
+          return NextResponse.json({ error: computed.error || 'Enter a valid discount' }, { status: 400 });
+        }
+        offerTotal = computed.final;
+      }
+
+      if (offerTotal > cartTotalMax) {
+        return NextResponse.json({
+          error: `Offer total cannot exceed the abandoned cart total (${cartTotalMax})`,
+        }, { status: 400 });
+      }
+
+      if (offerTotal >= cartTotalMax && discountType === 'none') {
+        return NextResponse.json({ error: 'Set a discount before sending a recovery link' }, { status: 400 });
+      }
+
+      const recoveryToken = cart.recoveryToken || generateRecoveryToken();
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      const trimmedCustomerName = String(customerName || cart.name || '').trim() || 'Customer';
+      const resolvedCustomerEmail = String(customerEmailInput || cart.email || '').trim().toLowerCase();
+      const resolvedCustomerPhone = String(customerPhoneInput || cart.phone || '').trim();
+      const discountValue = Number(recoveryDiscountValue);
+      const safeDiscountValue = Number.isFinite(discountValue) ? discountValue : null;
+      const origin = process.env.NEXT_PUBLIC_BASE_URL
+        || request.headers.get('origin')
+        || '';
+      const recoveryLink = buildRecoveryLink(origin, recoveryToken);
+      const discountedItems = applyRecoveryPricingToItems(cart.items || [], offerTotal, cartTotalMax);
+
+      const updated = await AbandonedCart.findOneAndUpdate(
+        { _id: cartId, storeId, status: { $ne: 'converted' } },
+        {
+          $set: {
+            status: cart.status === 'pending_payment' ? 'pending_payment' : 'active',
+            recoveryToken,
+            recoveryDiscountType: discountType,
+            recoveryDiscountValue: safeDiscountValue,
+            recoveryCartTotal: cartTotalMax,
+            recoveryOfferTotal: offerTotal,
+            recoveryLinkExpiresAt: expiresAt,
+            recoveryLinkSentAt: new Date(),
+            recoveryLinkSentTo: resolvedCustomerEmail || null,
+            ...(trimmedCustomerName ? { name: trimmedCustomerName } : {}),
+            ...(resolvedCustomerEmail ? { email: resolvedCustomerEmail } : {}),
+            ...(resolvedCustomerPhone ? { phone: resolvedCustomerPhone } : {}),
+          },
+        },
+        { new: true }
+      ).lean();
+
+      if (!updated) {
+        return NextResponse.json({ error: 'Could not create recovery link' }, { status: 409 });
+      }
+
+      let emailSent = false;
+      let emailError = null;
+
+      if (sendRecoveryEmail !== false && resolvedCustomerEmail) {
+        try {
+          const store = await Store.findById(storeId).select('name').lean();
+          const discountLabel = discountType === 'percent' && safeDiscountValue
+            ? `${safeDiscountValue}% off your cart`
+            : discountType === 'amount' && safeDiscountValue
+              ? `${cart.currency || 'AED'} ${safeDiscountValue} off your cart`
+              : `Special price locked at ${cart.currency || 'AED'} ${offerTotal}`;
+
+          await sendAbandonedCartRecoveryLinkEmail({
+            email: resolvedCustomerEmail,
+            customerName: trimmedCustomerName,
+            storeName: store?.name || 'Store1920',
+            originalTotal: cartTotalMax,
+            offerTotal,
+            currency: cart.currency || 'AED',
+            discountLabel,
+            recoveryLink,
+            items: discountedItems,
+            storeId,
+          });
+          emailSent = true;
+        } catch (mailError) {
+          emailError = mailError?.message || 'Failed to send recovery email';
+        }
+      } else if (sendRecoveryEmail !== false && !resolvedCustomerEmail) {
+        emailError = 'No customer email available to send';
+      }
+
+      let whatsappSent = false;
+      let whatsappError = null;
+      let whatsappResult = null;
+      const phoneForWhatsApp = String(updated.phone || resolvedCustomerPhone || '').trim();
+
+      if (sendWhatsApp !== false && phoneForWhatsApp) {
+        try {
+          whatsappResult = await sendAbandonedCartWhatsAppReminder(
+            { ...updated, phone: phoneForWhatsApp, name: trimmedCustomerName },
+            {
+              variant: 'cart',
+              useRecoveryLink: true,
+              offerTotal,
+            },
+          );
+          whatsappSent = Boolean(whatsappResult?.success);
+          if (whatsappResult?.skipped) {
+            whatsappError = whatsappResult.reason || 'WhatsApp skipped';
+          }
+        } catch (waError) {
+          whatsappError = waError?.message || 'Failed to send WhatsApp cart reminder';
+        }
+      } else if (sendWhatsApp !== false && !phoneForWhatsApp) {
+        whatsappError = 'Add a customer phone to send WhatsApp cart reminder';
+      }
+
+      return NextResponse.json({
+        success: true,
+        recoveryLink,
+        emailSent,
+        emailError,
+        whatsappSent,
+        whatsappError,
+        whatsapp: whatsappResult,
+        customerEmail: resolvedCustomerEmail || null,
+        cart: { ...updated, _id: String(updated._id) },
+      });
+    }
+
+    if (action === 'send-whatsapp-cart-reminder') {
+      const cart = await AbandonedCart.findOne({ _id: cartId, storeId }).lean();
+      if (!cart) {
+        return NextResponse.json({ error: 'Abandoned cart not found' }, { status: 404 });
+      }
+      if (cart.status === 'converted') {
+        return NextResponse.json({ error: 'This cart is already converted' }, { status: 409 });
+      }
+
+      const variant = String(body?.variant || 'cart').trim() === 'checkout' ? 'checkout' : 'cart';
+      const whatsapp = await sendAbandonedCartWhatsAppReminder(cart, {
+        variant,
+        useRecoveryLink: body?.useRecoveryLink !== false && Boolean(cart.recoveryToken),
+        offerTotal: cart.recoveryOfferTotal ?? null,
+        buttonPath: body?.buttonPath,
+      });
+
+      return NextResponse.json({
+        success: true,
+        whatsapp,
+        cart: { ...cart, _id: String(cart._id) },
+      });
+    }
+
+    if (action === 'confirm-payment') {
+      const updated = await AbandonedCart.findOneAndUpdate(
+        { _id: cartId, storeId, status: 'pending_payment' },
+        {
+          $set: {
+            status: 'converted',
+            convertedAt: new Date(),
+          },
+        },
+        { new: true }
+      ).lean();
+
+      if (!updated) {
+        return NextResponse.json({ error: 'Pending cart not found' }, { status: 404 });
+      }
+
+      return NextResponse.json({
+        success: true,
+        cart: { ...updated, _id: String(updated._id) },
+      });
+    }
+
     if (action !== 'convert') {
       return NextResponse.json({ error: 'Unsupported action' }, { status: 400 });
     }
@@ -279,12 +485,15 @@ export async function PATCH(request) {
       return NextResponse.json({ error: paymentError.message || 'Failed to prepare payment link' }, { status: 400 });
     }
 
+    const requiresPaymentConfirmation = conversionRequiresPaymentConfirmation(paymentDetails.paymentMethod);
+    const nextStatus = requiresPaymentConfirmation ? 'pending_payment' : 'converted';
+
     const updated = await AbandonedCart.findOneAndUpdate(
       { _id: cartId, storeId, status: { $ne: 'converted' } },
       {
         $set: {
-          status: 'converted',
-          convertedAt: new Date(),
+          status: nextStatus,
+          ...(requiresPaymentConfirmation ? {} : { convertedAt: new Date() }),
           convertedBy: convertedByUserId
             ? String(convertedByUserId)
             : sellerUid,
@@ -366,6 +575,7 @@ export async function PATCH(request) {
       emailSent,
       emailError,
       customerEmail: resolvedCustomerEmail || null,
+      pendingPayment: requiresPaymentConfirmation,
       cart: { ...finalCart, _id: String(finalCart._id) },
     });
   } catch (error) {

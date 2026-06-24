@@ -21,6 +21,7 @@ import ProductDescription from "./ProductDescription";
 import ProductReviewsSection from "./ProductReviewsSection";
 import BnplLogo from "./BnplLogo";
 import PayLaterModal from "./PayLaterModal";
+import StorefrontActionToast from "./StorefrontActionToast";
 import { useAuth } from '@/lib/useAuth';
 import { trackMetaEvent } from "@/lib/metaPixelClient";
 import { trackViewContent } from "@/lib/metaPixelTracking";
@@ -351,9 +352,8 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const [quantity, setQuantity] = useState(1);
   const [isInWishlist, setIsInWishlist] = useState(false);
   const [wishlistLoading, setWishlistLoading] = useState(false);
-  const [showWishlistToast, setShowWishlistToast] = useState(false);
-  const [wishlistMessage, setWishlistMessage] = useState('');
-  const [showCartToast, setShowCartToast] = useState(false);
+  const [actionToast, setActionToast] = useState(null);
+  const actionToastTimerRef = useRef(null);
   const [isOrderingNow, setIsOrderingNow] = useState(false);
   const [showRatingBreakdown, setShowRatingBreakdown] = useState(false);
   const ratingBreakdownRef = useRef(null);
@@ -1916,6 +1916,57 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     }
   };
 
+  const showActionToast = (payload) => {
+    if (actionToastTimerRef.current) {
+      clearTimeout(actionToastTimerRef.current);
+    }
+    setActionToast(payload);
+    actionToastTimerRef.current = setTimeout(() => {
+      setActionToast(null);
+      actionToastTimerRef.current = null;
+    }, payload.duration || 4500);
+  };
+
+  const notifyCartAdded = () => {
+    showActionToast({
+      variant: 'cart',
+      title: t('product.addedToCartToast'),
+      subtitle: t('product.addedToCartSubtitle'),
+      actionLabel: t('product.viewCart'),
+      actionHref: '/cart',
+      duration: 4500,
+    });
+  };
+
+  const notifyWishlistUpdate = (type) => {
+    if (type === 'added') {
+      showActionToast({
+        variant: 'wishlist',
+        title: t('product.addedToWishlistToast'),
+        subtitle: t('product.addedToWishlistSubtitle'),
+        actionLabel: t('product.viewWishlist'),
+        actionHref: '/wishlist',
+        duration: 4500,
+      });
+      return;
+    }
+
+    if (type === 'removed') {
+      showActionToast({
+        variant: 'wishlist-removed',
+        title: t('product.removedFromWishlistToast'),
+        duration: 4500,
+      });
+      return;
+    }
+
+    showActionToast({
+      variant: 'wishlist-removed',
+      title: t('common.wishlistUpdateFailed'),
+      duration: 4500,
+    });
+  };
+
   const handleWishlist = async () => {
     if (wishlistLoading) return;
 
@@ -1935,11 +1986,8 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
         });
         
         setIsInWishlist(!isInWishlist);
-        setWishlistMessage(isInWishlist ? 'Removed from wishlist' : 'Added to wishlist!');
-        setShowWishlistToast(true);
+        notifyWishlistUpdate(isInWishlist ? 'removed' : 'added');
         window.dispatchEvent(new Event('wishlistUpdated'));
-        
-        setTimeout(() => setShowWishlistToast(false), 3000);
       } else {
         // Handle localStorage wishlist for guests
         const guestWishlist = JSON.parse(localStorage.getItem('guestWishlist') || '[]');
@@ -1950,7 +1998,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
           const updatedWishlist = guestWishlist.filter((item) => item && String(item.productId) !== productId);
           localStorage.setItem('guestWishlist', JSON.stringify(updatedWishlist));
           setIsInWishlist(false);
-          setWishlistMessage('Removed from wishlist');
+          notifyWishlistUpdate('removed');
         } else {
           // Add to wishlist with product details
           const wishlistItem = {
@@ -1967,18 +2015,14 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
           guestWishlist.push(wishlistItem);
           localStorage.setItem('guestWishlist', JSON.stringify(guestWishlist));
           setIsInWishlist(true);
-          setWishlistMessage('Added to wishlist!');
+          notifyWishlistUpdate('added');
         }
         
-        setShowWishlistToast(true);
         window.dispatchEvent(new Event('wishlistUpdated'));
-        setTimeout(() => setShowWishlistToast(false), 3000);
       }
     } catch (error) {
       console.error('Error updating wishlist:', error);
-      setWishlistMessage('Failed to update wishlist');
-      setShowWishlistToast(true);
-      setTimeout(() => setShowWishlistToast(false), 3000);
+      notifyWishlistUpdate('error');
     } finally {
       setWishlistLoading(false);
     }
@@ -2023,8 +2067,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       }
     }
 
-    setShowCartToast(true);
-    setTimeout(() => setShowCartToast(false), 3000);
+    notifyCartAdded();
     setAddedToCart(true);
   };
 
@@ -2160,9 +2203,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       }
     }
     
-    // Show cart toast
-    setShowCartToast(true);
-    setTimeout(() => setShowCartToast(false), 3000);
+    notifyCartAdded();
 
     pushDataLayerEvent('fbt_add_bundle_success', {
       currency: 'AED',
@@ -2280,8 +2321,8 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
           {/* LEFT: Media gallery */}
           <div className="w-full min-w-0 space-y-3 lg:space-y-4 lg:min-w-0 lg:sticky lg:top-24 lg:self-start relative z-20">
-            <div className="hidden lg:flex gap-3 items-start">
-              <div className="flex flex-col gap-1.5 w-[56px] xl:w-[64px] flex-shrink-0 overflow-y-auto max-h-[720px] scrollbar-hide">
+            <div className="hidden lg:flex gap-3 items-stretch">
+              <div className="flex min-h-0 w-[56px] flex-shrink-0 flex-col gap-1.5 overflow-y-auto scrollbar-hide xl:w-[64px]">
                 {mediaGallery.map((item, index) => (
                   <button
                     key={`${item.src}-${index}`}
@@ -3380,46 +3421,26 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
         </div>
       )}
 
-      {/* Wishlist Toast */}
-      {showWishlistToast && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 md:bottom-8 md:right-8 md:left-auto md:translate-x-0 bg-white border-2 border-orange-500 rounded-xl shadow-2xl px-6 py-4 flex items-center gap-3 z-[9999] animate-slide-up max-w-[90vw] md:max-w-none">
-          {wishlistMessage.includes('Added') ? (
-            <div className="w-10 h-10 rounded-full flex items-center justify-center bg-green-100">
-              <HeartIcon size={20} className="text-green-600" fill="currentColor" />
-            </div>
-          ) : (
-            <div className="w-10 h-10 rounded-full flex items-center justify-center bg-red-100">
-              <HeartIcon size={20} className="text-red-600" fill="none" />
-            </div>
-          )}
-          <div>
-            <p className="font-semibold text-gray-900">{wishlistMessage}</p>
-            {wishlistMessage.includes('Added') && (
-              <a href="/wishlist" className="text-sm text-orange-500 hover:underline">
-                View Wishlist
-              </a>
-            )}
-          </div>
-        </div>
-      )}
 
-      {/* Cart Toast */}
-      {showCartToast && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 md:bottom-8 md:right-8 md:left-auto md:translate-x-0 bg-white border-2 border-green-500 rounded-xl shadow-2xl px-6 py-4 flex items-center gap-3 z-[9999] animate-slide-up max-w-[90vw] md:max-w-none">
-          <div className="w-10 h-10 rounded-full flex items-center justify-center bg-green-100">
-            <ShoppingCartIcon 
-              size={20} 
-              className="text-green-600"
-            />
-          </div>
-          <div>
-            <p className="font-semibold text-gray-900">{t('product.addedToCartToast')}</p>
-            <Link href="/cart" className="text-sm text-orange-500 hover:underline">
-              {t('product.viewCart')}
-            </Link>
-          </div>
-        </div>
-      )}
+      {actionToast ? (
+        <StorefrontActionToast
+          floating
+          visible
+          variant={actionToast.variant}
+          title={actionToast.title}
+          subtitle={actionToast.subtitle}
+          actionLabel={actionToast.actionLabel}
+          actionHref={actionToast.actionHref}
+          duration={actionToast.duration || 4500}
+          onDismiss={() => {
+            if (actionToastTimerRef.current) {
+              clearTimeout(actionToastTimerRef.current);
+              actionToastTimerRef.current = null;
+            }
+            setActionToast(null);
+          }}
+        />
+      ) : null}
 
       {renderFullViewGallery()}
       {renderFbtPopup()}

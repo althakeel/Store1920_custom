@@ -7,6 +7,7 @@ import {
   getCategoryDisplayName,
   getDirectChildCategories,
   getCategoryRecordId,
+  buildCategoryShopLink,
   resolveStoreNavMenuItems,
 } from '@/lib/categoryNavigation';
 
@@ -156,14 +157,29 @@ function MegaDropdown({ item, dropdownLinks, featuredImages, onClose, timerRef, 
           <div>
             <div className={`grid gap-3 ${columns === 1 ? 'sm:grid-cols-1' : columns === 2 ? 'sm:grid-cols-2' : 'sm:grid-cols-3'}`}>
               {dropdownLinks.map((entry, idx) => (
-                <Link
-                  key={`${entry.name}-${idx}`}
-                  href={entry.link || '#'}
-                  className="rounded-lg border px-3 py-2 text-sm transition"
-                  style={{ borderColor: menuStyle.dropdownBorderColor, color: menuStyle.dropdownTextColor }}
-                >
-                  {entry.name}
-                </Link>
+                <div key={`${entry.name}-${idx}`} className="space-y-1">
+                  <Link
+                    href={entry.link || '#'}
+                    className="block rounded-lg border px-3 py-2 text-sm font-medium transition"
+                    style={{ borderColor: menuStyle.dropdownBorderColor, color: menuStyle.dropdownTextColor }}
+                  >
+                    {entry.name}
+                  </Link>
+                  {Array.isArray(entry.children) && entry.children.length > 0 ? (
+                    <div className="space-y-0.5 pl-2">
+                      {entry.children.map((child) => (
+                        <Link
+                          key={`${entry.name}-${child.name}`}
+                          href={child.link || '#'}
+                          className="block rounded px-2 py-1 text-xs transition hover:underline"
+                          style={{ color: menuStyle.dropdownMutedTextColor }}
+                        >
+                          {child.name}
+                        </Link>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
               ))}
             </div>
 
@@ -453,7 +469,7 @@ export default function NavbarMenuBar() {
                           hoveredChildren.map((child) => (
                             <Link
                               key={child._id || child.slug || child.name}
-                              href={`/shop?category=${encodeURIComponent(child.slug || child._id || '')}`}
+                              href={buildCategoryShopLink(child, categories)}
                               className="rounded-lg border px-3 py-2 text-sm transition"
                               style={{ borderColor: 'var(--menu-dropdown-border)', color: 'var(--menu-dropdown-text)' }}
                             >

@@ -64,7 +64,23 @@ export default function ClientLayout({ children, initialStorefrontLanguage = 'en
           />
         </>
       )}
-      <Toaster />
+      <Toaster
+        position="top-center"
+        containerClassName="storefront-toaster"
+        containerStyle={{
+          top: 88,
+          zIndex: 2147483000,
+        }}
+        toastOptions={{
+          style: {
+            zIndex: 2147483000,
+            background: 'transparent',
+            boxShadow: 'none',
+            padding: 0,
+            maxWidth: 'none',
+          },
+        }}
+      />
       <DynamicMetaTags />
       {children}
       {!hideStorefrontChrome && (

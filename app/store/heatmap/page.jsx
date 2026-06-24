@@ -7,7 +7,10 @@ import { MousePointerClick } from 'lucide-react';
 import { useAuth } from '@/lib/useAuth';
 import PageSkeleton from '@/components/PageSkeleton';
 import Loading from '@/components/Loading';
+import StorePagination from '@/components/store/StorePagination';
 import { readPageCache, writePageCache } from '@/lib/storePageCache';
+
+const PAGE_SIZE = 25;
 
 function HeatmapCanvas({ density = [], points = [], maxDensity = 0, pagePath = '/' }) {
   const cells = useMemo(() => density.slice(0, 200), [density]);
@@ -68,9 +71,14 @@ export default function StoreHeatmapPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [range, setRange] = useState('week');
   const [pagePath, setPagePath] = useState('');
+  const [elementsPage, setElementsPage] = useState(1);
+  const [pagesPage, setPagesPage] = useState(1);
   const [data, setData] = useState(null);
 
-  const cacheKey = useMemo(() => `heatmap:${range}:${pagePath || '_'}`, [range, pagePath]);
+  const cacheKey = useMemo(
+    () => `heatmap:${range}:${pagePath || '_'}:${elementsPage}:${pagesPage}`,
+    [range, pagePath, elementsPage, pagesPage],
+  );
 
   useEffect(() => {
     const cached = readPageCache(cacheKey);
@@ -89,7 +97,12 @@ export default function StoreHeatmapPage() {
       let token = await getToken(false);
       if (!token) token = await getToken(true);
 
-      const params = new URLSearchParams({ range });
+      const params = new URLSearchParams({
+        range,
+        limit: String(PAGE_SIZE),
+        elementsPage: String(elementsPage),
+        pagesPage: String(pagesPage),
+      });
       if (pagePath) params.set('pagePath', pagePath);
 
       const response = await axios.get(`/api/store/heatmap?${params.toString()}`, {
@@ -107,7 +120,7 @@ export default function StoreHeatmapPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [cacheKey, getToken, pagePath, range]);
+  }, [cacheKey, elementsPage, getToken, pagePath, pagesPage, range]);
 
   useEffect(() => {
     loadHeatmap({ silent: Boolean(readPageCache(cacheKey)) });
@@ -116,7 +129,10 @@ export default function StoreHeatmapPage() {
   if (loading && !data) return <PageSkeleton />;
 
   const summary = data?.summary || {};
-  const pages = data?.pages || [];
+  const pageOptions = data?.pageOptions || data?.pages || [];
+  const trackedPages = data?.pages || [];
+  const pagesPagination = data?.pagesPagination || { page: 1, limit: PAGE_SIZE, total: 0, totalPages: 1 };
+  const elementsPagination = data?.topElementsPagination || { page: 1, limit: PAGE_SIZE, total: 0, totalPages: 1 };
 
   return (
     <div className="space-y-4 sm:space-y-5">
@@ -134,7 +150,11 @@ export default function StoreHeatmapPage() {
         <div className="flex flex-wrap gap-2">
           <select
             value={range}
-            onChange={(event) => setRange(event.target.value)}
+            onChange={(event) => {
+              setElementsPage(1);
+              setPagesPage(1);
+              setRange(event.target.value);
+            }}
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
           >
             <option value="today">Today</option>
@@ -162,7 +182,7 @@ export default function StoreHeatmapPage() {
         {[
           ['Total clicks', summary.totalClicks || 0],
           ['Unique sessions', summary.uniqueSessions || 0],
-          ['Tracked pages', pages.length],
+          ['Tracked pages', pagesPagination.total || pageOptions.length],
           ['Avg viewport', summary.avgViewport ? `${summary.avgViewport.width}×${summary.avgViewport.height}` : '—'],
         ].map(([label, value]) => (
           <div key={label} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
@@ -178,11 +198,14 @@ export default function StoreHeatmapPage() {
         </label>
         <select
           value={data?.pagePath || pagePath || '/'}
-          onChange={(event) => setPagePath(event.target.value)}
+          onChange={(event) => {
+            setElementsPage(1);
+            setPagePath(event.target.value);
+          }}
           className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm sm:max-w-xl"
         >
-          {pages.length ? (
-            pages.map((page) => (
+          {pageOptions.length ? (
+            pageOptions.map((page) => (
               <option key={page.pagePath} value={page.pagePath}>
                 {page.pagePath} ({page.clicks} clicks)
               </option>
@@ -191,6 +214,43 @@ export default function StoreHeatmapPage() {
             <option value="/">/</option>
           )}
         </select>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-4 py-3">
+          <h2 className="text-sm font-semibold text-slate-900">All tracked pages</h2>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+              <tr>
+                <th className="px-4 py-2.5 text-left">Page</th>
+                <th className="px-4 py-2.5 text-right">Clicks</th>
+              </tr>
+            </thead>
+            <tbody>
+              {trackedPages.length ? trackedPages.map((page) => (
+                <tr key={page.pagePath} className="border-t border-slate-100">
+                  <td className="px-4 py-3 font-medium text-slate-900">{page.pagePath}</td>
+                  <td className="px-4 py-3 text-right text-slate-600">{page.clicks}</td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan={2} className="px-4 py-8 text-center text-slate-500">No tracked pages yet.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="p-4 pt-0">
+          <StorePagination
+            pagination={pagesPagination}
+            itemLabel="pages"
+            disabled={refreshing}
+            onPageChange={setPagesPage}
+            className="border-0 bg-transparent px-0 py-0 shadow-none"
+          />
+        </div>
       </div>
 
       {refreshing ? <Loading inline /> : (
@@ -209,7 +269,7 @@ export default function StoreHeatmapPage() {
             <p className="mt-3 text-sm text-slate-500">No element data yet.</p>
           ) : (
             <div className="mt-3 space-y-2">
-              {data.topElements.map((item) => (
+              {(data?.topElements || []).map((item) => (
                 <div key={`${item.tag}-${item.text}`} className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 text-sm">
                   <div className="min-w-0">
                     <p className="font-medium text-slate-900">{item.text || 'Unlabeled element'}</p>
@@ -222,6 +282,13 @@ export default function StoreHeatmapPage() {
               ))}
             </div>
           )}
+          <StorePagination
+            pagination={elementsPagination}
+            itemLabel="elements"
+            disabled={refreshing}
+            onPageChange={setElementsPage}
+            className="mt-4 border-0 bg-transparent px-0 py-0 shadow-none"
+          />
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">

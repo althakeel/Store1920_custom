@@ -13,7 +13,8 @@
     "start": "next start",
     "lint": "next lint",
     "migrate:product-images-s3": "node scripts/migrateProductImagesToS3.js",
-    "migrate:product-images-s3:dry-run": "node scripts/migrateProductImagesToS3.js --dry-run"
+    "migrate:product-images-s3:dry-run": "node scripts/migrateProductImagesToS3.js --dry-run",
+    "migrate:categories": "node scripts/migrateCategories.mjs --no-backup"
   },
   "engines": {
     "node": "22.x"
@@ -46,6 +47,7 @@
     "firebase": "^12.6.0",
     "firebase-admin": "^13.6.0",
     "formidable": "^3.5.4",
+    "framer-motion": "^12.41.0",
     "inngest": "^3.54.0",
     "jspdf": "^3.0.3",
     "jspdf-autotable": "^5.0.2",

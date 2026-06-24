@@ -1,0 +1,207 @@
+<user_query>
+Implement the complete category structure from the report into the website navigation, database schema, and URL routing. Additionally, delete all old categories, replace them with the new structure, and automatically reassign all existing products to the correct new category based on their product title and description.
+
+═══════════════════════════════════════════
+PHASE 1 — DELETE OLD CATEGORIES
+═══════════════════════════════════════════
+
+1. Audit the existing categories table in the database
+2. Export a list of all existing categories BEFORE deleting (save as old_categories_backup.json)
+3. DELETE all existing categories from the database
+4. Do NOT delete products — only categories
+5. After deletion, confirm the categories table is empty before proceeding to Phase 2
+
+IMPORTANT: Do not skip the backup step. Always export old categories first.
+
+═══════════════════════════════════════════
+PHASE 2 — INSERT NEW CATEGORIES
+═══════════════════════════════════════════
+
+Create a categories table (or equivalent data structure) that supports:
+  - id
+  - name
+  - slug (URL-friendly, lowercase, hyphens)
+  - parent_id (null for L1, references parent for L2/L3)
+  - level (1, 2, or 3)
+  - meta_title
+  - meta_description
+  - is_active (boolean)
+  - sort_order
+
+Seed the database with ALL categories from Section 2 of the report (the full hierarchy tree). Slugs must exactly match the URLs specified in Section 4 of the report.
+
+HIERARCHY RULES:
+- L1 = Top-level (parent_id = null) — 12 categories total
+- L2 = Sub-category (parent_id = L1 id)
+- L3 = Child category (parent_id = L2 id)
+- Maximum 3 levels. Do not create a 4th level under any circumstance.
+- parent_id must be correctly assigned for every single category
+
+═══════════════════════════════════════════
+PHASE 3 — REASSIGN ALL PRODUCTS TO NEW CATEGORIES
+═══════════════════════════════════════════
+
+After new categories are inserted, loop through every product in the database and reassign it to the correct new category using this logic:
+
+MATCHING RULES (apply in order):
+
+1. TITLE KEYWORD MATCHING
+   Scan the product title for keywords that clearly indicate a category.
+   Examples:
+   - Title contains "iPhone", "Samsung Galaxy", "smartphone" → Electronics > Mobile & Smartphones
+   - Title contains "laptop", "notebook", "MacBook" → Electronics > Computers & Laptops
+   - Title contains "sofa", "couch", "bed frame", "wardrobe" → Home & Living > Furniture
+   - Title contains "lipstick", "foundation", "mascara" → Health, Beauty & Personal Care > Makeup & Cosmetics
+   - Title contains "nappy", "baby wipe", "baby formula" → Baby, Kids & Maternity > Baby Essentials
+   - Title contains "dumbbell", "treadmill", "yoga mat" → Sports, Fitness & Outdoors > Fitness Equipment
+   - Title contains "suitcase", "luggage", "travel pillow" → Travel & Luggage
+   - Title contains "drill", "hammer", "screwdriver" → Tools, Hardware & Home Improvement
+   - Title contains "dog food", "cat litter", "pet collar" → Pets & Pet Supplies
+   - Title contains "perfume", "oud", "cologne", "eau de parfum" → Health, Beauty & Personal Care > Fragrance & Perfumes
+   - Title contains "dress", "abaya", "blouse", "women's top" → Clothing & Fashion > Women's Clothing
+   - Title contains "men's shirt", "kandura", "men's suit" → Clothing & Fashion > Men's Clothing
+   - Title contains "sneakers", "running shoes", "heels", "sandals" → Clothing & Fashion > Shoes & Footwear
+   - Title contains "car charger", "dash cam", "car seat cover" → Car & Automotive
+   - Title contains "office chair", "office desk", "filing cabinet" → Office & Stationery > Office Furniture
+   (Continue this logic for all categories in the report)
+
+2. DESCRIPTION KEYWORD MATCHING
+   If the title match is ambiguous, also scan the product description for additional context keywords to confirm the category assignment.
+
+3. EXISTING CATEGORY MAPPING
+   Use the old category backup (old_categories_backup.json) as a reference to map old category names to new ones.
+   Apply this mapping table:
+
+   OLD CATEGORY                  → NEW CATEGORY (from report)
+   ─────────────────────────────────────────────────────────
+   Accessories                   → Assign by product title
+   Audio                         → Electronics > Audio & Headphones
+   Automotive                    → Car & Automotive
+   Baby & Kids                   → Baby, Kids & Maternity
+   Baby & Maternity              → Baby, Kids & Maternity
+   Baby, Kids & Maternity        → Baby, Kids & Maternity
+   Beauty & Personal Care        → Health, Beauty & Personal Care
+   Cables & Connectivity         → Electronics > Computers & Laptops > Cables & Connectivity
+   Cameras & Accessories         → Electronics > Cameras & Photography
+   Car Accessories               → Car & Automotive > Car Accessories & Electronics
+   Coffee                        → Home & Living > Kitchen & Dining > Coffee & Tea
+   Computer & Office Accessories → Electronics > Computers & Laptops
+   Computers & Accessories       → Electronics > Computers & Laptops
+   Electronics                   → Electronics (reassign by product title to correct L2)
+   Fashion                       → Clothing & Fashion (reassign by product title to correct L2)
+   Furniture & Home Living       → Home & Living > Furniture
+   Gaming                        → Electronics > Gaming
+   Health & Personal Care        → Health, Beauty & Personal Care
+   Home & Bathroom               → Home & Living > Bedding & Bath
+   Home & Garden                 → Garden & Outdoor
+   Home & Kitchen                → Home & Living > Kitchen & Dining
+   Home & Living                 → Home & Living (reassign by product title to correct L2)
+   Home Appliances               → Home & Living > Home Appliances
+   Home Improvement & Tools      → Tools, Hardware & Home Improvement
+   Kids & Education              → Baby, Kids & Maternity > Toys, Games & Education
+   Lifestyle Accessories         → Assign by product title
+   Lingerie & Loungewear         → Clothing & Fashion > Women's Clothing > Lingerie & Loungewear
+   Men's Clothing                → Clothing & Fashion > Men's Clothing
+   Mobile Accessories            → Electronics > Mobile & Smartphones > Mobile Accessories
+   Office Furniture              → Office & Stationery > Office Furniture
+   Outdoor & Garden              → Garden & Outdoor
+   Outdoor & Travel              → Assign by product title (Garden & Outdoor OR Travel & Luggage)
+   Pet Supplies                  → Pets & Pet Supplies
+   Pets                          → Pets & Pet Supplies
+   Power & Energy                → Electronics > Power & Energy
+   Security & Safety             → Electronics > Smart Home & Security
+   Shoes & Footwear              → Clothing & Fashion > Shoes & Footwear
+   Smart Gadgets & Electronics   → Electronics (reassign by product title to correct L2)
+   Special Occasion & Costumes   → Clothing & Fashion > Costumes & Special Occasion
+   Sports & Fitness              → Sports, Fitness & Outdoors
+   Sports & Outdoor              → Sports, Fitness & Outdoors
+   Sports, Outdoors & Hobbies    → Sports, Fitness & Outdoors
+   Tools & Hardware              → Tools, Hardware & Home Improvement
+   Toys & Learning               → Baby, Kids & Maternity > Toys, Games & Education
+   Toys, Games & Entertainment   → Baby, Kids & Maternity > Toys, Games & Education
+   Travel & Luggage              → Travel & Luggage
+   Travel Accessories            → Travel & Luggage > Travel Accessories
+   Women's Clothing              → Clothing & Fashion > Women's Clothing
+
+4. UNMATCHED PRODUCTS
+   If a product cannot be confidently assigned to a category:
+   - Set category_id = null
+   - Flag it with needs_review = true
+   - Export all unmatched products to a file: unmatched_products.json
+   - Do NOT guess or force an incorrect category assignment
+
+5. AFTER REASSIGNMENT
+   - Generate a reassignment report: product_category_reassignment_log.json
+   - This file must contain: product_id, product_title, old_category, new_category, match_method (title/description/mapping/unmatched)
+   - Print a summary to the console: total products, successfully reassigned, unmatched
+
+═══════════════════════════════════════════
+PHASE 4 — URL ROUTING
+═══════════════════════════════════════════
+
+- Implement the exact URL structure from Section 4 of the report
+- Pattern: /category/ → /category/sub-category/ → /category/sub-category/child-category/
+- All URLs: lowercase, hyphens only
+- Every category URL must return a valid page (no 404s)
+- Create 301 redirects from ALL old category URLs to the new equivalent URLs
+
+═══════════════════════════════════════════
+PHASE 5 — NAVIGATION COMPONENT
+═══════════════════════════════════════════
+
+- Build a mega menu or dropdown navigation with all 12 top-level categories
+- L1 categories in the main nav bar
+- Hovering/clicking L1 reveals L2 sub-categories
+- L2 items link to their pages with L3 visible as sidebar filters or sub-links
+- Fully responsive: desktop mega menu + mobile accordion/drawer
+
+═══════════════════════════════════════════
+PHASE 6 — CATEGORY PAGE TEMPLATE
+═══════════════════════════════════════════
+
+Each category page (L1, L2, L3) must include:
+  - H1 tag = Category Name
+  - Breadcrumb navigation (Home > L1 > L2 > L3)
+  - BreadcrumbList JSON-LD structured data schema
+  - Unique meta title and meta description (editable per category)
+  - Canonical tag
+  - Product grid showing products assigned to that category
+  - Sub-category cards for L1 and L2 pages linking to child categories
+  - SSR or SSG rendering (not client-side only — must be crawlable by Google)
+
+═══════════════════════════════════════════
+PHASE 7 — SEO REQUIREMENTS
+═══════════════════════════════════════════
+
+- Unique <title> tag per category page
+- Unique <meta name="description"> per category page
+- BreadcrumbList JSON-LD schema on every category page
+- Canonical tags on all category pages
+- XML sitemap covering all category URLs
+- No JavaScript-only rendering for category pages
+
+═══════════════════════════════════════════
+EXECUTION ORDER — FOLLOW THIS EXACTLY
+═══════════════════════════════════════════
+
+Step 1: Read the full attached report document
+Step 2: Identify the tech stack and database from project files
+Step 3: Export old categories → old_categories_backup.json
+Step 4: Delete old categories from database
+Step 5: Create new categories table schema
+Step 6: Seed all new categories with correct parent_id and slugs
+Step 7: Reassign all products using the matching rules above
+Step 8: Export product_category_reassignment_log.json and unmatched_products.json
+Step 9: Build URL routing
+Step 10: Build navigation component
+Step 11: Build category page template
+Step 12: Implement SEO tags, schema, sitemap, and redirects
+
+CRITICAL RULES
+- Never delete products — only categories
+- Always backup before deleting
+- Slugs must match Section 4 of the report exactly
+- parent_id must be correctly set — wrong assignments break navigation and SEO
+- Flag unmatched products, never force-assign them
+- Ask before making assumptions about the tech stack if it is not clear from project files
+</user_query>

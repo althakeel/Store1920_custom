@@ -10,6 +10,7 @@ import {
   CreditCard,
   Mail,
   MapPin,
+  MessageCircle,
   Phone,
   ShoppingCart,
   Trash2,
@@ -27,6 +28,7 @@ const SOURCE_META = {
   'guest-cart': { label: 'Guest cart', className: 'bg-violet-50 text-violet-700' },
   checkout: { label: 'At checkout', className: 'bg-amber-50 text-amber-700' },
   converted: { label: 'Converted', className: 'bg-emerald-50 text-emerald-700' },
+  pending_payment: { label: 'Awaiting payment', className: 'bg-amber-50 text-amber-800' },
   anonymous: { label: 'Guest', className: 'bg-slate-100 text-slate-700' },
 };
 
@@ -47,7 +49,10 @@ function formatMoney(amount, currency = 'AED') {
 }
 
 function getCartTotal(cart) {
-  if (cart?.status === 'converted' && Number.isFinite(Number(cart?.convertedCartTotal))) {
+  if (
+    (cart?.status === 'converted' || cart?.status === 'pending_payment')
+    && Number.isFinite(Number(cart?.convertedCartTotal))
+  ) {
     return Number(cart.convertedCartTotal);
   }
 
@@ -65,13 +70,29 @@ function getCustomerLabel(cart) {
   return getAbandonedCartDisplayName(cart);
 }
 
+function hasCustomerEmailSent(cart = {}) {
+  if (cart.conversionEmailSent) return true;
+  if (cart.recoveryLinkSentAt) return true;
+  return false;
+}
+
+function getEmailSentLabel(cart = {}) {
+  if (cart.conversionEmailSent) {
+    return `Conversion email · ${cart.conversionCustomerEmail || cart.email || 'customer'}`;
+  }
+  if (cart.recoveryLinkSentAt) {
+    return `Discount link email · ${cart.recoveryLinkSentTo || cart.email || 'customer'}`;
+  }
+  return '';
+}
+
 function normalizePhoneForWhatsApp(phone) {
   const digits = String(phone || '').replace(/\D/g, '');
   if (!digits) return null;
   return digits.startsWith('971') ? digits : `971${digits.replace(/^0+/, '')}`;
 }
 
-function PaymentLinkShare({ cart, link, amount, currency = 'AED' }) {
+function PaymentLinkShare({ cart, link, amount, currency = 'AED', title = 'Payment link for customer' }) {
   const [copied, setCopied] = useState(false);
   const message = `Hi${cart?.name ? ` ${getCustomerLabel(cart)}` : ''}, please complete your payment of ${formatMoney(amount, currency)} here: ${link}`;
   const whatsappPhone = normalizePhoneForWhatsApp(cart?.phone);
@@ -94,7 +115,7 @@ function PaymentLinkShare({ cart, link, amount, currency = 'AED' }) {
 
   return (
     <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-3">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-700">Payment link for customer</p>
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-700">{title}</p>
       <p className="mt-2 break-all rounded-md border border-blue-100 bg-white px-2 py-2 text-xs text-slate-700">
         {link}
       </p>
@@ -186,7 +207,9 @@ function ConvertModal({
   open,
   onClose,
   onConfirm,
+  onSendRecoveryLink,
   saving,
+  sendingRecoveryLink = false,
   dashboardUsers = [],
   currentUserId = null,
 }) {
@@ -196,12 +219,19 @@ function ConvertModal({
   const [note, setNote] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
   const [sendCustomerEmail, setSendCustomerEmail] = useState(true);
+  const [sendWhatsAppReminder, setSendWhatsAppReminder] = useState(true);
   const [convertedById, setConvertedById] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('cod');
   const [paymentLinkInput, setPaymentLinkInput] = useState('');
   const [paymentLinkError, setPaymentLinkError] = useState('');
   const [successCart, setSuccessCart] = useState(null);
+  const [recoveryLink, setRecoveryLink] = useState('');
+  const [recoveryEmailSent, setRecoveryEmailSent] = useState(false);
+  const [recoveryEmailError, setRecoveryEmailError] = useState('');
+  const [recoveryWhatsAppSent, setRecoveryWhatsAppSent] = useState(false);
+  const [recoveryWhatsAppError, setRecoveryWhatsAppError] = useState('');
 
   const cartTotalMax = cart ? getAbandonedCartTotal(cart) : 0;
   const currency = cart?.currency || 'AED';
@@ -216,10 +246,17 @@ function ConvertModal({
     setPaymentLinkInput('');
     setPaymentLinkError('');
     setSuccessCart(null);
+    setRecoveryLink(cart.recoveryToken
+      ? `${typeof window !== 'undefined' ? window.location.origin : ''}/recover-cart/${cart.recoveryToken}`
+      : '');
+    setRecoveryEmailSent(false);
+    setRecoveryEmailError('');
     const label = getCustomerLabel(cart);
     setCustomerName(label === 'Guest' || label === 'Logged-in customer' ? '' : label);
     setCustomerEmail(String(cart.email || '').trim());
+    setCustomerPhone(String(cart.phone || '').trim());
     setSendCustomerEmail(true);
+    setSendWhatsAppReminder(true);
 
     const defaultUser = dashboardUsers.find(
       (member) => member.userId === currentUserId || member.id === currentUserId
@@ -262,6 +299,41 @@ function ConvertModal({
     && (paymentMethod !== 'tabby' && paymentMethod !== 'tamara' ? true : paymentLinkInput.trim())
     && (!sendCustomerEmail || customerEmail.trim())
   );
+
+  const canSendRecoveryLink = Boolean(
+    onSendRecoveryLink
+    && pricingMode !== 'none'
+    && computedFinal !== null
+    && !priceError
+    && computedFinal < cartTotalMax
+    && customerName.trim()
+    && (!sendCustomerEmail || customerEmail.trim())
+  );
+
+  const handleSendRecoveryLink = async () => {
+    if (!canSendRecoveryLink || !onSendRecoveryLink) return;
+
+    const result = await onSendRecoveryLink({
+      recoveryDiscountType: pricingMode,
+      recoveryDiscountValue: pricingMode === 'amount' || pricingMode === 'percent'
+        ? Number(discountInput)
+        : null,
+      recoveryOfferTotal: computedFinal,
+      customerName,
+      customerEmail: customerEmail.trim(),
+      customerPhone: customerPhone.trim(),
+      sendRecoveryEmail: sendCustomerEmail,
+      sendWhatsApp: sendWhatsAppReminder && Boolean(customerPhone.trim()),
+    });
+
+    if (result?.recoveryLink) {
+      setRecoveryLink(result.recoveryLink);
+      setRecoveryEmailSent(Boolean(result.emailSent));
+      setRecoveryEmailError(result.emailError || '');
+      setRecoveryWhatsAppSent(Boolean(result.whatsappSent));
+      setRecoveryWhatsAppError(result.whatsappError || '');
+    }
+  };
 
   const paymentOptions = [
     { id: 'cod', label: 'COD' },
@@ -308,19 +380,36 @@ function ConvertModal({
   if (!open || !cart) return null;
 
   if (successCart) {
+    const isPendingPayment = successCart.status === 'pending_payment' || successCart.pendingPayment;
+
     return (
       <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-4">
         <div className="flex min-h-full items-center justify-center">
           <div className="flex w-full max-w-md max-h-[min(90vh,calc(100dvh-2rem))] flex-col rounded-xl bg-white shadow-xl">
           <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
-            <h3 className="text-base font-semibold text-slate-900">Cart converted</h3>
+            <h3 className="text-base font-semibold text-slate-900">
+              {isPendingPayment ? 'Payment link sent' : 'Cart converted'}
+            </h3>
             <button type="button" onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100">
               <X size={18} />
             </button>
           </div>
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
-            <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800">
-              <p className="font-semibold">Conversion saved successfully.</p>
+            <div className={`rounded-lg border px-3 py-2.5 text-sm ${
+              isPendingPayment
+                ? 'border-amber-100 bg-amber-50 text-amber-900'
+                : 'border-emerald-100 bg-emerald-50 text-emerald-800'
+            }`}>
+              <p className="font-semibold">
+                {isPendingPayment
+                  ? 'Payment link created. Waiting for customer payment.'
+                  : 'Conversion saved successfully.'}
+              </p>
+              {isPendingPayment ? (
+                <p className="mt-1 text-xs">
+                  This cart moves to Converted only after the customer pays through the link.
+                </p>
+              ) : null}
               <p className="mt-1">
                 Payment method: {getConversionPaymentMethodLabel(successCart.conversionPaymentMethod)}
               </p>
@@ -419,6 +508,31 @@ function ConvertModal({
             </label>
             {sendCustomerEmail && !customerEmail.trim() ? (
               <p className="mt-1 text-xs text-red-600">Enter the customer email to send the message.</p>
+            ) : null}
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Customer phone (for WhatsApp)
+            </label>
+            <input
+              type="tel"
+              value={customerPhone}
+              onChange={(event) => setCustomerPhone(event.target.value)}
+              placeholder="05xxxxxxxx or 9715xxxxxxxx"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500"
+            />
+            <label className="mt-2 flex items-center gap-2 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                checked={sendWhatsAppReminder}
+                onChange={(event) => setSendWhatsAppReminder(event.target.checked)}
+                className="rounded border-slate-300"
+              />
+              Send WhatsApp cart reminder with discount link
+            </label>
+            {sendWhatsAppReminder && !customerPhone.trim() ? (
+              <p className="mt-1 text-xs text-amber-700">Add a phone number to send the WhatsApp cart reminder.</p>
             ) : null}
           </div>
 
@@ -567,6 +681,52 @@ function ConvertModal({
 
           {priceError ? <p className="text-xs text-red-600">{priceError}</p> : null}
 
+          <div className="rounded-lg border border-violet-100 bg-violet-50 px-3 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-700">
+              Send private discount link first
+            </p>
+            <p className="mt-1 text-xs text-violet-800">
+              Share a private link by email and WhatsApp so the customer only sees the discounted cart total above.
+            </p>
+            <button
+              type="button"
+              disabled={!canSendRecoveryLink || sendingRecoveryLink}
+              onClick={handleSendRecoveryLink}
+              className="mt-3 w-full rounded-lg bg-violet-700 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {sendingRecoveryLink ? 'Sending...' : 'Generate & send discount link'}
+            </button>
+            {pricingMode === 'none' ? (
+              <p className="mt-2 text-xs text-violet-700">Choose a discount type above before sending a link.</p>
+            ) : null}
+            {recoveryLink ? (
+              <div className="mt-3">
+                <PaymentLinkShare
+                  cart={cart}
+                  link={recoveryLink}
+                  amount={computedFinal ?? cart.recoveryOfferTotal ?? cartTotalMax}
+                  currency={currency}
+                  title="Private discount link for customer"
+                />
+                {recoveryEmailSent ? (
+                  <p className="mt-2 text-xs font-medium text-emerald-700">Recovery email sent to {customerEmail}</p>
+                ) : null}
+                {recoveryEmailError ? (
+                  <p className="mt-2 text-xs text-amber-800">{recoveryEmailError}</p>
+                ) : null}
+                {recoveryWhatsAppSent ? (
+                  <p className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
+                    <CheckCircle2 size={14} />
+                    WhatsApp sent to {customerPhone.trim() || cart.phone}
+                  </p>
+                ) : null}
+                {recoveryWhatsAppError ? (
+                  <p className="mt-2 text-xs text-amber-800">{recoveryWhatsAppError}</p>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+
           <div>
             <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
               Payment method
@@ -592,7 +752,7 @@ function ConvertModal({
             </div>
             {paymentMethod === 'stripe' ? (
               <p className="mt-2 text-xs text-slate-500">
-                A Stripe checkout link for the final amount will be created when you convert this cart.
+                A Stripe checkout link for the final amount will be created. The cart is marked converted only after payment.
               </p>
             ) : null}
             {paymentMethod === 'tabby' || paymentMethod === 'tamara' ? (
@@ -649,7 +809,9 @@ function ConvertModal({
             onClick={handleSubmit}
             className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
           >
-            {saving ? 'Saving...' : 'Mark as converted'}
+            {saving ? 'Saving...' : (paymentMethod === 'stripe' || paymentMethod === 'tabby' || paymentMethod === 'tamara'
+              ? 'Send payment link'
+              : 'Mark as converted')}
           </button>
         </div>
         </div>
@@ -658,15 +820,33 @@ function ConvertModal({
   );
 }
 
-function CartRow({ cart, expanded, onToggle, onConvertClick, onResendEmail, onDelete, resendingId, deletingId, canDelete = false }) {
+function CartRow({
+  cart,
+  expanded,
+  onToggle,
+  onConvertClick,
+  onConfirmPayment,
+  onResendEmail,
+  onSendWhatsApp,
+  onDelete,
+  resendingId,
+  sendingWhatsAppId,
+  whatsappSentCartId,
+  deletingId,
+  confirmingPaymentId,
+  canDelete = false,
+}) {
   const items = Array.isArray(cart.items) ? cart.items : [];
   const isConverted = cart.status === 'converted';
+  const isPendingPayment = cart.status === 'pending_payment';
   const isAnonymous = cart.isAnonymousGuest || isAnonymousAbandonedCart(cart);
   const source = isConverted
     ? SOURCE_META.converted
-    : isAnonymous
-      ? SOURCE_META.anonymous
-      : (SOURCE_META[cart.source] || { label: cart.source || 'Abandoned', className: 'bg-slate-50 text-slate-700' });
+    : isPendingPayment
+      ? SOURCE_META.pending_payment
+      : isAnonymous
+        ? SOURCE_META.anonymous
+        : (SOURCE_META[cart.source] || { label: cart.source || 'Abandoned', className: 'bg-slate-50 text-slate-700' });
   const total = getCartTotal(cart);
   const location = getLocationLabel(cart.address);
 
@@ -682,7 +862,14 @@ function CartRow({ cart, expanded, onToggle, onConvertClick, onResendEmail, onDe
             <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${source.className}`}>
               {source.label}
             </span>
-            <span className="text-[11px] text-slate-500">{formatDate(isConverted ? cart.convertedAt : cart.lastSeenAt)}</span>
+            <span className="text-[11px] text-slate-500">
+              {formatDate(isConverted ? cart.convertedAt : isPendingPayment ? cart.updatedAt : cart.lastSeenAt)}
+            </span>
+            {hasCustomerEmailSent(cart) ? (
+              <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-700">
+                Email sent
+              </span>
+            ) : null}
           </div>
           <p className="mt-1 truncate text-sm font-semibold text-slate-900">{getCustomerLabel(cart)}</p>
         </div>
@@ -712,6 +899,18 @@ function CartRow({ cart, expanded, onToggle, onConvertClick, onResendEmail, onDe
               <MapPin size={14} className="shrink-0 text-slate-400" />
               <span className={location ? '' : 'text-slate-400'}>{location || 'Location not provided'}</span>
             </p>
+            {hasCustomerEmailSent(cart) ? (
+              <p className="flex items-center gap-2 text-sky-700">
+                <Mail size={14} className="shrink-0 text-sky-500" />
+                <span>{getEmailSentLabel(cart)}</span>
+                {cart.recoveryLinkSentAt ? (
+                  <span className="text-slate-500">· {formatDate(cart.recoveryLinkSentAt)}</span>
+                ) : null}
+                {cart.conversionEmailSentAt ? (
+                  <span className="text-slate-500">· {formatDate(cart.conversionEmailSentAt)}</span>
+                ) : null}
+              </p>
+            ) : null}
           </div>
 
           {isConverted ? (
@@ -762,7 +961,24 @@ function CartRow({ cart, expanded, onToggle, onConvertClick, onResendEmail, onDe
             </div>
           ) : null}
 
-          {isConverted && cart.conversionPaymentLink ? (
+          {isPendingPayment ? (
+            <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              <p className="font-medium">Waiting for customer payment</p>
+              <p className="mt-0.5">
+                Offer total: {formatMoney(getCartTotal(cart), cart.currency || 'AED')}
+              </p>
+              {cart.conversionPaymentMethod ? (
+                <p className="mt-0.5">
+                  Payment: {getConversionPaymentMethodLabel(cart.conversionPaymentMethod)}
+                </p>
+              ) : null}
+              {cart.conversionEmailSent ? (
+                <p className="mt-0.5">Email sent to {cart.conversionCustomerEmail || cart.email}</p>
+              ) : null}
+            </div>
+          ) : null}
+
+          {(isConverted || isPendingPayment) && cart.conversionPaymentLink ? (
             <div className="mt-3">
               <PaymentLinkShare
                 cart={cart}
@@ -796,7 +1012,40 @@ function CartRow({ cart, expanded, onToggle, onConvertClick, onResendEmail, onDe
           )}
 
           {!isConverted ? (
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-3 space-y-2">
+              <div className="flex flex-wrap gap-2">
+              {cart.phone && onSendWhatsApp ? (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onSendWhatsApp(cart);
+                  }}
+                  disabled={sendingWhatsAppId === cart._id}
+                  className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-60 ${
+                    whatsappSentCartId === cart._id
+                      ? 'border-emerald-500 bg-emerald-600 text-white'
+                      : 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                  }`}
+                >
+                  {sendingWhatsAppId === cart._id ? (
+                    <>
+                      <MessageCircle size={14} />
+                      Sending...
+                    </>
+                  ) : whatsappSentCartId === cart._id ? (
+                    <>
+                      <CheckCircle2 size={14} />
+                      Queued
+                    </>
+                  ) : (
+                    <>
+                      <MessageCircle size={14} />
+                      Send WhatsApp reminder
+                    </>
+                  )}
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={(event) => {
@@ -806,8 +1055,22 @@ function CartRow({ cart, expanded, onToggle, onConvertClick, onResendEmail, onDe
                 className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
               >
                 <CheckCircle2 size={14} />
-                Convert order
+                {isPendingPayment ? 'Update payment link' : 'Convert order'}
               </button>
+              {isPendingPayment ? (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onConfirmPayment?.(cart);
+                  }}
+                  disabled={confirmingPaymentId === cart._id}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 disabled:opacity-60"
+                >
+                  <CreditCard size={14} />
+                  {confirmingPaymentId === cart._id ? 'Saving...' : 'Mark payment received'}
+                </button>
+              ) : null}
               {canDelete ? (
                 <button
                   type="button"
@@ -821,6 +1084,13 @@ function CartRow({ cart, expanded, onToggle, onConvertClick, onResendEmail, onDe
                   <Trash2 size={14} />
                   {deletingId === cart._id ? 'Deleting...' : 'Delete'}
                 </button>
+              ) : null}
+              </div>
+              {whatsappSentCartId === cart._id ? (
+                <p className="flex items-center gap-1.5 text-xs font-medium text-emerald-700">
+                  <CheckCircle2 size={14} />
+                  WhatsApp queued to {cart.phone} (971 format). Check customer&apos;s WhatsApp in a few minutes.
+                </p>
               ) : null}
             </div>
           ) : (
@@ -852,13 +1122,18 @@ export default function AbandonedCheckoutPage() {
   const [loading, setLoading] = useState(true);
   const [carts, setCarts] = useState([]);
   const [error, setError] = useState('');
+  const [whatsappSuccess, setWhatsappSuccess] = useState('');
   const [filter, setFilter] = useState('all');
   const [page, setPage] = useState(1);
   const [expandedId, setExpandedId] = useState(null);
   const [convertCart, setConvertCart] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [sendingRecoveryLink, setSendingRecoveryLink] = useState(false);
+  const [sendingWhatsAppId, setSendingWhatsAppId] = useState(null);
+  const [whatsappSentCartId, setWhatsappSentCartId] = useState(null);
   const [resendingId, setResendingId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [confirmingPaymentId, setConfirmingPaymentId] = useState(null);
   const [dashboardUsers, setDashboardUsers] = useState([]);
   const [canDeleteAbandonedCarts, setCanDeleteAbandonedCarts] = useState(false);
 
@@ -916,6 +1191,11 @@ export default function AbandonedCheckoutPage() {
     [carts]
   );
 
+  const emailSentCarts = useMemo(
+    () => carts.filter(hasCustomerEmailSent),
+    [carts]
+  );
+
   const stats = useMemo(() => {
     const convertedValue = convertedCarts.reduce((sum, cart) => sum + getCartTotal(cart), 0);
 
@@ -925,20 +1205,22 @@ export default function AbandonedCheckoutPage() {
       cart: identifiedActiveCarts.filter((cart) => cart.source === 'cart').length,
       checkout: identifiedActiveCarts.filter((cart) => cart.source === 'checkout').length,
       converted: convertedCarts.length,
+      emailSent: emailSentCarts.length,
       activeValue: identifiedActiveCarts.reduce((sum, cart) => sum + getCartTotal(cart), 0),
       convertedValue,
     };
-  }, [identifiedActiveCarts, guestActiveCarts, convertedCarts]);
+  }, [identifiedActiveCarts, guestActiveCarts, convertedCarts, emailSentCarts]);
 
   const filteredCarts = useMemo(() => {
     if (filter === 'converted') return convertedCarts;
+    if (filter === 'email_sent') return emailSentCarts;
     if (filter === 'guest') return guestActiveCarts;
     if (filter === 'all') return identifiedActiveCarts;
     if (filter === 'cart') {
       return identifiedActiveCarts.filter((cart) => cart.source === 'cart' || cart.source === 'guest-cart');
     }
     return identifiedActiveCarts.filter((cart) => cart.source === filter);
-  }, [identifiedActiveCarts, guestActiveCarts, convertedCarts, filter]);
+  }, [identifiedActiveCarts, guestActiveCarts, convertedCarts, emailSentCarts, filter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredCarts.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -948,6 +1230,106 @@ export default function AbandonedCheckoutPage() {
     setPage(1);
     setExpandedId(null);
   }, [filter]);
+
+  const handleSendRecoveryLink = async ({
+    recoveryDiscountType,
+    recoveryDiscountValue,
+    recoveryOfferTotal,
+    customerName,
+    customerEmail,
+    customerPhone,
+    sendRecoveryEmail,
+    sendWhatsApp = true,
+  }) => {
+    if (!convertCart?._id) return null;
+
+    setSendingRecoveryLink(true);
+    setError('');
+
+    try {
+      const token = await getToken();
+      const { data } = await axios.patch(
+        '/api/store/abandoned-checkout',
+        {
+          cartId: convertCart._id,
+          action: 'send-recovery-link',
+          recoveryDiscountType,
+          recoveryDiscountValue,
+          recoveryOfferTotal,
+          customerName,
+          customerEmail,
+          customerPhone,
+          sendRecoveryEmail,
+          sendWhatsApp,
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      if (data?.cart) {
+        setCarts((current) => current.map((cart) => (
+          cart._id === data.cart._id ? data.cart : cart
+        )));
+        setConvertCart(data.cart);
+      }
+
+      return data;
+    } catch (err) {
+      setError(err?.response?.data?.error || err.message || 'Failed to send recovery link');
+      return null;
+    } finally {
+      setSendingRecoveryLink(false);
+    }
+  };
+
+  const handleSendWhatsAppCartReminder = async (cart) => {
+    if (!cart?._id || !cart?.phone) return;
+
+    setSendingWhatsAppId(cart._id);
+    setError('');
+
+    try {
+      const token = await getToken();
+      const { data } = await axios.patch(
+        '/api/store/abandoned-checkout',
+        {
+          cartId: cart._id,
+          action: 'send-whatsapp-cart-reminder',
+          variant: cart.source === 'checkout' ? 'checkout' : 'cart',
+          useRecoveryLink: Boolean(cart.recoveryToken),
+        },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+
+      if (data?.whatsapp?.success) {
+        const displayPhone = data.whatsapp.to || cart.phone;
+        const queued = data.whatsapp.queued !== false;
+        setError('');
+        setWhatsappSentCartId(cart._id);
+        setWhatsappSuccess(
+          queued
+            ? `WhatsApp queued to ${displayPhone}. Customer should receive it within a few minutes if that number has WhatsApp.`
+            : `WhatsApp sent to ${displayPhone}`,
+        );
+        setTimeout(() => {
+          setWhatsappSentCartId(null);
+          setWhatsappSuccess('');
+        }, 12000);
+        return;
+      }
+
+      if (data?.whatsapp?.skipped) {
+        setError(data.whatsapp.reason || 'WhatsApp could not be sent');
+        return;
+      }
+
+      const reason = data?.whatsapp?.reason || data?.whatsapp?.error || 'WhatsApp could not be sent';
+      setError(reason.includes('missing token') ? `${reason}. Add WABA_TOKEN_* to .env and restart the server.` : reason);
+    } catch (err) {
+      setError(err?.response?.data?.error || err.message || 'Failed to send WhatsApp reminder');
+    } finally {
+      setSendingWhatsAppId(null);
+    }
+  };
 
   const handleConvert = async ({
     convertedCartTotal,
@@ -993,9 +1375,12 @@ export default function AbandonedCheckoutPage() {
         setCarts((current) => current.map((cart) => (
           cart._id === data.cart._id ? data.cart : cart
         )));
-        setFilter('converted');
+        if (data.cart.status === 'converted') {
+          setFilter('converted');
+        }
         return {
           ...data.cart,
+          pendingPayment: Boolean(data.pendingPayment),
           emailSent: Boolean(data.emailSent),
           emailError: data.emailError || null,
           customerEmail: data.customerEmail || customerEmail || null,
@@ -1008,6 +1393,36 @@ export default function AbandonedCheckoutPage() {
       return null;
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleConfirmPayment = async (cart) => {
+    if (!cart?._id) return;
+
+    setConfirmingPaymentId(cart._id);
+    setError('');
+
+    try {
+      const token = await getToken();
+      const { data } = await axios.patch(
+        '/api/store/abandoned-checkout',
+        {
+          cartId: cart._id,
+          action: 'confirm-payment',
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      if (data?.cart) {
+        setCarts((current) => current.map((entry) => (
+          entry._id === data.cart._id ? data.cart : entry
+        )));
+        setFilter('converted');
+      }
+    } catch (err) {
+      setError(err?.response?.data?.error || err.message || 'Failed to confirm payment');
+    } finally {
+      setConfirmingPaymentId(null);
     }
   };
 
@@ -1082,6 +1497,7 @@ export default function AbandonedCheckoutPage() {
     { id: 'cart', label: 'Added to cart', count: stats.cart },
     { id: 'checkout', label: 'Checkout', count: stats.checkout },
     { id: 'guest', label: 'Guest', count: stats.guest },
+    { id: 'email_sent', label: 'Email sent', count: stats.emailSent },
     { id: 'converted', label: 'Converted', count: stats.converted },
   ];
 
@@ -1098,6 +1514,12 @@ export default function AbandonedCheckoutPage() {
 
       {error ? (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+      ) : null}
+      {whatsappSuccess ? (
+        <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+          <CheckCircle2 size={18} className="shrink-0" />
+          {whatsappSuccess}
+        </div>
       ) : null}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -1148,14 +1570,18 @@ export default function AbandonedCheckoutPage() {
               ? 'No converted carts yet'
               : filter === 'guest'
                 ? 'No guest abandons yet'
-                : 'No abandoned carts found'}
+                : filter === 'email_sent'
+                  ? 'No emails sent yet'
+                  : 'No abandoned carts found'}
           </p>
           <p className="mt-1 text-xs text-slate-500">
             {filter === 'converted'
               ? 'When you convert a recovered cart, it will appear here.'
               : filter === 'guest'
                 ? 'Carts with no email, phone, or address appear here as Guest.'
-                : 'Abandoned carts with customer details will show up here.'}
+                : filter === 'email_sent'
+                  ? 'Carts appear here after you send a discount link email or a conversion/payment email.'
+                  : 'Abandoned carts with customer details will show up here.'}
           </p>
         </div>
       ) : (
@@ -1168,10 +1594,15 @@ export default function AbandonedCheckoutPage() {
                 expanded={expandedId === cart._id}
                 onToggle={() => setExpandedId((current) => (current === cart._id ? null : cart._id))}
                 onConvertClick={setConvertCart}
+                onConfirmPayment={handleConfirmPayment}
                 onResendEmail={handleResendEmail}
+                onSendWhatsApp={handleSendWhatsAppCartReminder}
                 onDelete={canDeleteAbandonedCarts ? handleDelete : undefined}
                 resendingId={resendingId}
+                sendingWhatsAppId={sendingWhatsAppId}
+                whatsappSentCartId={whatsappSentCartId}
                 deletingId={deletingId}
+                confirmingPaymentId={confirmingPaymentId}
                 canDelete={canDeleteAbandonedCarts}
               />
             ))}
@@ -1210,12 +1641,14 @@ export default function AbandonedCheckoutPage() {
         cart={convertCart}
         open={Boolean(convertCart)}
         onClose={() => {
-          if (saving) return;
+          if (saving || sendingRecoveryLink) return;
           setConvertCart(null);
           setExpandedId(null);
         }}
         onConfirm={handleConvert}
+        onSendRecoveryLink={handleSendRecoveryLink}
         saving={saving}
+        sendingRecoveryLink={sendingRecoveryLink}
         dashboardUsers={dashboardUsers}
         currentUserId={user?.uid || null}
       />

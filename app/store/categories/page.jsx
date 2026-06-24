@@ -121,7 +121,6 @@ function buildSystemCategoryMenuUrl(category = {}) {
   if (category?.slug) {
     return `/shop?category=${category.slug}`;
   }
-
   return category?.url || buildCategoryUrl(category?.name || '');
 }
 

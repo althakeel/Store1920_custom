@@ -30,6 +30,11 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const periodType = searchParams.get('period') === 'week' ? 'week' : 'month';
     const channel = searchParams.get('channel') || 'all';
+    const view = ['retention', 'ltv', 'channels'].includes(searchParams.get('view'))
+      ? searchParams.get('view')
+      : 'retention';
+    const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit') || 25)));
+    const page = Math.max(1, Number(searchParams.get('page') || 1));
     const maxCohorts = Math.min(24, Math.max(4, Number(searchParams.get('maxCohorts') || 12)));
     const maxOffset = Math.min(12, Math.max(3, Number(searchParams.get('maxOffset') || 6)));
 
@@ -51,16 +56,36 @@ export async function GET(request) {
     });
     const channelCohorts = buildChannelCohorts(profiles);
 
+    const rowsByView = {
+      retention: dateCohorts.retentionRows,
+      ltv: dateCohorts.ltvRows,
+      channels: channelCohorts,
+    };
+    const allRows = rowsByView[view] || [];
+    const total = allRows.length;
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const safePage = Math.min(page, totalPages);
+    const offset = (safePage - 1) * limit;
+    const paginatedRows = allRows.slice(offset, offset + limit);
+
     return NextResponse.json({
       periodType,
       channel,
+      view,
       summary,
       channels,
-      retention: dateCohorts.retentionRows,
-      ltv: dateCohorts.ltvRows,
-      channelBreakdown: channelCohorts,
-      periodLabels: Array.from({ length: maxOffset + 1 }, (_, offset) => (
-        periodType === 'week' ? `Week ${offset}` : `Month ${offset}`
+      retention: view === 'retention' ? paginatedRows : [],
+      ltv: view === 'ltv' ? paginatedRows : [],
+      channelBreakdown: view === 'channels' ? paginatedRows : [],
+      pagination: {
+        page: safePage,
+        limit,
+        total,
+        totalPages,
+        view,
+      },
+      periodLabels: Array.from({ length: maxOffset + 1 }, (_, offsetIndex) => (
+        periodType === 'week' ? `Week ${offsetIndex}` : `Month ${offsetIndex}`
       )),
     });
   } catch (error) {

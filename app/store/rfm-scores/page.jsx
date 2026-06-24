@@ -6,7 +6,10 @@ import Link from 'next/link';
 import { BarChart3, RefreshCw } from 'lucide-react';
 import { useAuth } from '@/lib/useAuth';
 import PageSkeleton from '@/components/PageSkeleton';
+import Loading from '@/components/Loading';
 import { readPageCache, writePageCache } from '@/lib/storePageCache';
+
+const PAGE_SIZE = 25;
 
 function ScorePill({ value, label }) {
   const colors = {
@@ -42,9 +45,10 @@ export default function StoreRfmScoresPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [segment, setSegment] = useState('all');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
   const [data, setData] = useState(null);
 
-  const cacheKey = `rfm:${segment}:${search.trim()}`;
+  const cacheKey = `rfm:${segment}:${search.trim()}:${page}`;
 
   useEffect(() => {
     const cached = readPageCache(cacheKey, 24 * 60 * 60 * 1000);
@@ -64,7 +68,7 @@ export default function StoreRfmScoresPage() {
       let token = await getToken(false);
       if (!token) token = await getToken(true);
 
-      const params = new URLSearchParams({ limit: '100' });
+      const params = new URLSearchParams({ limit: String(PAGE_SIZE), page: String(page) });
       if (segment !== 'all') params.set('segment', segment);
       if (search.trim()) params.set('q', search.trim());
       if (forceRefresh) params.set('refresh', 'true');
@@ -81,14 +85,14 @@ export default function StoreRfmScoresPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [cacheKey, getToken, search, segment]);
+  }, [cacheKey, getToken, page, search, segment]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
       loadScores(false);
     }, search ? 300 : 0);
     return () => clearTimeout(timer);
-  }, [loadScores, search, segment]);
+  }, [loadScores, page, search, segment]);
 
   const handleRefresh = async () => {
     try {
@@ -109,6 +113,14 @@ export default function StoreRfmScoresPage() {
   const summary = data?.summary || { segments: {} };
   const segmentMeta = data?.segmentMeta || {};
   const customers = data?.customers || [];
+  const pagination = data?.pagination || { page: 1, limit: PAGE_SIZE, total: 0, totalPages: 1 };
+  const visiblePageStart = Math.max(1, Math.min(pagination.page - 2, pagination.totalPages - 4));
+  const visiblePageNumbers = Array.from(
+    { length: Math.min(5, pagination.totalPages) },
+    (_, index) => visiblePageStart + index,
+  ).filter((pageNumber) => pageNumber <= pagination.totalPages);
+  const rangeStart = pagination.total ? (pagination.page - 1) * pagination.limit + 1 : 0;
+  const rangeEnd = Math.min(pagination.page * pagination.limit, pagination.total);
   const segmentCards = Object.entries(summary.segments || {})
     .filter(([, count]) => count > 0)
     .sort((a, b) => b[1] - a[1]);
@@ -180,7 +192,10 @@ export default function StoreRfmScoresPage() {
               <button
                 key={key}
                 type="button"
-                onClick={() => setSegment(segment === key ? 'all' : key)}
+                onClick={() => {
+                  setPage(1);
+                  setSegment(segment === key ? 'all' : key);
+                }}
                 className={`rounded-xl border p-3 text-left transition ${
                   segment === key ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 bg-white hover:bg-slate-50'
                 }`}
@@ -202,13 +217,19 @@ export default function StoreRfmScoresPage() {
         <input
           type="search"
           value={search}
-          onChange={(event) => setSearch(event.target.value)}
+          onChange={(event) => {
+            setPage(1);
+            setSearch(event.target.value);
+          }}
           placeholder="Search name, email, or RFM e.g. 5-4-5"
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm sm:max-w-xs"
         />
         <select
           value={segment}
-          onChange={(event) => setSegment(event.target.value)}
+          onChange={(event) => {
+            setPage(1);
+            setSegment(event.target.value);
+          }}
           className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
         >
           <option value="all">All segments</option>
@@ -227,6 +248,7 @@ export default function StoreRfmScoresPage() {
       ) : null}
 
       {!loading && customers.length > 0 ? (
+        <>
         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
           <table className="min-w-full text-sm">
             <thead>
@@ -272,6 +294,48 @@ export default function StoreRfmScoresPage() {
             </tbody>
           </table>
         </div>
+
+        {pagination.totalPages > 1 ? (
+          <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-slate-500">
+              Showing {rangeStart}–{rangeEnd} of {pagination.total} customers · Page {pagination.page} of {pagination.totalPages}
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={pagination.page <= 1 || loading || refreshing}
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Previous
+              </button>
+              {visiblePageNumbers.map((pageNumber) => (
+                <button
+                  key={pageNumber}
+                  type="button"
+                  disabled={loading || refreshing}
+                  onClick={() => setPage(pageNumber)}
+                  className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
+                    pagination.page === pageNumber
+                      ? 'bg-slate-900 text-white'
+                      : 'border border-slate-200 text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  {pageNumber}
+                </button>
+              ))}
+              <button
+                type="button"
+                disabled={pagination.page >= pagination.totalPages || loading || refreshing}
+                onClick={() => setPage((current) => Math.min(pagination.totalPages, current + 1))}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        ) : null}
+        </>
       ) : null}
 
       <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4 text-sm text-indigo-950">

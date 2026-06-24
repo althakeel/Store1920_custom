@@ -1,33 +1,46 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
 import Link from 'next/link';
 import { useAuth } from '@/lib/useAuth';
 import Loading from '@/components/Loading';
+import StorePagination from '@/components/store/StorePagination';
+
+const PAGE_SIZE = 25;
 
 export default function MarketingAnalyticsPage() {
   const { getToken } = useAuth();
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState('week');
+  const [productsPage, setProductsPage] = useState(1);
+  const [searchesPage, setSearchesPage] = useState(1);
   const [data, setData] = useState(null);
 
+  const loadAnalytics = useCallback(async () => {
+    try {
+      setLoading(true);
+      const token = await getToken();
+      const params = new URLSearchParams({
+        range,
+        limit: String(PAGE_SIZE),
+        productsPage: String(productsPage),
+        searchesPage: String(searchesPage),
+      });
+      const response = await axios.get(`/api/store/marketing-analytics?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setData(response.data);
+    } catch (error) {
+      console.error('Failed to load marketing analytics:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [getToken, productsPage, range, searchesPage]);
+
   useEffect(() => {
-    (async () => {
-      try {
-        setLoading(true);
-        const token = await getToken();
-        const response = await axios.get(`/api/store/marketing-analytics?range=${range}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        setData(response.data);
-      } catch (error) {
-        console.error('Failed to load marketing analytics:', error);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [range, getToken]);
+    loadAnalytics();
+  }, [loadAnalytics]);
 
   if (loading) return <Loading />;
   if (!data) {
@@ -35,6 +48,8 @@ export default function MarketingAnalyticsPage() {
   }
 
   const summary = data.summary || {};
+  const productsPagination = data.topProductsPagination || { page: 1, limit: PAGE_SIZE, total: 0, totalPages: 1 };
+  const searchesPagination = data.topSearchesPagination || { page: 1, limit: PAGE_SIZE, total: 0, totalPages: 1 };
 
   return (
     <div className="space-y-4 sm:space-y-5">
@@ -48,7 +63,11 @@ export default function MarketingAnalyticsPage() {
         <div className="flex flex-wrap gap-2">
           <select
             value={range}
-            onChange={(event) => setRange(event.target.value)}
+            onChange={(event) => {
+              setProductsPage(1);
+              setSearchesPage(1);
+              setRange(event.target.value);
+            }}
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
           >
             <option value="today">Today</option>
@@ -147,6 +166,13 @@ export default function MarketingAnalyticsPage() {
               ))
             )}
           </div>
+          <StorePagination
+            pagination={productsPagination}
+            itemLabel="products"
+            disabled={loading}
+            onPageChange={setProductsPage}
+            className="border-0 border-t border-slate-200 bg-transparent px-4 py-3 shadow-none"
+          />
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white shadow-md">
@@ -165,6 +191,13 @@ export default function MarketingAnalyticsPage() {
               ))
             )}
           </div>
+          <StorePagination
+            pagination={searchesPagination}
+            itemLabel="searches"
+            disabled={loading}
+            onPageChange={setSearchesPage}
+            className="border-0 border-t border-slate-200 bg-transparent px-4 py-3 shadow-none"
+          />
         </div>
       </div>
     </div>

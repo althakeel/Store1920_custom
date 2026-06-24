@@ -5,15 +5,24 @@ import { useEffect, useState } from 'react'
 
 import axios from 'axios'
 import toast from 'react-hot-toast'
-import { SaveIcon, TruckIcon, PackageIcon, WeightIcon, DollarSignIcon, SearchIcon, XIcon } from 'lucide-react'
+import { SaveIcon, TruckIcon, PackageIcon, DollarSignIcon, SearchIcon, XIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 import { useAuth } from '@/lib/useAuth'
 import { indiaStatesAndDistricts } from '@/assets/indiaStatesAndDistricts'
+import { UAE_EMIRATES } from '@/lib/uaeEmirateAreas'
+import {
+  createEmptyShippingOption,
+  resolveShippingOptions,
+  SHIPPING_LOGIC_LABELS,
+  findExpressShippingOption,
+  getExpressExtraFee,
+  upsertExpressShippingOption,
+} from '@/lib/shippingOptions'
 
 
 export default function StoreShippingSettings() {
   const { getToken } = useAuth()
   const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || 'AED'
-  const stateOptions = indiaStatesAndDistricts.map((entry) => entry.state)
+  const stateOptions = [...UAE_EMIRATES, ...indiaStatesAndDistricts.map((entry) => entry.state)]
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [allProducts, setAllProducts] = useState([])
@@ -21,26 +30,15 @@ export default function StoreShippingSettings() {
   const [productSearch, setProductSearch] = useState('')
   const [form, setForm] = useState({
     enabled: true,
-    shippingType: 'FLAT_RATE',
-    flatRate: 5,
-    perItemFee: 2,
-    maxItemFee: '',
-    weightUnit: 'kg',
-    baseWeight: 1,
-    baseWeightFee: 5,
-    additionalWeightFee: 2,
+    shippingOptions: [createEmptyShippingOption({ isDefault: true })],
     freeShippingMin: 499,
     enableProductSpecificFreeShipping: false,
     localDeliveryFee: '',
     regionalDeliveryFee: '',
     stateCharges: [],
-    estimatedDays: '3-5',
     enableCOD: true,
     codFee: 0,
     maxCODAmount: 0,
-    enableExpressShipping: false,
-    expressShippingFee: 20,
-    expressEstimatedDays: '1-2'
   })
 
   useEffect(() => {
@@ -52,33 +50,29 @@ export default function StoreShippingSettings() {
           axios.get('/api/store/product', { headers: token ? { Authorization: `Bearer ${token}` } : {} }),
         ]);
         if (shippingRes.data?.setting) {
+          const setting = shippingRes.data.setting
+          const shippingOptions = resolveShippingOptions(setting).map((option) => ({
+            ...option,
+            maxItemFee: option.maxItemFee == null ? '' : option.maxItemFee,
+          }))
           setForm({
-            enabled: Boolean(shippingRes.data.setting.enabled),
-            shippingType: shippingRes.data.setting.shippingType || 'FLAT_RATE',
-            flatRate: Number(shippingRes.data.setting.flatRate || 5),
-            perItemFee: Number(shippingRes.data.setting.perItemFee || 2),
-            maxItemFee: shippingRes.data.setting.maxItemFee ? Number(shippingRes.data.setting.maxItemFee) : '',
-            weightUnit: shippingRes.data.setting.weightUnit || 'kg',
-            baseWeight: Number(shippingRes.data.setting.baseWeight || 1),
-            baseWeightFee: Number(shippingRes.data.setting.baseWeightFee || 5),
-            additionalWeightFee: Number(shippingRes.data.setting.additionalWeightFee || 2),
-            freeShippingMin: Number(shippingRes.data.setting.freeShippingMin || 499),
-            enableProductSpecificFreeShipping: Boolean(shippingRes.data.setting.enableProductSpecificFreeShipping),
-            localDeliveryFee: shippingRes.data.setting.localDeliveryFee ? Number(shippingRes.data.setting.localDeliveryFee) : '',
-            regionalDeliveryFee: shippingRes.data.setting.regionalDeliveryFee ? Number(shippingRes.data.setting.regionalDeliveryFee) : '',
-            stateCharges: Array.isArray(shippingRes.data.setting.stateCharges)
-              ? shippingRes.data.setting.stateCharges.map((entry) => ({
+            enabled: Boolean(setting.enabled),
+            shippingOptions: shippingOptions.length
+              ? shippingOptions
+              : [createEmptyShippingOption({ isDefault: true })],
+            freeShippingMin: Number(setting.freeShippingMin || 499),
+            enableProductSpecificFreeShipping: Boolean(setting.enableProductSpecificFreeShipping),
+            localDeliveryFee: setting.localDeliveryFee ? Number(setting.localDeliveryFee) : '',
+            regionalDeliveryFee: setting.regionalDeliveryFee ? Number(setting.regionalDeliveryFee) : '',
+            stateCharges: Array.isArray(setting.stateCharges)
+              ? setting.stateCharges.map((entry) => ({
                   state: String(entry?.state || '').trim(),
                   fee: Number(entry?.fee || 0)
                 })).filter((entry) => entry.state)
               : [],
-            estimatedDays: shippingRes.data.setting.estimatedDays || '3-5',
-            enableCOD: Boolean(shippingRes.data.setting.enableCOD),
-            codFee: Number(shippingRes.data.setting.codFee || 0),
-            maxCODAmount: Number(shippingRes.data.setting.maxCODAmount || 0),
-            enableExpressShipping: Boolean(shippingRes.data.setting.enableExpressShipping),
-            expressShippingFee: Number(shippingRes.data.setting.expressShippingFee || 20),
-            expressEstimatedDays: shippingRes.data.setting.expressEstimatedDays || '1-2'
+            enableCOD: Boolean(setting.enableCOD),
+            codFee: Number(setting.codFee || 0),
+            maxCODAmount: Number(setting.maxCODAmount || 0),
           })
         }
         if (productsRes.data?.products) {
@@ -106,8 +100,202 @@ export default function StoreShippingSettings() {
     );
   };
 
+  const updateShippingOption = (optionId, patch) => {
+    setForm((prev) => ({
+      ...prev,
+      shippingOptions: prev.shippingOptions.map((option) =>
+        option.id === optionId ? { ...option, ...patch } : option,
+      ),
+    }));
+  };
+
+  const setDefaultShippingOption = (optionId) => {
+    setForm((prev) => ({
+      ...prev,
+      shippingOptions: prev.shippingOptions.map((option) => ({
+        ...option,
+        isDefault: option.id === optionId,
+      })),
+    }));
+  };
+
+  const addShippingOption = () => {
+    setForm((prev) => ({
+      ...prev,
+      shippingOptions: [
+        ...prev.shippingOptions,
+        createEmptyShippingOption({
+          name: `Delivery Option ${prev.shippingOptions.length + 1}`,
+          isDefault: prev.shippingOptions.length === 0,
+          sortOrder: prev.shippingOptions.length,
+        }),
+      ],
+    }));
+  };
+
+  const removeShippingOption = (optionId) => {
+    setForm((prev) => {
+      const next = prev.shippingOptions.filter((option) => option.id !== optionId);
+      if (!next.length) {
+        return { ...prev, shippingOptions: [createEmptyShippingOption({ isDefault: true })] };
+      }
+      if (!next.some((option) => option.isDefault)) {
+        next[0] = { ...next[0], isDefault: true };
+      }
+      return { ...prev, shippingOptions: next };
+    });
+  };
+
+  const toggleOptionStateRestriction = (optionId, stateName) => {
+    setForm((prev) => ({
+      ...prev,
+      shippingOptions: prev.shippingOptions.map((option) => {
+        if (option.id !== optionId) return option;
+        const current = Array.isArray(option.availableStates) ? option.availableStates : [];
+        const exists = current.includes(stateName);
+        return {
+          ...option,
+          availableStates: exists
+            ? current.filter((state) => state !== stateName)
+            : [...current, stateName],
+        };
+      }),
+    }));
+  };
+
+  const renderOptionLogicFields = (option) => {
+    if (option.shippingType === 'FLAT_RATE') {
+      return (
+        <div className='mt-4 rounded-lg bg-slate-50 p-4'>
+          <label className='mb-2 block text-sm font-medium text-slate-700'>Flat Rate Fee</label>
+          <div className='flex items-center gap-2'>
+            <span className='text-slate-600'>{currency}</span>
+            <input
+              type='number'
+              step='0.01'
+              value={option.flatRate}
+              onChange={(e) => updateShippingOption(option.id, { flatRate: Number(e.target.value) })}
+              className='w-40 rounded border border-slate-300 px-3 py-2'
+            />
+          </div>
+        </div>
+      );
+    }
+
+    if (option.shippingType === 'PER_ITEM') {
+      return (
+        <div className='mt-4 space-y-3 rounded-lg bg-slate-50 p-4'>
+          <div>
+            <label className='mb-2 block text-sm font-medium text-slate-700'>Fee Per Item</label>
+            <div className='flex items-center gap-2'>
+              <span className='text-slate-600'>{currency}</span>
+              <input
+                type='number'
+                step='0.01'
+                value={option.perItemFee}
+                onChange={(e) => updateShippingOption(option.id, { perItemFee: Number(e.target.value) })}
+                className='w-40 rounded border border-slate-300 px-3 py-2'
+              />
+            </div>
+          </div>
+          <div>
+            <label className='mb-2 block text-sm font-medium text-slate-700'>Maximum Item Fee (Optional)</label>
+            <div className='flex items-center gap-2'>
+              <span className='text-slate-600'>{currency}</span>
+              <input
+                type='number'
+                step='0.01'
+                value={option.maxItemFee}
+                onChange={(e) => updateShippingOption(option.id, { maxItemFee: e.target.value })}
+                placeholder='No limit'
+                className='w-40 rounded border border-slate-300 px-3 py-2'
+              />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (option.shippingType === 'WEIGHT_BASED') {
+      return (
+        <div className='mt-4 space-y-3 rounded-lg bg-slate-50 p-4'>
+          <div className='flex items-center gap-4'>
+            <label className='flex items-center gap-2'>
+              <input
+                type='radio'
+                checked={option.weightUnit === 'kg'}
+                onChange={() => updateShippingOption(option.id, { weightUnit: 'kg' })}
+                className='accent-slate-700'
+              />
+              <span className='text-sm text-slate-700'>Kilograms (kg)</span>
+            </label>
+            <label className='flex items-center gap-2'>
+              <input
+                type='radio'
+                checked={option.weightUnit === 'lb'}
+                onChange={() => updateShippingOption(option.id, { weightUnit: 'lb' })}
+                className='accent-slate-700'
+              />
+              <span className='text-sm text-slate-700'>Pounds (lb)</span>
+            </label>
+          </div>
+          <div className='grid grid-cols-1 gap-3 md:grid-cols-3'>
+            <div>
+              <label className='mb-2 block text-sm font-medium text-slate-700'>Base Weight</label>
+              <input
+                type='number'
+                step='0.1'
+                value={option.baseWeight}
+                onChange={(e) => updateShippingOption(option.id, { baseWeight: Number(e.target.value) })}
+                className='w-full rounded border border-slate-300 px-3 py-2'
+              />
+            </div>
+            <div>
+              <label className='mb-2 block text-sm font-medium text-slate-700'>Base Weight Fee</label>
+              <div className='flex items-center gap-2'>
+                <span className='text-slate-600'>{currency}</span>
+                <input
+                  type='number'
+                  step='0.01'
+                  value={option.baseWeightFee}
+                  onChange={(e) => updateShippingOption(option.id, { baseWeightFee: Number(e.target.value) })}
+                  className='w-full rounded border border-slate-300 px-3 py-2'
+                />
+              </div>
+            </div>
+            <div>
+              <label className='mb-2 block text-sm font-medium text-slate-700'>
+                Additional Fee per {option.weightUnit}
+              </label>
+              <div className='flex items-center gap-2'>
+                <span className='text-slate-600'>{currency}</span>
+                <input
+                  type='number'
+                  step='0.01'
+                  value={option.additionalWeightFee}
+                  onChange={(e) => updateShippingOption(option.id, { additionalWeightFee: Number(e.target.value) })}
+                  className='w-full rounded border border-slate-300 px-3 py-2'
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className='mt-4 rounded-lg bg-emerald-50 p-4 text-sm text-emerald-800'>
+        This delivery option is always free for the customer.
+      </div>
+    );
+  };
+
   const onSave = async () => {
     try {
+      if (!form.shippingOptions.some((option) => option.enabled)) {
+        toast.error('Enable at least one delivery option before saving.')
+        return
+      }
       setSaving(true)
       const hasFreeShippingProducts = selectedFreeProducts.length > 0;
       const payload = {
@@ -142,6 +330,44 @@ export default function StoreShippingSettings() {
 
   if (loading) return <div className='p-6'>Loading...</div>
 
+  const expressOption = findExpressShippingOption(form.shippingOptions)
+  const expressEnabled = Boolean(expressOption?.enabled)
+  const expressExtraFee = getExpressExtraFee(form.shippingOptions)
+  const expressEstimatedDays = expressOption?.estimatedDays || '1-2'
+
+  const setExpressEnabled = (enabled) => {
+    setForm((prev) => ({
+      ...prev,
+      shippingOptions: upsertExpressShippingOption(prev.shippingOptions, {
+        enabled,
+        extraFee: getExpressExtraFee(prev.shippingOptions) || 20,
+        estimatedDays: findExpressShippingOption(prev.shippingOptions)?.estimatedDays || '1-2',
+      }),
+    }))
+  }
+
+  const setExpressExtraFee = (fee) => {
+    setForm((prev) => ({
+      ...prev,
+      shippingOptions: upsertExpressShippingOption(prev.shippingOptions, {
+        enabled: true,
+        extraFee: Number(fee) || 0,
+        estimatedDays: findExpressShippingOption(prev.shippingOptions)?.estimatedDays || '1-2',
+      }),
+    }))
+  }
+
+  const setExpressEstimatedDays = (days) => {
+    setForm((prev) => ({
+      ...prev,
+      shippingOptions: upsertExpressShippingOption(prev.shippingOptions, {
+        enabled: expressEnabled || true,
+        extraFee: getExpressExtraFee(prev.shippingOptions) || 20,
+        estimatedDays: days,
+      }),
+    }))
+  }
+
   return (
     <div className='p-6 max-w-4xl'>
       <div className='flex items-center gap-3 mb-6'>
@@ -165,122 +391,150 @@ export default function StoreShippingSettings() {
 
         {form.enabled && (
           <>
-            {/* Shipping Type */}
+            {/* Delivery Options */}
             <div className='bg-white p-6 rounded-xl border border-slate-200'>
-              <h2 className='text-xl font-semibold text-slate-800 mb-4 flex items-center gap-2'>
-                <PackageIcon size={20} /> Shipping Method
-              </h2>
-              <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3'>
-                {[
-                  { value: 'FLAT_RATE', label: 'Flat Rate', desc: 'Fixed fee per order' },
-                  { value: 'PER_ITEM', label: 'Per Item', desc: 'Fee per product' },
-                  { value: 'WEIGHT_BASED', label: 'Weight Based', desc: 'Based on weight' },
-                  { value: 'FREE', label: 'Free Shipping', desc: 'No shipping cost' }
-                ].map(type => (
-                  <label key={type.value} className={`flex flex-col p-4 border-2 rounded-lg cursor-pointer transition ${form.shippingType === type.value ? 'border-slate-700 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}>
-                    <input type='radio' name='shippingType' value={type.value} checked={form.shippingType === type.value}
-                      onChange={(e) => setForm(s => ({ ...s, shippingType: e.target.value }))}
-                      className='sr-only' />
-                    <span className='font-medium text-slate-700'>{type.label}</span>
-                    <span className='text-xs text-slate-500 mt-1'>{type.desc}</span>
-                  </label>
-                ))}
+              <div className='mb-4 flex flex-wrap items-center justify-between gap-3'>
+                <div>
+                  <h2 className='text-xl font-semibold text-slate-800 flex items-center gap-2'>
+                    <PackageIcon size={20} /> Delivery Options
+                  </h2>
+                  <p className='mt-1 text-sm text-slate-500'>
+                    Add multiple delivery methods. Each option can use its own pricing logic.
+                  </p>
+                </div>
+                <button
+                  type='button'
+                  onClick={addShippingOption}
+                  className='inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50'
+                >
+                  <PlusIcon size={16} /> Add Option
+                </button>
               </div>
 
-              {/* Flat Rate Settings */}
-              {form.shippingType === 'FLAT_RATE' && (
-                <div className='mt-4 p-4 bg-slate-50 rounded-lg'>
-                  <label className='block text-sm font-medium text-slate-700 mb-2'>Flat Rate Fee</label>
-                  <div className='flex items-center gap-2'>
-                    <span className='text-slate-600'>{currency}</span>
-                    <input type='number' step='0.01' value={form.flatRate}
-                      onChange={(e) => setForm(s => ({ ...s, flatRate: Number(e.target.value) }))}
-                      className='w-40 border border-slate-300 rounded px-3 py-2' />
-                  </div>
-                  <p className='text-xs text-slate-500 mt-2'>A fixed shipping fee applied to all orders</p>
-                </div>
-              )}
+              <div className='space-y-4'>
+                {form.shippingOptions.map((option, index) => (
+                  <div key={option.id} className='rounded-xl border border-slate-200 bg-slate-50/40 p-4'>
+                    <div className='flex flex-wrap items-start justify-between gap-3'>
+                      <div className='min-w-0 flex-1'>
+                        <label className='mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500'>
+                          Option {index + 1}
+                        </label>
+                        <input
+                          type='text'
+                          value={option.name}
+                          onChange={(e) => updateShippingOption(option.id, { name: e.target.value })}
+                          className='w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800'
+                          placeholder='e.g. Standard Delivery'
+                        />
+                      </div>
+                      <div className='flex items-center gap-3'>
+                        <label className='flex items-center gap-2 text-sm text-slate-700'>
+                          <input
+                            type='checkbox'
+                            checked={option.enabled}
+                            onChange={(e) => updateShippingOption(option.id, { enabled: e.target.checked })}
+                            className='accent-slate-700'
+                          />
+                          Enabled
+                        </label>
+                        <label className='flex items-center gap-2 text-sm text-slate-700'>
+                          <input
+                            type='radio'
+                            name='defaultShippingOption'
+                            checked={option.isDefault}
+                            onChange={() => setDefaultShippingOption(option.id)}
+                            className='accent-slate-700'
+                          />
+                          Default
+                        </label>
+                        {form.shippingOptions.length > 1 ? (
+                          <button
+                            type='button'
+                            onClick={() => removeShippingOption(option.id)}
+                            className='rounded-lg p-2 text-red-600 transition hover:bg-red-50'
+                            aria-label={`Remove ${option.name}`}
+                          >
+                            <Trash2Icon size={16} />
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
 
-              {/* Per Item Settings */}
-              {form.shippingType === 'PER_ITEM' && (
-                <div className='mt-4 p-4 bg-slate-50 rounded-lg space-y-3'>
-                  <div>
-                    <label className='block text-sm font-medium text-slate-700 mb-2'>Fee Per Item</label>
-                    <div className='flex items-center gap-2'>
-                      <span className='text-slate-600'>{currency}</span>
-                      <input type='number' step='0.01' value={form.perItemFee}
-                        onChange={(e) => setForm(s => ({ ...s, perItemFee: Number(e.target.value) }))}
-                        className='w-40 border border-slate-300 rounded px-3 py-2' />
+                    <div className='mt-4 grid grid-cols-1 gap-3 md:grid-cols-2'>
+                      <div>
+                        <label className='mb-2 block text-sm font-medium text-slate-700'>Estimated Delivery Days</label>
+                        <input
+                          type='text'
+                          value={option.estimatedDays}
+                          onChange={(e) => updateShippingOption(option.id, { estimatedDays: e.target.value })}
+                          placeholder='e.g. 3-5'
+                          className='w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm'
+                        />
+                      </div>
                     </div>
-                  </div>
-                  <div>
-                    <label className='block text-sm font-medium text-slate-700 mb-2'>Maximum Item Fee (Optional)</label>
-                    <div className='flex items-center gap-2'>
-                      <span className='text-slate-600'>{currency}</span>
-                      <input type='number' step='0.01' value={form.maxItemFee}
-                        onChange={(e) => setForm(s => ({ ...s, maxItemFee: e.target.value }))}
-                        placeholder='No limit'
-                        className='w-40 border border-slate-300 rounded px-3 py-2' />
-                    </div>
-                    <p className='text-xs text-slate-500 mt-2'>Cap the total shipping when multiple items ordered</p>
-                  </div>
-                </div>
-              )}
 
-              {/* Weight Based Settings */}
-              {form.shippingType === 'WEIGHT_BASED' && (
-                <div className='mt-4 p-4 bg-slate-50 rounded-lg space-y-3'>
-                  <div className='flex items-center gap-4'>
-                    <label className='flex items-center gap-2'>
-                      <input type='radio' value='kg' checked={form.weightUnit === 'kg'}
-                        onChange={(e) => setForm(s => ({ ...s, weightUnit: e.target.value }))}
-                        className='accent-slate-700' />
-                      <span className='text-sm text-slate-700'>Kilograms (kg)</span>
-                    </label>
-                    <label className='flex items-center gap-2'>
-                      <input type='radio' value='lb' checked={form.weightUnit === 'lb'}
-                        onChange={(e) => setForm(s => ({ ...s, weightUnit: e.target.value }))}
-                        className='accent-slate-700' />
-                      <span className='text-sm text-slate-700'>Pounds (lb)</span>
-                    </label>
+                    <div className='mt-4'>
+                      <label className='mb-2 block text-sm font-medium text-slate-700'>Pricing Logic</label>
+                      <div className='grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4'>
+                        {Object.entries(SHIPPING_LOGIC_LABELS).map(([value, label]) => (
+                          <label
+                            key={value}
+                            className={`cursor-pointer rounded-lg border-2 p-3 transition ${
+                              option.shippingType === value
+                                ? 'border-slate-700 bg-white'
+                                : 'border-slate-200 bg-white hover:border-slate-400'
+                            }`}
+                          >
+                            <input
+                              type='radio'
+                              name={`shippingType-${option.id}`}
+                              value={value}
+                              checked={option.shippingType === value}
+                              onChange={() => updateShippingOption(option.id, { shippingType: value })}
+                              className='sr-only'
+                            />
+                            <span className='text-sm font-medium text-slate-700'>{label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    {renderOptionLogicFields(option)}
+
+                    <div className='mt-4'>
+                      <label className='mb-2 block text-sm font-medium text-slate-700'>
+                        State / Emirate Restrictions (Optional)
+                      </label>
+                      <p className='mb-2 text-xs text-slate-500'>
+                        Leave empty to show this option everywhere. Select states to limit availability.
+                      </p>
+                      <div className='flex max-h-36 flex-wrap gap-2 overflow-y-auto rounded-lg border border-slate-200 bg-white p-3'>
+                        {stateOptions.map((stateName) => {
+                          const selected = (option.availableStates || []).includes(stateName);
+                          return (
+                            <button
+                              key={`${option.id}-${stateName}`}
+                              type='button'
+                              onClick={() => toggleOptionStateRestriction(option.id, stateName)}
+                              className={`rounded-full border px-2.5 py-1 text-xs font-medium transition ${
+                                selected
+                                  ? 'border-slate-700 bg-slate-700 text-white'
+                                  : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-400'
+                              }`}
+                            >
+                              {stateName}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
-                  <div className='grid grid-cols-1 md:grid-cols-3 gap-3'>
-                    <div>
-                      <label className='block text-sm font-medium text-slate-700 mb-2'>Base Weight</label>
-                      <div className='flex items-center gap-2'>
-                        <input type='number' step='0.1' value={form.baseWeight}
-                          onChange={(e) => setForm(s => ({ ...s, baseWeight: Number(e.target.value) }))}
-                          className='w-24 border border-slate-300 rounded px-3 py-2' />
-                        <span className='text-sm text-slate-600'>{form.weightUnit}</span>
-                      </div>
-                    </div>
-                    <div>
-                      <label className='block text-sm font-medium text-slate-700 mb-2'>Base Weight Fee</label>
-                      <div className='flex items-center gap-2'>
-                        <span className='text-slate-600'>{currency}</span>
-                        <input type='number' step='0.01' value={form.baseWeightFee}
-                          onChange={(e) => setForm(s => ({ ...s, baseWeightFee: Number(e.target.value) }))}
-                          className='w-24 border border-slate-300 rounded px-3 py-2' />
-                      </div>
-                    </div>
-                    <div>
-                      <label className='block text-sm font-medium text-slate-700 mb-2'>Additional Fee per {form.weightUnit}</label>
-                      <div className='flex items-center gap-2'>
-                        <span className='text-slate-600'>{currency}</span>
-                        <input type='number' step='0.01' value={form.additionalWeightFee}
-                          onChange={(e) => setForm(s => ({ ...s, additionalWeightFee: Number(e.target.value) }))}
-                          className='w-24 border border-slate-300 rounded px-3 py-2' />
-                      </div>
-                    </div>
-                  </div>
-                  <p className='text-xs text-slate-500'>Example: 3kg order = Base fee + (2 × Additional fee)</p>
-                </div>
-              )}
+                ))}
+              </div>
             </div>
 
             {/* Product-specific free shipping */}
-            {form.shippingType !== 'FREE' && (
-              <div className='bg-white p-6 rounded-xl border border-slate-200'>
+            <div className='bg-white p-6 rounded-xl border border-slate-200'>
                 <h2 className='text-xl font-semibold text-slate-800 mb-1 flex items-center gap-2'>
                   <PackageIcon size={20} /> Free Shipping by Product
                 </h2>
@@ -359,11 +613,9 @@ export default function StoreShippingSettings() {
                   {selectedFreeProducts.length} product(s) selected — customers pay no delivery fee when these are in the cart.
                 </p>
               </div>
-            )}
 
             {/* Free Shipping Threshold */}
-            {form.shippingType !== 'FREE' && (
-              <div className='bg-white p-6 rounded-xl border border-slate-200'>
+            <div className='bg-white p-6 rounded-xl border border-slate-200'>
                 <h2 className='text-xl font-semibold text-slate-800 mb-4 flex items-center gap-2'>
                   <DollarSignIcon size={20} /> Free Shipping Threshold
                 </h2>
@@ -375,10 +627,9 @@ export default function StoreShippingSettings() {
                       onChange={(e) => setForm(s => ({ ...s, freeShippingMin: Number(e.target.value) }))}
                       className='w-48 border border-slate-300 rounded px-3 py-2' />
                   </div>
-                  <p className='text-xs text-slate-500 mt-2'>Orders at or above this amount get free shipping (applies to all products)</p>
+                  <p className='text-xs text-slate-500 mt-2'>Orders at or above this amount get free shipping (applies to flat-rate options)</p>
                 </div>
               </div>
-            )}
 
             {/* Regional Settings */}
             <div className='bg-white p-6 rounded-xl border border-slate-200'>
@@ -409,17 +660,48 @@ export default function StoreShippingSettings() {
               </div>
             </div>
 
-            {/* Delivery Time */}
+            {/* Express Shipping */}
             <div className='bg-white p-6 rounded-xl border border-slate-200'>
-              <h2 className='text-xl font-semibold text-slate-800 mb-4'>Delivery Estimates</h2>
-              <div>
-                <label className='block text-sm font-medium text-slate-700 mb-2'>Estimated Delivery Days</label>
-                <input type='text' value={form.estimatedDays}
-                  onChange={(e) => setForm(s => ({ ...s, estimatedDays: e.target.value }))}
-                  placeholder='e.g., 3-5, 1-2, 5-7'
-                  className='w-48 border border-slate-300 rounded px-3 py-2' />
-                <p className='text-xs text-slate-500 mt-2'>Display estimated delivery time to customers</p>
-              </div>
+              <h2 className='text-xl font-semibold text-slate-800 mb-4'>Express Shipping</h2>
+              <label className='flex items-center gap-3 mb-4 cursor-pointer'>
+                <input
+                  type='checkbox'
+                  checked={expressEnabled}
+                  onChange={(e) => setExpressEnabled(e.target.checked)}
+                  className='w-5 h-5 accent-slate-700'
+                />
+                <span className='text-slate-700'>Enable express/priority shipping option</span>
+              </label>
+              {expressEnabled ? (
+                <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
+                  <div>
+                    <label className='block text-sm font-medium text-slate-700 mb-2'>Express Shipping Fee</label>
+                    <div className='flex items-center gap-2'>
+                      <span className='text-slate-600'>{currency}</span>
+                      <input
+                        type='number'
+                        step='0.01'
+                        value={expressExtraFee}
+                        onChange={(e) => setExpressExtraFee(e.target.value)}
+                        className='w-40 border border-slate-300 rounded px-3 py-2'
+                      />
+                    </div>
+                    <p className='text-xs text-slate-500 mt-2'>
+                      Extra fee on top of standard shipping. Shown as a separate option at checkout.
+                    </p>
+                  </div>
+                  <div>
+                    <label className='block text-sm font-medium text-slate-700 mb-2'>Express Delivery Days</label>
+                    <input
+                      type='text'
+                      value={expressEstimatedDays}
+                      onChange={(e) => setExpressEstimatedDays(e.target.value)}
+                      placeholder='e.g. 1-2 or Next Day Delivery'
+                      className='w-full border border-slate-300 rounded px-3 py-2'
+                    />
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             {/* COD Settings */}
@@ -460,37 +742,6 @@ export default function StoreShippingSettings() {
                         className='w-40 border border-slate-300 rounded px-3 py-2' />
                     </div>
                     <p className='text-xs text-slate-500 mt-2'>Max order total for COD (use 0 for unlimited)</p>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Express Shipping */}
-            <div className='bg-white p-6 rounded-xl border border-slate-200'>
-              <h2 className='text-xl font-semibold text-slate-800 mb-4'>Express Shipping</h2>
-              <label className='flex items-center gap-3 mb-4 cursor-pointer'>
-                <input type='checkbox' checked={form.enableExpressShipping}
-                  onChange={(e) => setForm(s => ({ ...s, enableExpressShipping: e.target.checked }))}
-                  className='w-5 h-5 accent-slate-700' />
-                <span className='text-slate-700'>Enable express/priority shipping option</span>
-              </label>
-              {form.enableExpressShipping && (
-                <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
-                  <div>
-                    <label className='block text-sm font-medium text-slate-700 mb-2'>Express Shipping Fee</label>
-                    <div className='flex items-center gap-2'>
-                      <span className='text-slate-600'>{currency}</span>
-                      <input type='number' step='0.01' value={form.expressShippingFee}
-                        onChange={(e) => setForm(s => ({ ...s, expressShippingFee: Number(e.target.value) }))}
-                        className='w-40 border border-slate-300 rounded px-3 py-2' />
-                    </div>
-                  </div>
-                  <div>
-                    <label className='block text-sm font-medium text-slate-700 mb-2'>Express Delivery Days</label>
-                    <input type='text' value={form.expressEstimatedDays}
-                      onChange={(e) => setForm(s => ({ ...s, expressEstimatedDays: e.target.value }))}
-                      placeholder='e.g., 1-2'
-                      className='w-40 border border-slate-300 rounded px-3 py-2' />
                   </div>
                 </div>
               )}

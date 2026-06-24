@@ -13,6 +13,7 @@ import { useStorefrontMarket } from '@/lib/useStorefrontMarket'
 import { useStorefrontI18n } from '@/lib/useStorefrontI18n'
 
 import toast from 'react-hot-toast'
+import { showStorefrontActionToast } from '@/lib/storefrontActionToast'
 import { PLACEHOLDER_IMAGE as PLACEHOLDER } from '@/lib/mediaUrls'
 import {
   getImageUrlAt,
@@ -213,7 +214,13 @@ const ProductCard = ({
       price: priceNum > 0 ? priceNum : undefined,
     }))
     dispatch(uploadCart({ getToken }))
-    toast.success(t('common.addedToCart'))
+    showStorefrontActionToast({
+      variant: 'cart',
+      title: t('product.addedToCartToast'),
+      subtitle: t('product.addedToCartSubtitle'),
+      actionLabel: t('product.viewCart'),
+      actionHref: '/cart',
+    })
   }
 
   const renderCartControl = () => {

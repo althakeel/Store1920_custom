@@ -6,6 +6,7 @@ import Stripe from "stripe";
 import { recordPurchaseFromOrder } from "@/lib/serverCustomerTracking";
 import { sendDeferredPaymentWhatsApp } from '@/lib/whatsapp/orderNotifications';
 import { sendMetaPurchaseFromOrder } from '@/lib/metaConversionsApi';
+import { finalizeAbandonedCartFromStripeSession } from '@/lib/abandonedCartConversion';
 
 export async function POST(request){
     try {
@@ -77,6 +78,10 @@ export async function POST(request){
             // Primary event: hosted Stripe Checkout session completed (payment captured)
             case 'checkout.session.completed': {
                 const session = event.data.object
+                await dbConnect()
+                const recoveredCart = await finalizeAbandonedCartFromStripeSession(session)
+                if (recoveredCart) break
+
                 if (session.payment_status === 'paid') {
                     const { orderIds, userId } = extractMeta(session.metadata)
                     if (orderIds.length) await markOrdersPaid(orderIds, userId)
@@ -87,6 +92,10 @@ export async function POST(request){
             // Async payment: session payment succeeded after initial pending state
             case 'checkout.session.async_payment_succeeded': {
                 const session = event.data.object
+                await dbConnect()
+                const recoveredCart = await finalizeAbandonedCartFromStripeSession(session)
+                if (recoveredCart) break
+
                 const { orderIds, userId } = extractMeta(session.metadata)
                 if (orderIds.length) await markOrdersPaid(orderIds, userId)
                 break

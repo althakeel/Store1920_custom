@@ -2,6 +2,7 @@
 import StoreLayout from "@/components/store/StoreLayout";
 import StoreLanguageScope from "@/components/store/StoreLanguageScope";
 import StoreShellSkeleton from "@/components/store/StoreShellSkeleton";
+import "@/styles/store-editor.css";
 
 import { useEffect, useState } from "react"
 import { usePathname, useRouter } from "next/navigation";

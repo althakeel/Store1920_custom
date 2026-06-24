@@ -12,7 +12,7 @@ const AbandonedCartSchema = new mongoose.Schema({
   currency: String,
   lastSeenAt: Date,
   source: { type: String, default: 'checkout' },
-  status: { type: String, enum: ['active', 'converted'], default: 'active', index: true },
+  status: { type: String, enum: ['active', 'pending_payment', 'converted'], default: 'active', index: true },
   convertedAt: { type: Date, default: null },
   convertedBy: { type: String, default: null },
   convertedByName: { type: String, default: null },
@@ -32,6 +32,14 @@ const AbandonedCartSchema = new mongoose.Schema({
   conversionEmailSentAt: { type: Date, default: null },
   conversionEmailError: { type: String, default: null },
   linkedOrderId: { type: String, default: null, index: true },
+  recoveryToken: { type: String, default: null, index: true, sparse: true },
+  recoveryDiscountType: { type: String, enum: ['none', 'amount', 'percent', 'custom'], default: null },
+  recoveryDiscountValue: { type: Number, default: null },
+  recoveryCartTotal: { type: Number, default: null },
+  recoveryOfferTotal: { type: Number, default: null },
+  recoveryLinkExpiresAt: { type: Date, default: null },
+  recoveryLinkSentAt: { type: Date, default: null },
+  recoveryLinkSentTo: { type: String, default: null },
 }, { timestamps: true });
 
 // Indexes for query performance
