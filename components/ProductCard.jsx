@@ -102,7 +102,6 @@ const ProductCard = ({
   const [showCardVideo, setShowCardVideo] = useState(false)
   const [isCartHydrated, setIsCartHydrated] = useState(false)
   const cardVideoRef = useRef(null)
-  const [reviews, setReviews] = useState([])
 
   const cartEntry = cartItems[product._id]
   const itemQuantity = (() => {
@@ -115,29 +114,6 @@ const ProductCard = ({
   useEffect(() => {
     setIsCartHydrated(true)
   }, [])
-
-  useEffect(() => {
-    if (Number(product.averageRating) > 0 || Number(product.ratingCount) > 0) {
-      return undefined
-    }
-
-    let cancelled = false
-
-    const fetchReviews = async () => {
-      try {
-        const { data } = await import('axios').then((ax) => ax.default.get(`/api/review?productId=${product._id}`))
-        if (!cancelled) setReviews(data.reviews || [])
-      } catch {
-        // silent fail
-      }
-    }
-
-    fetchReviews()
-
-    return () => {
-      cancelled = true
-    }
-  }, [product._id, product.averageRating, product.ratingCount])
 
   let priceNum = getSalePrice(product)
   let AEDNum = getAEDPrice(product)
@@ -164,13 +140,8 @@ const ProductCard = ({
   const convertedAED = convertPrice(AEDNum)
   const isOutOfStock = product.inStock === false || (typeof product.stockQuantity === 'number' && product.stockQuantity <= 0)
 
-  const ratingValue = reviews.length > 0
-    ? Math.round(reviews.reduce((acc, curr) => acc + (curr.rating || 0), 0) / reviews.length)
-    : Math.round(product.averageRating || 0)
-
-  const reviewCount = reviews.length > 0
-    ? reviews.length
-    : (typeof product.ratingCount === 'number' ? product.ratingCount : 0)
+  const ratingValue = Math.round(Number(product.averageRating) || 0)
+  const reviewCount = Math.max(0, Number(product.ratingCount) || 0)
 
   const fallbackName = product.name || product.title || t('common.untitledProduct')
   const productName = fallbackName

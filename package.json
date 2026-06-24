@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1068.0",
+    "@aws-sdk/s3-request-presigner": "^3.1075.0",
     "@emailjs/nodejs": "^5.0.2",
     "@google/generative-ai": "^0.24.1",
     "@imagekit/next": "^2.1.5",
@@ -63,6 +64,7 @@
     "react-select-country-list": "^2.2.3",
     "recharts": "^3.7.0",
     "resend": "^6.5.2",
+    "sharp": "^0.35.2",
     "stripe": "^18.5.0",
     "xlsx": "^0.18.5"
   },

@@ -1,8 +1,14 @@
 'use client'
-import { addToCart, removeFromCart } from "@/lib/features/cart/cartSlice";
 import { useDispatch, useSelector } from "react-redux";
+import {
+  adjustBundleCartTier,
+  getBundleTierFromEntry,
+  isBulkBundleProduct,
+  resolveCartLinePricing,
+} from '@/lib/bulkBundleCart';
+import { decrementCartItem, incrementCartItem } from '@/lib/bundleCartActions';
 
-const Counter = ({ productId, maxQty }) => {
+const Counter = ({ productId, maxQty, product }) => {
 
     const { cartItems } = useSelector(state => state.cart);
 
@@ -10,23 +16,34 @@ const Counter = ({ productId, maxQty }) => {
 
     const entry = cartItems[productId];
     const quantity = typeof entry === 'number' ? entry : entry?.quantity || 0;
-    const price = typeof entry === 'number' ? undefined : entry?.price;
+    const pricing = product ? resolveCartLinePricing(product, entry, quantity) : null;
+    const isBundle = Boolean(product && isBulkBundleProduct(product));
+    const displayQuantity = isBundle
+      ? (getBundleTierFromEntry(entry, product) || pricing?.displayQuantity || quantity)
+      : quantity;
     const normalizedMaxQty = typeof maxQty === 'number' ? Math.max(0, maxQty) : null;
-    const canIncrement = normalizedMaxQty === null ? true : quantity < normalizedMaxQty;
+    const canIncrement = isBundle
+      ? Boolean(adjustBundleCartTier(entry, product, 'up'))
+      : (normalizedMaxQty === null ? true : quantity < normalizedMaxQty);
 
     const addToCartHandler = () => {
-        if (!canIncrement) return;
-        dispatch(addToCart({ productId, price, maxQty: normalizedMaxQty }))
+        incrementCartItem(dispatch, {
+          productId,
+          entry,
+          product,
+          price: typeof entry === 'object' ? entry?.price : undefined,
+          maxQty: normalizedMaxQty,
+        });
     }
 
     const removeFromCartHandler = () => {
-        dispatch(removeFromCart({ productId }))
+        decrementCartItem(dispatch, { productId, entry, product });
     }
 
     return (
         <div className="inline-flex items-center gap-1 sm:gap-3 px-3 py-1 rounded border border-slate-200 max-sm:text-sm text-slate-600">
             <button onClick={removeFromCartHandler} className="p-1 select-none">-</button>
-            <p className="p-1">{quantity}</p>
+            <p className="p-1">{displayQuantity}</p>
             <button
                 onClick={addToCartHandler}
                 disabled={!canIncrement}

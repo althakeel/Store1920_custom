@@ -2,7 +2,7 @@
 'use client'
 import { useAuth } from '@/lib/useAuth';
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useState, useRef, useCallback } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { useDispatch } from "react-redux"
@@ -12,8 +12,7 @@ import Loading from "@/components/Loading"
 
 import axios from "axios"
 import dynamic from "next/dynamic"
-import { ImportCancelledError, importProductSpreadsheetFile } from '@/lib/productImportClient'
-import ProductImportProgressPanel from '@/components/store/ProductImportProgressPanel'
+import ProductBulkImportPanel from '@/components/store/ProductBulkImportPanel'
 import {
     buildCategoryLookup,
     getProductCategoryLabels,
@@ -94,6 +93,9 @@ export default function StoreManageProducts() {
 
     const [loading, setLoading] = useState(true)
     const [products, setProducts] = useState([])
+    const [totalProducts, setTotalProducts] = useState(0)
+    const [debouncedSearch, setDebouncedSearch] = useState('')
+    const searchDebounceRef = useRef(null)
     const [editingProduct, setEditingProduct] = useState(null)
     const [showEditModal, setShowEditModal] = useState(false)
     const [categoryMap, setCategoryMap] = useState({}) // Map of category ID to name
@@ -109,10 +111,6 @@ export default function StoreManageProducts() {
     const [selectedFbtProductIds, setSelectedFbtProductIds] = useState([])
     const [fbtBundleDiscount, setFbtBundleDiscount] = useState('')
     const [searchFbt, setSearchFbt] = useState('')
-    const [productImportFile, setProductImportFile] = useState(null)
-    const [importingProducts, setImportingProducts] = useState(false)
-    const [importProgress, setImportProgress] = useState(null)
-    const [stoppingImport, setStoppingImport] = useState(false)
     const [selectedProductIds, setSelectedProductIds] = useState([])
     const [deletingBulkProducts, setDeletingBulkProducts] = useState(false)
     const [showBulkEditModal, setShowBulkEditModal] = useState(false)
@@ -127,24 +125,35 @@ export default function StoreManageProducts() {
     })
     const [aiAutofillRunning, setAiAutofillRunning] = useState(false)
     const [aiAutofillProgress, setAiAutofillProgress] = useState(null)
-    const productImportInputRef = useRef(null)
-    const importControlRef = useRef({ cancelled: false, abortController: null })
 
-    const fetchStoreProducts = async () => {
+    const fetchStoreProducts = useCallback(async ({ page = currentPage, search = debouncedSearch, category = selectedCategory, silent = false } = {}) => {
         try {
+            if (!silent) setLoading(true)
              const token = await getToken()
-             const { data } = await axios.get('/api/store/product', {headers: { Authorization: `Bearer ${token}` } })
-             const nextProducts = data.products.sort((a, b)=> new Date(b.createdAt) - new Date(a.createdAt))
+             const { data } = await axios.get('/api/store/product', {
+                headers: { Authorization: `Bearer ${token}` },
+                params: {
+                    page,
+                    limit: pageSize,
+                    search: search || undefined,
+                    category: category || undefined,
+                    manage: 'true',
+                    sort: 'newest',
+                },
+             })
+             const nextProducts = Array.isArray(data?.products) ? data.products : []
              setProducts(nextProducts)
-             if (data.categoryLookup && typeof data.categoryLookup === 'object') {
-                setCategoryMap(data.categoryLookup)
+             setTotalProducts(Number(data?.pagination?.total) || nextProducts.length)
+             if (data?.categoryLookup && typeof data.categoryLookup === 'object') {
+                setCategoryMap((current) => ({ ...current, ...data.categoryLookup }))
              }
              setSelectedProductIds((prev) => prev.filter((id) => nextProducts.some((product) => String(product._id) === id)))
         } catch (error) {
             toast.error(error?.response?.data?.error || error.message)
+        } finally {
+            setLoading(false)
         }
-        setLoading(false)
-    }
+    }, [currentPage, debouncedSearch, selectedCategory, pageSize, getToken])
 
     // Fetch all categories to map IDs to names
     const fetchCategories = async () => {
@@ -313,49 +322,40 @@ export default function StoreManageProducts() {
 
     useEffect(() => {
         if(user){
-            fetchStoreProducts()
             fetchCategories()
-        }  
+        }
     }, [user])
 
     useEffect(() => {
-        setCurrentPage(1)
-    }, [searchQuery, selectedCategory, pageSize])
-
-    // Filter products based on search query and selected category
-    const filteredProducts = products.filter(product => {
-        // Filter by selected category
-        if (selectedCategory) {
-            const hasCategory = product.categories?.includes(selectedCategory) || product.category === selectedCategory;
-            if (!hasCategory) return false;
+        if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current)
+        searchDebounceRef.current = setTimeout(() => {
+            setDebouncedSearch(searchQuery.trim())
+        }, 300)
+        return () => {
+            if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current)
         }
+    }, [searchQuery])
 
-        // Filter by search query
-        if (!searchQuery) return true;
-        
-        const query = searchQuery.toLowerCase().trim();
-        // Escape special regex characters and create word boundary regex
-        const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const wordBoundaryRegex = new RegExp(`\\b${escapedQuery}\\b`, 'i');
-        
-        // Search in product name
-        if (wordBoundaryRegex.test(product.name?.toLowerCase() || '')) return true;
-        
-        // Search in SKU
-        if (wordBoundaryRegex.test(product.sku?.toLowerCase() || '')) return true;
-        
-        // Search in categories
-        if (product.categories?.some(catId => wordBoundaryRegex.test(resolveCategoryName(categoryMap, catId)?.toLowerCase() || ''))) return true;
-        if (product.category && wordBoundaryRegex.test(resolveCategoryName(categoryMap, product.category)?.toLowerCase() || '')) return true;
-        
-        // Search in tags
-        if (product.tags?.some(tag => wordBoundaryRegex.test(tag.toLowerCase() || ''))) return true;
-        
-        // Search in description
-        if (wordBoundaryRegex.test(product.description?.toLowerCase() || '')) return true;
-        
-        return false;
-    });
+    useEffect(() => {
+        if (!user) return
+        fetchStoreProducts({ page: currentPage, search: debouncedSearch, category: selectedCategory })
+    }, [user, currentPage, debouncedSearch, selectedCategory, pageSize, fetchStoreProducts])
+
+    const handleImportComplete = async () => {
+        await fetchStoreProducts()
+        dispatch(fetchProductsAction(STOREFRONT_CATALOG_FETCH))
+    }
+
+    useEffect(() => {
+        setCurrentPage(1)
+    }, [debouncedSearch, selectedCategory, pageSize])
+
+    const filteredProducts = products
+    const totalPages = Math.max(1, Math.ceil(totalProducts / pageSize))
+    const safeCurrentPage = Math.min(currentPage, totalPages)
+    const paginatedProducts = filteredProducts
+    const paginationStart = totalProducts ? ((safeCurrentPage - 1) * pageSize) + 1 : 0
+    const paginationEnd = totalProducts ? Math.min(safeCurrentPage * pageSize, totalProducts) : 0
 
     const filteredFbtProducts = products
         .filter((p) => String(p._id) !== String(fbtTargetProduct?._id || ''))
@@ -369,18 +369,10 @@ export default function StoreManageProducts() {
             )
         })
 
-    const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize))
-    const safeCurrentPage = Math.min(currentPage, totalPages)
-    const paginatedProducts = useMemo(() => {
-        const startIndex = (safeCurrentPage - 1) * pageSize
-        return filteredProducts.slice(startIndex, startIndex + pageSize)
-    }, [filteredProducts, pageSize, safeCurrentPage])
     const productNameById = useMemo(
         () => Object.fromEntries(products.map((product) => [String(product._id), product.name || 'Product'])),
         [products]
     )
-    const paginationStart = filteredProducts.length ? ((safeCurrentPage - 1) * pageSize) + 1 : 0
-    const paginationEnd = filteredProducts.length ? Math.min(safeCurrentPage * pageSize, filteredProducts.length) : 0
 
     useEffect(() => {
         if (currentPage !== safeCurrentPage) {
@@ -416,76 +408,6 @@ export default function StoreManageProducts() {
 
             return [...new Set([...prev, ...visibleIds])]
         })
-    }
-
-    const importProductsFromFile = async () => {
-        const activeImportFile = productImportFile || productImportInputRef.current?.files?.[0] || null
-
-        if (!activeImportFile) {
-            toast.error('Choose a CSV or Excel file first')
-            return
-        }
-
-        importControlRef.current = { cancelled: false, abortController: null }
-        setStoppingImport(false)
-        setImportProgress(null)
-
-        try {
-            setImportingProducts(true)
-            const data = await importProductSpreadsheetFile(activeImportFile, {
-                getToken,
-                onProgress: setImportProgress,
-                shouldCancel: () => importControlRef.current.cancelled,
-                registerAbortController: (controller) => {
-                    importControlRef.current.abortController = controller
-                },
-            })
-
-            if (data?.summary?.created > 0 || data?.summary?.updated > 0) {
-                toast.success(data?.message || 'Products imported successfully')
-            } else if (data?.summary?.skipped === data?.summary?.totalRows) {
-                toast((data?.message || 'Import finished, but all rows were skipped'), { icon: '⚠️' })
-            } else {
-                toast(data?.message || 'Import finished', { icon: 'ℹ️' })
-            }
-            setProductImportFile(null)
-            if (productImportInputRef.current) {
-                productImportInputRef.current.value = ''
-            }
-            await fetchStoreProducts()
-            dispatch(fetchProductsAction(STOREFRONT_CATALOG_FETCH))
-        } catch (error) {
-            if (error instanceof ImportCancelledError) {
-                const partial = error.partialResult
-                setImportProgress((current) => ({
-                    ...(current || {}),
-                    phase: 'cancelled',
-                    message: partial?.summary
-                        ? `Stopped after ${partial.summary.created || 0} created, ${partial.summary.updated || 0} updated`
-                        : 'Import stopped before any products were saved',
-                }))
-                toast(partial?.summary
-                    ? `Import stopped (${partial.summary.created || 0} created, ${partial.summary.updated || 0} updated)`
-                    : 'Import stopped', { icon: '⏹️' })
-                if (partial?.summary) {
-                    await fetchStoreProducts()
-                    dispatch(fetchProductsAction(STOREFRONT_CATALOG_FETCH))
-                }
-            } else {
-                toast.error(error?.response?.data?.error || error.message || 'Failed to import products')
-            }
-        } finally {
-            setImportingProducts(false)
-            setStoppingImport(false)
-            importControlRef.current.abortController = null
-        }
-    }
-
-    const stopProductImport = () => {
-        setStoppingImport(true)
-        importControlRef.current.cancelled = true
-        importControlRef.current.abortController?.abort()
-        setImportProgress((current) => (current ? { ...current, phase: 'cancelled', message: 'Stopping import...' } : current))
     }
 
     const exportProductsToCsv = () => {
@@ -702,7 +624,7 @@ export default function StoreManageProducts() {
                     />
                     {searchQuery && (
                         <p className="text-sm text-slate-600 mt-2">
-                            Found {filteredProducts.length} product{filteredProducts.length !== 1 ? 's' : ''}
+                            Found {totalProducts} product{totalProducts !== 1 ? 's' : ''}
                         </p>
                     )}
                 </div>
@@ -727,21 +649,6 @@ export default function StoreManageProducts() {
                         <option key={size} value={size}>{size} / page</option>
                     ))}
                 </select>
-                <input
-                    ref={productImportInputRef}
-                    type="file"
-                    accept=".csv,.xlsx,.xls"
-                    onChange={(e) => setProductImportFile(e.target.files?.[0] || null)}
-                    className="px-3 py-2 text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:font-medium file:text-slate-700 hover:file:bg-slate-200"
-                />
-                <button
-                    type="button"
-                    onClick={importProductsFromFile}
-                    disabled={importingProducts}
-                    className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 transition disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                    {importingProducts ? 'Importing...' : 'Import File'}
-                </button>
                 <button
                     type="button"
                     onClick={exportProductsToCsv}
@@ -757,30 +664,9 @@ export default function StoreManageProducts() {
                 >
                     {aiAutofillRunning ? 'AI Auto Fill...' : 'AI Auto Fill Queue'}
                 </button>
-                <Link
-                    href="/store/bulk-import"
-                    className="px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-slate-700 hover:bg-slate-50 transition"
-                >
-                    Bulk Import Page
-                </Link>
             </div>
 
-            {(importingProducts || importProgress) && (
-                <div className="mb-4">
-                    <ProductImportProgressPanel
-                        progress={importProgress || {
-                            phase: 'parsing',
-                            message: 'Starting import...',
-                            productsProcessed: 0,
-                            productTotal: 0,
-                            percent: 0,
-                        }}
-                        onStop={importingProducts ? stopProductImport : null}
-                        stopping={stoppingImport}
-                        onDismiss={() => setImportProgress(null)}
-                    />
-                </div>
-            )}
+            <ProductBulkImportPanel onImportComplete={handleImportComplete} embedded />
 
             {aiAutofillProgress && (
                 <div className="mb-4 w-full rounded-lg border border-violet-200 bg-violet-50 px-4 py-3">
@@ -1029,7 +915,7 @@ export default function StoreManageProducts() {
 
             <div className="mt-4 flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm text-slate-600">
-                    Showing {paginationStart}-{paginationEnd} of {filteredProducts.length} product{filteredProducts.length !== 1 ? 's' : ''}
+                    Showing {paginationStart}-{paginationEnd} of {totalProducts} product{totalProducts !== 1 ? 's' : ''}
                 </p>
 
                 <div className="flex items-center gap-2">

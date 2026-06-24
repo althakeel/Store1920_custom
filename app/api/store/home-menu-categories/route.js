@@ -2,9 +2,11 @@ import dbConnect from '@/lib/mongodb';
 import HomeMenuCategorySettings from '@/models/HomeMenuCategorySettings';
 import { NextResponse } from 'next/server';
 import { getAuth } from '@/lib/firebase-admin';
+import { getCachedData, setCachedData } from '@/lib/cache';
 
-// Increase max duration and request size for image-heavy category data
 export const maxDuration = 60;
+const CACHE_KEY = 'public:home-menu-categories:v1';
+const CACHE_TTL = 180;
 
 function parseAuthHeader(req) {
   const auth = req.headers.get('authorization') || req.headers.get('Authorization');
@@ -15,16 +17,34 @@ function parseAuthHeader(req) {
 
 export async function GET(req) {
   try {
+    const cached = getCachedData(CACHE_KEY);
+    if (cached) {
+      return NextResponse.json(cached, {
+        status: 200,
+        headers: {
+          'Cache-Control': 'public, s-maxage=180, stale-while-revalidate=600',
+          'X-Cache': 'HIT',
+        },
+      });
+    }
+
     await dbConnect();
 
-    // Simply return the most recently saved configuration
-    // No authentication required for reading public home menu categories
     const settings = await HomeMenuCategorySettings.findOne({}).sort({ updatedAt: -1 }).lean();
-
-    return NextResponse.json({
+    const payload = {
       count: settings?.count || 6,
       items: settings?.items || [],
-    }, { status: 200 });
+    };
+
+    setCachedData(CACHE_KEY, payload, CACHE_TTL);
+
+    return NextResponse.json(payload, {
+      status: 200,
+      headers: {
+        'Cache-Control': 'public, s-maxage=180, stale-while-revalidate=600',
+        'X-Cache': 'MISS',
+      },
+    });
   } catch (error) {
     console.error('Error fetching home menu categories:', error);
     return NextResponse.json(

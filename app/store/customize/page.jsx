@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import ExploreInterestsCustomizeCard from '@/components/store/ExploreInterestsCustomizeCard'
 import {
   ArrowRight,
   LayoutTemplate,
@@ -89,6 +90,12 @@ const designPages = [
 
 const selectionPages = [
   {
+    title: 'Recommended Products',
+    description: 'Manually choose which products show in the Recommended tab under Explore your interests.',
+    href: '/store/explore-interests',
+    icon: Compass,
+  },
+  {
     title: 'Featured Sections',
     description: 'Select featured collections and section content.',
     href: '/store/category-slider',
@@ -105,12 +112,6 @@ const selectionPages = [
     description: 'Edit the Top Deals title and configure its source rules from the home sections editor.',
     href: '/store/customize/top-deals',
     icon: Sparkles,
-  },
-  {
-    title: 'Explore Interests',
-    description: 'Enable the section and manually choose recommended products.',
-    href: '/store/explore-interests',
-    icon: Compass,
   },
 ]
 
@@ -167,6 +168,8 @@ export default function CustomizePage() {
       </div>
 
       <div className="space-y-6 px-4 py-6 sm:space-y-8 sm:px-6 lg:px-8 lg:py-8">
+        <ExploreInterestsCustomizeCard />
+
         <Section
           title="Design Pages"
           description="These pages control the appearance, layout, and section behavior of your storefront."

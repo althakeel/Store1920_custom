@@ -7,7 +7,6 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/lib/useAuth';
-import { clearDashboardCache } from '@/lib/storeDashboardCache';
 
 const StoreDashboardCharts = dynamic(() => import('@/components/store/StoreDashboardCharts'), {
   ssr: false,
@@ -107,10 +106,10 @@ export default function Dashboard() {
   useEffect(() => {
     if (authLoading || !user) return;
 
-    clearDashboardCache();
     fetchDashboard();
 
     const interval = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
       fetchDashboard({ silent: true });
     }, DASHBOARD_REFRESH_MS);
 

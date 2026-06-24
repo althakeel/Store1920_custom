@@ -9,11 +9,13 @@ import axios from 'axios'
 import { useDispatch, useSelector } from 'react-redux'
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket'
 import { useStorefrontI18n } from '@/lib/useStorefrontI18n'
-import { addToCart, deleteItemFromCart, fetchCart, removeFromCart, uploadCart } from '@/lib/features/cart/cartSlice'
+import { deleteItemFromCart, fetchCart, uploadCart } from '@/lib/features/cart/cartSlice'
 import { useAuth } from '@/lib/useAuth'
 import { getCartEntryProductId, getCartEntryQuantity, isFreeGiftEntry } from '@/lib/freeGiftUtils'
 import { pushGtmEcommerceEvent, toGtmItem } from '@/lib/pushGtmEcommerceEvent'
 import { GTM_EVENTS, gtmDedupeKey } from '@/lib/gtmEvents'
+import { resolveCartLinePricing } from '@/lib/bulkBundleCart'
+import { decrementCartItem, incrementCartItem } from '@/lib/bundleCartActions'
 
 const getQty = (entry) => {
   if (typeof entry === 'number') return entry
@@ -60,22 +62,29 @@ export default function CartQuickSidebar() {
       if (!product) continue
 
       const isFreeGift = isFreeGiftEntry(entry)
-      const unitPrice = isFreeGift ? 0 : Number(entry?.price ?? product?.price ?? 0)
-      const convertedUnitPrice = convertPrice(unitPrice)
+      const pricing = resolveCartLinePricing(product, entry, qty)
+      const convertedUnitPrice = convertPrice(pricing.unitPrice)
+      const convertedLineTotal = convertPrice(pricing.lineTotal)
       rows.push({
         productId: cartKey,
         actualProductId: productId,
-        qty,
+        qty: pricing.displayQuantity ?? qty,
         name: product.name || 'Product',
         image: getImageSrc(product),
         convertedUnitPrice,
+        convertedLineTotal,
         isFreeGift,
+        product,
+        entry,
       })
     }
     return rows
   }, [cartItems, productMap, convertPrice])
 
-  const convertedSubtotal = useMemo(() => convertPrice(Number(total || 0)), [total, convertPrice])
+  const convertedSubtotal = useMemo(
+    () => convertPrice(cartRows.reduce((sum, row) => sum + Number(row.convertedLineTotal || 0), 0)),
+    [cartRows, convertPrice],
+  )
 
   const shouldHideOnPage =
     pathname === '/cart' ||
@@ -92,21 +101,25 @@ export default function CartQuickSidebar() {
   }
 
   const handleIncrease = async (productId) => {
-    dispatch(addToCart({ productId: String(productId) }))
+    const id = String(productId)
+    const entry = cartItems?.[id]
+    const product = cartRows.find((row) => String(row.productId) === id)?.product
+    incrementCartItem(dispatch, { productId: id, entry, product })
     await syncCartIfNeeded()
   }
 
   const handleDecrease = async (productId) => {
     const id = String(productId)
-    const currentEntry = cartItems?.[id]
-    const currentQty = getQty(currentEntry)
+    const entry = cartItems?.[id]
+    const product = cartRows.find((row) => String(row.productId) === id)?.product
+    const currentQty = getQty(entry)
 
-    if (currentQty <= 1) {
+    if (!product && currentQty <= 1) {
       await handleDelete(id)
       return
     }
 
-    dispatch(removeFromCart({ productId: id }))
+    decrementCartItem(dispatch, { productId: id, entry, product })
     await syncCartIfNeeded()
   }
 
@@ -116,7 +129,7 @@ export default function CartQuickSidebar() {
     if (row) {
       pushGtmEcommerceEvent(GTM_EVENTS.REMOVE_FROM_CART, {
         currency: market.currency || 'AED',
-        value: Number(row.convertedUnitPrice || 0) * Number(row.qty || 1),
+        value: Number(row.convertedLineTotal || row.convertedUnitPrice || 0),
         items: [toGtmItem({
           _id: row.actualProductId,
           name: row.name,

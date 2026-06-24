@@ -72,6 +72,7 @@ const nextConfig = {
             '@tiptap/react',
             '@tiptap/starter-kit',
             'firebase/auth',
+            'firebase/app',
             'react-redux',
         ],
     },

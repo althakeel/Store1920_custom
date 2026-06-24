@@ -1,11 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/useAuth';
 import toast from 'react-hot-toast';
 import PageSkeleton from '@/components/PageSkeleton';
 import NavbarPreview from '@/components/store/NavbarPreview';
+import {
+  filterParentCategories,
+  getCategoryDisplayName,
+  resolveStoreNavMenuItems,
+} from '@/lib/categoryNavigation';
 import {
   Eye,
   Loader2,
@@ -56,6 +61,7 @@ const defaultSettings = {
     showcaseFlyoutBorderColor: '#dbe3ee',
   },
   navMenuItems: [],
+  navMenuUseParentCategories: false,
 };
 
 const defaultNavbarBranding = {
@@ -240,6 +246,7 @@ export default function MenuManagementPage() {
         navMenuItems: Array.isArray(data?.navMenuItems) && data.navMenuItems.length
           ? data.navMenuItems
           : defaultMenuItems,
+        navMenuUseParentCategories: Boolean(data?.navMenuUseParentCategories),
       });
 
       if (brandingResponse.ok) {
@@ -294,6 +301,21 @@ export default function MenuManagementPage() {
       active = false;
     };
   }, []);
+
+  const parentCategoryPreview = useMemo(
+    () => filterParentCategories(categoryOptions),
+    [categoryOptions],
+  );
+
+  const previewMenuItems = useMemo(() => {
+    return resolveStoreNavMenuItems(
+      {
+        navMenuUseParentCategories: form.navMenuUseParentCategories,
+        navMenuItems: form.navMenuItems,
+      },
+      categoryOptions,
+    );
+  }, [form.navMenuUseParentCategories, form.navMenuItems, categoryOptions]);
 
   const saveSettings = async (payload, successMessage = 'Navigation menu saved') => {
     const token = await getToken();
@@ -648,6 +670,7 @@ export default function MenuManagementPage() {
     try {
       await saveSettings({
         navMenuItems: form.navMenuItems,
+        navMenuUseParentCategories: form.navMenuUseParentCategories,
       }, 'Menu saved');
     } catch (error) {
       toast.error(error?.message || 'Failed to save menu');
@@ -733,7 +756,9 @@ export default function MenuManagementPage() {
                 logoWidth={navbarBranding.logoWidth}
                 logoHeight={navbarBranding.logoHeight}
                 navMenuEnabled={form.navMenuEnabled}
-                navMenuItems={form.navMenuItems}
+                navMenuItems={previewMenuItems}
+                navMenuUseParentCategories={form.navMenuUseParentCategories}
+                categoryOptions={categoryOptions}
                 navActionsVisibility={form.navActionsVisibility}
                 userName={user?.displayName || user?.email?.split('@')[0] || 'store1920'}
                 searchPlaceholder="Wireless Headphones"
@@ -898,7 +923,9 @@ export default function MenuManagementPage() {
               logoWidth={navbarBranding.logoWidth}
               logoHeight={navbarBranding.logoHeight}
               navMenuEnabled={form.navMenuEnabled}
-              navMenuItems={form.navMenuItems}
+              navMenuItems={previewMenuItems}
+              navMenuUseParentCategories={form.navMenuUseParentCategories}
+              categoryOptions={categoryOptions}
               navActionsVisibility={form.navActionsVisibility}
               userName={user?.displayName || user?.email?.split('@')[0] || 'store1920'}
               searchPlaceholder="Coffee Maker"
@@ -906,6 +933,57 @@ export default function MenuManagementPage() {
           </div>
         </div>
 
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Use parent categories</p>
+              <p className="text-xs text-slate-500">
+                Automatically build the navbar from top-level store categories. Manual navigation items are hidden.
+              </p>
+            </div>
+            <label className="relative inline-flex cursor-pointer items-center">
+              <input
+                type="checkbox"
+                checked={form.navMenuUseParentCategories}
+                onChange={(e) => setForm((prev) => ({
+                  ...prev,
+                  navMenuUseParentCategories: e.target.checked,
+                }))}
+                className="peer sr-only"
+              />
+              <span className="h-6 w-11 rounded-full bg-slate-300 transition peer-checked:bg-indigo-600 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:after:translate-x-5" />
+            </label>
+          </div>
+
+          {form.navMenuUseParentCategories ? (
+            <div className="mt-4 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-indigo-800">
+                {parentCategoryPreview.length} parent categories with subcategories
+              </p>
+              <p className="mt-1 text-xs text-indigo-900/80">
+                Only top-level categories that have child categories are shown in the navbar.
+              </p>
+              {parentCategoryPreview.length > 0 ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {parentCategoryPreview.map((category) => (
+                    <span
+                      key={category._id || category.slug || category.name}
+                      className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-700 ring-1 ring-indigo-100"
+                    >
+                      {getCategoryDisplayName(category)}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-sm text-indigo-900">
+                  No parent categories found. Add categories under Store → Categories first.
+                </p>
+              )}
+            </div>
+          ) : null}
+        </div>
+
+      {!form.navMenuUseParentCategories ? (
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
         <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
           <div>
@@ -1457,6 +1535,7 @@ export default function MenuManagementPage() {
         </div>
         </div>
       </div>
+      ) : null}
       </div>
       ) : null}
       </div>

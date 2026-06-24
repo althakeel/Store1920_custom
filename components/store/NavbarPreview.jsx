@@ -1,7 +1,9 @@
 'use client';
 
+import { useMemo } from 'react';
 import { Heart, Search, ShoppingCart, Package, User } from 'lucide-react';
 import ShipXpressBadge from '@/components/ShipXpressBadge';
+import { buildParentCategoryNavMenuItems } from '@/lib/categoryNavigation';
 
 const DEFAULT_BG = '#9f4b1d';
 
@@ -12,12 +14,19 @@ export default function NavbarPreview({
   logoHeight = 50,
   navMenuEnabled = true,
   navMenuItems = [],
+  navMenuUseParentCategories = false,
+  categoryOptions = [],
   navActionsVisibility = { orders: true, wishlist: true, cart: true },
   userName = 'store1920',
   searchPlaceholder = 'Search products...',
 }) {
   const bg = backgroundColor || DEFAULT_BG;
-  const menuItems = (navMenuItems || []).filter((item) => String(item?.name || '').trim());
+  const menuItems = useMemo(() => {
+    const items = navMenuUseParentCategories
+      ? buildParentCategoryNavMenuItems(categoryOptions)
+      : (navMenuItems || []);
+    return items.filter((item) => String(item?.name || '').trim());
+  }, [navMenuUseParentCategories, categoryOptions, navMenuItems]);
   const logoW = Math.min(Number(logoWidth) || 50, 250);
   const logoH = Math.min(Number(logoHeight) || 50, 50);
 

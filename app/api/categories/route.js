@@ -5,7 +5,7 @@ import { localizeRecord, resolveStorefrontLanguage } from '@/lib/storefrontLangu
 import { getCachedData, setCachedData } from '@/lib/cache';
 import { sanitizeCategoryFields, sanitizeCategoryTree } from '@/lib/displayText';
 
-const CACHE_KEY = 'public:categories:tree:v3';
+const CACHE_KEY = 'public:categories:tree:v5';
 
 // GET - Fetch all categories (public endpoint)
 export async function GET(req) {
@@ -25,13 +25,40 @@ export async function GET(req) {
         await connectDB();
 
         const allCategories = await Category.find({})
-            .select('name nameAr slug image parentId description descriptionAr')
+            .select('name nameAr slug image parentId description descriptionAr legacySourceId')
             .sort({ name: 1 })
             .lean();
 
+        const categoryIdAliases = new Map();
+        for (const category of allCategories) {
+            const categoryId = String(category._id || '').trim();
+            if (!categoryId) continue;
+            categoryIdAliases.set(categoryId, categoryId);
+
+            const legacySourceId = String(category.legacySourceId || '').trim();
+            if (legacySourceId) {
+                categoryIdAliases.set(legacySourceId, categoryId);
+                const legacyTermMatch = legacySourceId.match(/^sql:term:(\d+)$/i);
+                if (legacyTermMatch) {
+                    categoryIdAliases.set(legacyTermMatch[1], categoryId);
+                }
+            }
+
+            const slug = String(category.slug || '').trim().toLowerCase();
+            if (slug) categoryIdAliases.set(slug, categoryId);
+        }
+
+        const resolveCategoryParentId = (rawParentId) => {
+            const parentKey = String(rawParentId || '').trim();
+            if (!parentKey) return '';
+            return categoryIdAliases.get(parentKey)
+                || categoryIdAliases.get(parentKey.toLowerCase())
+                || parentKey;
+        };
+
         const childrenByParent = new Map();
         for (const category of allCategories) {
-            const parentId = category.parentId ? String(category.parentId) : '';
+            const parentId = resolveCategoryParentId(category.parentId);
             if (!parentId) continue;
             if (!childrenByParent.has(parentId)) {
                 childrenByParent.set(parentId, []);
@@ -46,6 +73,7 @@ export async function GET(req) {
 
             return localizeRecord(sanitizeCategoryFields({
                 ...category,
+                parentId: resolveCategoryParentId(category.parentId) || null,
                 children,
             }), language, ['name', 'description']);
         });

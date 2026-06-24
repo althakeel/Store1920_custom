@@ -32,6 +32,10 @@ const NavbarMenuSettingsSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    navMenuUseParentCategories: {
+      type: Boolean,
+      default: false,
+    },
     navActionsVisibility: {
       store: { type: Boolean, default: true },
       orders: { type: Boolean, default: true },
@@ -173,6 +177,15 @@ if (!NavbarMenuSettingsModel.schema.path('navMenuStyle')) {
       dropdownTextColor: { type: String, default: '#334155', trim: true },
       dropdownMutedTextColor: { type: String, default: '#64748b', trim: true },
       dropdownBorderColor: { type: String, default: '#e2e8f0', trim: true },
+    },
+  });
+}
+
+if (!NavbarMenuSettingsModel.schema.path('navMenuUseParentCategories')) {
+  NavbarMenuSettingsModel.schema.add({
+    navMenuUseParentCategories: {
+      type: Boolean,
+      default: false,
     },
   });
 }

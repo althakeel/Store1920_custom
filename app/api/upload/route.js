@@ -1,6 +1,7 @@
 import { getAuth } from '@/lib/firebase-admin';
 import { uploadBannerToImageKit } from '@/lib/bannerStorage';
 import { uploadToS3 } from '@/lib/storage';
+import { optimizeUploadBuffer } from '@/lib/optimizeUploadBuffer';
 
 export const config = {
   api: {
@@ -43,12 +44,20 @@ export async function POST(request) {
 
     for (const file of files) {
       const buffer = Buffer.from(await file.arrayBuffer());
+      const optimized = await optimizeUploadBuffer(buffer, {
+        contentType: file.type,
+        fileName: file.name,
+      });
+      const uploadBuffer = optimized.buffer;
       const filePrefix = isShowcaseBannerUpload ? 'showcase' : 'upload';
-      const fileName = `${filePrefix}_${Date.now()}_${Math.random().toString(36).substring(7)}_${file.name}`;
+      const uploadName = optimized.optimized && String(file.name || '').match(/\.(jpe?g|png|webp|avif|heic|heif|tiff?|bmp)$/i)
+        ? String(file.name || 'upload').replace(/\.[^.]+$/, '.jpg')
+        : file.name;
+      const fileName = `${filePrefix}_${Date.now()}_${Math.random().toString(36).substring(7)}_${uploadName}`;
 
       if (isShowcaseBannerUpload) {
         const response = await uploadBannerToImageKit({
-          buffer,
+          buffer: uploadBuffer,
           fileName,
           folder: 'store/showcase-banners',
         });
@@ -57,10 +66,10 @@ export async function POST(request) {
       }
 
       const result = await uploadToS3({
-        buffer,
+        buffer: uploadBuffer,
         fileName,
         folder: 'uploads',
-        contentType: file.type || undefined,
+        contentType: optimized.contentType || file.type || undefined,
       });
       uploadedUrls.push(result.url);
     }

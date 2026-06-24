@@ -24,7 +24,11 @@ const KNOWN_BADGES = [
   'Free Shipping',
 ];
 
-import { ensureS3Configured, getS3PublicBaseUrl, isHostedMediaUrl, uploadToS3 } from '@/lib/storage';
+import { ensureS3Configured, getS3PublicBaseUrl, isHostedMediaUrl, mirrorRemoteImageToS3 } from '@/lib/storage';
+import {
+  MIN_PRODUCT_IMAGE_WIDTH,
+  normalizeRemoteProductImageUrl,
+} from '@/lib/productImageSource';
 
 const S3_PUBLIC_URL = getS3PublicBaseUrl();
 
@@ -172,7 +176,10 @@ const shouldMirrorImageUrl = (imageUrl = '') => {
   }
   if (!S3_PUBLIC_URL) return true;
 
-  return !isHostedMediaUrl(imageUrl);
+  if (!isHostedMediaUrl(imageUrl)) return true;
+
+  // Re-mirror WooCommerce / WordPress URLs even if another hosted URL slipped through.
+  return /wp-content\/uploads|woocommerce/i.test(String(imageUrl));
 };
 
 const getFileExtension = (imageUrl = '', contentType = '') => {
@@ -211,24 +218,13 @@ const sanitizeFilePart = (value = '') => {
   return sanitized || 'image';
 };
 
-const mirrorRemoteImageToS3 = async (imageUrl, { storeId, slug, imageIndex }) => {
-  const response = await axios.get(imageUrl, {
-    responseType: 'arraybuffer',
-    timeout: 30000,
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-    },
-    maxRedirects: 5,
-  });
-
-  const extension = getFileExtension(imageUrl, response.headers['content-type']);
-  const fileName = `${sanitizeFilePart(slug)}-${imageIndex + 1}.${extension}`;
-  const upload = await uploadToS3({
-    buffer: Buffer.from(response.data),
+const mirrorRemoteImageToS3ForImport = async (imageUrl, { storeId, slug, imageIndex }) => {
+  const normalizedUrl = normalizeRemoteProductImageUrl(imageUrl);
+  const fileName = `${sanitizeFilePart(slug)}-${imageIndex + 1}-${Date.now()}`;
+  const upload = await mirrorRemoteImageToS3(normalizedUrl, {
     fileName,
     folder: `products/imported/${sanitizeFilePart(storeId || 'store')}`,
-    contentType: response.headers['content-type'] || undefined,
+    minWidth: MIN_PRODUCT_IMAGE_WIDTH,
   });
 
   return upload.url;
@@ -242,7 +238,7 @@ const resolveImportedImages = async (imageUrls = [], { storeId, slug }) => {
         return { originalUrl: imageUrl, finalUrl: imageUrl, mirrored: false };
       }
 
-      const finalUrl = await mirrorRemoteImageToS3(imageUrl, { storeId, slug, imageIndex });
+      const finalUrl = await mirrorRemoteImageToS3ForImport(imageUrl, { storeId, slug, imageIndex });
       return { originalUrl: imageUrl, finalUrl, mirrored: true };
     })
   );

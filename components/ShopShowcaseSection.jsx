@@ -2,13 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import styles from './ShopShowcaseSection.module.css'
+import { resolveStoreNavMenuItems } from '@/lib/categoryNavigation'
 import axios from 'axios'
 import Link from 'next/link'
 import bannerStyles from './ShopShowcaseSectionBanners.module.css'
 import productGridStyles from './ShopShowcaseSectionProducts.module.css'
 import ShowcaseProductBanners from './ShowcaseProductBanners'
 import { HOME_SECTION_CLASS } from '@/lib/storefrontCarousel'
-import { TABBY_LOGO_SRC } from '@/lib/bnplAssets'
+import { cleanDisplayText } from '@/lib/displayText'
 import {
   Baby,
   Bike,
@@ -111,8 +112,6 @@ function getOriginalImageUrl(value) {
   return raw.replace(/\/tr:[^/]+\//i, '/')
 }
 
-const DEFAULT_FLYOUT_IMAGE = TABBY_LOGO_SRC
-
 function ShopShowcaseSkeleton({ navbarBg = DEFAULT_NAVBAR_BG }) {
   return (
     <section className={`${HOME_SECTION_CLASS} max-w-[1400px] mx-auto px-0 sm:px-6`} aria-label="Loading shop showcase">
@@ -193,6 +192,10 @@ export default function ShopShowcaseSection({
   const [storeMenuItems, setStoreMenuItems] = useState(
     Array.isArray(initialStoreSettings?.navMenuItems) ? initialStoreSettings.navMenuItems : []
   );
+  const [navMenuUseParentCategories, setNavMenuUseParentCategories] = useState(
+    Boolean(initialStoreSettings?.navMenuUseParentCategories),
+  );
+  const [catalogCategories, setCatalogCategories] = useState([]);
   const [menuStyle, setMenuStyle] = useState({
     showcaseFlyoutBackgroundColor: '#ffffff',
     showcaseFlyoutTitleColor: '#0f172a',
@@ -201,7 +204,11 @@ export default function ShopShowcaseSection({
     showcaseFlyoutBorderColor: '#dbe3ee',
   })
   const [hoveredMenuIndex, setHoveredMenuIndex] = useState(null)
+  const [flyoutPosition, setFlyoutPosition] = useState({ top: 0, maxHeight: 360 })
   const closeFlyoutTimerRef = useRef(null)
+  const menuContainerRef = useRef(null)
+  const menuScrollRef = useRef(null)
+  const menuItemRefs = useRef([])
   const { market, convertPrice } = useStorefrontMarket()
   const navbarBg = useNavbarBackgroundColor()
 
@@ -216,14 +223,55 @@ export default function ShopShowcaseSection({
     clearFlyoutCloseTimer()
     closeFlyoutTimerRef.current = window.setTimeout(() => {
       setHoveredMenuIndex(null)
-    }, 180)
+    }, 320)
+  }
+
+  const updateFlyoutPosition = (index) => {
+    const row = menuItemRefs.current[index]
+    const container = menuContainerRef.current
+    if (!row || !container) {
+      setFlyoutPosition({ top: 0, maxHeight: 360 })
+      return
+    }
+
+    const containerRect = container.getBoundingClientRect()
+    const rowRect = row.getBoundingClientRect()
+    const containerHeight = container.offsetHeight || containerRect.height
+    const preferredHeight = 360
+    const minVisibleHeight = 220
+
+    let top = Math.max(0, rowRect.top - containerRect.top)
+    let maxHeight = Math.min(preferredHeight, containerHeight - top)
+
+    if (maxHeight < minVisibleHeight) {
+      top = Math.max(0, containerHeight - preferredHeight)
+      maxHeight = Math.min(preferredHeight, containerHeight - top)
+    }
+
+    setFlyoutPosition({ top, maxHeight })
+  }
+
+  const handleMenuItemHover = (index) => {
+    clearFlyoutCloseTimer()
+    setHoveredMenuIndex(index)
+    window.requestAnimationFrame(() => updateFlyoutPosition(index))
   }
 
   useEffect(() => {
     if (skipInitialFetch && initialShowcaseData) {
-      const advancedItems = Array.isArray(initialStoreSettings?.navMenuItems) ? initialStoreSettings.navMenuItems : [];
+      const advancedItems = resolveStoreNavMenuItems(
+        {
+          navMenuUseParentCategories: Boolean(initialStoreSettings?.navMenuUseParentCategories),
+          navMenuItems: initialStoreSettings?.navMenuItems,
+        },
+        Array.isArray(initialShowcaseData?.categories) ? initialShowcaseData.categories : [],
+      );
       if (advancedItems.length) {
         setStoreMenuItems(advancedItems);
+      }
+      setNavMenuUseParentCategories(Boolean(initialStoreSettings?.navMenuUseParentCategories));
+      if (Array.isArray(initialShowcaseData?.categories)) {
+        setCatalogCategories(initialShowcaseData.categories);
       }
       const resolvedMenuStyle = initialStoreSettings?.navMenuStyle && typeof initialStoreSettings.navMenuStyle === 'object'
         ? initialStoreSettings.navMenuStyle
@@ -237,31 +285,42 @@ export default function ShopShowcaseSection({
         showcaseFlyoutBorderColor: String(resolvedMenuStyle.showcaseFlyoutBorderColor || prev.showcaseFlyoutBorderColor),
       }));
       setLoading(false);
-      return undefined;
     }
 
     const load = async () => {
       try {
-        const [showcaseRes, settingsRes, navbarRes] = await Promise.all([
+        const [showcaseRes, settingsRes, navbarRes, categoriesRes] = await Promise.all([
           initialShowcaseData
             ? Promise.resolve({ data: initialShowcaseData })
             : axios.get('/api/public/shop-showcase'),
           axios.get('/api/store/settings').catch(() => ({ data: {} })),
           axios.get('/api/store/navbar-menu').catch(() => ({ data: {} })),
+          axios.get('/api/categories').catch(() => ({ data: { categories: [] } })),
         ])
 
         const showcaseData = showcaseRes.data || { config: null, sectionProducts: [], products: [], categories: [] }
         setData(showcaseData)
+
+        const parsedCategories = Array.isArray(categoriesRes.data?.categories)
+          ? categoriesRes.data.categories
+          : [];
+        setCatalogCategories(parsedCategories);
 
         if (!showcaseData.config || showcaseData.config.enabled === false) {
           setStoreMenuItems([])
           return
         }
 
-        const advancedItems = Array.isArray(settingsRes.data?.navMenuItems) ? settingsRes.data.navMenuItems : []
-        const resolvedMenuStyle = settingsRes.data?.navMenuStyle && typeof settingsRes.data.navMenuStyle === 'object'
-          ? settingsRes.data.navMenuStyle
-          : {}
+        const useParentCategories = Boolean(settingsRes.data?.navMenuUseParentCategories);
+        setNavMenuUseParentCategories(useParentCategories);
+
+        const advancedItems = resolveStoreNavMenuItems(
+          {
+            navMenuUseParentCategories: useParentCategories,
+            navMenuItems: settingsRes.data?.navMenuItems,
+          },
+          parsedCategories,
+        );
         const legacyItems = Array.isArray(navbarRes.data?.items)
           ? navbarRes.data.items.map((item) => ({
               name: String(item?.name || item?.label || '').trim(),
@@ -273,7 +332,14 @@ export default function ShopShowcaseSection({
             }))
           : []
 
-        setStoreMenuItems(advancedItems.length ? advancedItems : legacyItems)
+        setStoreMenuItems(
+          useParentCategories
+            ? advancedItems
+            : (advancedItems.length ? advancedItems : legacyItems),
+        )
+        const resolvedMenuStyle = settingsRes.data?.navMenuStyle && typeof settingsRes.data.navMenuStyle === 'object'
+          ? settingsRes.data.navMenuStyle
+          : {}
         setMenuStyle((prev) => ({
           ...prev,
           showcaseFlyoutBackgroundColor: String(resolvedMenuStyle.showcaseFlyoutBackgroundColor || prev.showcaseFlyoutBackgroundColor),
@@ -289,7 +355,18 @@ export default function ShopShowcaseSection({
         setLoading(false)
       }
     }
-    load()
+    const handleMenuUpdated = () => {
+      load()
+    }
+    window.addEventListener('navMenuUpdated', handleMenuUpdated)
+
+    if (!(skipInitialFetch && initialShowcaseData)) {
+      load()
+    }
+
+    return () => {
+      window.removeEventListener('navMenuUpdated', handleMenuUpdated)
+    }
   }, [initialShowcaseData, initialStoreSettings, skipInitialFetch])
 
   const config = data.config
@@ -300,7 +377,7 @@ export default function ShopShowcaseSection({
       .filter((category) => String(category?.name || '').trim())
       .slice(0, 12)
       .map((category) => ({
-        title: String(category.name || '').trim(),
+        title: cleanDisplayText(String(category.name || '').trim()),
         href: getCategoryHref(category),
         iconImage: String(category?.icon || category?.image || category?.iconUrl || '').trim(),
         icon: getCategoryIconByName(category?.name),
@@ -310,7 +387,7 @@ export default function ShopShowcaseSection({
   const storeNavigationItems = useMemo(() => {
     const navItems = (Array.isArray(storeMenuItems) ? storeMenuItems : [])
       .map((item) => ({
-        title: String(item?.name || item?.label || '').trim(),
+        title: cleanDisplayText(String(item?.name || item?.label || '').trim()),
         href: String(item?.link || item?.url || '#').trim() || '#',
         hasDropdown: Boolean(item?.hasDropdown),
         dropdownLinks: Array.isArray(item?.megaMenu?.links) ? item.megaMenu.links : [],
@@ -321,8 +398,10 @@ export default function ShopShowcaseSection({
       }))
       .filter((item) => item.title)
 
+    if (navMenuUseParentCategories) return navItems
+
     return navItems.length ? navItems : categoryMenuItems
-  }, [categoryMenuItems, storeMenuItems])
+  }, [categoryMenuItems, navMenuUseParentCategories, storeMenuItems])
 
   const bannerBlocks = useMemo(() => ([
     {
@@ -368,9 +447,11 @@ export default function ShopShowcaseSection({
     const links = Array.isArray(hoveredMenuItem?.dropdownLinks) ? hoveredMenuItem.dropdownLinks : []
     return links
       .map((dropdownItem, dropdownIndex) => ({
-        title: String(
-          dropdownItem?.title || dropdownItem?.label || dropdownItem?.name || `Option ${dropdownIndex + 1}`
-        ).trim(),
+        title: cleanDisplayText(
+          String(
+            dropdownItem?.title || dropdownItem?.label || dropdownItem?.name || `Option ${dropdownIndex + 1}`,
+          ).trim(),
+        ),
         href: String(dropdownItem?.link || dropdownItem?.url || '#').trim() || '#',
       }))
       .filter((dropdownItem) => dropdownItem.title)
@@ -378,23 +459,13 @@ export default function ShopShowcaseSection({
 
   const hoveredDropdownImages = useMemo(() => {
     const images = Array.isArray(hoveredMenuItem?.dropdownImages) ? hoveredMenuItem.dropdownImages : []
-    const normalized = images
+    return images
       .map((imageItem) => ({
-        src: String(imageItem?.url || imageItem?.image || '').trim() || DEFAULT_FLYOUT_IMAGE,
-        alt: String(imageItem?.label || '').trim(),
+        src: String(imageItem?.url || imageItem?.image || imageItem?.src || '').trim(),
+        alt: cleanDisplayText(String(imageItem?.label || '').trim()),
         href: String(imageItem?.link || '#').trim() || '#',
       }))
       .filter((imageItem) => imageItem.src)
-
-    if (normalized.length) return normalized
-
-    return [
-      {
-        src: DEFAULT_FLYOUT_IMAGE,
-        alt: '',
-        href: '#',
-      },
-    ]
   }, [hoveredMenuItem])
 
   useEffect(() => {
@@ -403,18 +474,39 @@ export default function ShopShowcaseSection({
     }
   }, [])
 
+  useEffect(() => {
+    const scroll = menuScrollRef.current
+    if (!scroll || hoveredMenuIndex == null) return undefined
+
+    const handleScroll = () => updateFlyoutPosition(hoveredMenuIndex)
+    scroll.addEventListener('scroll', handleScroll, { passive: true })
+    return () => scroll.removeEventListener('scroll', handleScroll)
+  }, [hoveredMenuIndex])
+
+  useEffect(() => {
+    if (hoveredMenuIndex == null) return undefined
+
+    const handleResize = () => updateFlyoutPosition(hoveredMenuIndex)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [hoveredMenuIndex])
+
   if (loading) return <ShopShowcaseSkeleton navbarBg={navbarBg} />
   if (!config || config.enabled === false) return null
 
+  const showCategoryFlyout = Boolean(hoveredMenuItem?.hasDropdown && hoveredDropdownLinks.length)
+
   return (
     <section className={`${HOME_SECTION_CLASS} max-w-[1400px] mx-auto px-4 sm:px-6`}>
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[280px_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 gap-3 overflow-visible lg:grid-cols-[280px_minmax(0,1fr)]">
         <div
-          className="relative hidden min-h-0 lg:block"
+          ref={menuContainerRef}
+          className="relative z-30 hidden min-h-0 overflow-visible lg:block"
+          style={{ width: showCategoryFlyout ? 560 : undefined }}
           onMouseEnter={clearFlyoutCloseTimer}
           onMouseLeave={scheduleFlyoutClose}
         >
-          <aside className="absolute inset-0 flex min-h-0 flex-col overflow-hidden rounded-none border border-slate-200 bg-white shadow-sm">
+          <aside className="absolute inset-y-0 left-0 flex w-[280px] min-h-0 flex-col overflow-hidden rounded-none border border-slate-200 bg-white shadow-sm">
             <div
               className="flex items-center justify-between px-4 py-3 text-white"
               style={{ backgroundColor: navbarBg }}
@@ -431,6 +523,7 @@ export default function ShopShowcaseSection({
             </div>
 
             <div
+              ref={menuScrollRef}
               className={styles.leftMenuScroll}
               onMouseEnter={(event) => {
                 if (event.target === event.currentTarget) {
@@ -446,11 +539,11 @@ export default function ShopShowcaseSection({
                 return (
                   <div
                     key={`${menuItem.title}-${menuItem.href}-${index}`}
-                    className="border-b border-slate-200"
-                    onMouseEnter={() => {
-                      clearFlyoutCloseTimer()
-                      setHoveredMenuIndex(index)
+                    ref={(element) => {
+                      menuItemRefs.current[index] = element
                     }}
+                    className="border-b border-slate-200"
+                    onMouseEnter={() => handleMenuItemHover(index)}
                   >
                     <Link
                       href={menuItem.href}
@@ -486,92 +579,86 @@ export default function ShopShowcaseSection({
             </div>
           </aside>
 
-          {hoveredMenuItem?.hasDropdown && (hoveredDropdownLinks.length || hoveredDropdownImages.length) ? (
-            <div
-              className="absolute left-[calc(100%-1px)] top-0 z-30 w-[500px] overflow-hidden rounded-none border shadow-sm"
-              style={{
-                backgroundColor: menuStyle.showcaseFlyoutBackgroundColor,
-                borderColor: menuStyle.showcaseFlyoutBorderColor,
-              }}
-              onMouseEnter={clearFlyoutCloseTimer}
-              onMouseLeave={scheduleFlyoutClose}
-            >
+          {showCategoryFlyout ? (
+            <>
               <div
-                className="border-b px-5 py-3"
+                className="absolute z-10"
                 style={{
-                  borderColor: menuStyle.showcaseFlyoutBorderColor,
-                  background: `linear-gradient(180deg, ${menuStyle.showcaseFlyoutHoverColor} 0%, ${menuStyle.showcaseFlyoutBackgroundColor} 100%)`,
+                  left: 276,
+                  top: flyoutPosition.top,
+                  width: 8,
+                  height: flyoutPosition.maxHeight,
                 }}
+                onMouseEnter={clearFlyoutCloseTimer}
+                aria-hidden
+              />
+              <div
+                className="absolute left-[279px] z-20 flex w-[280px] flex-col overflow-hidden rounded-none border border-slate-200 shadow-sm"
+                style={{
+                  top: flyoutPosition.top,
+                  maxHeight: flyoutPosition.maxHeight,
+                  backgroundColor: menuStyle.showcaseFlyoutBackgroundColor,
+                  borderColor: menuStyle.showcaseFlyoutBorderColor,
+                }}
+                onMouseEnter={clearFlyoutCloseTimer}
               >
-                <p className="mt-0.5 text-[34px] font-semibold leading-none" style={{ color: menuStyle.showcaseFlyoutTitleColor }}>
-                  {hoveredMenuItem.title}
-                </p>
-              </div>
-
-              <div className={`grid ${hoveredDropdownImages.length ? 'grid-cols-[minmax(0,1fr)_250px]' : 'grid-cols-1'}`}>
-                <div className="min-w-0">
-                  {hoveredDropdownLinks.length ? (
-                    <div className="max-h-[320px] overflow-y-auto">
-                      {hoveredDropdownLinks.map((dropdownItem, dropdownIndex) => (
-                        <Link
-                          key={`${dropdownItem.title}-${dropdownItem.href}-${dropdownIndex}`}
-                          href={dropdownItem.href}
-                          className="group flex items-center justify-between border-b px-5 py-3 text-[18px] font-medium leading-tight transition-colors"
-                          style={{
-                            color: menuStyle.showcaseFlyoutLinkColor,
-                            borderColor: menuStyle.showcaseFlyoutBorderColor,
-                          }}
-                          onMouseEnter={(event) => {
-                            event.currentTarget.style.backgroundColor = menuStyle.showcaseFlyoutHoverColor
-                          }}
-                          onMouseLeave={(event) => {
-                            event.currentTarget.style.backgroundColor = 'transparent'
-                          }}
-                        >
-                          <span className="truncate pr-3">{dropdownItem.title}</span>
-                          <ChevronRight size={17} className="text-slate-400 transition-transform duration-200 group-hover:translate-x-0.5" />
-                        </Link>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="px-5 py-6 text-sm" style={{ color: menuStyle.showcaseFlyoutLinkColor }}>
-                      No submenu links added yet.
-                    </div>
-                  )}
-                </div>
-
-                {hoveredDropdownImages.length ? (
-                  <div
-                    className="space-y-3 border-l p-3"
-                    style={{
-                      borderColor: menuStyle.showcaseFlyoutBorderColor,
-                      backgroundColor: menuStyle.showcaseFlyoutHoverColor,
-                    }}
-                  >
-                    {hoveredDropdownImages.slice(0, 2).map((imageItem, imageIndex) => (
+                <div className={`grid min-h-0 flex-1 ${hoveredDropdownImages.length ? 'grid-cols-[minmax(0,1fr)_120px]' : 'grid-cols-1'}`}>
+                  <div className="min-h-0 min-w-0 overflow-y-auto">
+                    {hoveredDropdownLinks.map((dropdownItem, dropdownIndex) => (
                       <Link
-                        key={`${imageItem.src}-${imageIndex}`}
-                        href={imageItem.href}
-                        className="group relative block overflow-hidden rounded-xl border"
-                        style={{ borderColor: menuStyle.showcaseFlyoutBorderColor }}
+                        key={`${dropdownItem.title}-${dropdownItem.href}-${dropdownIndex}`}
+                        href={dropdownItem.href}
+                        className="group flex items-center justify-between border-b px-4 py-3 text-[13px] font-medium leading-5 transition-colors"
+                        style={{
+                          color: menuStyle.showcaseFlyoutLinkColor,
+                          borderColor: menuStyle.showcaseFlyoutBorderColor,
+                        }}
+                        onMouseEnter={(event) => {
+                          event.currentTarget.style.backgroundColor = menuStyle.showcaseFlyoutHoverColor
+                        }}
+                        onMouseLeave={(event) => {
+                          event.currentTarget.style.backgroundColor = 'transparent'
+                        }}
                       >
-                        <img
-                          src={imageItem.src}
-                          alt={imageItem.alt || hoveredMenuItem?.title || 'Featured image'}
-                          className="h-[132px] w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                          loading="lazy"
-                        />
-                        {imageItem.alt ? (
-                          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/65 to-transparent p-2">
-                            <p className="truncate text-[11px] font-semibold text-white">{imageItem.alt}</p>
-                          </div>
-                        ) : null}
+                        <span className="truncate pr-3">{dropdownItem.title}</span>
+                        <ChevronRight size={16} className="shrink-0 text-slate-400 transition-transform duration-200 group-hover:translate-x-0.5" />
                       </Link>
                     ))}
                   </div>
-                ) : null}
+
+                  {hoveredDropdownImages.length ? (
+                    <div
+                      className="space-y-2 border-l p-2"
+                      style={{
+                        borderColor: menuStyle.showcaseFlyoutBorderColor,
+                        backgroundColor: menuStyle.showcaseFlyoutHoverColor,
+                      }}
+                    >
+                      {hoveredDropdownImages.slice(0, 2).map((imageItem, imageIndex) => (
+                        <Link
+                          key={`${imageItem.src}-${imageIndex}`}
+                          href={imageItem.href}
+                          className="group relative block overflow-hidden rounded-lg border"
+                          style={{ borderColor: menuStyle.showcaseFlyoutBorderColor }}
+                        >
+                          <img
+                            src={imageItem.src}
+                            alt={imageItem.alt || hoveredMenuItem?.title || 'Featured image'}
+                            className="h-[88px] w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                            loading="lazy"
+                          />
+                          {imageItem.alt ? (
+                            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/65 to-transparent p-1.5">
+                              <p className="truncate text-[10px] font-semibold text-white">{imageItem.alt}</p>
+                            </div>
+                          ) : null}
+                        </Link>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
               </div>
-            </div>
+            </>
           ) : null}
         </div>
 

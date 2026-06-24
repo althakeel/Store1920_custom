@@ -24,6 +24,8 @@ import { TableHeader } from '@tiptap/extension-table-header'
 import { useAuth } from '@/lib/useAuth';
 import { formatStorefrontMoney } from '@/lib/storefrontMarket';
 import { getProductImageAspectRatioClass } from '@/lib/productMedia';
+import { compressImageForUpload, getUploadErrorMessage } from '@/lib/compressImageForUpload';
+import { uploadStoreImage } from '@/lib/uploadStoreImage';
 
 const toArabicPriceDisplay = (amount) => {
     const numeric = Number(amount);
@@ -257,25 +259,16 @@ function RichTextDescriptionEditor({
                         onChange={async (e) => {
                             const file = e.target.files?.[0]
                             if (!file) return
-                            if (file.size > 5 * 1024 * 1024) {
-                                toast.error('Single image must be 5MB or smaller')
-                                e.target.value = ''
-                                return
-                            }
 
                             try {
-                                const formData = new FormData()
-                                formData.append('image', file)
-
                                 const token = await getAuthTokenOrThrow()
-                                const { data } = await axios.post('/api/store/upload-image', formData, {
-                                    headers: { Authorization: `Bearer ${token}` }
-                                })
+                                const compressed = await compressImageForUpload(file)
+                                const data = await uploadStoreImage(compressed, { token })
 
                                 editor?.chain().focus().setImage({ src: data.url }).run()
                                 toast.success('Image uploaded!')
                             } catch (error) {
-                                toast.error('Failed to upload image')
+                                toast.error(getUploadErrorMessage(error))
                             }
                             e.target.value = ''
                         }}
@@ -929,8 +922,14 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
             toast.error('Please select a valid image or video file')
             return
         }
-        if (isImage && file.size > 5 * 1024 * 1024) {
-            toast.error('Single image must be 5MB or smaller')
+
+        let uploadFile = file
+        if (isImage) {
+            uploadFile = await compressImageForUpload(file)
+        }
+
+        if (isImage && uploadFile.size > 8 * 1024 * 1024) {
+            toast.error('Image is still too large after compression. Try a smaller photo.')
             return
         }
         if (isVideo && file.size > 50 * 1024 * 1024) {
@@ -938,8 +937,8 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
             return
         }
         // Create preview URL for the file
-        const previewUrl = URL.createObjectURL(file)
-        setImages(prev => ({ ...prev, [key]: { file, preview: previewUrl, type: isVideo ? 'video' : 'image' } }))
+        const previewUrl = URL.createObjectURL(uploadFile)
+        setImages(prev => ({ ...prev, [key]: { file: uploadFile, preview: previewUrl, type: isVideo ? 'video' : 'image' } }))
     }
 
     const handleImageDelete = async (key) => {
@@ -986,7 +985,13 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
 
     const compressImageForAi = async (file) => {
         const mimeType = String(file?.type || '').toLowerCase()
-        if (!mimeType.startsWith('image/') || file.size <= 1.5 * 1024 * 1024) {
+        if (!mimeType.startsWith('image/')) {
+            return file
+        }
+
+        const aiSupported = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+        const needsConversion = !aiSupported.includes(mimeType) || file.size > 1.5 * 1024 * 1024
+        if (!needsConversion) {
             return file
         }
 
@@ -1616,18 +1621,20 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 formData.append('variants', JSON.stringify(variantsToSend))
             }
 
-            Object.keys(images).forEach(key => {
+            const token = await getAuthTokenOrThrow(true)
+
+            for (const key of Object.keys(images)) {
                 const img = images[key]
-                if (img) {
-                    // If it's an object with file property (new upload), use the file
-                    // If it's a string (existing image URL), append as 'images' too
-                    if (img.file) {
-                        formData.append('images', img.file)
-                    } else if (typeof img === 'string') {
-                        formData.append('images', img)
-                    }
+                if (!img) continue
+                if (typeof img === 'string') {
+                    formData.append('images', img)
+                    continue
                 }
-            })
+                if (img.file) {
+                    const uploaded = await uploadStoreImage(img.file, { token })
+                    formData.append('images', uploaded.url)
+                }
+            }
 
             productInfo.reviews.forEach((rev, index) => {
                 if (rev.image) formData.append(`reviewImages_${index}`, rev.image)
@@ -1638,7 +1645,6 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 formData.append('productId', String(product._id))
             }
 
-            const token = await getAuthTokenOrThrow(true)
             console.log('Submitting product with token:', token);
             const apiCall = product?._id
                 ? axios.put(`/api/store/product`, formData, { 
@@ -1682,7 +1688,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 router.push('/store/manage-product')
             }
         } catch (error) {
-            toast.error(normalizeErrorMessage(error?.response?.data?.error || error?.response?.data || error?.message))
+            toast.error(getUploadErrorMessage(error) || normalizeErrorMessage(error?.response?.data?.error || error?.response?.data || error?.message))
         } finally {
             setLoading(false)
         }

@@ -221,7 +221,7 @@ function OpenProductsLivePanel({ products = [], onViewerClick, isStale = false }
   );
 }
 
-const LIVE_POLL_MS = 12000;
+const LIVE_POLL_MS = 20000;
 
 function smoothLiveCount(previous, incoming, { hasActivity = false, graceMs = 20000, lastActiveAt = 0 } = {}) {
   const next = Number(incoming || 0);
@@ -281,9 +281,25 @@ export default function StoreLiveAnalytics({ getToken, currency = 'AED' }) {
 
   useEffect(() => {
     fetchLive(true);
-    const interval = setInterval(() => fetchLive(false), LIVE_POLL_MS);
+
+    const poll = () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      fetchLive(false);
+    };
+
+    const interval = setInterval(poll, LIVE_POLL_MS);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        fetchLive(false);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+
     return () => {
       clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
       fetchGenerationRef.current += 1;
     };
   }, [fetchLive]);

@@ -65,6 +65,6 @@ ProductSchema.index({ storeId: 1, createdAt: -1 });              // Store produc
 ProductSchema.index({ storeId: 1, name: 1 });                      // Store product picker (name sort)
 ProductSchema.index({ storeId: 1, price: 1 });                   // Store product picker (price sort)
 ProductSchema.index({ storeId: 1, sku: 1 });                     // Store SKU lookup
-ProductSchema.index({ name: 'text', brand: 'text', shortDescription: 'text' }); // Full-text search
+ProductSchema.index({ name: 'text', brand: 'text', shortDescription: 'text', sku: 'text', seoTitle: 'text' }); // Full-text search
 
 export default mongoose.models.Product || mongoose.model("Product", ProductSchema);

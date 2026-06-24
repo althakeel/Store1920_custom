@@ -2,7 +2,13 @@ import connectDB from "@/lib/mongodb";
 import Product from "@/models/Product";
 import { NextResponse } from "next/server";
 import { localizeRecord, resolveStorefrontLanguage } from "@/lib/storefrontLanguage";
-import mongoose from "mongoose";
+import { getProductThumbnailUrl } from "@/lib/productMedia";
+import { PLACEHOLDER_IMAGE } from "@/lib/mediaUrls";
+
+function hasDisplayableImage(product) {
+  const thumbnail = getProductThumbnailUrl(product, { fallback: PLACEHOLDER_IMAGE });
+  return Boolean(thumbnail && thumbnail !== PLACEHOLDER_IMAGE);
+}
 
 export async function POST(req) {
     try {
@@ -18,24 +24,23 @@ export async function POST(req) {
             return NextResponse.json({ products: [] });
         }
 
-        const validProductIds = productIds
-            .map((id) => String(id || '').trim())
-            .filter((id) => mongoose.Types.ObjectId.isValid(id));
+        const validProductIds = Array.from(new Set(
+          productIds.map((id) => String(id || '').trim()).filter(Boolean)
+        ));
 
         if (validProductIds.length === 0) {
             return NextResponse.json({ products: [] });
         }
 
         const products = await Product.find({ _id: { $in: validProductIds } })
-            .select('name nameAr slug price mrp AED images category categories inStock fastDelivery freeShippingEligible imageAspectRatio shortDescription shortDescriptionAr sku hasVariants variants allowReturn allowReplacement')
+            .select('name nameAr slug price mrp AED images externalImages category categories inStock fastDelivery freeShippingEligible imageAspectRatio shortDescription shortDescriptionAr sku hasVariants variants allowReturn allowReplacement createdAt')
             .lean();
 
-        // Preserve order and filter strictly: must have name, slug, images
-        const productMap = new Map(products.map(p => [p._id.toString(), p]));
+        const productMap = new Map(products.map((product) => [String(product._id), product]));
         const orderedProducts = validProductIds
-            .map(id => productMap.get(id))
-            .filter(product => product && product.name && product.slug && Array.isArray(product.images) && product.images.length > 0)
-            .map(product => localizeRecord(product, language, ['name', 'shortDescription']))
+            .map((id) => productMap.get(id))
+            .filter((product) => product && product.name && product.slug && hasDisplayableImage(product))
+            .map((product) => localizeRecord(product, language, ['name', 'shortDescription']))
             .filter(Boolean);
 
         return NextResponse.json({ products: orderedProducts }, {

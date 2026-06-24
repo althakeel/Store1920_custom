@@ -85,7 +85,7 @@ function SearchResultsInner() {
 
       try {
         setLoading(true);
-        const response = await fetch(`/api/search-products?keyword=${encodeURIComponent(keyword)}`);
+        const response = await fetch(`/api/search-products?keyword=${encodeURIComponent(keyword)}&limit=100&includeOutOfStock=true`);
         const data = await response.json();
         
         if (data.error) {

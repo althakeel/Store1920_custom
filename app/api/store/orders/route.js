@@ -101,7 +101,7 @@ export async function GET(request){
                     model: 'Product',
                     select: 'name slug images sku',
                 })
-                .sort({ createdAt: -1 })
+                .sort({ createdAt: -1, shortOrderNumber: -1 })
                 .lean(),
             AbandonedCart.find({ storeId, status: 'converted' })
                 .select('_id userId email phone status convertedAt convertedBy convertedByName convertedCartTotal cartTotal conversionNote conversionDiscountType conversionDiscountValue conversionPaymentMethod linkedOrderId')

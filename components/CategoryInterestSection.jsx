@@ -10,6 +10,8 @@ import {
   HOME_SECTION_GRID_INNER_CLASS,
 } from '@/lib/storefrontCarousel';
 import { cleanDisplayText } from '@/lib/displayText';
+import { getProductThumbnailUrl } from '@/lib/productMedia';
+import { PLACEHOLDER_IMAGE } from '@/lib/mediaUrls';
 import CategoryChipScroller from '@/components/CategoryChipScroller';
 import { HomeExploreInterestsSkeleton } from '@/components/home/HomeSectionSkeletons';
 
@@ -32,11 +34,67 @@ function normalizeToken(value) {
   return normalizeCategory(value).toLowerCase();
 }
 
+function isRootParentCategory(category) {
+  const parentId = category?.parentId;
+  if (parentId === null || parentId === undefined) return true;
+  const normalized = String(parentId).trim().toLowerCase();
+  return !normalized || normalized === 'null' || normalized === '0';
+}
+
+function isDisplayableCategoryName(name) {
+  const label = normalizeCategory(name);
+  if (!label || label.length < 2) return false;
+  if (/^\d+$/.test(label)) return false;
+  if (/^[a-f0-9]{24}$/i.test(label)) return false;
+  return true;
+}
+
+function normalizeCategoryId(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function collectDescendantCategoryIds(rootId, childrenByParentId) {
+  const root = normalizeCategoryId(rootId);
+  const ids = new Set([root]);
+  const queue = [root];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    const children = childrenByParentId.get(current) || [];
+    children.forEach((childId) => {
+      const normalized = normalizeCategoryId(childId);
+      if (!ids.has(normalized)) {
+        ids.add(normalized);
+        queue.push(normalized);
+      }
+    });
+  }
+
+  return ids;
+}
+
+function buildCategoryTreeMaps(categories = []) {
+  const childrenByParentId = new Map();
+
+  categories.forEach((category) => {
+    const parentKey = category?.parentId ? normalizeCategoryId(category.parentId) : '';
+    if (!parentKey) return;
+
+    const childId = normalizeCategoryId(category._id);
+    if (!childrenByParentId.has(parentKey)) {
+      childrenByParentId.set(parentKey, []);
+    }
+    childrenByParentId.get(parentKey).push(childId);
+  });
+
+  return { childrenByParentId };
+}
+
 function getProductCategoryCandidates(product) {
   const values = [];
 
   const pushValue = (value) => {
-    const normalized = normalizeToken(value);
+    const normalized = normalizeCategoryId(value);
     if (normalized) {
       values.push(normalized);
     }
@@ -60,7 +118,15 @@ function getProductCategoryCandidates(product) {
   pushValue(product?.subcategory);
 
   if (Array.isArray(product?.categories)) {
-    product.categories.forEach((item) => pushMaybeObject(item));
+    product.categories.forEach((item) => {
+      if (typeof item === 'object' && item !== null) {
+        pushValue(item?._id);
+        pushValue(item?.name);
+        pushValue(item?.slug);
+        return;
+      }
+      pushValue(item);
+    });
   }
 
   return Array.from(new Set(values));
@@ -96,7 +162,8 @@ const normalizeImages = (images) => {
 function isRenderableProduct(product) {
   if (!product || typeof product !== 'object') return false;
   if (!product.name || !product.slug) return false;
-  return normalizeImages(product.images).length > 0;
+  const thumbnail = getProductThumbnailUrl(product, { fallback: PLACEHOLDER_IMAGE });
+  return Boolean(thumbnail && thumbnail !== PLACEHOLDER_IMAGE);
 }
 
 function sortByLatest(products) {
@@ -109,6 +176,7 @@ function sortByLatest(products) {
 
 export default function CategoryInterestSection() {
   const [apiCategories, setApiCategories] = useState([]);
+  const [categoryChildrenByParentId, setCategoryChildrenByParentId] = useState(new Map());
   const [sectionEnabled, setSectionEnabled] = useState(true);
   const [manualRecommendedIds, setManualRecommendedIds] = useState([]);
   const [manualRecommendedProducts, setManualRecommendedProducts] = useState([]);
@@ -142,34 +210,6 @@ export default function CategoryInterestSection() {
       .map((id) => productMap.get(String(id || '').trim()))
       .filter(isRenderableProduct);
   }, [manualRecommendedIds, catalogProducts]);
-
-  const categoryBuckets = useMemo(() => {
-    const bucket = new Map();
-
-    catalogProducts.forEach((product) => {
-      const rawCategory =
-        product?.category?.name ||
-        product?.categoryName ||
-        product?.category ||
-        product?.subcategory ||
-        '';
-
-      const category = normalizeCategory(rawCategory);
-      if (!category) return;
-
-      bucket.set(category, (bucket.get(category) || 0) + 1);
-    });
-
-    return Array.from(bucket.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, MAX_CATEGORIES)
-      .map(([name]) => ({
-        key: `bucket:${name}`,
-        label: name,
-        id: null,
-        slug: null,
-      }));
-  }, [catalogProducts]);
 
   const [selectedCategoryKey, setSelectedCategoryKey] = useState('recommended');
 
@@ -216,17 +256,20 @@ export default function CategoryInterestSection() {
         const data = await response.json();
         if (!isActive) return;
 
-        const normalized = Array.isArray(data?.categories)
-          ? data.categories
-              .filter((cat) => cat && !cat.parentId && normalizeCategory(cat.name))
-              .map((cat) => ({
-                key: `api:${String(cat._id || cat.slug || cat.name)}`,
-                label: normalizeCategory(cat.name),
-                id: normalizeToken(cat._id),
-                slug: normalizeToken(cat.slug),
-              }))
-          : [];
+        const categoryList = Array.isArray(data?.categories) ? data.categories : [];
+        const { childrenByParentId } = buildCategoryTreeMaps(categoryList);
 
+        const normalized = categoryList
+          .filter((cat) => cat && isRootParentCategory(cat) && isDisplayableCategoryName(cat.name))
+          .map((cat) => ({
+            key: `api:${String(cat._id || cat.slug || cat.name)}`,
+            label: normalizeCategory(cat.name),
+            id: String(cat._id || ''),
+            slug: normalizeToken(cat.slug),
+          }))
+          .sort((left, right) => left.label.localeCompare(right.label));
+
+        setCategoryChildrenByParentId(childrenByParentId);
         setApiCategories(normalized.slice(0, MAX_CATEGORIES));
       } catch {
         // Keep fallback categories from product buckets.
@@ -334,9 +377,9 @@ export default function CategoryInterestSection() {
   const categoriesToRender = useMemo(() => {
     return [
       { key: 'recommended', label: 'Recommended', id: null, slug: null },
-      ...(apiCategories.length ? apiCategories : categoryBuckets),
+      ...apiCategories,
     ];
-  }, [apiCategories, categoryBuckets]);
+  }, [apiCategories]);
 
   const selectedCategoryOption = useMemo(() => {
     return categoriesToRender.find((category) => category.key === selectedCategoryKey) || categoriesToRender[0];
@@ -351,25 +394,33 @@ export default function CategoryInterestSection() {
 
   const displayedProducts = useMemo(() => {
     if (!selectedCategoryOption || selectedCategoryOption.key === 'recommended') {
-      if (manualRecommendedProducts.length > 0) {
-        return manualRecommendedProducts.slice(0, MAX_PRODUCTS);
-      }
-      if (fallbackManualProducts.length > 0) {
-        return fallbackManualProducts.slice(0, MAX_PRODUCTS);
+      if (manualRecommendedIds.length > 0) {
+        if (manualRecommendedProducts.length > 0) {
+          return manualRecommendedProducts.slice(0, MAX_PRODUCTS);
+        }
+        if (fallbackManualProducts.length > 0) {
+          return fallbackManualProducts.slice(0, MAX_PRODUCTS);
+        }
+        return [];
       }
       return latestProducts;
     }
 
     const selectedLabel = normalizeToken(selectedCategoryOption.label);
-    const selectedId = normalizeToken(selectedCategoryOption.id);
+    const selectedId = normalizeCategoryId(selectedCategoryOption.id);
     const selectedSlug = normalizeToken(selectedCategoryOption.slug);
+    const matchCategoryIds = selectedId
+      ? collectDescendantCategoryIds(selectedId, categoryChildrenByParentId)
+      : new Set();
 
     return catalogProducts
       .filter((product) => {
         const candidates = getProductCategoryCandidates(product);
         if (candidates.length === 0) return false;
 
-        if (selectedId && candidates.includes(selectedId)) return true;
+        if (selectedId) {
+          return candidates.some((candidate) => matchCategoryIds.has(normalizeCategoryId(candidate)));
+        }
         if (selectedSlug && candidates.includes(selectedSlug)) return true;
         if (selectedLabel && candidates.includes(selectedLabel)) return true;
 
@@ -379,9 +430,11 @@ export default function CategoryInterestSection() {
   }, [
     catalogProducts,
     selectedCategoryOption,
+    categoryChildrenByParentId,
     manualRecommendedProducts,
     fallbackManualProducts,
     latestProducts,
+    manualRecommendedIds,
   ]);
 
   if (!sectionEnabled) {

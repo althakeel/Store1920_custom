@@ -999,7 +999,7 @@ const Navbar = () => {
       setSearchSuggestionsLoading(true);
       try {
         const { data } = await axios.get('/api/search-products', {
-          params: { keyword: query, limit: 8 },
+          params: { keyword: query, limit: 8, includeOutOfStock: true },
         });
         setSearchSuggestionResults(Array.isArray(data?.products) ? data.products : []);
       } catch {

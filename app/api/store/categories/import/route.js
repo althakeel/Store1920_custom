@@ -9,7 +9,8 @@ import { resolveStoreAccess } from '@/lib/storeAccess';
 import { cleanDisplayText } from '@/lib/displayText';
 import { invalidateCategoryCaches } from '@/lib/categoryCache';
 
-import { getS3PublicBaseUrl, isHostedMediaUrl, uploadToS3 } from '@/lib/storage';
+import { getS3PublicBaseUrl, isHostedMediaUrl, mirrorRemoteImageToS3 } from '@/lib/storage';
+import { normalizeRemoteProductImageUrl } from '@/lib/productImageSource';
 
 const S3_PUBLIC_URL = getS3PublicBaseUrl();
 
@@ -192,24 +193,13 @@ const sanitizeFilePart = (value = '') => {
   return sanitized || 'category';
 };
 
-const mirrorRemoteImageToS3 = async (imageUrl, { storeId, slug }) => {
-  const response = await axios.get(imageUrl, {
-    responseType: 'arraybuffer',
-    timeout: 30000,
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-    },
-    maxRedirects: 5,
-  });
-
-  const extension = getFileExtension(imageUrl, response.headers['content-type']);
-  const fileName = `${sanitizeFilePart(slug)}.${extension}`;
-  const upload = await uploadToS3({
-    buffer: Buffer.from(response.data),
+const mirrorRemoteCategoryImageToS3 = async (imageUrl, { storeId, slug }) => {
+  const normalizedUrl = normalizeRemoteProductImageUrl(imageUrl);
+  const fileName = `${sanitizeFilePart(slug)}-${Date.now()}`;
+  const upload = await mirrorRemoteImageToS3(normalizedUrl, {
     fileName,
     folder: `categories/imported/${sanitizeFilePart(storeId || 'store')}`,
-    contentType: response.headers['content-type'] || undefined,
+    minWidth: 0,
   });
 
   return upload.url;
@@ -441,7 +431,7 @@ export async function POST(request) {
 
         if (shouldMirrorImageUrl(finalImage)) {
           try {
-            finalImage = await mirrorRemoteImageToS3(finalImage, {
+            finalImage = await mirrorRemoteCategoryImageToS3(finalImage, {
               storeId: authContext.userId,
               slug: finalSlug,
             });
@@ -507,7 +497,7 @@ export async function POST(request) {
 
           if (shouldMirrorImageUrl(finalImage)) {
             try {
-              finalImage = await mirrorRemoteImageToS3(finalImage, {
+              finalImage = await mirrorRemoteCategoryImageToS3(finalImage, {
                 storeId: authContext.userId,
                 slug: finalSlug,
               });

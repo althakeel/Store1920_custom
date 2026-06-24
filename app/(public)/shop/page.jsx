@@ -19,6 +19,8 @@ function ShopContent() {
     const [mounted, setMounted] = useState(false);
     const [shopProducts, setShopProducts] = useState([]);
     const [shopLoading, setShopLoading] = useState(true);
+    const [searchProducts, setSearchProducts] = useState([]);
+    const [searchLoading, setSearchLoading] = useState(false);
     const [categoryProducts, setCategoryProducts] = useState([]);
     const [categoryLoading, setCategoryLoading] = useState(false);
     const [sortBy, setSortBy] = useState('newest');
@@ -121,10 +123,36 @@ function ShopContent() {
         };
     }, [categoryParam]);
 
-    const normalizeText = useCallback((value) => {
-        if (value === null || value === undefined) return '';
-        return String(value).toLowerCase();
-    }, []);
+    useEffect(() => {
+        const term = search?.trim();
+        if (!term) {
+            setSearchProducts([]);
+            setSearchLoading(false);
+            return undefined;
+        }
+
+        let isActive = true;
+        setSearchLoading(true);
+
+        fetch(`/api/search-products?keyword=${encodeURIComponent(term)}&limit=100&includeOutOfStock=true`)
+            .then((res) => res.json())
+            .then((data) => {
+                if (!isActive) return;
+                setSearchProducts(Array.isArray(data.products) ? data.products : []);
+            })
+            .catch(() => {
+                if (!isActive) return;
+                setSearchProducts([]);
+            })
+            .finally(() => {
+                if (!isActive) return;
+                setSearchLoading(false);
+            });
+
+        return () => {
+            isActive = false;
+        };
+    }, [search]);
 
     const getProductPrice = useCallback((product) => {
         if (!product) return 0;
@@ -176,53 +204,13 @@ function ShopContent() {
         return hasBadge || hasTag;
     }, []);
 
-    const sourceProducts = categoryParam ? categoryProducts : shopProducts;
+    const sourceProducts = search?.trim()
+        ? searchProducts
+        : (categoryParam ? categoryProducts : shopProducts);
 
-    // Filter by search
     const filteredProducts = useMemo(() => {
-        let filtered = sourceProducts;
-
-        // Category filtering is handled by the API when category param exists
-        // to avoid mismatches between ID-based categories and display names.
-
-        // Filter by search term if search param exists
-        if (search) {
-            const searchTerm = normalizeText(search.trim());
-            filtered = filtered.filter((product) => {
-                const name = normalizeText(product.name);
-                const description = normalizeText(product.description || product.shortDescription);
-                const brand = normalizeText(product.brand || product.brandName);
-                const sku = normalizeText(product.sku);
-                const categoryName = normalizeText(product.category?.name || product.category?.slug || product.category);
-                const categoryList = Array.isArray(product.categories)
-                    ? product.categories.map((cat) => normalizeText(cat?.name || cat?.slug || cat)).join(' ')
-                    : '';
-                const tags = Array.isArray(product.tags)
-                    ? product.tags.map((tag) => normalizeText(tag)).join(' ')
-                    : '';
-                const variants = Array.isArray(product.variants)
-                    ? product.variants
-                        .map((variant) => normalizeText(variant?.name || variant?.title || variant?.sku))
-                        .join(' ')
-                    : '';
-
-                const haystack = [
-                    name,
-                    description,
-                    brand,
-                    sku,
-                    categoryName,
-                    categoryList,
-                    tags,
-                    variants,
-                ].join(' ');
-
-                return haystack.includes(searchTerm);
-            });
-        }
-
-        return filtered;
-    }, [sourceProducts, search, normalizeText]);
+        return sourceProducts;
+    }, [sourceProducts]);
 
     const visibleProducts = useMemo(() => {
         let list = [...filteredProducts];
@@ -428,7 +416,7 @@ function ShopContent() {
                 </div>
 
                 {/* Products Grid - Full Width (No Sidebar) */}
-                {!mounted || (categoryParam ? categoryLoading : shopLoading) ? (
+                {!mounted || searchLoading || (categoryParam ? categoryLoading : (!search?.trim() && shopLoading)) ? (
                     <div className="text-center py-16 bg-white rounded-lg border border-gray-200">
                         <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-orange-500 mb-4"></div>
                         <p className="text-gray-500 text-lg">Loading products...</p>

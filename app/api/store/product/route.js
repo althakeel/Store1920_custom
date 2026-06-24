@@ -1,5 +1,6 @@
 
 import { uploadToS3 } from '@/lib/storage';
+import { optimizeUploadBuffer } from '@/lib/optimizeUploadBuffer';
 import connectDB from '@/lib/mongodb';
 import Product from '@/models/Product';
 import Category from '@/models/Category';
@@ -84,11 +85,18 @@ const uploadMedia = async (files) => {
     return Promise.all(
         files.map(async (file) => {
             const buffer = Buffer.from(await file.arrayBuffer());
-            const response = await uploadToS3({
-                buffer,
+            const optimized = await optimizeUploadBuffer(buffer, {
+                contentType: file.type,
                 fileName: file.name,
+            });
+            const uploadName = optimized.optimized && !String(file.name || '').toLowerCase().endsWith('.jpg')
+                ? String(file.name || 'product').replace(/\.[^.]+$/, '.jpg')
+                : file.name;
+            const response = await uploadToS3({
+                buffer: optimized.buffer,
+                fileName: uploadName,
                 folder: "products",
-                contentType: file.type || undefined,
+                contentType: optimized.contentType || file.type || undefined,
             });
 
             return response.url;
@@ -447,7 +455,29 @@ export async function GET(request) {
             const page = Math.max(1, Number.parseInt(pageParam || '1', 10) || 1);
             const limit = Math.min(48, Math.max(1, Number.parseInt(searchParams.get('limit') || '24', 10) || 24));
             const sort = searchParams.get('sort') || 'newest';
-            const pickerResult = await fetchPickerPage(Product, { storeId, page, limit, search, sort });
+            const category = String(searchParams.get('category') || '').trim();
+            const manage = searchParams.get('manage') === 'true';
+            const pickerResult = await fetchPickerPage(Product, {
+                storeId,
+                page,
+                limit,
+                search,
+                sort,
+                category,
+                mode: manage ? 'manage' : 'picker',
+            });
+
+            if (manage) {
+                const categories = await Category.find({})
+                    .select('_id name nameAr slug legacySourceId parentId')
+                    .lean();
+                const categoryLookup = buildCategoryLookup(categories);
+                pickerResult.products = pickerResult.products.map((product) => ({
+                    ...product,
+                    categoryNames: getProductCategoryLabels(product, categoryLookup),
+                }));
+                pickerResult.categoryLookup = categoryLookup;
+            }
 
             return NextResponse.json(
                 pickerResult,

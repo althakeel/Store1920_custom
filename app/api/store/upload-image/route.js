@@ -2,6 +2,7 @@ import authSeller from '@/middlewares/authSeller';
 import { getAuth } from '@/lib/firebase-admin';
 import { uploadBannerToImageKit } from '@/lib/bannerStorage';
 import { uploadToS3 } from '@/lib/storage';
+import { optimizeUploadBuffer } from '@/lib/optimizeUploadBuffer';
 
 export async function POST(request) {
   try {
@@ -33,13 +34,23 @@ export async function POST(request) {
     }
 
     const buffer = Buffer.from(await image.arrayBuffer());
+    const optimized = await optimizeUploadBuffer(buffer, {
+      contentType: image.type,
+      fileName: image.name,
+    });
+    const uploadBuffer = optimized.buffer;
+    const uploadContentType = optimized.contentType || image.type || undefined;
+    const uploadName = optimized.optimized && !String(image.name || '').toLowerCase().endsWith('.jpg')
+      ? String(image.name || 'upload').replace(/\.[^.]+$/, '.jpg')
+      : image.name;
+
     const fileName = type
-      ? `${type}_${Date.now()}_${image.name}`
-      : `desc_${Date.now()}_${image.name}`;
+      ? `${type}_${Date.now()}_${uploadName}`
+      : `desc_${Date.now()}_${uploadName}`;
 
     if (type === 'banner') {
       const response = await uploadBannerToImageKit({
-        buffer,
+        buffer: uploadBuffer,
         fileName,
         folder: 'stores/banners',
       });
@@ -52,10 +63,10 @@ export async function POST(request) {
 
     const folder = type === 'logo' ? 'brands' : 'products';
     const result = await uploadToS3({
-      buffer,
+      buffer: uploadBuffer,
       fileName,
       folder,
-      contentType: image.type || undefined,
+      contentType: uploadContentType,
     });
 
     return Response.json({
@@ -64,6 +75,12 @@ export async function POST(request) {
     });
   } catch (error) {
     console.error('Image upload error:', error);
+    const message = String(error?.message || '').toLowerCase();
+    if (message.includes('entity too large') || message.includes('413')) {
+      return Response.json({
+        error: 'Image is too large. Use a smaller file or let the app compress it before upload.',
+      }, { status: 413 });
+    }
     return Response.json({
       error: error.message || 'Failed to upload image',
     }, { status: 500 });

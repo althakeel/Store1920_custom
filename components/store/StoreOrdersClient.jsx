@@ -8,10 +8,10 @@ import PageSkeleton from "@/components/PageSkeleton";
 import { readPageCache, writePageCache } from "@/lib/storePageCache";
 import axios from "axios";
 import toast from "react-hot-toast";
-import { Package, Truck, X, Download, Printer, RefreshCw, MapPin, Trash2, CalendarClock, AlertTriangle } from "lucide-react";
+import { Package, Truck, X, Download, Printer, RefreshCw, MapPin, Trash2, CalendarClock, AlertTriangle, Search } from "lucide-react";
 import { downloadInvoice, printInvoice } from "@/lib/generateInvoice";
 import { schedulePickup } from '@/lib/delhivery';
-import { STORE_ORDER_NOTIFICATION_EVENT } from '@/lib/storeOrderNotifications';
+import { STORE_ORDER_NOTIFICATION_EVENT, STORE_ORDER_TOAST_ID, dispatchStoreOrdersImportEnd, dispatchStoreOrdersImportStart } from '@/lib/storeOrderNotifications';
 import {
     formatConversionDiscount,
     getConversionPaymentLabel,
@@ -20,6 +20,70 @@ import {
     getOrderExpectedDeliveryDate,
     summarizeDeliveryBuckets,
 } from '@/lib/storeOrderInsights';
+
+function normalizeOrderSearchQuery(value = '') {
+    return String(value || '').trim().toLowerCase();
+}
+
+function orderMatchesSearch(order, query) {
+    const q = normalizeOrderSearchQuery(query);
+    if (!q) return true;
+
+    const qDigits = q.replace(/\D/g, '');
+    const qNoHash = q.replace(/^#/, '');
+
+    const textFields = [
+        order?.guestName,
+        order?.guestEmail,
+        order?.guestPhone,
+        order?.alternatePhone,
+        order?.userId?.name,
+        order?.userId?.email,
+        order?.shippingAddress?.name,
+        order?.shippingAddress?.email,
+        order?.shippingAddress?.phone,
+        order?.shortOrderNumber != null ? String(order.shortOrderNumber) : '',
+        order?._id ? String(order._id) : '',
+        order?.legacySourceId,
+        order?.trackingId,
+        order?.trackingUrl,
+        order?.courier,
+        order?.delhivery?.waybill,
+        order?.delhivery?.awb,
+    ]
+        .filter(Boolean)
+        .map((value) => String(value).toLowerCase());
+
+    if (textFields.some((value) => value.includes(q) || value.includes(qNoHash))) {
+        return true;
+    }
+
+    if (order?.legacySourceId) {
+        const legacyId = String(order.legacySourceId).toLowerCase().replace(/^wc-/, '');
+        if (legacyId === qNoHash || legacyId.includes(qNoHash)) {
+            return true;
+        }
+    }
+
+    if (qDigits.length >= 3) {
+        const digitFields = [
+            order?.guestPhone,
+            order?.alternatePhone,
+            order?.shippingAddress?.phone,
+            order?.shortOrderNumber != null ? String(order.shortOrderNumber) : '',
+            order?.trackingId,
+            order?.delhivery?.waybill,
+        ]
+            .filter(Boolean)
+            .map((value) => String(value).replace(/\D/g, ''));
+
+        if (digitFields.some((value) => value.includes(qDigits))) {
+            return true;
+        }
+    }
+
+    return false;
+}
 
 const updateOrderStatus = async (orderId, newStatus, getToken, fetchOrders) => {
     try {
@@ -79,12 +143,16 @@ export default function StoreOrders() {
         courier: ''
     });
     const [filterStatus, setFilterStatus] = useState('ALL');
+    const [filterPayment, setFilterPayment] = useState('ALL');
     const [datePreset, setDatePreset] = useState('ALL');
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState('');
     const [exportTypeFilter, setExportTypeFilter] = useState('ALL');
+    const [orderSearchQuery, setOrderSearchQuery] = useState('');
     const [orderCsvFile, setOrderCsvFile] = useState(null);
     const [importingOrdersCsv, setImportingOrdersCsv] = useState(false);
+    const [importProgress, setImportProgress] = useState({ current: 0, total: 0, phase: 'idle' });
+    const suppressLiveAlertsRef = useRef(false);
     const [selectedOrderIds, setSelectedOrderIds] = useState([]);
     const [deletingBulkOrders, setDeletingBulkOrders] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
@@ -250,7 +318,31 @@ export default function StoreOrders() {
         return !!order?.isPaid;
     };
 
-    // Calculate order statistics
+    const normalizeOrderPaymentMethod = (order) => {
+        const raw = String(order?.paymentMethod || order?.payment_method || '').trim().toUpperCase();
+        if (!raw) return 'OTHER';
+        if (raw === 'COD' || raw === 'CASH_ON_DELIVERY' || raw.includes('COD')) return 'COD';
+        if (raw === 'TABBY' || raw.includes('TABBY')) return 'TABBY';
+        if (raw === 'TAMARA' || raw.includes('TAMARA')) return 'TAMARA';
+        if (raw === 'WALLET') return 'WALLET';
+        if (
+            ['CARD', 'STRIPE', 'RAZORPAY', 'UPI', 'NETBANKING', 'ONLINE', 'PREPAID'].includes(raw)
+            || raw.includes('CARD')
+            || raw.includes('STRIPE')
+        ) {
+            return 'CARD';
+        }
+        return raw;
+    };
+
+    const PAYMENT_FILTER_OPTIONS = [
+        { value: 'ALL', label: 'All payments' },
+        { value: 'COD', label: 'COD' },
+        { value: 'CARD', label: 'Card' },
+        { value: 'TABBY', label: 'Tabby' },
+        { value: 'TAMARA', label: 'Tamara' },
+        { value: 'WALLET', label: 'Wallet' },
+    ];
     const getOrderStats = () => {
         const stats = {
             TOTAL: orders.length,
@@ -286,21 +378,60 @@ export default function StoreOrders() {
         return true;
     };
 
-    // Filter orders based on selected status + date range
+    // Filter orders based on selected status + payment + date range
     const getFilteredOrders = () => {
-        const dateFiltered = orders.filter(isOrderInRange);
-        if (filterStatus === 'ALL') return dateFiltered;
-        if (filterStatus === 'PENDING_PAYMENT') return dateFiltered.filter(o => {
-            return !isOrderPaid(o);
+        let dateFiltered = orders.filter(isOrderInRange);
+
+        if (filterStatus === 'ALL') {
+            // keep all
+        } else if (filterStatus === 'PENDING_PAYMENT') {
+            dateFiltered = dateFiltered.filter((o) => !isOrderPaid(o));
+        } else if (filterStatus === 'PENDING_SHIPMENT') {
+            dateFiltered = dateFiltered.filter((o) => !o.trackingId && ['ORDER_PLACED', 'PROCESSING'].includes(o.status));
+        } else if (filterStatus === 'RETURN_REQUESTED') {
+            dateFiltered = dateFiltered.filter((o) => o.returns && o.returns.some((r) => r.status === 'REQUESTED'));
+        } else if (filterStatus === 'CONVERTED') {
+            dateFiltered = dateFiltered.filter((o) => Boolean(o.conversion));
+        } else if (filterStatus === 'DELIVERY_TODAY') {
+            dateFiltered = dateFiltered.filter((o) => getDeliveryBucket(o) === 'today');
+        } else if (filterStatus === 'DELIVERY_TOMORROW') {
+            dateFiltered = dateFiltered.filter((o) => getDeliveryBucket(o) === 'tomorrow');
+        } else if (filterStatus === 'DELIVERY_DELAYED') {
+            dateFiltered = dateFiltered.filter((o) => getDeliveryBucket(o) === 'delayed');
+        } else {
+            dateFiltered = dateFiltered.filter((o) => o.status === filterStatus);
+        }
+
+        if (filterPayment !== 'ALL') {
+            dateFiltered = dateFiltered.filter((o) => normalizeOrderPaymentMethod(o) === filterPayment);
+        }
+
+        if (orderSearchQuery.trim()) {
+            dateFiltered = dateFiltered.filter((order) => orderMatchesSearch(order, orderSearchQuery));
+        }
+
+        return dateFiltered.sort((a, b) => {
+            const aDate = new Date(a?.createdAt || 0).getTime();
+            const bDate = new Date(b?.createdAt || 0).getTime();
+            if (bDate !== aDate) return bDate - aDate;
+            const aNum = Number(a?.shortOrderNumber) || 0;
+            const bNum = Number(b?.shortOrderNumber) || 0;
+            return bNum - aNum;
         });
-        if (filterStatus === 'PENDING_SHIPMENT') return dateFiltered.filter(o => !o.trackingId && ['ORDER_PLACED', 'PROCESSING'].includes(o.status));
-        if (filterStatus === 'RETURN_REQUESTED') return dateFiltered.filter(o => o.returns && o.returns.some(r => r.status === 'REQUESTED'));
-        if (filterStatus === 'CONVERTED') return dateFiltered.filter(o => Boolean(o.conversion));
-        if (filterStatus === 'DELIVERY_TODAY') return dateFiltered.filter(o => getDeliveryBucket(o) === 'today');
-        if (filterStatus === 'DELIVERY_TOMORROW') return dateFiltered.filter(o => getDeliveryBucket(o) === 'tomorrow');
-        if (filterStatus === 'DELIVERY_DELAYED') return dateFiltered.filter(o => getDeliveryBucket(o) === 'delayed');
-        return dateFiltered.filter(o => o.status === filterStatus);
     };
+
+    const paymentStats = useMemo(() => {
+        const counts = { ALL: orders.length, COD: 0, CARD: 0, TABBY: 0, TAMARA: 0, WALLET: 0 };
+        orders.forEach((order) => {
+            const method = normalizeOrderPaymentMethod(order);
+            if (counts[method] !== undefined) {
+                counts[method] += 1;
+            }
+        });
+        return counts;
+    }, [orders]);
+
+    // Calculate order statistics
 
     const deliverySummary = useMemo(() => summarizeDeliveryBuckets(orders), [orders]);
     const convertedOrderCount = useMemo(
@@ -747,6 +878,7 @@ export default function StoreOrders() {
         const handleNewStoreOrder = (event) => {
             const incoming = Array.isArray(event?.detail?.orders) ? event.detail.orders : [];
             fetchOrders();
+            if (suppressLiveAlertsRef.current || incoming.length === 0) return;
             if (incoming.length === 1) {
                 const order = incoming[0];
                 const label = order.shortOrderNumber ? `#${order.shortOrderNumber}` : 'A new order';
@@ -763,7 +895,7 @@ export default function StoreOrders() {
 
     useEffect(() => {
         setCurrentPage(1);
-    }, [filterStatus, fromDate, toDate, datePreset, ordersPerPage]);
+    }, [filterStatus, filterPayment, fromDate, toDate, datePreset, ordersPerPage, orderSearchQuery]);
 
     useEffect(() => {
         if (currentPage > totalPages) {
@@ -920,7 +1052,19 @@ export default function StoreOrders() {
             return baseOrders.filter((order) => isOrderPaid(order));
         }
         if (exportTypeFilter === 'COD') {
-            return baseOrders.filter((order) => String(order?.paymentMethod || order?.payment_method || '').toLowerCase() === 'cod');
+            return baseOrders.filter((order) => normalizeOrderPaymentMethod(order) === 'COD');
+        }
+        if (exportTypeFilter === 'CARD') {
+            return baseOrders.filter((order) => normalizeOrderPaymentMethod(order) === 'CARD');
+        }
+        if (exportTypeFilter === 'TABBY') {
+            return baseOrders.filter((order) => normalizeOrderPaymentMethod(order) === 'TABBY');
+        }
+        if (exportTypeFilter === 'TAMARA') {
+            return baseOrders.filter((order) => normalizeOrderPaymentMethod(order) === 'TAMARA');
+        }
+        if (exportTypeFilter === 'WALLET') {
+            return baseOrders.filter((order) => normalizeOrderPaymentMethod(order) === 'WALLET');
         }
 
         return baseOrders;
@@ -1131,29 +1275,96 @@ export default function StoreOrders() {
             return;
         }
 
+        const BATCH_SIZE = 75;
+
         try {
             setImportingOrdersCsv(true);
+            setImportProgress({ current: 0, total: 0, phase: 'parsing' });
+            suppressLiveAlertsRef.current = true;
+            setLiveOrderAlert('');
+            dispatchStoreOrdersImportStart();
+            toast.dismiss(STORE_ORDER_TOAST_ID);
+
             const token = await getToken();
             if (!token) {
                 toast.error('Authentication failed. Please sign in again.');
                 return;
             }
 
-            const formData = new FormData();
-            formData.append('file', orderCsvFile);
+            const XLSX = await import('xlsx');
+            const buffer = await orderCsvFile.arrayBuffer();
+            const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+            const sheetName = workbook.SheetNames[0];
+            if (!sheetName) {
+                toast.error('No worksheet found in file');
+                return;
+            }
 
-            const { data } = await axios.post('/api/store/orders/csv', formData, {
+            const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' })
+                .filter((row) => !Object.values(row).some((value) => String(value || '').includes('EXPORT_META')));
+            if (!rows.length) {
+                toast.error('No order rows found in file');
+                return;
+            }
+
+            setImportProgress({ current: 0, total: rows.length, phase: 'importing' });
+
+            let createdCount = 0;
+            let updatedCount = 0;
+            let failedCount = 0;
+
+            for (let offset = 0; offset < rows.length; offset += BATCH_SIZE) {
+                const batch = rows.slice(offset, offset + BATCH_SIZE);
+                const { data } = await axios.post('/api/store/orders/csv', {
+                    rows: batch,
+                    rowOffset: offset,
+                }, {
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                    },
+                });
+
+                createdCount += Number(data?.summary?.created || 0);
+                updatedCount += Number(data?.summary?.updated || 0);
+                failedCount += Number(data?.summary?.failed || 0);
+
+                setImportProgress({
+                    current: Math.min(offset + batch.length, rows.length),
+                    total: rows.length,
+                    phase: 'importing',
+                });
+            }
+
+            setOrderCsvFile(null);
+            setImportProgress({ current: rows.length, total: rows.length, phase: 'done' });
+            await fetchOrders();
+
+            const importedCount = createdCount + updatedCount;
+            const latestOrders = await axios.get('/api/store/orders', {
                 headers: { Authorization: `Bearer ${token}` },
+            }).then((response) => (Array.isArray(response?.data?.orders) ? response.data.orders : [])).catch(() => []);
+
+            dispatchStoreOrdersImportEnd({
+                importedCount: importedCount || latestOrders.length,
+                orderIds: latestOrders.map((order) => String(order?._id || '')).filter(Boolean),
             });
 
-            toast.success(data?.message || 'Orders imported successfully');
-            setOrderCsvFile(null);
-            await fetchOrders();
+            if (failedCount > 0) {
+                toast.error(`Import finished with ${failedCount} failed row(s). ${createdCount} new, ${updatedCount} replaced.`);
+            } else {
+                toast.success(`Import complete: ${createdCount} new, ${updatedCount} replaced.`);
+            }
         } catch (error) {
             console.error('Order CSV import failed:', error);
             toast.error(error?.response?.data?.error || 'Failed to import orders CSV');
+            dispatchStoreOrdersImportEnd({ importedCount: 0, orderIds: [] });
         } finally {
+            suppressLiveAlertsRef.current = false;
             setImportingOrdersCsv(false);
+            setTimeout(() => {
+                setImportProgress({ current: 0, total: 0, phase: 'idle' });
+            }, 2500);
         }
     };
 
@@ -1293,6 +1504,38 @@ export default function StoreOrders() {
         <>
             <h1 className="text-2xl text-slate-500 mb-6">Store <span className="text-slate-800 font-medium">Orders</span></h1>
 
+            <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4">
+                <label htmlFor="order-search" className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Search orders
+                </label>
+                <div className="relative">
+                    <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                        id="order-search"
+                        type="search"
+                        value={orderSearchQuery}
+                        onChange={(e) => setOrderSearchQuery(e.target.value)}
+                        placeholder="Email, phone, name, order #, tracking AWB..."
+                        className="w-full rounded-lg border border-gray-300 py-2.5 pl-10 pr-10 text-sm text-slate-800 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                    />
+                    {orderSearchQuery ? (
+                        <button
+                            type="button"
+                            onClick={() => setOrderSearchQuery('')}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                            aria-label="Clear search"
+                        >
+                            <X size={16} />
+                        </button>
+                    ) : null}
+                </div>
+                {orderSearchQuery.trim() ? (
+                    <p className="mt-2 text-xs text-slate-500">
+                        {filteredOrders.length.toLocaleString()} order{filteredOrders.length === 1 ? '' : 's'} found
+                    </p>
+                ) : null}
+            </div>
+
             {liveOrderAlert ? (
                 <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
                     <span>{liveOrderAlert}</span>
@@ -1411,6 +1654,41 @@ export default function StoreOrders() {
                 ))}
             </div>
 
+            {/* Payment method filters */}
+            <div className="mb-6">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Payment method</p>
+                <div className="flex flex-wrap gap-2">
+                    {PAYMENT_FILTER_OPTIONS.map((option) => (
+                        <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => setFilterPayment(option.value)}
+                            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all ${
+                                filterPayment === option.value
+                                    ? 'bg-slate-900 text-white shadow-md'
+                                    : 'bg-gray-100 text-slate-700 hover:bg-gray-200'
+                            }`}
+                        >
+                            <span>{option.label}</span>
+                            {option.value !== 'ALL' && paymentStats[option.value] > 0 ? (
+                                <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${
+                                    filterPayment === option.value ? 'bg-slate-700 text-white' : 'bg-white text-slate-600'
+                                }`}>
+                                    {paymentStats[option.value]}
+                                </span>
+                            ) : null}
+                            {option.value === 'ALL' ? (
+                                <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${
+                                    filterPayment === option.value ? 'bg-slate-700 text-white' : 'bg-white text-slate-600'
+                                }`}>
+                                    {paymentStats.ALL}
+                                </span>
+                            ) : null}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
             {/* Date Range Filters */}
             <div className="mb-6 bg-white border border-gray-200 rounded-lg p-4 flex flex-col gap-4">
                 <div className="flex flex-wrap gap-2">
@@ -1469,6 +1747,10 @@ export default function StoreOrders() {
                             <option value="CANCELLED">Cancelled</option>
                             <option value="PAID">Paid</option>
                             <option value="COD">COD</option>
+                            <option value="CARD">Card</option>
+                            <option value="TABBY">Tabby</option>
+                            <option value="TAMARA">Tamara</option>
+                            <option value="WALLET">Wallet</option>
                         </select>
                     </div>
                     <div>
@@ -1507,6 +1789,31 @@ export default function StoreOrders() {
                                     Export Excel
                                 </button>
                             </div>
+                            {importingOrdersCsv && importProgress.total > 0 ? (
+                                <div className="w-full max-w-md rounded-lg border border-slate-200 bg-slate-50 p-3">
+                                    <div className="mb-1 flex items-center justify-between text-xs text-slate-600">
+                                        <span>
+                                            {importProgress.phase === 'parsing'
+                                                ? 'Reading file...'
+                                                : 'Importing orders...'}
+                                        </span>
+                                        <span>
+                                            {Math.min(100, Math.round((importProgress.current / importProgress.total) * 100))}%
+                                        </span>
+                                    </div>
+                                    <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+                                        <div
+                                            className="h-full rounded-full bg-blue-600 transition-all duration-300"
+                                            style={{
+                                                width: `${Math.min(100, Math.round((importProgress.current / importProgress.total) * 100))}%`,
+                                            }}
+                                        />
+                                    </div>
+                                    <p className="mt-1 text-xs text-slate-500">
+                                        {importProgress.current.toLocaleString()} / {importProgress.total.toLocaleString()} rows
+                                    </p>
+                                </div>
+                            ) : null}
                         </div>
                     </div>
                 </div>

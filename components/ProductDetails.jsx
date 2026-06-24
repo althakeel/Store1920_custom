@@ -9,7 +9,8 @@ import { useRouter } from "next/navigation";
 import axios from "axios";
 import { useDispatch, useSelector } from "react-redux";
 
-import { addToCart, removeFromCart, deleteItemFromCart, setCartItemQuantity, uploadCart } from "@/lib/features/cart/cartSlice";
+import { addToCart, removeFromCart, deleteItemFromCart, setCartItemQuantity, setCartEntry, uploadCart } from "@/lib/features/cart/cartSlice";
+import { buildBundleCartEntry } from "@/lib/bulkBundleCart";
 import MobileProductActions from "./MobileProductActions";
 import ProductShareButton from "./ProductShareButton";
 import ProductCard from "./ProductCard";
@@ -1617,6 +1618,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
               alt={`${safeProductName} ${fullViewIndex + 1}`}
               width={1200}
               height={1200}
+              quality={95}
               className="max-h-[85vh] w-auto max-w-full object-contain"
               priority
               onError={(event) => { event.currentTarget.src = PLACEHOLDER_IMAGE; }}
@@ -1890,26 +1892,40 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       const bundleTier = useBundleLine
         ? quantity
         : (isBulkBundleProduct ? 1 : (selectedBundleQty || null));
-      for (let i = 0; i < qty; i++) {
-        const payload = {
-          productId: product._id, 
+
+      const baseVariantOptions = {
+        color: selectedColor || null,
+        size: selectedSize || null,
+        bundleQty: bundleTier,
+      };
+
+      if (useBundleLine) {
+        const entry = buildBundleCartEntry({
           price: effPrice,
-          productName: product.name || product.title || 'Product',
-          quantity: 1,
-          variantOptions: {
-            color: selectedColor || null,
-            size: selectedSize || null,
-            bundleQty: bundleTier
+          variantOptions: baseVariantOptions,
+          ...(product.specialOffer?.offerToken ? {
+            offerToken: product.specialOffer.offerToken,
+            discountPercent: product.specialOffer.discountPercent,
+          } : {}),
+        }, product, bundleTier);
+        dispatch(setCartEntry({ productId: product._id, entry }));
+      } else {
+        for (let i = 0; i < qty; i++) {
+          const payload = {
+            productId: product._id, 
+            price: effPrice,
+            productName: product.name || product.title || 'Product',
+            quantity: 1,
+            variantOptions: baseVariantOptions,
+          };
+          
+          if (product.specialOffer?.offerToken) {
+            payload.offerToken = product.specialOffer.offerToken;
+            payload.discountPercent = product.specialOffer.discountPercent;
           }
-        };
-        
-        // If this is a special offer, include the offer token
-        if (product.specialOffer?.offerToken) {
-          payload.offerToken = product.specialOffer.offerToken;
-          payload.discountPercent = product.specialOffer.discountPercent;
+          
+          dispatch(addToCart(payload));
         }
-        
-        dispatch(addToCart(payload));
       }
       // Go directly to checkout (guests can checkout there)
       router.push('/checkout');
@@ -1935,26 +1951,40 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     const bundleTier = useBundleLine
       ? quantity
       : (isBulkBundleProduct ? 1 : (selectedBundleQty || null));
-    for (let i = 0; i < qty; i++) {
-      const payload = {
-        productId: product._id,
+
+    const baseVariantOptions = {
+      color: selectedColor || null,
+      size: selectedSize || null,
+      bundleQty: bundleTier,
+    };
+
+    if (useBundleLine) {
+      const entry = buildBundleCartEntry({
         price: effPrice,
-        productName: product.name || product.title || 'Product',
-        quantity: 1,
-        variantOptions: {
-          color: selectedColor || null,
-          size: selectedSize || null,
-          bundleQty: bundleTier
+        variantOptions: baseVariantOptions,
+        ...(product.specialOffer?.offerToken ? {
+          offerToken: product.specialOffer.offerToken,
+          discountPercent: product.specialOffer.discountPercent,
+        } : {}),
+      }, product, bundleTier);
+      dispatch(setCartEntry({ productId: product._id, entry }));
+    } else {
+      for (let i = 0; i < qty; i++) {
+        const payload = {
+          productId: product._id,
+          price: effPrice,
+          productName: product.name || product.title || 'Product',
+          quantity: 1,
+          variantOptions: baseVariantOptions,
+        };
+        
+        if (product.specialOffer?.offerToken) {
+          payload.offerToken = product.specialOffer.offerToken;
+          payload.discountPercent = product.specialOffer.discountPercent;
         }
-      };
-      
-      // If this is a special offer, include the offer token
-      if (product.specialOffer?.offerToken) {
-        payload.offerToken = product.specialOffer.offerToken;
-        payload.discountPercent = product.specialOffer.discountPercent;
+        
+        dispatch(addToCart(payload));
       }
-      
-      dispatch(addToCart(payload));
     }
 
     pushGtmEcommerceEvent(GTM_EVENTS.ADD_TO_CART, {
@@ -2330,7 +2360,8 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                       src={mainImage || PLACEHOLDER_IMAGE}
                       alt={safeProductName}
                       fill
-                      sizes="(max-width: 1024px) 100vw, 520px"
+                      sizes="(max-width: 1024px) 100vw, 640px"
+                      quality={90}
                       className="object-contain bg-white pointer-events-none"
                       priority
                       onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE; }}
@@ -2434,6 +2465,8 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                             src={item.src || PLACEHOLDER_IMAGE}
                             alt={`${safeProductName} ${index + 1}`}
                             fill
+                            sizes="100vw"
+                            quality={90}
                             className="object-cover"
                             priority={index === 0}
                             draggable={false}
@@ -2458,6 +2491,8 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                     src={mainImage || PLACEHOLDER_IMAGE}
                     alt={safeProductName}
                     fill
+                    sizes="100vw"
+                    quality={90}
                     className="object-cover"
                     priority
                     onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE; }}

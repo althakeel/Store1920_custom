@@ -1,0 +1,65 @@
+# Nginx upload size (fixes 413 Request Entity Too Large)
+
+The HTML `413` page from nginx means the reverse proxy rejected the request **before** it reached Next.js.
+Increase the body limit on the server that runs nginx (e.g. AWS EC2, VPS).
+
+## Quick fix
+
+Edit your nginx site config (often `/etc/nginx/nginx.conf` or `/etc/nginx/sites-available/store1920`):
+
+```nginx
+http {
+    # Allow large product/media uploads (default is often 1m)
+    client_max_body_size 100M;
+}
+
+server {
+    listen 443 ssl;
+    server_name your-domain.com;
+
+    client_max_body_size 100M;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Timeouts for slow uploads
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+}
+```
+
+Then reload nginx:
+
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+## App-side mitigations (already in codebase)
+
+1. **Client compression** — images are resized/compressed before upload (`lib/compressImageForUpload.js`).
+2. **Direct S3 upload** — `/api/store/upload/presign` returns a presigned URL so files go **browser → S3**, bypassing nginx.
+3. **Server optimization** — `sharp` compresses images on API routes before storing.
+
+Product save now uploads media to S3 first, then sends only URLs in the form (small JSON payload).
+
+## S3 CORS (required for direct browser upload)
+
+In the S3 bucket CORS configuration, allow PUT from your storefront domain:
+
+```json
+[
+  {
+    "AllowedHeaders": ["*"],
+    "AllowedMethods": ["PUT", "GET", "HEAD"],
+    "AllowedOrigins": ["https://your-domain.com", "http://localhost:3000"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3000
+  }
+]
+```

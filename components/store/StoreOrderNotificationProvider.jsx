@@ -18,11 +18,17 @@ import {
   dispatchStoreNewOrderEvent,
   getNotifiedOrderIds,
   getOrderNotificationCheckpoint,
+  isOrderNotificationsSuppressed,
   rememberNotifiedOrderIds,
   setOrderNotificationCheckpoint,
+  setOrderNotificationsSuppressed,
+  STORE_ORDER_TOAST_ID,
+  STORE_ORDERS_IMPORT_END_EVENT,
+  STORE_ORDERS_IMPORT_START_EVENT,
 } from '@/lib/storeOrderNotifications';
 
 const ALERT_SOUND_SRC = '/sound/alert.mp3';
+const BATCH_TOAST_THRESHOLD = 2;
 let alertAudio = null;
 
 function preloadStoreAlertSound() {
@@ -43,6 +49,10 @@ function playStoreAlertSound() {
   void alertAudio.play().catch(() => {});
 }
 
+function dismissOrderToasts() {
+  toast.dismiss(STORE_ORDER_TOAST_ID);
+}
+
 const StoreOrderNotificationContext = createContext({
   unreadCount: 0,
   recentOrders: [],
@@ -61,23 +71,27 @@ function formatOrderLabel(order) {
   return `${orderNumber} · AED ${total}`;
 }
 
-function showNewOrderToast(order) {
-  toast.custom((toastInstance) => (
+function OrderToastShell({ toastInstance, title, children, onDismissAll = false }) {
+  const dismiss = () => {
+    if (onDismissAll) {
+      dismissOrderToasts();
+      return;
+    }
+    toast.dismiss(toastInstance.id);
+  };
+
+  return (
     <div
       className={`${
         toastInstance.visible ? 'animate-enter' : 'animate-leave'
-      } pointer-events-auto flex w-full max-w-md rounded-xl border border-emerald-200 bg-white p-4 shadow-lg`}
+      } pointer-events-auto relative z-[9999] flex w-full max-w-md rounded-xl border border-emerald-200 bg-white p-4 shadow-lg`}
     >
       <div className="flex-1">
-        <p className="text-sm font-semibold text-emerald-700">New order received</p>
-        <p className="mt-1 text-sm text-slate-800">{formatOrderLabel(order)}</p>
-        <p className="mt-1 text-xs text-slate-500">
-          {order.customerName || 'Customer'}
-          {order.itemCount ? ` · ${order.itemCount} item${order.itemCount === 1 ? '' : 's'}` : ''}
-        </p>
+        <p className="text-sm font-semibold text-emerald-700">{title}</p>
+        {children}
         <StoreNavLink
           href="/store/orders"
-          onClick={() => toast.dismiss(toastInstance.id)}
+          onClick={dismiss}
           className="mt-3 inline-flex text-xs font-semibold text-emerald-700 hover:text-emerald-800"
         >
           View orders →
@@ -85,14 +99,51 @@ function showNewOrderToast(order) {
       </div>
       <button
         type="button"
-        onClick={() => toast.dismiss(toastInstance.id)}
-        className="ml-3 text-slate-400 hover:text-slate-600"
-        aria-label="Dismiss notification"
+        onClick={dismiss}
+        className="ml-3 shrink-0 text-lg leading-none text-slate-400 hover:text-slate-600"
+        aria-label={onDismissAll ? 'Dismiss all order alerts' : 'Dismiss notification'}
       >
         ×
       </button>
     </div>
-  ), { duration: 10000 });
+  );
+}
+
+function showNewOrderToast(order) {
+  toast.custom((toastInstance) => (
+    <OrderToastShell toastInstance={toastInstance} title="New order received">
+      <p className="mt-1 text-sm text-slate-800">{formatOrderLabel(order)}</p>
+      <p className="mt-1 text-xs text-slate-500">
+        {order.customerName || 'Customer'}
+        {order.itemCount ? ` · ${order.itemCount} item${order.itemCount === 1 ? '' : 's'}` : ''}
+      </p>
+    </OrderToastShell>
+  ), {
+    id: STORE_ORDER_TOAST_ID,
+    duration: 8000,
+  });
+}
+
+function showBatchOrderToast(orders) {
+  const preview = orders.slice(0, 3).map(formatOrderLabel).join(', ');
+  const extra = orders.length > 3 ? ` +${orders.length - 3} more` : '';
+
+  toast.custom((toastInstance) => (
+    <OrderToastShell
+      toastInstance={toastInstance}
+      title={`${orders.length} new orders received`}
+      onDismissAll
+    >
+      <p className="mt-1 text-sm text-slate-800">
+        {preview}
+        {extra}
+      </p>
+      <p className="mt-1 text-xs text-slate-500">Imported or live orders are grouped into one alert.</p>
+    </OrderToastShell>
+  ), {
+    id: STORE_ORDER_TOAST_ID,
+    duration: 10000,
+  });
 }
 
 export default function StoreOrderNotificationProvider({
@@ -108,6 +159,7 @@ export default function StoreOrderNotificationProvider({
   const [unreadCount, setUnreadCount] = useState(0);
   const checkpointRef = useRef('');
   const pollingRef = useRef(null);
+  const suppressRef = useRef(false);
 
   const markAllRead = useCallback(() => {
     if (!storeId) return;
@@ -116,9 +168,10 @@ export default function StoreOrderNotificationProvider({
     setOrderNotificationCheckpoint(storeId, now);
     setUnreadCount(0);
     setRecentOrders([]);
+    dismissOrderToasts();
   }, [storeId]);
 
-  const handleNewOrders = useCallback((orders = []) => {
+  const handleNewOrders = useCallback((orders = [], options = {}) => {
     if (!storeId || !orders.length) return;
 
     const seen = getNotifiedOrderIds(storeId);
@@ -126,6 +179,11 @@ export default function StoreOrderNotificationProvider({
     if (!freshOrders.length) return;
 
     rememberNotifiedOrderIds(storeId, freshOrders.map((order) => order.orderId));
+
+    if (suppressRef.current || isOrderNotificationsSuppressed() || options.silent) {
+      return;
+    }
+
     setRecentOrders((current) => {
       const merged = [...freshOrders, ...current];
       const unique = [];
@@ -142,15 +200,20 @@ export default function StoreOrderNotificationProvider({
 
     playStoreAlertSound();
 
-    freshOrders.forEach((order) => {
-      showNewOrderToast(order);
-    });
+    if (freshOrders.length >= BATCH_TOAST_THRESHOLD) {
+      dismissOrderToasts();
+      showBatchOrderToast(freshOrders);
+    } else {
+      dismissOrderToasts();
+      showNewOrderToast(freshOrders[0]);
+    }
 
     dispatchStoreNewOrderEvent({ orders: freshOrders });
   }, [storeId]);
 
   const refreshNotifications = useCallback(async () => {
     if (!canViewOrders || !storeId) return;
+    if (suppressRef.current || isOrderNotificationsSuppressed()) return;
 
     try {
       const token = await getToken();
@@ -169,7 +232,6 @@ export default function StoreOrderNotificationProvider({
       handleNewOrders(Array.isArray(data?.orders) ? data.orders : []);
     } catch (error) {
       if (axios.isCancel?.(error)) return;
-      // Silent fail for background polling.
     }
   }, [canViewOrders, storeId, getToken, handleNewOrders]);
 
@@ -178,11 +240,26 @@ export default function StoreOrderNotificationProvider({
 
     preloadStoreAlertSound();
     checkpointRef.current = getOrderNotificationCheckpoint(storeId);
-    refreshNotifications();
 
-    pollingRef.current = window.setInterval(refreshNotifications, 15000);
+    const poll = () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      refreshNotifications();
+    };
+
+    poll();
+
+    pollingRef.current = window.setInterval(poll, 20000);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        refreshNotifications();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
     return () => {
       if (pollingRef.current) window.clearInterval(pollingRef.current);
+      document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [canViewOrders, storeId, refreshNotifications]);
 
@@ -191,6 +268,43 @@ export default function StoreOrderNotificationProvider({
       markAllRead();
     }
   }, [pathname, markAllRead]);
+
+  useEffect(() => {
+    const onImportStart = () => {
+      suppressRef.current = true;
+      setOrderNotificationsSuppressed(true);
+      dismissOrderToasts();
+      markAllRead();
+    };
+
+    const onImportEnd = (event) => {
+      suppressRef.current = false;
+      setOrderNotificationsSuppressed(false);
+
+      const importedCount = Number(event?.detail?.importedCount || 0);
+      const orderIds = Array.isArray(event?.detail?.orderIds) ? event.detail.orderIds : [];
+
+      if (orderIds.length) {
+        rememberNotifiedOrderIds(storeId, orderIds);
+      }
+
+      markAllRead();
+
+      if (importedCount > 0) {
+        toast.success(`Imported ${importedCount} order${importedCount === 1 ? '' : 's'}`, {
+          id: 'store-orders-import-summary',
+        });
+      }
+    };
+
+    window.addEventListener(STORE_ORDERS_IMPORT_START_EVENT, onImportStart);
+    window.addEventListener(STORE_ORDERS_IMPORT_END_EVENT, onImportEnd);
+
+    return () => {
+      window.removeEventListener(STORE_ORDERS_IMPORT_START_EVENT, onImportStart);
+      window.removeEventListener(STORE_ORDERS_IMPORT_END_EVENT, onImportEnd);
+    };
+  }, [markAllRead, storeId]);
 
   const value = useMemo(() => ({
     unreadCount,

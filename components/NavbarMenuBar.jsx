@@ -7,6 +7,7 @@ import {
   getCategoryDisplayName,
   getDirectChildCategories,
   getCategoryRecordId,
+  resolveStoreNavMenuItems,
 } from '@/lib/categoryNavigation';
 
 const MENU_CACHE_KEY = 'nav:menu:v1';
@@ -214,6 +215,7 @@ function MegaDropdown({ item, dropdownLinks, featuredImages, onClose, timerRef, 
 
 export default function NavbarMenuBar() {
   const [navMenuItems, setNavMenuItems] = useState([]);
+  const [navMenuUseParentCategories, setNavMenuUseParentCategories] = useState(false);
   const [navMenuEnabled, setNavMenuEnabled] = useState(false);
   const [categories, setCategories] = useState([]);
   const [hoveredCategory, setHoveredCategory] = useState(null);
@@ -229,6 +231,13 @@ export default function NavbarMenuBar() {
     () => filterParentCategories(categories),
     [categories]
   );
+
+  const effectiveMenuItems = useMemo(() => {
+    return resolveStoreNavMenuItems(
+      { navMenuUseParentCategories, navMenuItems },
+      categories,
+    );
+  }, [navMenuUseParentCategories, categories, navMenuItems]);
 
   const hoveredChildren = useMemo(
     () => getDirectChildCategories(categories, hoveredCategory),
@@ -268,6 +277,7 @@ export default function NavbarMenuBar() {
         const parsedCategories = Array.isArray(nextCategories?.categories) ? nextCategories.categories : [];
         const parsedItems = sanitizeMenuItems(nextSettings?.navMenuItems);
         const parsedEnabled = Boolean(nextSettings?.navMenuEnabled);
+        const parsedUseParentCategories = Boolean(nextSettings?.navMenuUseParentCategories);
         const parsedActions = {
           ...defaultActionsVisibility,
           ...(nextSettings?.navActionsVisibility || {}),
@@ -282,6 +292,7 @@ export default function NavbarMenuBar() {
         setCategories(parsedCategories);
         setNavMenuItems(parsedItems);
         setNavMenuEnabled(parsedEnabled);
+        setNavMenuUseParentCategories(parsedUseParentCategories);
         setMenuStyle(parsedStyle);
 
         window.sessionStorage.setItem(CATEGORIES_CACHE_KEY, JSON.stringify(parsedCategories));
@@ -321,8 +332,8 @@ export default function NavbarMenuBar() {
     };
   }, []);
 
-  if (loadedOnce && (!navMenuEnabled || navMenuItems.length === 0)) return null;
-  if (!loadedOnce && navMenuItems.length === 0) return null;
+  if (loadedOnce && (!navMenuEnabled || effectiveMenuItems.length === 0)) return null;
+  if (!loadedOnce && effectiveMenuItems.length === 0) return null;
 
   const menuBarTextColor = getContrastColor(menuStyle.barBackgroundColor);
   const menuBarBorderColor = getMenuBarBorderColor(menuBarTextColor);
@@ -350,7 +361,7 @@ export default function NavbarMenuBar() {
     >
       <div className={`${NAVBAR_CONTAINER_CLASS} overflow-x-auto scrollbar-hide`}>
         <div className="relative flex items-center py-2 whitespace-nowrap">
-          {navMenuItems.map((item, index) => {
+          {effectiveMenuItems.map((item, index) => {
             const dropdownLinks = Array.isArray(item?.megaMenu?.links) ? item.megaMenu.links : [];
             const featuredImages = Array.isArray(item?.megaMenu?.images) ? item.megaMenu.images.filter((img) => img?.url) : [];
             const shouldUseCollectionsFlyout = isCollectionsItem(item);

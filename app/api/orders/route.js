@@ -25,6 +25,10 @@ import { linkGuestOrdersToUser, resolveContactForGuestLinking } from '@/lib/link
 import { getAuth } from '@/lib/firebase-admin';
 import { recordPurchaseFromOrder, shouldRecordPurchaseOnCreate } from '@/lib/serverCustomerTracking';
 import { sendMetaPurchaseFromOrder } from '@/lib/metaConversionsApi';
+import {
+  findBulkBundleVariant,
+  isBulkBundleProduct,
+} from '@/lib/bulkBundleCart';
 
 const PaymentMethod = {
     COD: 'COD',
@@ -279,6 +283,7 @@ export async function POST(request) {
             }
             // If variantOptions provided, validate against matching variant stock; else product stockQuantity
             let availableQty = typeof product.stockQuantity === 'number' ? product.stockQuantity : 0;
+            let variantMatch = null;
             if (item.variantOptions && Array.isArray(product.variants) && product.variants.length > 0) {
                 const { color, size, bundleQty } = item.variantOptions || {};
                 const match = product.variants.find(v => {
@@ -290,10 +295,13 @@ export async function POST(request) {
                 if (!match) {
                     return NextResponse.json({ error: 'Selected variant not found', id: item.id, variantOptions: item.variantOptions }, { status: 400 });
                 }
+                variantMatch = match;
                 availableQty = typeof match.stock === 'number' ? match.stock : availableQty;
             }
-            if (availableQty < requestedQty) {
-                return NextResponse.json({ error: 'Insufficient stock', id: item.id, availableQty, requestedQty }, { status: 400 });
+            const isBundleOrder = isBulkBundleProduct(product) && Number(item.variantOptions?.bundleQty) > 0;
+            const orderQty = isBundleOrder ? 1 : requestedQty;
+            if (availableQty < orderQty) {
+                return NextResponse.json({ error: 'Insufficient stock', id: item.id, availableQty, requestedQty: orderQty }, { status: 400 });
             }
             
             // Check for personalized offer token and validate
@@ -355,17 +363,26 @@ export async function POST(request) {
                     console.error('Error validating free gift campaign:', err);
                 }
             }
+
+            if (isBundleOrder) {
+                const bundleVariant = findBulkBundleVariant(product, item.variantOptions.bundleQty) || variantMatch;
+                if (bundleVariant?.price != null) {
+                    finalPrice = Number(bundleVariant.price);
+                }
+            } else if (variantMatch?.price != null) {
+                finalPrice = Number(variantMatch.price);
+            }
             
             const storeId = product.storeId;
             if (!ordersByStore.has(storeId)) ordersByStore.set(storeId, []);
             checkoutStoreIds.add(String(storeId));
             ordersByStore.get(storeId).push({ 
                 ...item, 
-                quantity: requestedQty, 
+                quantity: orderQty, 
                 price: finalPrice,
                 appliedOffer: appliedOffer 
             });
-            grandSubtotal += Number(finalPrice) * Number(requestedQty);
+            grandSubtotal += Number(finalPrice) * Number(orderQty);
         }
 
         // Shipping: use from payload, fallback to 0

@@ -17,6 +17,7 @@ import { runTrackedOnce } from "@/lib/trackingDedupe";
 import { GTM_EVENTS, gtmDedupeKey } from "@/lib/gtmEvents";
 import { STORE_CURRENCY } from "@/lib/storeCurrency";
 import { getCartEntryProductId, getCartEntryQuantity, isFreeGiftEntry } from "@/lib/freeGiftUtils";
+import { resolveCartLinePricing } from "@/lib/bulkBundleCart";
 
 export const dynamic = "force-dynamic";
 
@@ -108,13 +109,15 @@ export default function Cart() {
             const isFreeGift = isFreeGiftEntry(value);
 
             if (product && qty > 0) {
-                const unitPrice = isFreeGift
-                    ? 0
-                    : ((typeof value === 'object' ? value?.price : undefined) ?? product.price ?? 0);
+                const pricing = resolveCartLinePricing(product, value, qty);
                 arr.push({
                     ...product,
                     quantity: qty,
-                    _cartPrice: unitPrice,
+                    _cartPrice: pricing.unitPrice,
+                    _lineTotal: pricing.lineTotal,
+                    _displayQuantity: pricing.displayQuantity,
+                    _isBulkBundle: pricing.isBulkBundle,
+                    _bundleTier: pricing.bundleTier,
                     _cartKey: key,
                     _productId: actualProductId,
                     _isFreeGift: isFreeGift,
@@ -122,7 +125,7 @@ export default function Cart() {
                 });
                 const isOutOfStock = product.inStock === false || (typeof product.stockQuantity === 'number' && product.stockQuantity <= 0);
                 if (!isOutOfStock && !isFreeGift) {
-                    total += unitPrice * qty;
+                    total += pricing.lineTotal;
                 }
             } else if (!product && qty > 0) {
                 console.warn('[Cart Page] Product not found in list:', key, 'qty:', qty);
@@ -338,13 +341,13 @@ export default function Cart() {
                                                         {item._isFreeGift ? (
                                                             <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-semibold text-green-700">Qty 1 gift</span>
                                                         ) : (
-                                                            <Counter productId={item._cartKey || item._id} maxQty={maxQty} />
+                                                            <Counter productId={item._cartKey || item._id} maxQty={maxQty} product={item} />
                                                         )}
                                                     </div>
                                                 </div>
 
                                                 <div className="flex items-center justify-between mt-3 md:hidden">
-                                                    <p className="text-sm font-semibold text-gray-900">Total: {item._isFreeGift ? 'FREE' : `${currency}${((item._cartPrice ?? item.price ?? 0) * item.quantity).toLocaleString()}`}</p>
+                                                    <p className="text-sm font-semibold text-gray-900">Total: {item._isFreeGift ? 'FREE' : `${currency}${(item._lineTotal ?? ((item._cartPrice ?? item.price ?? 0) * item.quantity)).toLocaleString()}`}</p>
                                                     {!item._isFreeGift ? (
                                                         <button
                                                             onClick={() => handleDeleteItemFromCart(item._cartKey || item._id)}
@@ -369,7 +372,7 @@ export default function Cart() {
                                                         <Trash2Icon size={20} />
                                                     </button>
                                                 ) : <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-semibold text-green-700">AUTO-ADDED</span>}
-                                                <p className="text-lg font-bold text-gray-900">{item._isFreeGift ? 'FREE' : `${currency}${((item._cartPrice ?? item.price ?? 0) * item.quantity).toLocaleString()}`}</p>
+                                                <p className="text-lg font-bold text-gray-900">{item._isFreeGift ? 'FREE' : `${currency}${(item._lineTotal ?? ((item._cartPrice ?? item.price ?? 0) * item.quantity)).toLocaleString()}`}</p>
                                             </div>
                                         </div>
                                             );
@@ -411,7 +414,7 @@ export default function Cart() {
                                                         </div>
 
                                                         <div className="flex items-center justify-between mt-3 md:hidden">
-                                                            <p className="text-sm font-semibold text-gray-900">Total: {currency}{((item._cartPrice ?? item.price ?? 0) * item.quantity).toLocaleString()}</p>
+                                                            <p className="text-sm font-semibold text-gray-900">Total: {currency}{(item._lineTotal ?? ((item._cartPrice ?? item.price ?? 0) * item.quantity)).toLocaleString()}</p>
                                                             <button
                                                                 onClick={() => handleDeleteItemFromCart(item._cartKey || item._id)}
                                                                 disabled={!!deletingKeys[item._cartKey]}
@@ -432,7 +435,7 @@ export default function Cart() {
                                                         >
                                                             <Trash2Icon size={20} />
                                                         </button>
-                                                        <p className="text-lg font-bold text-gray-900">{currency}{((item._cartPrice ?? item.price ?? 0) * item.quantity).toLocaleString()}</p>
+                                                        <p className="text-lg font-bold text-gray-900">{currency}{(item._lineTotal ?? ((item._cartPrice ?? item.price ?? 0) * item.quantity)).toLocaleString()}</p>
                                                     </div>
                                                 </div>
                                             </div>

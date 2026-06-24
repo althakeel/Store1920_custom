@@ -26,6 +26,7 @@ const DEFAULT_SETTINGS = {
     showcaseFlyoutBorderColor: '#dbe3ee',
   },
   navMenuItems: [],
+  navMenuUseParentCategories: false,
 };
 
 let inMemorySettings = {
@@ -146,6 +147,7 @@ const mergeWithDefaults = (raw) => {
 
   return {
     navMenuEnabled: boolOrDefault(raw?.navMenuEnabled, boolOrDefault(raw?.enabled, DEFAULT_SETTINGS.navMenuEnabled)),
+    navMenuUseParentCategories: boolOrDefault(raw?.navMenuUseParentCategories, DEFAULT_SETTINGS.navMenuUseParentCategories),
     navActionsVisibility: normalizeVisibility(raw?.navActionsVisibility),
     navMenuStyle: normalizeMenuStyle(raw?.navMenuStyle, DEFAULT_SETTINGS.navMenuStyle),
     navMenuItems,
@@ -216,6 +218,9 @@ export async function PUT(request) {
 
     const next = {
       navMenuEnabled: incoming.navMenuEnabled == null ? current.navMenuEnabled : boolOrDefault(incoming.navMenuEnabled, current.navMenuEnabled),
+      navMenuUseParentCategories: incoming.navMenuUseParentCategories == null
+        ? current.navMenuUseParentCategories
+        : boolOrDefault(incoming.navMenuUseParentCategories, current.navMenuUseParentCategories),
       navActionsVisibility: incoming.navActionsVisibility == null
         ? current.navActionsVisibility
         : {
@@ -240,6 +245,7 @@ export async function PUT(request) {
         $set: {
           storeId: userId,
           navMenuEnabled: next.navMenuEnabled,
+          navMenuUseParentCategories: next.navMenuUseParentCategories,
           navActionsVisibility: next.navActionsVisibility,
           navMenuStyle: next.navMenuStyle,
           navMenuItems: next.navMenuItems,
@@ -274,6 +280,9 @@ export async function PUT(request) {
 
       const next = {
         navMenuEnabled: incoming.navMenuEnabled == null ? current.navMenuEnabled : boolOrDefault(incoming.navMenuEnabled, current.navMenuEnabled),
+        navMenuUseParentCategories: incoming.navMenuUseParentCategories == null
+          ? current.navMenuUseParentCategories
+          : boolOrDefault(incoming.navMenuUseParentCategories, current.navMenuUseParentCategories),
         navActionsVisibility: incoming.navActionsVisibility == null
           ? normalizeVisibility(current.navActionsVisibility)
           : {

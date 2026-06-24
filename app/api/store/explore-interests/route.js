@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import connectDB from '@/lib/mongodb'
 import Store from '@/models/Store'
 import authSeller from '@/middlewares/authSeller'
+import { invalidateCachePattern } from '@/lib/cache'
 
 export const dynamic = 'force-dynamic'
 
@@ -68,6 +69,7 @@ export async function POST(request) {
       { $set: { exploreInterestsEnabled: enabled, exploreInterestsProductIds: productIds } },
       { new: true }
     )
+    invalidateCachePattern('public:explore-interests')
     console.log('[explore interests POST] wrote to first store:', updated?._id, 'ids:', productIds.length, 'requested storeId was:', storeId)
 
     return NextResponse.json({ message: 'Saved', enabled, productIds, _storeId: updated?._id ? String(updated._id) : storeId })

@@ -7,7 +7,7 @@ import { countryCodes } from "@/assets/countryCodes";
 import { indiaStatesAndDistricts } from "@/assets/indiaStatesAndDistricts";
 import { useSelector, useDispatch } from "react-redux";
 import { fetchAddress } from "@/lib/features/address/addressSlice";
-import { clearCart, addToCart, removeFromCart, deleteItemFromCart } from "@/lib/features/cart/cartSlice";
+import { clearCart, deleteItemFromCart } from "@/lib/features/cart/cartSlice";
 import { fetchShippingSettings, calculateShipping } from "@/lib/shipping";
 import { trackMetaEvent } from "@/lib/metaPixelClient";
 import { trackInitiateCheckout } from "@/lib/metaPixelTracking";
@@ -25,6 +25,8 @@ import { pushGtmEcommerceEvent, toGtmItem } from '@/lib/pushGtmEcommerceEvent';
 import { runTrackedOnce } from '@/lib/trackingDedupe';
 import { GTM_EVENTS, gtmDedupeKey } from '@/lib/gtmEvents';
 import { getCartEntryProductId, getCartEntryQuantity, isFreeGiftEntry } from "@/lib/freeGiftUtils";
+import { resolveCartLinePricing } from "@/lib/bulkBundleCart";
+import { decrementCartItem, incrementCartItem } from "@/lib/bundleCartActions";
 import { STORE1920_LOGO_PATH } from "@/lib/brandLogo";
 import {
   getPhoneInputError,
@@ -180,9 +182,9 @@ export default function CheckoutPage() {
       const itemsTotal = cartItemsArray.reduce((sum, item) => {
         const product = products.find((p) => p._id === item.productId);
         if (!product) return sum;
-        const variant = product.variants?.find((v) => v._id === item.variantId);
-        const price = variant?.salePrice || variant?.price || product.salePrice || product.price || 0;
-        return sum + price * item.quantity;
+        const cartValue = cartItems[item.productId] ?? cartItems[Object.keys(cartItems).find((key) => getCartEntryProductId(key, cartItems[key]) === item.productId)];
+        const pricing = resolveCartLinePricing(product, cartValue, item.quantity);
+        return sum + pricing.lineTotal;
       }, 0);
       
       const cartProductIds = cartItemsArray.map((item) => item.productId);
@@ -555,11 +557,16 @@ export default function CheckoutPage() {
     if (product && qty > 0) {
       if (isPurchasableProduct(product)) {
         console.log('Found purchasable product for key:', key, product.name);
-        const unitPrice = isFreeGift ? 0 : (Number(priceOverride ?? product.salePrice ?? product.price ?? 0) || 0);
+        const pricing = resolveCartLinePricing(product, value, qty);
+        const unitPrice = isFreeGift ? 0 : pricing.unitPrice;
         cartArray.push({
           ...product,
           quantity: qty,
           _cartPrice: unitPrice,
+          _lineTotal: pricing.lineTotal,
+          _displayQuantity: pricing.displayQuantity,
+          _isBulkBundle: pricing.isBulkBundle,
+          _bundleTier: pricing.bundleTier,
           _cartKey: key,
           _productId: actualProductId,
           _isFreeGift: isFreeGift,
@@ -573,7 +580,7 @@ export default function CheckoutPage() {
   
   console.log('Checkout - Final Cart Array:', cartArray);
 
-  const subtotal = cartArray.reduce((sum, item) => sum + (item._cartPrice ?? item.price ?? 0) * item.quantity, 0);
+  const subtotal = cartArray.reduce((sum, item) => sum + (item._lineTotal ?? ((item._cartPrice ?? item.price ?? 0) * item.quantity)), 0);
   
   // Calculate coupon discount
   const couponDiscountRaw = Number(appliedCoupon?.discountAmount || 0);
@@ -614,10 +621,16 @@ export default function CheckoutPage() {
     const variantOptions = typeof value === 'object' ? value?.variantOptions : undefined;
     const offerToken = typeof value === 'object' ? value?.offerToken : undefined;
     const freeGift = typeof value === 'object' ? value?.freeGift : undefined;
+    const bundleTier = item._bundleTier ?? variantOptions?.bundleQty;
     return {
       id: item._productId || item._id,
-      quantity: qty,
-      ...(variantOptions ? { variantOptions } : {}),
+      quantity: item._isBulkBundle ? 1 : qty,
+      ...(variantOptions || bundleTier ? {
+        variantOptions: {
+          ...(variantOptions || {}),
+          ...(bundleTier ? { bundleQty: Number(bundleTier) } : {}),
+        },
+      } : {}),
       ...(offerToken ? { offerToken } : {}),
       ...(freeGift ? { freeGift } : {}),
     };
@@ -680,16 +693,19 @@ export default function CheckoutPage() {
       if (!productId || qty <= 0) continue;
 
       const product = products?.find((p) => String(p._id) === String(productId));
-      const priceOverride = typeof value === 'object' ? value?.price : undefined;
-      const unitPrice = product
-        ? Number(product.salePrice ?? product.price ?? priceOverride ?? 0)
-        : Number(priceOverride ?? 0);
+      const pricing = product
+        ? resolveCartLinePricing(product, value, qty)
+        : {
+          unitPrice: Number(typeof value === 'object' ? value?.price : 0) || 0,
+          lineTotal: Number(typeof value === 'object' ? value?.price : 0) || 0,
+          displayQuantity: qty,
+        };
 
-      gtmItems.push(toGtmItem(product || { _id: productId, name: 'Product', price: unitPrice }, {
+      gtmItems.push(toGtmItem(product || { _id: productId, name: 'Product', price: pricing.unitPrice }, {
         item_id: productId,
         item_name: product?.name || 'Product',
-        price: unitPrice,
-        quantity: qty,
+        price: pricing.unitPrice,
+        quantity: pricing.displayQuantity ?? qty,
       }));
     }
 
@@ -1808,21 +1824,30 @@ export default function CheckoutPage() {
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
-                                if (item.quantity > 1) {
-                                  dispatch(removeFromCart({ productId: item._cartKey || item._id }));
-                                } else {
-                                  dispatch(deleteItemFromCart({ productId: item._cartKey || item._id }));
-                                }
+                                const cartKey = item._cartKey || item._id;
+                                const entry = cartItems?.[cartKey];
+                                decrementCartItem(dispatch, {
+                                  productId: cartKey,
+                                  entry,
+                                  product: item,
+                                });
                               }}
                             >-</button>
-                            <span className="px-2 text-sm">{item.quantity}</span>
+                            <span className="px-2 text-sm">{item._displayQuantity ?? item.quantity}</span>
                             <button 
                               type="button" 
                               className="px-2 py-0.5 rounded bg-gray-200 text-gray-700 hover:bg-gray-300 active:bg-gray-400" 
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
-                                dispatch(addToCart({ productId: item._cartKey || item._id, price: item._cartPrice ?? item.price }));
+                                const cartKey = item._cartKey || item._id;
+                                const entry = cartItems?.[cartKey];
+                                incrementCartItem(dispatch, {
+                                  productId: cartKey,
+                                  entry,
+                                  product: item,
+                                  price: item._cartPrice ?? item.price,
+                                });
                               }}
                             >+</button>
                           </div>
@@ -2861,9 +2886,9 @@ export default function CheckoutPage() {
                   const itemsTotal = cartItemsArray.reduce((sum, item) => {
                     const product = products.find((p) => p._id === item.productId);
                     if (!product) return sum;
-                    const variant = product.variants?.find((v) => v._id === item.variantId);
-                    const price = variant?.salePrice || variant?.price || product.salePrice || product.price || 0;
-                    return sum + price * item.quantity;
+                    const cartValue = cartItems[Object.keys(cartItems).find((key) => getCartEntryProductId(key, cartItems[key]) === item.productId)];
+                    const pricing = resolveCartLinePricing(product, cartValue, item.quantity);
+                    return sum + pricing.lineTotal;
                   }, 0);
                   
                   const cartProductIds = cartItemsArray.map(item => item.productId);

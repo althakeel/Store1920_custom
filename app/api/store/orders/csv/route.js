@@ -40,10 +40,184 @@ function normalizeText(value = '') {
   return String(value || '').trim()
 }
 
+function normalizeWcStatusSlug(value = '') {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^wc-/, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+function mapWoocommerceStatusToStore1920(wcStatus = '', wcLabel = '') {
+  const slug = normalizeWcStatusSlug(wcStatus)
+  const label = normalizeWcStatusSlug(wcLabel)
+  const s = slug || label
+
+  const exact = {
+    pending: 'ORDER_PLACED',
+    confirmed: 'ORDER_PLACED',
+    processing: 'PROCESSING',
+    'on-hold': 'ORDER_PLACED',
+    completed: 'DELIVERED',
+    closed: 'DELIVERED',
+    cancelled: 'CANCELLED',
+    refunded: 'RETURNED',
+    failed: 'PAYMENT_FAILED',
+    shipped: 'SHIPPED',
+    paid: 'DELIVERED',
+    returned: 'RETURNED',
+    'return-request': 'RETURN_REQUESTED',
+    'return-requested': 'RETURN_REQUESTED',
+    'return-approved': 'RETURN_APPROVED',
+    'return-rejected': 'PROCESSING',
+    'delivery-failed': 'CANCELLED',
+    'cash-on-delivery': 'ORDER_PLACED',
+    cod: 'ORDER_PLACED',
+    'out-for-delivery': 'OUT_FOR_DELIVERY',
+  }
+
+  if (exact[s]) return exact[s]
+  if (s.includes('return')) {
+    if (s.includes('reject')) return 'PROCESSING'
+    if (s.includes('approv')) return 'RETURN_APPROVED'
+    if (s.includes('request') || s.includes('initiat')) return 'RETURN_REQUESTED'
+    return 'RETURNED'
+  }
+  if (s.includes('deliver') && s.includes('fail')) return 'CANCELLED'
+  if (s.includes('ship')) return 'SHIPPED'
+  if (s.includes('cancel')) return 'CANCELLED'
+  if (s.includes('refund')) return 'RETURNED'
+  if (s.includes('fail')) return 'PAYMENT_FAILED'
+  if (s.includes('complet') || s.includes('closed') || s === 'paid') return 'DELIVERED'
+  if (s.includes('process') || s.includes('confirm')) return 'PROCESSING'
+
+  return ''
+}
+
+function normalizeImportedPaymentMethod(methodCode = '', methodTitle = '') {
+  const code = String(methodCode || '').trim()
+  const title = String(methodTitle || '').trim()
+  const combined = `${code} ${title}`.trim().toLowerCase()
+
+  if (!combined) return 'COD'
+
+  if (combined.includes('wallet') || combined.includes('store credit') || combined.includes('store-credit')) {
+    return 'WALLET'
+  }
+  if (combined.includes('tabby')) return 'TABBY'
+  if (combined.includes('tamara')) return 'TAMARA'
+  if (
+    combined.includes('cod')
+    || combined.includes('cash on delivery')
+    || combined.includes('cash-on-delivery')
+    || combined.includes('pay on delivery')
+  ) {
+    return 'COD'
+  }
+  if (combined.includes('stripe')) return 'STRIPE'
+  if (combined.includes('razorpay')) return 'RAZORPAY'
+  if (
+    combined.includes('card')
+    || combined.includes('credit')
+    || combined.includes('debit')
+    || combined.includes('paypal')
+    || combined.includes('prepaid')
+    || combined.includes('online')
+    || combined.includes('apple pay')
+    || combined.includes('google pay')
+    || combined.includes('visa')
+    || combined.includes('mastercard')
+    || combined.includes('mada')
+  ) {
+    return 'CARD'
+  }
+
+  const upper = code.toUpperCase()
+  if (['COD', 'CARD', 'STRIPE', 'TABBY', 'TAMARA', 'WALLET', 'RAZORPAY'].includes(upper)) {
+    return upper
+  }
+
+  return 'COD'
+}
+
+function normalizeImportedPaymentStatusText(paymentStatus = '', isPaid = false) {
+  const text = String(paymentStatus || '').trim().toLowerCase()
+  if (isPaid || ['paid', 'captured', 'completed', 'success', 'succeeded'].includes(text)) {
+    return 'PAID'
+  }
+  if (['failed', 'payment_failed', 'refunded', 'cancelled', 'canceled'].includes(text)) {
+    return 'FAILED'
+  }
+  return 'PENDING'
+}
+
+function resolveImportedPaymentStatus({
+  storeStatus,
+  paymentMethod,
+  isPaid,
+  paymentStatus,
+}) {
+  const method = String(paymentMethod || '').toUpperCase()
+  let paid = parseBoolean(isPaid, false)
+  const statusText = String(paymentStatus || '').trim()
+
+  if (statusText) {
+    paid = ['paid', 'captured', 'completed'].includes(statusText.toLowerCase())
+  }
+
+  if (method === 'COD') {
+    if (storeStatus === 'DELIVERED') paid = true
+    if (['RETURNED', 'RETURN_REQUESTED', 'RETURN_APPROVED', 'CANCELLED', 'PAYMENT_FAILED'].includes(storeStatus)) {
+      paid = false
+    }
+  }
+
+  return {
+    isPaid: paid,
+    paymentStatus: normalizeImportedPaymentStatusText(paid ? 'paid' : statusText, paid),
+  }
+}
+
 function parseDate(value) {
   if (!value) return null
-  const parsed = new Date(value)
-  return Number.isNaN(parsed.getTime()) ? null : parsed
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    if (value > 1e12) {
+      const ms = new Date(value)
+      return Number.isNaN(ms.getTime()) ? null : ms
+    }
+    if (value > 20000) {
+      const excelEpoch = Date.UTC(1899, 11, 30)
+      const parsed = new Date(excelEpoch + value * 86400000)
+      return Number.isNaN(parsed.getTime()) ? null : parsed
+    }
+  }
+
+  const text = String(value).trim()
+  if (!text) return null
+
+  const iso = new Date(text)
+  if (!Number.isNaN(iso.getTime()) && !/^0+$/.test(text.replace(/\D/g, ''))) {
+    return iso
+  }
+
+  const dmy = text.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/)
+  if (dmy) {
+    const year = Number(dmy[3].length === 2 ? `20${dmy[3]}` : dmy[3])
+    const parsed = new Date(
+      year,
+      Number(dmy[2]) - 1,
+      Number(dmy[1]),
+      Number(dmy[4] || 0),
+      Number(dmy[5] || 0),
+      Number(dmy[6] || 0),
+    )
+    return Number.isNaN(parsed.getTime()) ? null : parsed
+  }
+
+  return null
 }
 
 function normalizeRowKey(key = '') {
@@ -133,6 +307,8 @@ function parseOrderItems(value) {
         sku: normalizeText(item?.sku || item?.SKU),
         price: parseNumber(item?.price, 0),
         quantity: Math.max(1, parseNumber(item?.quantity, 1)),
+        woocommerceProductId: normalizeText(item?.woocommerceProductId || item?.productId || item?.woocommerceproductid),
+        legacySourceId: normalizeText(item?.legacySourceId || item?.legacysourceid),
       }))
       .filter((item) => isLikelyProductName(item.name))
   } catch {
@@ -178,8 +354,8 @@ function buildFallbackOrderItems(pick, total) {
   }
 
   const productName = normalizeText(
-    pick.fuzzy('description', 'note', 'productname', 'products', 'productdetails')
-      || pick('description', 'note', 'productName'),
+    pick.fuzzy('description', 'note', 'productname', 'products', 'productdetails', 'productnames', 'productssummary')
+      || pick('description', 'note', 'productName', 'productNames', 'productsSummary'),
   )
 
   if (!isLikelyProductName(productName)) return []
@@ -233,6 +409,28 @@ function escapeRegex(value = '') {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+function buildLegacyProductIds(item = {}) {
+  const ids = new Set()
+  const legacy = normalizeText(item.legacySourceId)
+  const wcProductId = normalizeText(item.woocommerceProductId)
+
+  if (legacy) {
+    ids.add(legacy)
+    if (legacy.startsWith('woo:')) {
+      ids.add(`wc-${legacy.slice(4)}`)
+    }
+    if (legacy.startsWith('wc-')) {
+      ids.add(`woo:${legacy.slice(3)}`)
+    }
+  }
+
+  if (wcProductId) {
+    ids.add(`woo:${wcProductId}`, `wc-${wcProductId}`)
+  }
+
+  return [...ids].filter(Boolean)
+}
+
 async function attachProductsToItems(items, storeId) {
   const enriched = []
 
@@ -240,21 +438,30 @@ async function attachProductsToItems(items, storeId) {
     const next = { ...item }
     let product = null
 
-    if (next.sku) {
-      product = await Product.findOne({ storeId, sku: next.sku }).select('_id name images price').lean()
+    const legacyIds = buildLegacyProductIds(next)
+    if (legacyIds.length) {
+      product = await Product.findOne({
+        storeId,
+        legacySourceId: { $in: legacyIds },
+      }).select('_id name images price legacySourceId').lean()
+    }
+
+    if (!product && next.sku) {
+      product = await Product.findOne({ storeId, sku: next.sku }).select('_id name images price legacySourceId').lean()
     }
 
     if (!product && next.name) {
       product = await Product.findOne({
         storeId,
         name: new RegExp(`^${escapeRegex(next.name)}$`, 'i'),
-      }).select('_id name images price').lean()
+      }).select('_id name images price legacySourceId').lean()
     }
 
     if (product) {
       next.productId = product._id
       if (!next.price) next.price = product.price || 0
       if (!next.name) next.name = product.name
+      if (!next.legacySourceId) next.legacySourceId = product.legacySourceId
     }
 
     enriched.push(next)
@@ -283,7 +490,11 @@ async function importOrderRow(row, storeId) {
 
   const explicitOrderId = normalizeText(pick('orderId', '_id', 'id'))
   const shortOrderNumber = parseNumber(pick('shortOrderNumber', 'orderNumber', 'orderno'), null)
-  const legacySourceId = normalizeText(pick('legacySourceId', 'csvSourceId', 'sourceId'))
+  let legacySourceId = normalizeText(pick('legacySourceId', 'csvSourceId', 'sourceId'))
+  const wcOrderId = normalizeText(pick('woocommerceOrderId', 'woocommerceorderid', 'wcorderid'))
+  if (!legacySourceId && wcOrderId) {
+    legacySourceId = `wc-${wcOrderId}`
+  }
 
   const customerName = normalizeText(pick.fuzzy(
     'customerName',
@@ -323,6 +534,8 @@ async function importOrderRow(row, storeId) {
     order = await Order.findOne({ shortOrderNumber, storeId })
   }
 
+  const isExisting = Boolean(order)
+
   if (!order) {
     order = new Order({ storeId })
   }
@@ -330,15 +543,21 @@ async function importOrderRow(row, storeId) {
   const codAmount = parseNumber(pick('cod'), null)
   const valueAmount = parseNumber(pick('value'), null)
   const explicitTotal = parseNumber(pick('total', 'amount', 'orderTotal'), null)
-  const total = explicitTotal ?? (codAmount || valueAmount || order.total || 0)
+  const total = explicitTotal ?? (codAmount || valueAmount || 0)
 
-  const paymentMethod = normalizeText(pick.fuzzy(
+  const paymentMethodRaw = normalizeText(pick.fuzzy(
     'paymentMethod',
     'paymentType',
     'payment',
   ) || pick('paymentMethod', 'paymentType'))
+  const paymentMethodTitle = normalizeText(pick.fuzzy(
+    'paymentMethodTitle',
+    'paymentTitle',
+    'paymentmethodtitle',
+  ) || pick('paymentMethodTitle', 'paymentTitle'))
+  const paymentMethod = normalizeImportedPaymentMethod(paymentMethodRaw, paymentMethodTitle)
 
-  let orderItems = parseOrderItems(pick('orderItems', 'lineItems'))
+  let orderItems = parseOrderItems(pick('orderItems', 'lineItems', 'lineitems'))
   if (!orderItems.length) {
     orderItems = buildFallbackOrderItems(pick, total)
   }
@@ -348,66 +567,142 @@ async function importOrderRow(row, storeId) {
 
   const shippingAddress = buildShippingAddress(pick, customerName, customerEmail, customerPhone)
 
-  order.legacySourceId = legacySourceId || order.legacySourceId || null
-  order.userId = userId || order.userId || undefined
-  order.total = total
-  order.shippingFee = parseNumber(pick('shippingFee', 'deliveryFee'), order.shippingFee || 0)
-  order.status = normalizeText(pick('status') || order.status || 'ORDER_PLACED').toUpperCase()
-  order.paymentMethod = paymentMethod || order.paymentMethod
-  order.paymentStatus = normalizeText(pick('paymentStatus') || order.paymentStatus || (order.isPaid ? 'PAID' : 'Pending'))
-  order.isPaid = parseBoolean(pick('isPaid', 'paid'), order.isPaid)
-  order.isGuest = pick('isGuest') !== '' ? parseBoolean(pick('isGuest'), !userId) : !userId
+  const isDelivered = parseBoolean(pick('isDelivered', 'delivered'), false)
+  const wcStatus = normalizeText(pick('woocommerceStatus', 'woocommercestatus'))
+  const wcStatusLabel = normalizeText(pick('woocommerceStatusLabel', 'woocommercestatuslabel'))
 
-  if (customerName) order.guestName = customerName
-  if (customerEmail) order.guestEmail = customerEmail
-  if (customerPhone) order.guestPhone = customerPhone
-
-  order.trackingId = normalizeText(pick('trackingId', 'awb', 'trackingNumber') || order.trackingId)
-  order.trackingUrl = normalizeText(pick('trackingUrl', 'trackingLink') || order.trackingUrl)
-  order.courier = normalizeText(pick('courier', 'courierName', 'couriertype') || order.courier)
-  order.notes = normalizeText(pick('notes', 'note') || order.notes)
-
-  if (Object.keys(shippingAddress).length > 0) {
-    order.shippingAddress = shippingAddress
-    order.markModified('shippingAddress')
+  let importedStatus = normalizeText(pick('status') || 'ORDER_PLACED').toUpperCase()
+  const mappedFromWc = mapWoocommerceStatusToStore1920(wcStatus, wcStatusLabel)
+  if (mappedFromWc && (importedStatus === 'ORDER_PLACED' || !pick('status'))) {
+    importedStatus = mappedFromWc
   }
 
-  if (orderItems.length) {
-    order.orderItems = orderItems
-    order.markModified('orderItems')
+  const resolvedStatus = isDelivered
+    && !['CANCELLED', 'RETURNED', 'RETURN_REQUESTED', 'RETURN_APPROVED', 'PAYMENT_FAILED'].includes(importedStatus)
+    ? 'DELIVERED'
+    : importedStatus
 
-    if (!order.total) {
-      order.total = orderItems.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.quantity || 1)), 0)
-    }
+  const payment = resolveImportedPaymentStatus({
+    storeStatus: resolvedStatus,
+    paymentMethod,
+    isPaid: pick('isPaid', 'paid'),
+    paymentStatus: pick('paymentStatus'),
+  })
+
+  if (legacySourceId) {
+    order.legacySourceId = legacySourceId
   }
 
-  const createdAt = parseDate(pick('createdAt', 'orderDate', 'date'))
-  const updatedAt = parseDate(pick('updatedAt'))
-
-  await order.save()
-
-  if (!order.shortOrderNumber) {
-    if (Number.isFinite(shortOrderNumber)) {
-      order.shortOrderNumber = shortOrderNumber
-      await syncOrderCounterFloor(storeId, shortOrderNumber)
-    } else {
-      order.shortOrderNumber = await allocateShortOrderNumber(storeId)
-    }
-  } else if (Number.isFinite(shortOrderNumber) && shortOrderNumber >= order.shortOrderNumber) {
+  if (Number.isFinite(shortOrderNumber)) {
     order.shortOrderNumber = shortOrderNumber
     await syncOrderCounterFloor(storeId, shortOrderNumber)
+  } else if (!order.shortOrderNumber) {
+    order.shortOrderNumber = await allocateShortOrderNumber(storeId)
   }
+
+  order.userId = userId || undefined
+  order.total = total
+  order.shippingFee = parseNumber(pick('shippingFee', 'deliveryFee'), 0)
+  order.status = resolvedStatus
+  order.paymentMethod = paymentMethod
+  order.paymentStatus = payment.paymentStatus
+  order.isPaid = payment.isPaid
+  order.isGuest = pick('isGuest') !== '' ? parseBoolean(pick('isGuest'), !userId) : !userId
+
+  const currency = normalizeText(pick('currency'))
+  if (currency) {
+    order.currency = currency
+  }
+
+  order.guestName = customerName
+  order.guestEmail = customerEmail
+  order.guestPhone = customerPhone
+
+  order.trackingId = normalizeText(pick('trackingId', 'awb', 'trackingNumber'))
+  order.trackingUrl = normalizeText(pick('trackingUrl', 'trackingLink'))
+  order.courier = normalizeText(pick('courier', 'courierName', 'couriertype'))
+  order.notes = normalizeText(pick('notes', 'note'))
+
+  order.shippingAddress = shippingAddress
+  order.markModified('shippingAddress')
+
+  order.orderItems = orderItems
+  order.markModified('orderItems')
+
+  if (!order.total && orderItems.length) {
+    order.total = orderItems.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.quantity || 1)), 0)
+  }
+
+  const createdAt = parseDate(pick.fuzzy('createdAt', 'orderDate', 'datecreated', 'ordercreated', 'date') || pick('createdAt', 'orderDate', 'date'))
+  const updatedAt = parseDate(pick('updatedAt', 'datemodified', 'modifiedAt')) || createdAt
 
   if (createdAt) {
     order.createdAt = createdAt
-  }
-  if (updatedAt) {
-    order.updatedAt = updatedAt
+    order.updatedAt = updatedAt || createdAt
   }
 
-  await order.save()
+  await order.save({ timestamps: !createdAt })
 
-  return order
+  return { order, isExisting }
+}
+
+function filterImportRows(rows = []) {
+  return rows.filter((row) => !isImportMetadataRow(row))
+}
+
+function isImportMetadataRow(row = {}) {
+  const values = Object.values(row).map((value) => String(value || '').trim())
+  return values.some((value) => value.includes('EXPORT_META'))
+}
+
+async function processImportRows(rows, storeId, { rowOffset = 0 } = {}) {
+  const importRows = filterImportRows(rows)
+  let created = 0
+  let updated = 0
+  let failed = 0
+  const failures = []
+
+  for (let index = 0; index < importRows.length; index += 1) {
+    const row = importRows[index] || {}
+    const rowNumber = rowOffset + index + 2
+
+    try {
+      const { isExisting } = await importOrderRow(row, storeId)
+      if (isExisting) {
+        updated += 1
+      } else {
+        created += 1
+      }
+    } catch (error) {
+      failed += 1
+      failures.push({
+        row: rowNumber,
+        reason: error?.message || 'Failed to import order row',
+      })
+    }
+  }
+
+  return {
+    summary: {
+      totalRows: importRows.length,
+      created,
+      updated,
+      failed,
+    },
+    failures: failures.slice(0, 100),
+  }
+}
+
+async function parseRowsFromUpload(file) {
+  const arrayBuffer = await file.arrayBuffer()
+  const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: true })
+  const sheetName = workbook.SheetNames[0]
+
+  if (!sheetName) {
+    throw new Error('No worksheet found in CSV file')
+  }
+
+  return filterImportRows(XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' }))
 }
 
 export async function POST(request) {
@@ -419,69 +714,32 @@ export async function POST(request) {
 
     await connectDB()
 
-    const formData = await request.formData()
-    const file = formData.get('file')
-    if (!file || typeof file !== 'object' || !('arrayBuffer' in file)) {
-      return NextResponse.json({ error: 'CSV file is required' }, { status: 400 })
+    const contentType = request.headers.get('content-type') || ''
+    let rows = []
+    let rowOffset = 0
+
+    if (contentType.includes('application/json')) {
+      const body = await request.json()
+      rows = Array.isArray(body?.rows) ? body.rows : []
+      rowOffset = Math.max(0, Number(body?.rowOffset) || 0)
+    } else {
+      const formData = await request.formData()
+      const file = formData.get('file')
+      if (!file || typeof file !== 'object' || !('arrayBuffer' in file)) {
+        return NextResponse.json({ error: 'CSV file is required' }, { status: 400 })
+      }
+      rows = await parseRowsFromUpload(file)
     }
 
-    const arrayBuffer = await file.arrayBuffer()
-    const workbook = XLSX.read(arrayBuffer, { type: 'array' })
-    const sheetName = workbook.SheetNames[0]
-
-    if (!sheetName) {
-      return NextResponse.json({ error: 'No worksheet found in CSV file' }, { status: 400 })
-    }
-
-    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' })
     if (!rows.length) {
       return NextResponse.json({ error: 'No order rows found in CSV file' }, { status: 400 })
     }
 
-    let created = 0
-    let updated = 0
-    let failed = 0
-    const failures = []
-
-    for (let index = 0; index < rows.length; index += 1) {
-      const row = rows[index] || {}
-      const rowNumber = index + 2
-
-      try {
-        const rowMap = buildNormalizedRowMap(row)
-        const beforeOrderId = normalizeText(pickRowValue(rowMap, 'orderId', '_id'))
-        const beforeShortOrderNumber = parseNumber(pickRowValue(rowMap, 'shortOrderNumber', 'orderNumber'), null)
-
-        const existing = beforeOrderId
-          ? await Order.findOne({ _id: beforeOrderId, storeId })
-          : Number.isFinite(beforeShortOrderNumber)
-            ? await Order.findOne({ shortOrderNumber: beforeShortOrderNumber, storeId })
-            : null
-
-        await importOrderRow(row, storeId)
-        if (existing) {
-          updated += 1
-        } else {
-          created += 1
-        }
-      } catch (error) {
-        failed += 1
-        failures.push({
-          row: rowNumber,
-          reason: error?.message || 'Failed to import order row',
-        })
-      }
-    }
+    const result = await processImportRows(rows, storeId, { rowOffset })
 
     return NextResponse.json({
       message: 'Order CSV import completed',
-      summary: {
-        totalRows: rows.length,
-        created,
-        updated,
-        failed,
-      },
-      failures: failures.slice(0, 100),
+      ...result,
     })
   } catch (error) {
     console.error('[store orders csv POST] error:', error)
