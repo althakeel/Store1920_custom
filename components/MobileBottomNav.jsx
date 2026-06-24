@@ -5,6 +5,7 @@ import { Home, Search, ShoppingCart, User, LayoutGrid } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useSelector } from 'react-redux'
+import { useAuth } from '@/lib/useAuth'
 import { isProductDetailPath } from '@/lib/productUrl'
 
 export default function MobileBottomNav() {
