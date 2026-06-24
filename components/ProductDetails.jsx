@@ -901,10 +901,105 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     });
   }
   
-  const availableStock = (typeof selectedVariant?.stock === 'number')
-    ? selectedVariant.stock
-    : (typeof product.stockQuantity === 'number' ? product.stockQuantity : 0);
-  const maxOrderQty = Math.max(0, availableStock);
+  const availableStock = useMemo(() => {
+    if (isBulkBundleProduct && quantity <= BUNDLE_UI_MAX_QTY && bulkBundleTiers.includes(quantity)) {
+      const bundleVariant = bulkVariants.find((v) => Number(v.options?.bundleQty) === Number(quantity));
+      if (typeof bundleVariant?.stock === 'number') {
+        return Math.max(0, bundleVariant.stock);
+      }
+    }
+
+    if (!isBulkBundleProduct && variants.length > 0) {
+      const match = variants.find((v) => {
+        if (isBulkBundleVariant(v)) return false;
+        const cOk = v.options?.color ? v.options.color === selectedColor : true;
+        const sOk = v.options?.size ? v.options.size === selectedSize : true;
+        return cOk && sOk;
+      });
+      if (typeof match?.stock === 'number') {
+        return Math.max(0, match.stock);
+      }
+    }
+
+    if (typeof product.stockQuantity === 'number') {
+      return Math.max(0, product.stockQuantity);
+    }
+
+    return product.inStock === false ? 0 : 999;
+  }, [
+    isBulkBundleProduct,
+    quantity,
+    bulkBundleTiers,
+    bulkVariants,
+    variants,
+    selectedColor,
+    selectedSize,
+    product.stockQuantity,
+    product.inStock,
+  ]);
+  const maxOrderQty = availableStock;
+
+  const upsertProductCartLines = useCallback((requestedQty) => {
+    const normalizedQty = Math.max(1, Number(requestedQty) || 1);
+    const useBundleLine = isBulkBundleProduct
+      && normalizedQty <= BUNDLE_UI_MAX_QTY
+      && bulkBundleTiers.includes(normalizedQty);
+    const safeMax = Math.max(0, maxOrderQty);
+    if (safeMax <= 0) return 0;
+
+    const addAmount = Math.min(normalizedQty, safeMax);
+    const bundleTier = useBundleLine
+      ? addAmount
+      : (isBulkBundleProduct ? 1 : (selectedBundleQty || null));
+
+    const baseVariantOptions = {
+      color: selectedColor || null,
+      size: selectedSize || null,
+      bundleQty: bundleTier,
+    };
+
+    const offerFields = product.specialOffer?.offerToken
+      ? {
+          offerToken: product.specialOffer.offerToken,
+          discountPercent: product.specialOffer.discountPercent,
+        }
+      : {};
+
+    if (useBundleLine) {
+      const entry = buildBundleCartEntry({
+        price: effPrice,
+        variantOptions: baseVariantOptions,
+        ...offerFields,
+      }, product, bundleTier);
+      dispatch(setCartEntry({ productId: cartProductId, entry }));
+      return addAmount;
+    }
+
+    const targetQty = Math.min(safeMax, cartQty + addAmount);
+    dispatch(setCartEntry({
+      productId: cartProductId,
+      entry: {
+        quantity: targetQty,
+        price: effPrice,
+        productName: product.name || product.title || 'Product',
+        variantOptions: baseVariantOptions,
+        ...offerFields,
+      },
+    }));
+    return targetQty;
+  }, [
+    isBulkBundleProduct,
+    bulkBundleTiers,
+    maxOrderQty,
+    selectedBundleQty,
+    selectedColor,
+    selectedSize,
+    effPrice,
+    product,
+    cartProductId,
+    cartQty,
+    dispatch,
+  ]);
 
   const handleProductQuantityChange = useCallback((value) => {
     const next = Math.max(1, Math.min(maxOrderQty || 1, Number(value) || 1));
@@ -1881,126 +1976,36 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const handleOrderNow = () => {
     if (isOrderingNow || !isSelectionInStock || maxOrderQty <= 0) return;
     setIsOrderingNow(true);
-    // Add to cart for both guests and signed-in users
     try {
-      const useBundleLine = isBulkBundleProduct && isBundleModeActive && bulkBundleTiers.includes(quantity);
-      const cartLines = useBundleLine
-        ? 1
-        : Math.min(quantity, maxOrderQty || 0);
-      let qty = cartLines;
-      if (!Number.isFinite(qty) || qty <= 0) {
-        qty = 1;
-      }
-      const bundleTier = useBundleLine
-        ? quantity
-        : (isBulkBundleProduct ? 1 : (selectedBundleQty || null));
-
-      const baseVariantOptions = {
-        color: selectedColor || null,
-        size: selectedSize || null,
-        bundleQty: bundleTier,
-      };
-
-      if (useBundleLine) {
-        const entry = buildBundleCartEntry({
-          price: effPrice,
-          variantOptions: baseVariantOptions,
-          ...(product.specialOffer?.offerToken ? {
-            offerToken: product.specialOffer.offerToken,
-            discountPercent: product.specialOffer.discountPercent,
-          } : {}),
-        }, product, bundleTier);
-        dispatch(setCartEntry({ productId: cartProductId, entry }));
-      } else {
-        for (let i = 0; i < qty; i++) {
-          const payload = {
-            productId: cartProductId, 
-            price: effPrice,
-            productName: product.name || product.title || 'Product',
-            quantity: 1,
-            variantOptions: baseVariantOptions,
-          };
-          
-          if (product.specialOffer?.offerToken) {
-            payload.offerToken = product.specialOffer.offerToken;
-            payload.discountPercent = product.specialOffer.discountPercent;
-          }
-          
-          dispatch(addToCart(payload));
-        }
-      }
-      // Go directly to checkout (guests can checkout there)
+      upsertProductCartLines(quantity);
       router.push('/checkout');
-      setIsOrderingNow(false);
     } catch (error) {
       console.error('Order now failed:', error);
+    } finally {
       setIsOrderingNow(false);
-      return;
     }
   };
 
   const handleAddToCart = async () => {
     if (!isSelectionInStock || maxOrderQty <= 0) return;
-    // Add to cart for both guests and signed-in users
-    const useBundleLine = isBulkBundleProduct && isBundleModeActive && bulkBundleTiers.includes(quantity);
-    const cartLines = useBundleLine
-      ? 1
-      : Math.min(quantity, maxOrderQty || 0);
-    let qty = cartLines;
-    if (!Number.isFinite(qty) || qty <= 0) {
-      qty = 1;
-    }
-    const bundleTier = useBundleLine
-      ? quantity
-      : (isBulkBundleProduct ? 1 : (selectedBundleQty || null));
 
-    const baseVariantOptions = {
-      color: selectedColor || null,
-      size: selectedSize || null,
-      bundleQty: bundleTier,
-    };
-
-    if (useBundleLine) {
-      const entry = buildBundleCartEntry({
-        price: effPrice,
-        variantOptions: baseVariantOptions,
-        ...(product.specialOffer?.offerToken ? {
-          offerToken: product.specialOffer.offerToken,
-          discountPercent: product.specialOffer.discountPercent,
-        } : {}),
-      }, product, bundleTier);
-      dispatch(setCartEntry({ productId: cartProductId, entry }));
-    } else {
-      for (let i = 0; i < qty; i++) {
-        const payload = {
-          productId: cartProductId,
-          price: effPrice,
-          productName: product.name || product.title || 'Product',
-          quantity: 1,
-          variantOptions: baseVariantOptions,
-        };
-        
-        if (product.specialOffer?.offerToken) {
-          payload.offerToken = product.specialOffer.offerToken;
-          payload.discountPercent = product.specialOffer.discountPercent;
-        }
-        
-        dispatch(addToCart(payload));
-      }
-    }
+    upsertProductCartLines(quantity);
+    const useBundleLine = isBulkBundleProduct
+      && quantity <= BUNDLE_UI_MAX_QTY
+      && bulkBundleTiers.includes(quantity);
+    const gtmQty = useBundleLine ? 1 : Math.min(Math.max(1, Number(quantity) || 1), maxOrderQty);
 
     pushGtmEcommerceEvent(GTM_EVENTS.ADD_TO_CART, {
       currency: 'AED',
-      value: Number((effPrice || product.price || 0) * (useBundleLine ? 1 : quantity)),
+      value: Number((effPrice || product.price || 0) * gtmQty),
       items: [{
         item_id: String(product._id || product.id || ''),
         item_name: product.name || product.title || 'Product',
         price: Number(effPrice || product.price || 0),
-        quantity: useBundleLine ? 1 : quantity,
+        quantity: gtmQty,
       }],
     });
-    
-    // Upload to server if signed in
+
     if (isSignedIn) {
       try {
         await dispatch(uploadCart()).unwrap();
@@ -2008,8 +2013,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
         console.error('Error uploading cart:', error);
       }
     }
-    
-    // Show cart toast
+
     setShowCartToast(true);
     setTimeout(() => setShowCartToast(false), 3000);
     setAddedToCart(true);
@@ -3195,11 +3199,11 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                         type="button"
                         onClick={async () => {
                           if (cartQty < Math.max(1, maxOrderQty)) {
-                            setQuantity((q) => q + 1);
                             const payload = {
                               productId: cartProductId,
                               price: effPrice,
-                              variantOptions: { color: selectedColor || null, size: selectedSize || null, bundleQty: selectedBundleQty || null }
+                              maxQty: maxOrderQty,
+                              variantOptions: { color: selectedColor || null, size: selectedSize || null, bundleQty: selectedBundleQty || null },
                             };
                             if (product.specialOffer?.offerToken) {
                               payload.offerToken = product.specialOffer.offerToken;
