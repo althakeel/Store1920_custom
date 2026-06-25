@@ -1333,12 +1333,12 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       className={`w-full text-start leading-snug ${mobile ? 'text-xs' : 'text-sm'} ${className}`.trim()}
     >
       <span className="font-normal text-gray-500">{t('product.soldBy')} </span>
-      <Link
-        href="/"
-        className={`${mobile ? 'font-semibold' : 'font-bold'} text-blue-600 hover:underline`}
+      <span
+        className={mobile ? 'font-semibold' : 'font-bold'}
+        style={{ color: navbarBrandColor }}
       >
         {STORE_SOLD_BY_NAME}
-      </Link>
+      </span>
     </p>
   );
 
