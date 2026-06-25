@@ -65,7 +65,7 @@ export async function proxy(request: NextRequest) {
   }
 
   // Large CSV uploads are authenticated in the route handler; skip proxy buffering.
-  if (pathname === '/api/store/product/bulk-import') {
+  if (pathname === '/api/store/product/bulk-import' || pathname === '/api/store/orders/csv') {
     return NextResponse.next();
   }
 

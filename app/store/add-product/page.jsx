@@ -1474,7 +1474,9 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
         .map(([slot, img]) => ({
             slot,
             preview: img.preview || img,
-            persistentUrl: typeof img === 'string' ? img : ''
+            persistentUrl: typeof img === 'string'
+                ? img
+                : String(img?.url || img?.persistentUrl || img?.preview || '').trim(),
         }))
 
     const removeReview = (index) => {
@@ -1532,35 +1534,56 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
             const uploadEmbedded = (file) => uploadStoreImage(file, { token })
 
             const imageUrls = []
-            for (const key of Object.keys(images)) {
+            const slotToUrl = {}
+            const sortedImageKeys = Object.keys(images).sort((a, b) => Number(a) - Number(b))
+            for (const key of sortedImageKeys) {
                 const img = images[key]
                 if (!img) continue
                 if (typeof img === 'string') {
                     imageUrls.push(img)
+                    slotToUrl[key] = img
                     continue
                 }
                 if (img.file) {
                     const uploaded = await uploadMedia(img.file)
                     imageUrls.push(uploaded.url)
+                    slotToUrl[key] = uploaded.url
+                } else if (img.preview && typeof img.preview === 'string' && !img.preview.startsWith('blob:')) {
+                    imageUrls.push(img.preview)
+                    slotToUrl[key] = img.preview
                 }
+            }
+
+            const resolveVariantImageOptions = (options = {}) => {
+                const next = { ...(options || {}) }
+                const slot = String(next.imageSlot || '').trim()
+                if (slot && slotToUrl[slot]) {
+                    next.image = slotToUrl[slot]
+                }
+                return next
             }
 
             const description = await sanitizeRichTextMedia(productInfo.description, uploadEmbedded)
             const descriptionAr = await sanitizeRichTextMedia(productInfo.descriptionAr, uploadEmbedded)
 
-            let variantsToSend = variants
+            let variantsToSend = hasVariants
+                ? variants.map((variant) => ({
+                    ...variant,
+                    options: resolveVariantImageOptions(variant.options),
+                }))
+                : variants
             let hasVariantsFlag = hasVariants
             if (bulkEnabled) {
                 variantsToSend = bulkOptions
                     .filter(b => Number(b.qty) > 0 && Number(b.price) > 0)
                     .map(b => ({
-                        options: {
+                        options: resolveVariantImageOptions({
                             bundleQty: Number(b.qty),
                             title: (b.title || undefined),
                             tag: b.tag || undefined,
                             ...(b.image ? { image: b.image } : {}),
                             ...(b.imageSlot ? { imageSlot: b.imageSlot } : {}),
-                        },
+                        }),
                         price: Number(b.price),
                         AED: Number(b.AED || b.price),
                         stock: Number(b.stock || 0),

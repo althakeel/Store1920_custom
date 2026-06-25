@@ -153,6 +153,7 @@ export default function StoreOrders() {
     const [orderCsvFile, setOrderCsvFile] = useState(null);
     const [importingOrdersCsv, setImportingOrdersCsv] = useState(false);
     const [importProgress, setImportProgress] = useState({ current: 0, total: 0, phase: 'idle' });
+    const [showImportExportPanel, setShowImportExportPanel] = useState(false);
     const suppressLiveAlertsRef = useRef(false);
     const [selectedOrderIds, setSelectedOrderIds] = useState([]);
     const [deletingBulkOrders, setDeletingBulkOrders] = useState(false);
@@ -442,6 +443,11 @@ export default function StoreOrders() {
     );
 
     const stats = getOrderStats();
+    const hasDateFilter = Boolean(fromDate || toDate);
+    const ordersMatchingDateRange = useMemo(
+        () => orders.filter(isOrderInRange),
+        [orders, fromDate, toDate],
+    );
     const filteredOrders = getFilteredOrders();
     const totalPages = Math.max(1, Math.ceil(filteredOrders.length / ordersPerPage));
     const safeCurrentPage = Math.min(currentPage, totalPages);
@@ -1277,8 +1283,6 @@ export default function StoreOrders() {
             return;
         }
 
-        const BATCH_SIZE = 75;
-
         try {
             setImportingOrdersCsv(true);
             setImportProgress({ current: 0, total: 0, phase: 'parsing' });
@@ -1293,58 +1297,68 @@ export default function StoreOrders() {
                 return;
             }
 
-            const XLSX = await import('xlsx');
-            const buffer = await orderCsvFile.arrayBuffer();
-            const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
-            const sheetName = workbook.SheetNames[0];
-            if (!sheetName) {
-                toast.error('No worksheet found in file');
-                return;
-            }
+            const authHeaders = { Authorization: `Bearer ${token}` };
 
-            const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' })
-                .filter((row) => !Object.values(row).some((value) => String(value || '').includes('EXPORT_META')));
-            if (!rows.length) {
+            const parseFormData = new FormData();
+            parseFormData.append('file', orderCsvFile);
+            parseFormData.append('mode', 'parse');
+
+            const { data: parseData } = await axios.post('/api/store/orders/csv', parseFormData, {
+                headers: authHeaders,
+                timeout: 120000,
+            });
+
+            const totalRows = Number(parseData?.total || 0);
+            const stats = parseData?.stats || {};
+
+            if (!totalRows) {
                 toast.error('No order rows found in file');
                 return;
             }
 
-            setImportProgress({ current: 0, total: rows.length, phase: 'importing' });
+            setImportProgress({
+                current: 0,
+                total: totalRows,
+                phase: 'importing',
+                sheetRows: stats.sheetRows,
+                emptyRowsSkipped: stats.emptyRowsSkipped,
+            });
 
-            let createdCount = 0;
-            let updatedCount = 0;
-            let failedCount = 0;
+            const importFormData = new FormData();
+            importFormData.append('file', orderCsvFile);
+            importFormData.append('mode', 'import');
 
-            for (let offset = 0; offset < rows.length; offset += BATCH_SIZE) {
-                const batch = rows.slice(offset, offset + BATCH_SIZE);
-                const { data } = await axios.post('/api/store/orders/csv', {
-                    rows: batch,
-                    rowOffset: offset,
-                }, {
-                    headers: {
-                        Authorization: `Bearer ${token}`,
-                        'Content-Type': 'application/json',
-                    },
-                });
+            const { data } = await axios.post('/api/store/orders/csv', importFormData, {
+                headers: authHeaders,
+                timeout: 600000,
+                onUploadProgress: (event) => {
+                    if (!event.total) return;
+                    const uploaded = Math.round((event.loaded / event.total) * Math.min(15, totalRows));
+                    setImportProgress((prev) => ({
+                        ...prev,
+                        current: Math.max(prev.current || 0, uploaded),
+                    }));
+                },
+            });
 
-                createdCount += Number(data?.summary?.created || 0);
-                updatedCount += Number(data?.summary?.updated || 0);
-                failedCount += Number(data?.summary?.failed || 0);
-
-                setImportProgress({
-                    current: Math.min(offset + batch.length, rows.length),
-                    total: rows.length,
-                    phase: 'importing',
-                });
-            }
+            const createdCount = Number(data?.summary?.created || 0);
+            const updatedCount = Number(data?.summary?.updated || 0);
+            const failedCount = Number(data?.summary?.failed || 0);
+            const importedTotal = Number(data?.totalParsed || data?.summary?.totalRows || totalRows);
 
             setOrderCsvFile(null);
-            setImportProgress({ current: rows.length, total: rows.length, phase: 'done' });
+            setImportProgress({
+                current: importedTotal,
+                total: importedTotal,
+                phase: 'done',
+                sheetRows: stats.sheetRows,
+                emptyRowsSkipped: stats.emptyRowsSkipped,
+            });
             await fetchOrders();
 
             const importedCount = createdCount + updatedCount;
             const latestOrders = await axios.get('/api/store/orders', {
-                headers: { Authorization: `Bearer ${token}` },
+                headers: authHeaders,
             }).then((response) => (Array.isArray(response?.data?.orders) ? response.data.orders : [])).catch(() => []);
 
             dispatchStoreOrdersImportEnd({
@@ -1355,7 +1369,7 @@ export default function StoreOrders() {
             if (failedCount > 0) {
                 toast.error(`Import finished with ${failedCount} failed row(s). ${createdCount} new, ${updatedCount} replaced.`);
             } else {
-                toast.success(`Import complete: ${createdCount} new, ${updatedCount} replaced.`);
+                toast.success(`Import complete: ${importedTotal.toLocaleString()} orders processed (${createdCount} new, ${updatedCount} updated).`);
             }
         } catch (error) {
             console.error('Order CSV import failed:', error);
@@ -1729,27 +1743,54 @@ export default function StoreOrders() {
 
             {/* Date Range Filters */}
             <div className="mb-6 bg-white border border-gray-200 rounded-lg p-4 flex flex-col gap-4">
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap gap-2">
+                        <button
+                            onClick={() => setDatePreset('ALL')}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${datePreset === 'ALL' ? 'bg-slate-900 text-white' : 'bg-gray-100 text-slate-700 hover:bg-gray-200'}`}
+                        >
+                            All Orders
+                        </button>
+                        <button
+                            onClick={() => setDatePreset('TODAY')}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${datePreset === 'TODAY' ? 'bg-slate-900 text-white' : 'bg-gray-100 text-slate-700 hover:bg-gray-200'}`}
+                        >
+                            Today
+                        </button>
+                        <button
+                            onClick={() => setDatePreset('LAST_7_DAYS')}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${datePreset === 'LAST_7_DAYS' ? 'bg-slate-900 text-white' : 'bg-gray-100 text-slate-700 hover:bg-gray-200'}`}
+                        >
+                            Last 7 Days
+                        </button>
+                    </div>
                     <button
-                        onClick={() => setDatePreset('ALL')}
-                        className={`px-4 py-2 rounded-lg text-sm font-medium transition ${datePreset === 'ALL' ? 'bg-slate-900 text-white' : 'bg-gray-100 text-slate-700 hover:bg-gray-200'}`}
+                        type="button"
+                        onClick={() => setShowImportExportPanel((prev) => !prev)}
+                        className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold transition ${
+                            showImportExportPanel || importingOrdersCsv
+                                ? 'border-slate-900 bg-slate-900 text-white'
+                                : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                        }`}
                     >
-                        All Orders
-                    </button>
-                    <button
-                        onClick={() => setDatePreset('TODAY')}
-                        className={`px-4 py-2 rounded-lg text-sm font-medium transition ${datePreset === 'TODAY' ? 'bg-slate-900 text-white' : 'bg-gray-100 text-slate-700 hover:bg-gray-200'}`}
-                    >
-                        Today
-                    </button>
-                    <button
-                        onClick={() => setDatePreset('LAST_7_DAYS')}
-                        className={`px-4 py-2 rounded-lg text-sm font-medium transition ${datePreset === 'LAST_7_DAYS' ? 'bg-slate-900 text-white' : 'bg-gray-100 text-slate-700 hover:bg-gray-200'}`}
-                    >
-                        Last 7 Days
+                        <Download size={16} />
+                        {showImportExportPanel || importingOrdersCsv ? 'Hide Import / Export' : 'Import / Export'}
                     </button>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                {(hasDateFilter || orders.length > 0) && (
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
+                        <span>
+                            Showing <strong>{filteredOrders.length}</strong> of <strong>{orders.length}</strong> loaded orders
+                        </span>
+                        {hasDateFilter ? (
+                            <span>
+                                · <strong>{ordersMatchingDateRange.length}</strong> match the selected date range
+                            </span>
+                        ) : null}
+                    </div>
+                )}
+                {(showImportExportPanel || importingOrdersCsv) ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 border-t border-slate-100 pt-4">
                     <div>
                         <label className="text-xs text-slate-500">From</label>
                         <input
@@ -1848,13 +1889,20 @@ export default function StoreOrders() {
                                         />
                                     </div>
                                     <p className="mt-1 text-xs text-slate-500">
-                                        {importProgress.current.toLocaleString()} / {importProgress.total.toLocaleString()} rows
+                                        {importProgress.current.toLocaleString()} / {importProgress.total.toLocaleString()} order rows
+                                        {importProgress.sheetRows
+                                            ? ` · ${importProgress.sheetRows.toLocaleString()} sheet rows`
+                                            : ''}
+                                        {importProgress.emptyRowsSkipped
+                                            ? ` · ${importProgress.emptyRowsSkipped.toLocaleString()} empty skipped`
+                                            : ''}
                                     </p>
                                 </div>
                             ) : null}
                         </div>
                     </div>
                 </div>
+                ) : null}
             </div>
 
             {hasSelectedOrders && (
@@ -1884,7 +1932,18 @@ export default function StoreOrders() {
             )}
 
             {filteredOrders.length === 0 ? (
-                <p className="text-center py-8 text-slate-500">No orders found for this status</p>
+                <div className="py-8 text-center text-slate-500">
+                    <p>No orders found for this status{hasDateFilter ? ' and date range' : ''}.</p>
+                    {orders.length > 0 && hasDateFilter && ordersMatchingDateRange.length === 0 ? (
+                        <p className="mt-2 text-sm text-amber-700">
+                            {orders.length} orders are loaded, but none fall between the selected dates.
+                            Re-import the WordPress CSV export to restore original order dates (`createdAt` column).
+                        </p>
+                    ) : null}
+                    {orders.length === 0 ? (
+                        <p className="mt-2 text-sm">Import orders from WordPress via WooCommerce → Rohith Order Confirm → Export all orders.</p>
+                    ) : null}
+                </div>
             ) : (
                 <div className="overflow-x-auto w-full rounded-md shadow border border-gray-200">
                     <table className="w-full text-sm text-left text-gray-600">

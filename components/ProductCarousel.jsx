@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import ProductCard from '@/components/ProductCard'
-import { CAROUSEL_PRODUCT_CARD_CLASS } from '@/lib/storefrontCarousel'
+import { getCarouselProductCardClass } from '@/lib/storefrontCarousel'
 import { useHorizontalCarouselDrag } from '@/lib/useHorizontalCarouselDrag'
 
 export default function ProductCarousel({
@@ -13,7 +13,10 @@ export default function ProductCarousel({
   showArrows = true,
   showMobileArrows = false,
   compactBottom = false,
+  compact = false,
+  compactDesktopOnly = false,
   edgeBleed = false,
+  cardsPerRow = 6,
 }) {
   const [canScrollLeft, setCanScrollLeft] = useState(false)
   const [canScrollRight, setCanScrollRight] = useState(false)
@@ -45,13 +48,14 @@ export default function ProductCarousel({
       container.removeEventListener('scroll', updateScrollState)
       window.removeEventListener('resize', updateScrollState)
     }
-  }, [products, scrollRef])
+  }, [products, scrollRef, cardsPerRow])
 
   if (!products.length) return null
 
-  const resolvedTrackClassName = compactBottom
-    ? trackClassName.replace(' pb-2', ' pb-0')
-    : trackClassName
+  const resolvedTrackClassName = [
+    compactBottom ? trackClassName.replace(' pb-2', ' pb-0') : trackClassName,
+    'w-full min-w-0',
+  ].filter(Boolean).join(' ')
 
   const arrowsVisible = showArrows || showMobileArrows
   const arrowVisibilityClass = showMobileArrows && !showArrows
@@ -67,6 +71,8 @@ export default function ProductCarousel({
   const resolvedTrackStyle = edgeBleed
     ? { ...trackStyle, scrollPaddingInline: '16px' }
     : trackStyle
+
+  const cardClassName = getCarouselProductCardClass(cardsPerRow);
 
   return (
     <div className={`relative w-full min-w-0 overflow-visible ${bleedClass} ${className}`.trim()}>
@@ -93,9 +99,11 @@ export default function ProductCarousel({
           <ProductCard
             key={product._id || product.id || product.slug || index}
             product={product}
-            className={CAROUSEL_PRODUCT_CARD_CLASS}
+            className={cardClassName}
             onCardClick={handleCardClick}
             priorityImages={index < priorityCount}
+            compact={compact}
+            compactDesktopOnly={compactDesktopOnly}
           />
         ))}
       </div>

@@ -3,9 +3,11 @@ import CategorySlider from '@/models/CategorySlider';
 import Product from '@/models/Product';
 import { NextResponse } from 'next/server';
 import { getCachedData, setCachedData } from '@/lib/cache';
+import { FEATURED_SECTIONS_CACHE_KEY } from '@/lib/categorySliderCache';
+import { normalizeCategorySliderBackground } from '@/lib/categorySliderTheme';
 import mongoose from 'mongoose';
 
-const CACHE_KEY = 'public:featured-sections:v2';
+const CACHE_KEY = FEATURED_SECTIONS_CACHE_KEY;
 
 function orderProductsByIds(products, ids) {
   const productMap = new Map(products.map((product) => [String(product._id), product]));
@@ -30,7 +32,7 @@ export async function GET() {
     await dbConnect();
 
     const sections = await CategorySlider.find({})
-      .select('title subtitle productIds storeId createdAt updatedAt')
+      .select('title subtitle sideImage cardsPerRow backgroundColor productIds storeId createdAt updatedAt')
       .sort({ createdAt: -1 })
       .lean();
 
@@ -54,6 +56,8 @@ export async function GET() {
         const productIds = Array.isArray(section.productIds) ? section.productIds : [];
         return {
           ...section,
+          cardsPerRow: section.cardsPerRow === 5 ? 5 : 6,
+          backgroundColor: normalizeCategorySliderBackground(section.backgroundColor),
           products: orderProductsByIds(products, productIds),
         };
       }),

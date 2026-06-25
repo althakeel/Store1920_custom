@@ -23,12 +23,35 @@ const CategorySliderSchema = new mongoose.Schema(
       required: true,
       default: [],
     },
+    sideImage: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+    cardsPerRow: {
+      type: Number,
+      default: 6,
+      enum: [5, 6],
+    },
+    backgroundColor: {
+      type: String,
+      default: '#f3f0ff',
+      trim: true,
+    },
   },
   { timestamps: true }
 );
 
 // Create compound index for efficient querying
 CategorySliderSchema.index({ storeId: 1, createdAt: -1 });
+
+if (mongoose.models.CategorySlider && !mongoose.models.CategorySlider.schema.paths.backgroundColor) {
+  delete mongoose.models.CategorySlider;
+}
+
+if (process.env.NODE_ENV === 'development' && mongoose.models.CategorySlider) {
+  delete mongoose.models.CategorySlider;
+}
 
 export default mongoose.models.CategorySlider ||
   mongoose.model('CategorySlider', CategorySliderSchema);

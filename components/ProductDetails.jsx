@@ -33,10 +33,18 @@ import { pushGtmEcommerceEvent } from '@/lib/pushGtmEcommerceEvent';
 import { GTM_EVENTS } from '@/lib/gtmEvents';
 import {
   buildProductMediaGallery,
-  findMediaIndexBySrc,
   getProductImageAspectRatioClass,
 } from '@/lib/productMedia';
 import { useHorizontalCarouselDrag } from '@/lib/useHorizontalCarouselDrag';
+import ProductVariantPicker from './ProductVariantPicker';
+import {
+  buildVariantOptionGroups,
+  findVariantBySelectedOptions,
+  getInitialSelectedOptions,
+  getVariantMediaIndex,
+  isBulkBundleVariantOption,
+  isVariantOptionValueAvailable,
+} from '@/lib/productVariantOptions';
 
 const PLACEHOLDER_IMAGE = 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png';
 const NAVBAR_BRAND_COLOR = '#8f3404';
@@ -348,6 +356,9 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const mainImage = activeMedia?.type === 'image' ? activeMedia.src : (activeMedia?.poster || null);
   const mobileCarouselRef = useRef(null);
   const mobileThumbnailsRef = useRef(null);
+  const desktopMainImageRef = useRef(null);
+  const desktopThumbnailsRef = useRef(null);
+  const [desktopGalleryHeight, setDesktopGalleryHeight] = useState(null);
   const mobileCarouselScrollRaf = useRef(null);
   const [quantity, setQuantity] = useState(1);
   const [isInWishlist, setIsInWishlist] = useState(false);
@@ -805,12 +816,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     () => (Array.isArray(product?.variants) ? product.variants : []),
     [product?._id, product?.variants]
   );
-  const isBulkBundleVariant = (v) => (
-    v?.options
-    && (v.options.bundleQty || v.options.bundleQty === 0)
-    && !v.options?.color
-    && !v.options?.size
-  );
+  const isBulkBundleVariant = isBulkBundleVariantOption;
   const bulkVariants = useMemo(
     () => variants.filter(isBulkBundleVariant),
     [variants]
@@ -826,13 +832,30 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const isBundleTierQty = (qty) => isBulkBundleProduct && bulkBundleTiers.includes(Number(qty));
   const isBundleModeActive = isBundleTierQty(quantity);
   const showBundleOptions = isBundleModeActive;
-  const variantColors = [...new Set(variants.filter((v) => !isBulkBundleVariant(v)).map((v) => v.options?.color).filter(Boolean))];
-  const variantSizes = [...new Set(variants.filter((v) => !isBulkBundleVariant(v)).map((v) => v.options?.size).filter(Boolean))];
-  const [selectedColor, setSelectedColor] = useState(variantColors[0] || product.colors?.[0] || null);
-  const [selectedSize, setSelectedSize] = useState(variantSizes[0] || product.sizes?.[0] || null);
+  const variantOptionGroups = useMemo(
+    () => buildVariantOptionGroups(variants, { isBulkBundleVariant }),
+    [variants],
+  );
+  const showVariantPicker = !isBulkBundleProduct && variantOptionGroups.length > 0;
+  const productImagesArray = useMemo(() => normalizeImages(product.images), [product.images]);
+  const [selectedOptions, setSelectedOptions] = useState(() => {
+    const initial = getInitialSelectedOptions(variantOptionGroups);
+    if (!initial.color && product.colors?.[0]) initial.color = product.colors[0];
+    if (!initial.size && product.sizes?.[0]) initial.size = product.sizes[0];
+    return initial;
+  });
   const [selectedBundleQty, setSelectedBundleQty] = useState(
     isBulkBundleProduct ? bulkBundleTiers[0] : (bulkVariants.length ? Number(bulkVariants[0].options.bundleQty) : null)
   );
+  const handleSelectVariantOption = useCallback((key, value) => {
+    setSelectedOptions((prev) => ({ ...prev, [key]: value }));
+  }, []);
+  const cartVariantOptions = useMemo(() => ({
+    ...selectedOptions,
+    color: selectedOptions.color || null,
+    size: selectedOptions.size || null,
+    bundleQty: selectedBundleQty || null,
+  }), [selectedOptions, selectedBundleQty]);
 
   const selectBulkBundleTier = useCallback((tier) => {
     const qty = Number(tier) || 1;
@@ -860,23 +883,13 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
         const tier = isBundleModeActive ? quantity : 1;
         return Number(v.options?.bundleQty) === Number(tier);
       })
-    : variants.find(v => {
-        const cOk = v.options?.color ? v.options.color === selectedColor : true;
-        const sOk = v.options?.size ? v.options.size === selectedSize : true;
-        return cOk && sOk;
-      })
+    : findVariantBySelectedOptions(variants, selectedOptions, { isBulkBundleVariant })
   ) || null;
 
-  const selectedVariantImage = (() => {
-    if (!selectedVariant?.options) return null;
-    if (selectedVariant.options.image) return selectedVariant.options.image;
-    const slot = Number(selectedVariant.options.imageSlot);
-    const productImagesArray = normalizeImages(product.images);
-    if (Number.isFinite(slot) && slot > 0 && productImagesArray.length > 0) {
-      return productImagesArray[slot - 1] || null;
-    }
-    return null;
-  })();
+  const variantMediaIndex = useMemo(() => {
+    if (!selectedVariant || isBulkBundleProduct) return -1;
+    return getVariantMediaIndex(selectedVariant, mediaGallery, productImagesArray);
+  }, [selectedVariant, isBulkBundleProduct, mediaGallery, productImagesArray]);
 
   const getBundleOptionImage = useCallback((variant) => {
     if (!variant?.options) return null;
@@ -923,12 +936,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     }
 
     if (!isBulkBundleProduct && variants.length > 0) {
-      const match = variants.find((v) => {
-        if (isBulkBundleVariant(v)) return false;
-        const cOk = v.options?.color ? v.options.color === selectedColor : true;
-        const sOk = v.options?.size ? v.options.size === selectedSize : true;
-        return cOk && sOk;
-      });
+      const match = findVariantBySelectedOptions(variants, selectedOptions, { isBulkBundleVariant });
       if (typeof match?.stock === 'number') {
         return Math.max(0, match.stock);
       }
@@ -945,8 +953,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     bulkBundleTiers,
     bulkVariants,
     variants,
-    selectedColor,
-    selectedSize,
+    selectedOptions,
     product.stockQuantity,
     product.inStock,
   ]);
@@ -964,8 +971,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       : (isBulkBundleProduct ? 1 : (selectedBundleQty || null));
 
     const baseVariantOptions = {
-      color: selectedColor || null,
-      size: selectedSize || null,
+      ...cartVariantOptions,
       bundleQty: bundleTier,
     };
 
@@ -1003,8 +1009,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     bulkBundleTiers,
     maxOrderQty,
     selectedBundleQty,
-    selectedColor,
-    selectedSize,
+    cartVariantOptions,
     effPrice,
     product,
     cartProductId,
@@ -1320,71 +1325,59 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const mobileDeliveryFeeLabel = qualifiesForFreeMobileDelivery
     ? t('product.mobile.freeDeliveryFee')
     : t('product.mobile.deliveryFee', { amount: formatMoney(convertPrice(15), true) });
-  const selectedVariantLabel = [selectedColor, selectedSize]
+  const selectedVariantLabel = variantOptionGroups
+    .map((group) => selectedOptions[group.key])
     .filter(Boolean)
     .join(' • ') || (selectedBundleQty ? `Bundle ${selectedBundleQty}` : 'Default');
 
-  // Helper to check if a color+size combination has stock
-  const isVariantInStock = (color, size) => {
+  const isSelectionInStock = (() => {
     if (isGloballyOutOfStock) return false;
-
-    const variant = variants.find(v => {
-      const cOk = v.options?.color ? v.options.color === color : !color;
-      const sOk = v.options?.size ? v.options.size === size : !size;
-      return cOk && sOk;
-    });
-    if (variant) return variant.stock > 0;
-    // For non-variant products, rely on base stock/inStock flags
-    if (variants.length === 0) {
+    if (!variants.length) {
       const hasStockQty = typeof product.stockQuantity === 'number' ? product.stockQuantity > 0 : true;
       return product.inStock !== false && hasStockQty;
     }
-    return false;
-  };
-
-  const isSelectionInStock = isVariantInStock(selectedColor, selectedSize);
+    return Boolean(selectedVariant && Number(selectedVariant.stock || 0) > 0);
+  })();
 
   useEffect(() => {
-    if (!selectedVariantImage) return;
-    const idx = findMediaIndexBySrc(mediaGallery, selectedVariantImage);
-    if (idx >= 0) {
-      goToMobileImage(idx, false);
-      return;
+    if (variantMediaIndex < 0) return;
+    setActiveMediaIndex(variantMediaIndex);
+    const carousel = mobileCarouselRef.current;
+    if (carousel) {
+      carousel.scrollTo({
+        left: variantMediaIndex * carousel.clientWidth,
+        behavior: 'auto',
+      });
     }
-    setActiveMediaIndex(0);
-  }, [selectedVariantImage, mediaGallery]);
-
-  // Helper to check if color has any size in stock
-  const isColorAvailable = (color) => {
-    if (variantSizes.length === 0) {
-      return isVariantInStock(color, null);
-    }
-    return variantSizes.some(size => isVariantInStock(color, size));
-  };
-
-  // Helper to check if size has any color in stock
-  const isSizeAvailable = (size) => {
-    if (variantColors.length === 0) {
-      return isVariantInStock(null, size);
-    }
-    return variantColors.some(color => isVariantInStock(color, size));
-  };
+  }, [variantMediaIndex]);
 
   useEffect(() => {
-    const availableVariants = variants.filter(v => (v?.stock ?? 0) > 0);
+    const initial = getInitialSelectedOptions(variantOptionGroups);
+    if (!initial.color && product.colors?.[0]) initial.color = product.colors[0];
+    if (!initial.size && product.sizes?.[0]) initial.size = product.sizes[0];
+
+    const availableVariants = variants.filter((variant) => !isBulkBundleVariant(variant) && (variant?.stock ?? 0) > 0);
     if (availableVariants.length === 1) {
-      const v = availableVariants[0];
-      if (v.options?.color) setSelectedColor(v.options.color);
-      if (v.options?.size) setSelectedSize(v.options.size);
+      const variant = availableVariants[0];
+      variantOptionGroups.forEach((group) => {
+        if (variant.options?.[group.key]) initial[group.key] = variant.options[group.key];
+      });
+      setSelectedOptions(initial);
       return;
     }
 
-    const availableColors = variantColors.filter(c => isColorAvailable(c));
-    if (availableColors.length === 1) setSelectedColor(availableColors[0]);
-
-    const availableSizes = variantSizes.filter(s => isSizeAvailable(s));
-    if (availableSizes.length === 1) setSelectedSize(availableSizes[0]);
-  }, []);
+    variantOptionGroups.forEach((group) => {
+      const availableValues = group.values.filter((value) => isVariantOptionValueAvailable(
+        variants,
+        initial,
+        group.key,
+        value,
+        { isBulkBundleVariant },
+      ));
+      if (availableValues.length === 1) initial[group.key] = availableValues[0];
+    });
+    setSelectedOptions({ ...initial });
+  }, [product?._id]);
 
   const imageContainerRef = useRef(null);
   const [showZoom, setShowZoom] = useState(false);
@@ -1868,6 +1861,35 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     }
   }, [activeImageIndex]);
 
+  useEffect(() => {
+    const mainImageEl = desktopMainImageRef.current;
+    if (!mainImageEl || typeof ResizeObserver === 'undefined') return undefined;
+
+    const syncGalleryHeight = () => {
+      const nextHeight = Math.round(mainImageEl.getBoundingClientRect().height);
+      if (nextHeight > 0) setDesktopGalleryHeight(nextHeight);
+    };
+
+    syncGalleryHeight();
+    const observer = new ResizeObserver(syncGalleryHeight);
+    observer.observe(mainImageEl);
+    window.addEventListener('resize', syncGalleryHeight);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', syncGalleryHeight);
+    };
+  }, [product?._id, aspectRatioClass, mediaGallery.length]);
+
+  useEffect(() => {
+    const container = desktopThumbnailsRef.current;
+    if (!container) return;
+    const thumb = container.children[activeMediaIndex];
+    if (thumb) {
+      thumb.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [activeMediaIndex, desktopGalleryHeight]);
+
   useEffect(() => () => {
     if (mobileCarouselScrollRaf.current) {
       cancelAnimationFrame(mobileCarouselScrollRaf.current);
@@ -2081,7 +2103,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       setQuantity(1);
     }
     // Only reset quantity when switching product or color/size — not on every render.
-  }, [product?._id, selectedColor, selectedSize]);
+  }, [product?._id, selectedOptions]);
 
   useEffect(() => {
     if (!addedToCart || cartQty <= 0) return;
@@ -2182,11 +2204,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     dispatch(addToCart({
       productId: cartProductId,
       price: effPrice,
-      variantOptions: {
-        color: selectedColor || null,
-        size: selectedSize || null,
-        bundleQty: selectedBundleQty || null,
-      },
+      variantOptions: cartVariantOptions,
     }));
     
     // Add selected FBT products
@@ -2321,13 +2339,17 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
           {/* LEFT: Media gallery */}
           <div className="w-full min-w-0 space-y-3 lg:space-y-4 lg:min-w-0 lg:sticky lg:top-24 lg:self-start relative z-20">
-            <div className="hidden lg:flex gap-3 items-stretch">
-              <div className="flex min-h-0 w-[56px] flex-shrink-0 flex-col gap-1.5 overflow-y-auto scrollbar-hide xl:w-[64px]">
+            <div className="hidden lg:flex gap-2.5 items-start">
+              <div
+                ref={desktopThumbnailsRef}
+                className="flex w-[48px] flex-shrink-0 flex-col gap-1 overflow-y-auto overscroll-contain scrollbar-hide xl:w-[52px]"
+                style={desktopGalleryHeight ? { maxHeight: `${desktopGalleryHeight}px` } : undefined}
+              >
                 {mediaGallery.map((item, index) => (
                   <button
                     key={`${item.src}-${index}`}
                     onClick={() => setActiveMediaIndex(index)}
-                    className={`relative w-[52px] h-[52px] xl:w-[60px] xl:h-[60px] border-2 rounded overflow-hidden transition-all bg-white flex-shrink-0 cursor-pointer ${
+                    className={`relative w-[44px] h-[44px] xl:w-[48px] xl:h-[48px] border-2 rounded overflow-hidden transition-all bg-white flex-shrink-0 cursor-pointer ${
                       activeMediaIndex === index ? 'border-orange-500' : 'border-gray-200 hover:border-gray-300'
                     }`}
                   >
@@ -2351,7 +2373,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
               </div>
 
               <div className="flex-1 min-w-0">
-                <div className={`relative bg-white rounded overflow-visible w-full ${aspectRatioClass}`}>
+                <div ref={desktopMainImageRef} className={`relative bg-white rounded overflow-visible w-full ${aspectRatioClass}`}>
                 {product.attributes?.condition === 'used' && (
                   <div className="absolute top-4 left-16 z-10">
                     <span className="bg-green-500 text-white text-xs font-semibold px-3 py-1 rounded flex items-center gap-1">
@@ -2722,50 +2744,16 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 </div>
               </div>
 
-              {(variantColors.length > 0 || variantSizes.length > 0) ? (
-                <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                  {variantColors.length > 0 ? (
-                    <div className="space-y-2">
-                      <label className="text-sm font-semibold text-gray-900">{t('product.color')}</label>
-                      <div className="flex flex-wrap gap-2">
-                        {variantColors.map((color) => (
-                          <button
-                            key={color}
-                            type="button"
-                            onClick={() => setSelectedColor(color)}
-                            className={`rounded-lg border-2 px-3 py-2 text-sm font-medium transition ${
-                              selectedColor === color
-                                ? 'border-[#E52721] bg-red-50 text-[#E52721]'
-                                : 'border-gray-200 bg-white text-gray-700'
-                            }`}
-                          >
-                            {color}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                  {variantSizes.length > 0 ? (
-                    <div className="space-y-2">
-                      <label className="text-sm font-semibold text-gray-900">{t('product.size')}</label>
-                      <div className="flex flex-wrap gap-2">
-                        {variantSizes.map((size) => (
-                          <button
-                            key={size}
-                            type="button"
-                            onClick={() => setSelectedSize(size)}
-                            className={`rounded-lg border-2 px-3 py-2 text-sm font-medium transition ${
-                              selectedSize === size
-                                ? 'border-[#E52721] bg-red-50 text-[#E52721]'
-                                : 'border-gray-200 bg-white text-gray-700'
-                            }`}
-                          >
-                            {size}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
+              {showVariantPicker ? (
+                <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                  <ProductVariantPicker
+                    groups={variantOptionGroups}
+                    variants={variants}
+                    selectedOptions={selectedOptions}
+                    onSelect={handleSelectVariantOption}
+                    productImages={productImagesArray}
+                    isBulkBundleVariant={isBulkBundleVariant}
+                  />
                 </div>
               ) : null}
 
@@ -2946,6 +2934,19 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   </span>
                 )}
               </div>
+
+              {showVariantPicker ? (
+                <div className="mt-4">
+                  <ProductVariantPicker
+                    groups={variantOptionGroups}
+                    variants={variants}
+                    selectedOptions={selectedOptions}
+                    onSelect={handleSelectVariantOption}
+                    productImages={productImagesArray}
+                    isBulkBundleVariant={isBulkBundleVariant}
+                  />
+                </div>
+              ) : null}
 
               {showBundleOptions ? (
                 <div className="mt-3 rounded-lg border border-gray-200 bg-white p-4">
@@ -3280,7 +3281,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                               productId: cartProductId,
                               price: effPrice,
                               maxQty: maxOrderQty,
-                              variantOptions: { color: selectedColor || null, size: selectedSize || null, bundleQty: selectedBundleQty || null },
+                              variantOptions: cartVariantOptions,
                             };
                             if (product.specialOffer?.offerToken) {
                               payload.offerToken = product.specialOffer.offerToken;
@@ -3350,33 +3351,6 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
               </div>
 
             </div>
-
-            {/* Color Options */}
-            {variantColors.length > 0 && (
-              <div className="space-y-2 pt-2">
-                <label className="text-sm font-semibold text-gray-900">{t('product.color')}</label>
-                <div className="flex flex-wrap gap-2">
-                  {variantColors.map((color) => {
-                    const inStock = isColorAvailable(color);
-                    return (
-                      <button
-                        key={color}
-                        onClick={() => setSelectedColor(color)}
-                        className={`px-4 py-2 rounded-lg border-2 transition-all text-sm font-medium relative ${
-                          selectedColor === color
-                            ? 'border-orange-500 bg-orange-50 text-orange-700'
-                            : inStock
-                            ? 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
-                            : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 opacity-40'
-                        }`}
-                      >
-                        {color}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
 
           </div>
         </div>

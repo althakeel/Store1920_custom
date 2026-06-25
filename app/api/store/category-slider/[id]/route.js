@@ -1,11 +1,9 @@
 import dbConnect from '@/lib/mongodb';
 import CategorySlider from '@/models/CategorySlider';
 import { NextResponse } from 'next/server';
-import { getAuth } from '@/lib/firebase-admin';
-import authSeller from '@/middlewares/authSeller';
-import { deleteCacheKey } from '@/lib/cache';
-
-const FEATURED_SECTIONS_CACHE_KEY = 'public:featured-sections:v2';
+import { invalidateCategorySliderCaches } from '@/lib/categorySliderCache';
+import { resolveCategorySliderAccess, buildCategorySliderFilter } from '@/lib/categorySliderAccess';
+import { normalizeCategorySliderBackground } from '@/lib/categorySliderTheme';
 
 function parseAuthHeader(req) {
   const auth = req.headers.get('authorization') || req.headers.get('Authorization');
@@ -15,16 +13,7 @@ function parseAuthHeader(req) {
 }
 
 async function resolveStoreScope(token) {
-  const decoded = await getAuth().verifyIdToken(token);
-  const userId = decoded.uid;
-  const storeId = await authSeller(userId);
-  if (!storeId) return null;
-
-  return {
-    userId,
-    storeId: String(storeId),
-    storeIds: [...new Set([String(storeId), String(userId)])],
-  };
+  return resolveCategorySliderAccess(token);
 }
 
 export async function PUT(req, { params }) {
@@ -46,7 +35,7 @@ export async function PUT(req, { params }) {
       return NextResponse.json({ error: 'Slider ID is required' }, { status: 400 });
     }
 
-    const { title, subtitle, productIds } = await req.json();
+    const { title, subtitle, productIds, sideImage, cardsPerRow, backgroundColor } = await req.json();
     console.log('=== 💾 PUT SLIDER START ===');
     console.log('💾 Received ID:', id);
     console.log('💾 Received title:', title);
@@ -60,22 +49,40 @@ export async function PUT(req, { params }) {
       );
     }
 
+    const productIdsValue = Array.isArray(productIds)
+      ? productIds.map((productId) => String(productId)).filter(Boolean)
+      : [];
+
+    if (productIdsValue.length === 0) {
+      return NextResponse.json(
+        { error: 'At least one product is required' },
+        { status: 400 }
+      );
+    }
+
     // Explicitly handle subtitle - ensure it's a string
     const subtitleValue = subtitle !== undefined && subtitle !== null ? String(subtitle).trim() : '';
     console.log('💾 Processed subtitle value:', JSON.stringify(subtitleValue), 'Length:', subtitleValue.length);
 
+    const sideImageValue = sideImage !== undefined && sideImage !== null
+      ? String(sideImage).trim()
+      : '';
+
     const updateData = {
       title: title.trim(),
       subtitle: subtitleValue,
-      productIds: productIds || [],
+      productIds: productIdsValue,
+      sideImage: sideImageValue,
+      cardsPerRow: Number(cardsPerRow) === 5 ? 5 : 6,
+      backgroundColor: normalizeCategorySliderBackground(backgroundColor),
     };
 
     console.log('💾 About to update with:', JSON.stringify(updateData));
 
     const slider = await CategorySlider.findOneAndUpdate(
-      { _id: id, storeId: { $in: scope.storeIds } },
-      { ...updateData, storeId: scope.storeId },
-      { new: true }
+      buildCategorySliderFilter(id, scope),
+      { $set: scope.isAdmin ? updateData : { ...updateData, storeId: scope.storeId } },
+      { new: true, runValidators: true }
     );
 
     console.log('💾 After update, subtitle:', JSON.stringify(slider?.subtitle));
@@ -90,18 +97,24 @@ export async function PUT(req, { params }) {
 
     // Ensure response includes all fields as plain object
     const sliderData = slider.toObject ? slider.toObject() : slider;
-    console.log('💾 Returning slider data:', sliderData);
+    console.log('💾 Returning slider data, backgroundColor:', sliderData.backgroundColor);
 
-    deleteCacheKey(FEATURED_SECTIONS_CACHE_KEY);
+    invalidateCategorySliderCaches();
 
     return NextResponse.json(
-      { message: 'Slider updated', slider: sliderData },
+      {
+        message: 'Slider updated',
+        slider: {
+          ...sliderData,
+          backgroundColor: normalizeCategorySliderBackground(sliderData.backgroundColor),
+        },
+      },
       { status: 200 }
     );
   } catch (error) {
     console.error('Error updating category slider:', error);
     return NextResponse.json(
-      { error: 'Failed to update slider' },
+      { error: error?.message || 'Failed to update slider' },
       { status: 500 }
     );
   }
@@ -126,10 +139,9 @@ export async function DELETE(req, { params }) {
       return NextResponse.json({ error: 'Slider ID is required' }, { status: 400 });
     }
 
-    const slider = await CategorySlider.findOneAndDelete({
-      _id: id,
-      storeId: { $in: scope.storeIds },
-    });
+    const slider = await CategorySlider.findOneAndDelete(
+      buildCategorySliderFilter(id, scope),
+    );
 
     if (!slider) {
       return NextResponse.json(
@@ -138,7 +150,7 @@ export async function DELETE(req, { params }) {
       );
     }
 
-    deleteCacheKey(FEATURED_SECTIONS_CACHE_KEY);
+    invalidateCategorySliderCaches();
 
     return NextResponse.json(
       { message: 'Slider deleted' },

@@ -11,7 +11,7 @@ import { toast } from "react-hot-toast"
 import Loading from "@/components/Loading"
 
 import axios from "axios"
-import dynamic from "next/dynamic"
+import nextDynamic from "next/dynamic"
 import ProductBulkImportPanel from '@/components/store/ProductBulkImportPanel'
 import {
     buildCategoryLookup,
@@ -20,7 +20,7 @@ import {
 } from '@/lib/categoryLookup'
 import { getProductThumbnailUrl } from '@/lib/productMedia'
 
-const ProductForm = dynamic(() => import('../add-product/page'), {
+const ProductForm = nextDynamic(() => import('../add-product/page'), {
     ssr: false,
     loading: () => (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 p-4">
@@ -125,6 +125,11 @@ export default function StoreManageProducts() {
     })
     const [aiAutofillRunning, setAiAutofillRunning] = useState(false)
     const [aiAutofillProgress, setAiAutofillProgress] = useState(null)
+    const [bulkAutofillJob, setBulkAutofillJob] = useState(null)
+    const [bulkEligibleCount, setBulkEligibleCount] = useState(null)
+    const [bulkAutofillLoading, setBulkAutofillLoading] = useState(false)
+    const [bulkNow, setBulkNow] = useState(Date.now())
+    const BULK_AUTOFILL_INTERVAL_MS = 60000
 
     const fetchStoreProducts = useCallback(async ({ page = currentPage, search = debouncedSearch, category = selectedCategory, silent = false } = {}) => {
         try {
@@ -154,6 +159,177 @@ export default function StoreManageProducts() {
             setLoading(false)
         }
     }, [currentPage, debouncedSearch, selectedCategory, pageSize, getToken])
+
+    const fetchBulkAutofillStatus = useCallback(async () => {
+        try {
+            const token = await getToken()
+            const { data } = await axios.get('/api/store/product/ai-autofill/bulk?preview=true', {
+                headers: { Authorization: `Bearer ${token}` },
+            })
+            setBulkAutofillJob(data?.job || null)
+            setBulkEligibleCount(Number(data?.preview?.eligibleCount ?? 0))
+        } catch (error) {
+            console.error('Bulk autofill status error:', error)
+        }
+    }, [getToken])
+
+    useEffect(() => {
+        fetchBulkAutofillStatus()
+    }, [fetchBulkAutofillStatus])
+
+    useEffect(() => {
+        let cancelled = false
+
+        const tick = async () => {
+            if (cancelled) return
+            try {
+                const token = await getToken()
+                const { data: statusData } = await axios.get('/api/store/product/ai-autofill/bulk', {
+                    headers: { Authorization: `Bearer ${token}` },
+                })
+                const job = statusData?.job || null
+                if (cancelled) return
+                setBulkAutofillJob(job)
+
+                if (job?.status === 'running') {
+                    const nextAt = job.nextProcessAt ? new Date(job.nextProcessAt).getTime() : 0
+                    if (!nextAt || Date.now() >= nextAt) {
+                        const { data: processData } = await axios.post('/api/store/product/ai-autofill/bulk', {
+                            action: 'process',
+                        }, {
+                            headers: { Authorization: `Bearer ${token}` },
+                        })
+                        if (cancelled) return
+                        const nextJob = processData?.job || null
+                        setBulkAutofillJob(nextJob)
+                        if (nextJob?.status === 'completed') {
+                            toast.success(`Bulk AI auto-fill finished: ${nextJob.successCount} updated, ${nextJob.failedCount} failed`)
+                            await fetchStoreProducts({ silent: true })
+                            dispatch(fetchProductsAction(STOREFRONT_CATALOG_FETCH))
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Bulk autofill tick error:', error)
+            }
+        }
+
+        tick()
+        const intervalId = setInterval(tick, 10000)
+        return () => {
+            cancelled = true
+            clearInterval(intervalId)
+        }
+    }, [dispatch, fetchStoreProducts, getToken])
+
+    useEffect(() => {
+        if (bulkAutofillJob?.status !== 'running') return undefined
+        const timer = setInterval(() => setBulkNow(Date.now()), 1000)
+        return () => clearInterval(timer)
+    }, [bulkAutofillJob?.status])
+
+    const bulkProgressStats = useMemo(() => {
+        if (!bulkAutofillJob) {
+            return null
+        }
+
+        const total = Number(bulkAutofillJob.totalCount || 0)
+        const finished = Number(bulkAutofillJob.processedCount || 0)
+        const pending = Number(
+            bulkAutofillJob.remainingCount ?? Math.max(0, total - finished),
+        )
+        const success = Number(bulkAutofillJob.successCount || 0)
+        const failed = Number(bulkAutofillJob.failedCount || 0)
+        const percent = total > 0 ? Math.min(100, Math.round((finished / total) * 100)) : 0
+        const inProgress = bulkAutofillJob.status === 'running' && pending > 0
+
+        return {
+            total,
+            finished,
+            pending,
+            success,
+            failed,
+            percent,
+            inProgress,
+            nextInSeconds: bulkAutofillJob.nextProcessAt
+                ? Math.max(0, Math.ceil((new Date(bulkAutofillJob.nextProcessAt).getTime() - bulkNow) / 1000))
+                : null,
+        }
+    }, [bulkAutofillJob, bulkNow])
+
+    const startBulkAutofillAll = async () => {
+        const count = bulkEligibleCount ?? 0
+        if (!count) {
+            toast.error('No products with images found for AI auto-fill')
+            return
+        }
+
+        const hours = Math.ceil((count * BULK_AUTOFILL_INTERVAL_MS) / 3600000)
+        if (!confirm(`Start automatic AI auto-fill for ${count} product(s)?\n\nOne product every 1 minute.\nEstimated time: ~${hours} hour(s).\n\nYou can close this page — the queue keeps running on the server.`)) {
+            return
+        }
+
+        try {
+            setBulkAutofillLoading(true)
+            const token = await getToken()
+            const { data } = await axios.post('/api/store/product/ai-autofill/bulk', {
+                action: 'start',
+                mode: 'with_images',
+                includeArabic: true,
+                intervalMs: BULK_AUTOFILL_INTERVAL_MS,
+            }, {
+                headers: { Authorization: `Bearer ${token}` },
+            })
+            setBulkAutofillJob(data?.job || null)
+            toast.success('Bulk AI auto-fill queue started')
+        } catch (error) {
+            toast.error(error?.response?.data?.error || error.message || 'Failed to start bulk queue')
+        } finally {
+            setBulkAutofillLoading(false)
+        }
+    }
+
+    const pauseBulkAutofill = async () => {
+        try {
+            const token = await getToken()
+            const { data } = await axios.post('/api/store/product/ai-autofill/bulk', { action: 'pause' }, {
+                headers: { Authorization: `Bearer ${token}` },
+            })
+            setBulkAutofillJob(data?.job || null)
+            toast.success('Bulk queue paused')
+        } catch (error) {
+            toast.error(error?.response?.data?.error || error.message)
+        }
+    }
+
+    const resumeBulkAutofill = async () => {
+        try {
+            const token = await getToken()
+            const { data } = await axios.post('/api/store/product/ai-autofill/bulk', { action: 'resume' }, {
+                headers: { Authorization: `Bearer ${token}` },
+            })
+            setBulkAutofillJob(data?.job || null)
+            toast.success('Bulk queue resumed')
+        } catch (error) {
+            toast.error(error?.response?.data?.error || error.message)
+        }
+    }
+
+    const cancelBulkAutofill = async () => {
+        if (!confirm('Stop the bulk AI auto-fill queue?')) return
+        try {
+            const token = await getToken()
+            const { data } = await axios.post('/api/store/product/ai-autofill/bulk', { action: 'cancel' }, {
+                headers: { Authorization: `Bearer ${token}` },
+            })
+            setBulkAutofillJob(data?.job || null)
+            toast.success('Bulk queue cancelled')
+        } catch (error) {
+            toast.error(error?.response?.data?.error || error.message)
+        }
+    }
+
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
     // Fetch all categories to map IDs to names
     const fetchCategories = async () => {
@@ -607,6 +783,10 @@ export default function StoreManageProducts() {
                 ...prev,
                 results: [...results],
             }))
+
+            if (index < queueIds.length - 1) {
+                await sleep(BULK_AUTOFILL_INTERVAL_MS)
+            }
         }
 
         const successCount = results.filter((item) => item.success).length
@@ -683,11 +863,140 @@ export default function StoreManageProducts() {
 
             <ProductBulkImportPanel onImportComplete={handleImportComplete} embedded />
 
+            <div className="mb-4 w-full rounded-xl border border-blue-200 bg-blue-50/70 px-4 py-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                        <h2 className="text-sm font-semibold text-slate-900">AI Auto Fill — Bulk Queue</h2>
+                        <p className="mt-1 max-w-3xl text-xs text-slate-600">
+                            Automatically fill English and Arabic product details from images. Runs in the background with a 1 minute gap between each product.
+                            {bulkEligibleCount != null ? ` ${bulkEligibleCount} product(s) with images ready.` : ''}
+                        </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                        {!bulkAutofillJob || bulkAutofillJob.status === 'completed' || bulkAutofillJob.status === 'cancelled' ? (
+                            <button
+                                type="button"
+                                onClick={startBulkAutofillAll}
+                                disabled={bulkAutofillLoading || !bulkEligibleCount}
+                                className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                                {bulkAutofillLoading ? 'Starting...' : 'Auto Fill All Products'}
+                            </button>
+                        ) : null}
+                        {bulkAutofillJob?.status === 'running' ? (
+                            <>
+                                <button type="button" onClick={pauseBulkAutofill} className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50">Pause</button>
+                                <button type="button" onClick={cancelBulkAutofill} className="px-3 py-2 rounded-lg border border-red-200 bg-white text-xs font-semibold text-red-700 hover:bg-red-50">Stop</button>
+                            </>
+                        ) : null}
+                        {bulkAutofillJob?.status === 'paused' ? (
+                            <>
+                                <button type="button" onClick={resumeBulkAutofill} className="px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700">Resume</button>
+                                <button type="button" onClick={cancelBulkAutofill} className="px-3 py-2 rounded-lg border border-red-200 bg-white text-xs font-semibold text-red-700 hover:bg-red-50">Stop</button>
+                            </>
+                        ) : null}
+                    </div>
+                </div>
+
+                {bulkAutofillJob && ['running', 'paused', 'completed'].includes(bulkAutofillJob.status) && bulkProgressStats ? (
+                    <div className="mt-4 rounded-lg border border-blue-100 bg-white/80 p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-sm font-semibold capitalize text-slate-900">
+                                Status: {bulkAutofillJob.status}
+                            </span>
+                            <span className="text-sm font-bold text-blue-700">
+                                {bulkProgressStats.percent}% complete
+                            </span>
+                        </div>
+
+                        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-center">
+                                <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Finished</p>
+                                <p className="mt-0.5 text-lg font-bold text-slate-900">{bulkProgressStats.finished}</p>
+                            </div>
+                            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-center">
+                                <p className="text-[11px] font-medium uppercase tracking-wide text-amber-700">Pending</p>
+                                <p className="mt-0.5 text-lg font-bold text-amber-900">{bulkProgressStats.pending}</p>
+                            </div>
+                            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-center">
+                                <p className="text-[11px] font-medium uppercase tracking-wide text-emerald-700">Success</p>
+                                <p className="mt-0.5 text-lg font-bold text-emerald-900">{bulkProgressStats.success}</p>
+                            </div>
+                            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-center">
+                                <p className="text-[11px] font-medium uppercase tracking-wide text-red-700">Failed</p>
+                                <p className="mt-0.5 text-lg font-bold text-red-900">{bulkProgressStats.failed}</p>
+                            </div>
+                        </div>
+
+                        <div className="mt-4">
+                            <div className="mb-1.5 flex items-center justify-between text-xs text-slate-600">
+                                <span>{bulkProgressStats.finished} of {bulkProgressStats.total} products done</span>
+                                <span>{bulkProgressStats.pending} remaining</span>
+                            </div>
+                            <div className="h-3 w-full overflow-hidden rounded-full bg-slate-200">
+                                <div className="flex h-full w-full">
+                                    {bulkProgressStats.total > 0 ? (
+                                        <>
+                                            <div
+                                                className="h-full bg-emerald-500 transition-all duration-500"
+                                                style={{ width: `${(bulkProgressStats.success / bulkProgressStats.total) * 100}%` }}
+                                                title={`${bulkProgressStats.success} succeeded`}
+                                            />
+                                            <div
+                                                className="h-full bg-red-500 transition-all duration-500"
+                                                style={{ width: `${(bulkProgressStats.failed / bulkProgressStats.total) * 100}%` }}
+                                                title={`${bulkProgressStats.failed} failed`}
+                                            />
+                                            {bulkProgressStats.inProgress ? (
+                                                <div
+                                                    className="h-full bg-blue-500 animate-pulse transition-all duration-500"
+                                                    style={{ width: `${(1 / bulkProgressStats.total) * 100}%` }}
+                                                    title="In progress"
+                                                />
+                                            ) : null}
+                                        </>
+                                    ) : null}
+                                </div>
+                            </div>
+                            <div className="mt-1.5 flex flex-wrap gap-3 text-[11px] text-slate-500">
+                                <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-emerald-500" /> Success</span>
+                                <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-red-500" /> Failed</span>
+                                <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-slate-200" /> Pending</span>
+                                {bulkProgressStats.inProgress ? (
+                                    <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-blue-500" /> In progress</span>
+                                ) : null}
+                            </div>
+                        </div>
+
+                        {bulkAutofillJob.status === 'running' && bulkAutofillJob.currentProductName ? (
+                            <p className="mt-3 text-xs text-slate-600">
+                                <span className="font-medium text-slate-800">Now processing:</span> {bulkAutofillJob.currentProductName}
+                                {bulkProgressStats.nextInSeconds != null
+                                    ? ` · Next product in ~${bulkProgressStats.nextInSeconds}s`
+                                    : ''}
+                            </p>
+                        ) : null}
+
+                        {bulkAutofillJob.recentResults?.length > 0 ? (
+                            <ul className="mt-3 max-h-32 space-y-1 overflow-y-auto border-t border-slate-100 pt-3 text-xs">
+                                {[...bulkAutofillJob.recentResults].reverse().map((item) => (
+                                    <li key={`${item.productId}-${item.at}`} className={item.success ? 'text-emerald-700' : 'text-red-700'}>
+                                        {item.success
+                                            ? `✓ ${item.name || item.productId}`
+                                            : `✕ ${item.name || item.productId}: ${item.error}`}
+                                    </li>
+                                ))}
+                            </ul>
+                        ) : null}
+                    </div>
+                ) : null}
+            </div>
+
             {aiAutofillProgress && (
                 <div className="mb-4 w-full rounded-lg border border-violet-200 bg-violet-50 px-4 py-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="text-sm font-medium text-violet-900">
-                            AI queue: {aiAutofillProgress.current} / {aiAutofillProgress.total}
+                            Selected products AI queue
                             {aiAutofillProgress.currentName ? ` — ${aiAutofillProgress.currentName}` : ''}
                         </div>
                         {!aiAutofillRunning && (
@@ -700,9 +1009,50 @@ export default function StoreManageProducts() {
                             </button>
                         )}
                     </div>
+
+                    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                        <div className="rounded-lg border border-violet-200 bg-white px-3 py-2 text-center">
+                            <p className="text-[11px] font-medium uppercase tracking-wide text-violet-600">Finished</p>
+                            <p className="mt-0.5 text-lg font-bold text-violet-900">
+                                {aiAutofillProgress.results?.length || 0}
+                            </p>
+                        </div>
+                        <div className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-center">
+                            <p className="text-[11px] font-medium uppercase tracking-wide text-amber-700">Pending</p>
+                            <p className="mt-0.5 text-lg font-bold text-amber-900">
+                                {Math.max(0, aiAutofillProgress.total - (aiAutofillProgress.results?.length || 0))}
+                            </p>
+                        </div>
+                        <div className="rounded-lg border border-violet-200 bg-white px-3 py-2 text-center sm:col-span-1 col-span-2">
+                            <p className="text-[11px] font-medium uppercase tracking-wide text-violet-600">Progress</p>
+                            <p className="mt-0.5 text-lg font-bold text-violet-900">
+                                {aiAutofillProgress.total
+                                    ? Math.round(((aiAutofillProgress.results?.length || 0) / aiAutofillProgress.total) * 100)
+                                    : 0}%
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="mt-3">
+                        <div className="mb-1.5 flex items-center justify-between text-xs text-violet-700">
+                            <span>{aiAutofillProgress.results?.length || 0} of {aiAutofillProgress.total} done</span>
+                            <span>{Math.max(0, aiAutofillProgress.total - (aiAutofillProgress.results?.length || 0))} remaining</span>
+                        </div>
+                        <div className="h-3 w-full overflow-hidden rounded-full bg-white">
+                            <div
+                                className="h-full rounded-full bg-violet-600 transition-all duration-500"
+                                style={{
+                                    width: `${aiAutofillProgress.total
+                                        ? Math.min(100, ((aiAutofillProgress.results?.length || 0) / aiAutofillProgress.total) * 100)
+                                        : 0}%`,
+                                }}
+                            />
+                        </div>
+                    </div>
+
                     {aiAutofillRunning && (
-                        <p className="mt-1 text-xs text-violet-700">
-                            Processing one product at a time. Please keep this page open.
+                        <p className="mt-2 text-xs text-violet-700">
+                            Processing one product every 1 minute. Please keep this page open.
                         </p>
                     )}
                     {aiAutofillProgress.results?.length > 0 && (

@@ -1,5 +1,6 @@
 import {
   CAROUSEL_PRODUCT_CARD_CLASS,
+  CATEGORY_SLIDER_SIDE_IMAGE_SIZE_CLASS,
   HOME_PRODUCT_GRID_CLASS,
   HOME_SECTION_CLASS,
   HOME_SECTION_GRID_INNER_CLASS,
@@ -110,12 +111,53 @@ export function HomeExploreInterestsSkeleton({ productCount = 6 }) {
   );
 }
 
+export function HomeSideImageSliderSkeleton({
+  withSideImage = true,
+  cardsPerRow = 5,
+  showTitle = true,
+}) {
+  const cardCount = cardsPerRow === 5 ? 5 : 6;
+  const cardWidthClass = cardsPerRow === 5
+    ? 'lg:flex-[0_0_calc((100%_-_3rem)_/_5)] lg:w-[calc((100%_-_3rem)_/_5)] lg:max-w-[calc((100%_-_3rem)_/_5)]'
+    : CAROUSEL_PRODUCT_CARD_CLASS;
+
+  return (
+    <div className="w-full min-w-0" aria-hidden="true">
+      <div
+        className={`${withSideImage ? 'lg:grid lg:w-full lg:max-w-full lg:grid-cols-[auto_minmax(0,1fr)] lg:items-stretch lg:gap-4 xl:gap-5' : ''}`}
+      >
+        {withSideImage ? (
+          <div
+            className={`mb-4 hidden aspect-square ${CATEGORY_SLIDER_SIDE_IMAGE_SIZE_CLASS} shrink-0 overflow-hidden rounded-2xl bg-slate-200 animate-pulse lg:mb-0 lg:block lg:self-center`}
+          />
+        ) : null}
+
+        <div
+          className={`min-w-0 ${withSideImage ? 'max-lg:bg-white lg:rounded-2xl lg:bg-[#f3f0ff] lg:px-4 lg:py-3' : ''}`}
+        >
+          {showTitle ? <HomeSectionTitleSkeleton /> : null}
+          <div className={`flex gap-3 overflow-hidden ${withSideImage ? 'lg:w-full' : ''}`}>
+            {Array.from({ length: cardCount }).map((_, index) => (
+              <HomeProductCardSkeleton
+                key={`home-side-slider-card-${index}`}
+                className={withSideImage ? `${cardWidthClass} shrink-0 grow-0` : CAROUSEL_PRODUCT_CARD_CLASS}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function HomeCategorySlidersSkeleton({ sections = 2 }) {
   return (
-    <div className="space-y-6 sm:space-y-8" aria-hidden="true">
-      {Array.from({ length: sections }).map((_, index) => (
-        <HomeProductCarouselSkeleton key={`home-slider-skeleton-${index}`} />
-      ))}
-    </div>
+    <section className={HOME_SECTION_CLASS} aria-hidden="true">
+      <div className={`${HOME_SECTION_GRID_INNER_CLASS} space-y-6 sm:space-y-8`}>
+        {Array.from({ length: sections }).map((_, index) => (
+          <HomeSideImageSliderSkeleton key={`home-slider-skeleton-${index}`} withSideImage={index === 0} />
+        ))}
+      </div>
+    </section>
   );
 }

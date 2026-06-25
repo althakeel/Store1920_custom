@@ -1,11 +1,9 @@
 import dbConnect from '@/lib/mongodb';
 import CategorySlider from '@/models/CategorySlider';
 import { NextResponse } from 'next/server';
-import { getAuth } from '@/lib/firebase-admin';
-import authSeller from '@/middlewares/authSeller';
-import { deleteCacheKey } from '@/lib/cache';
-
-const FEATURED_SECTIONS_CACHE_KEY = 'public:featured-sections:v2';
+import { invalidateCategorySliderCaches } from '@/lib/categorySliderCache';
+import { resolveCategorySliderAccess, buildCategorySliderFilter } from '@/lib/categorySliderAccess';
+import { normalizeCategorySliderBackground } from '@/lib/categorySliderTheme';
 
 function parseAuthHeader(req) {
   const auth = req.headers.get('authorization') || req.headers.get('Authorization');
@@ -15,16 +13,7 @@ function parseAuthHeader(req) {
 }
 
 async function resolveStoreScope(token) {
-  const decoded = await getAuth().verifyIdToken(token);
-  const userId = decoded.uid;
-  const storeId = await authSeller(userId);
-  if (!storeId) return null;
-
-  return {
-    userId,
-    storeId: String(storeId),
-    storeIds: [...new Set([String(storeId), String(userId)])],
-  };
+  return resolveCategorySliderAccess(token);
 }
 
 export async function GET(req) {
@@ -47,6 +36,9 @@ export async function GET(req) {
     const slidersWithDefaults = sliders.map(slider => ({
       ...slider,
       subtitle: slider.subtitle || '',
+      sideImage: slider.sideImage || '',
+      cardsPerRow: slider.cardsPerRow === 5 ? 5 : 6,
+      backgroundColor: normalizeCategorySliderBackground(slider.backgroundColor),
     }));
     
     console.log('📊 API returning sliders:', slidersWithDefaults);
@@ -75,7 +67,7 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
     }
 
-    const { title, subtitle, productIds } = await req.json();
+    const { title, subtitle, productIds, sideImage, cardsPerRow, backgroundColor } = await req.json();
     console.log('=== 💾 POST SLIDER START ===');
     console.log('💾 Raw request body - subtitle:', subtitle);
     console.log('💾 Subtitle is null:', subtitle === null);
@@ -104,25 +96,39 @@ export async function POST(req) {
     const subtitleValue = subtitle !== undefined && subtitle !== null ? String(subtitle).trim() : '';
     console.log('💾 Processed subtitle value:', JSON.stringify(subtitleValue), 'Length:', subtitleValue.length);
 
+    const sideImageValue = sideImage !== undefined && sideImage !== null
+      ? String(sideImage).trim()
+      : '';
+
+    if (!scope.storeId) {
+      return NextResponse.json(
+        { error: 'No store associated with this account' },
+        { status: 403 }
+      );
+    }
+
     const sliderData = {
       storeId: scope.storeId,
       title: title.trim(),
       subtitle: subtitleValue,
       productIds,
+      sideImage: sideImageValue,
+      cardsPerRow: Number(cardsPerRow) === 5 ? 5 : 6,
+      backgroundColor: normalizeCategorySliderBackground(backgroundColor),
     };
     console.log('💾 About to save with:', JSON.stringify(sliderData));
 
     const slider = new CategorySlider(sliderData);
     await slider.save();
     
-    deleteCacheKey(FEATURED_SECTIONS_CACHE_KEY);
+    invalidateCategorySliderCaches();
 
-    const savedData = slider.toObject();
-    console.log('💾 Saved to DB, subtitle now:', JSON.stringify(savedData.subtitle));
+    const savedData = slider.toObject ? slider.toObject() : slider;
+    console.log('💾 Saved to DB, backgroundColor:', savedData.backgroundColor);
     console.log('=== 💾 POST SLIDER END ===');
 
     return NextResponse.json(
-      { message: 'Slider created', slider: savedData },
+      { message: 'Slider created', slider: { ...savedData, backgroundColor: normalizeCategorySliderBackground(savedData.backgroundColor) } },
       { status: 201 }
     );
   } catch (error) {
@@ -159,10 +165,9 @@ export async function DELETE(req) {
       );
     }
 
-    const slider = await CategorySlider.findOneAndDelete({
-      _id: id,
-      storeId: { $in: scope.storeIds },
-    });
+    const slider = await CategorySlider.findOneAndDelete(
+      buildCategorySliderFilter(id, scope),
+    );
 
     if (!slider) {
       return NextResponse.json(
@@ -171,7 +176,7 @@ export async function DELETE(req) {
       );
     }
 
-    deleteCacheKey(FEATURED_SECTIONS_CACHE_KEY);
+    invalidateCategorySliderCaches();
 
     return NextResponse.json(
       { message: 'Slider deleted' },

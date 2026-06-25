@@ -6,6 +6,12 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import { FiTrash2, FiPlus, FiEdit2, FiX, FiSearch } from 'react-icons/fi';
 import Loading from '@/components/Loading';
+import { compressImageForUpload } from '@/lib/compressImageForUpload';
+import {
+  CATEGORY_SLIDER_BACKGROUND_PRESETS,
+  DEFAULT_CATEGORY_SLIDER_BACKGROUND,
+  normalizeCategorySliderBackground,
+} from '@/lib/categorySliderTheme';
 
 export default function CategorySliderPage() {
   const { user, getToken, loading: authLoading } = useAuth();
@@ -16,12 +22,38 @@ export default function CategorySliderPage() {
   const [editingIdx, setEditingIdx] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showAllSliders, setShowAllSliders] = useState(false);
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
 
   const [formData, setFormData] = useState({
     title: '',
     subtitle: '',
+    sideImage: '',
+    cardsPerRow: 6,
+    backgroundColor: DEFAULT_CATEGORY_SLIDER_BACKGROUND,
     productIds: [],
   });
+  const [uploadingSideImage, setUploadingSideImage] = useState(false);
+  const [myStoreScopeIds, setMyStoreScopeIds] = useState(() => new Set());
+
+  const normalizeProductIds = (ids = []) => (
+    [...new Set(
+      ids
+        .map((id) => {
+          if (!id) return '';
+          if (typeof id === 'object' && id.$oid) return id.$oid;
+          return String(id);
+        })
+        .map((id) => id.trim())
+        .filter((id) => id && id !== 'undefined' && id !== 'null'),
+    )]
+  );
+
+  const sliderBelongsToCurrentStore = (slider) => {
+    if (!slider?.storeId) return true;
+    return myStoreScopeIds.has(String(slider.storeId));
+  };
+
+  const canManageSlider = (slider) => isPlatformAdmin || sliderBelongsToCurrentStore(slider);
 
   const normalizeId = (value) => {
     if (!value) return null;
@@ -76,6 +108,20 @@ export default function CategorySliderPage() {
         }
       };
 
+      let token = await getToken();
+      if (token) {
+        try {
+          await axios.get('/api/admin/is-admin', {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          setIsPlatformAdmin(true);
+        } catch {
+          setIsPlatformAdmin(false);
+        }
+      } else {
+        setIsPlatformAdmin(false);
+      }
+
       // Fetch existing sliders (can show all or just user's)
       const endpoint = showAllSliders ? '/api/public/featured-sections' : '/api/store/category-slider';
       const slidersRes = showAllSliders 
@@ -93,12 +139,27 @@ export default function CategorySliderPage() {
         return {
           ...section,
           id: normalizedId,
-          subtitle: subtitleValue
+          subtitle: subtitleValue,
+          sideImage: section.sideImage ? String(section.sideImage).trim() : '',
+          cardsPerRow: section.cardsPerRow === 5 ? 5 : 6,
+          backgroundColor: normalizeCategorySliderBackground(section.backgroundColor),
         };
       });
       console.log('📊 Fetched sliders:', normalizedSliders);
       console.log('📊 First slider subtitle:', normalizedSliders[0]?.subtitle);
       setSliders(normalizedSliders);
+
+      const scopeIds = new Set();
+      if (user?.uid) scopeIds.add(String(user.uid));
+      try {
+        const ownSlidersRes = await getWithAuth('/api/store/category-slider');
+        (ownSlidersRes.data.sliders || []).forEach((slider) => {
+          if (slider.storeId) scopeIds.add(String(slider.storeId));
+        });
+      } catch (scopeError) {
+        console.warn('Could not resolve store scope for sliders:', scopeError);
+      }
+      setMyStoreScopeIds(scopeIds);
 
       // Fetch store products
       const productsRes = await getWithAuth('/api/store/product');
@@ -120,7 +181,7 @@ export default function CategorySliderPage() {
   };
 
   const handleAddSlider = () => {
-    setFormData({ title: '', subtitle: '', productIds: [] });
+    setFormData({ title: '', subtitle: '', sideImage: '', cardsPerRow: 6, backgroundColor: DEFAULT_CATEGORY_SLIDER_BACKGROUND, productIds: [] });
     setEditingIdx(null);
     setShowForm(true);
   };
@@ -141,6 +202,9 @@ export default function CategorySliderPage() {
       _id: sliderId,
       title: slider.title || '',
       subtitle: subtitleValue,
+      sideImage: slider.sideImage ? String(slider.sideImage).trim() : '',
+      cardsPerRow: slider.cardsPerRow === 5 ? 5 : 6,
+      backgroundColor: normalizeCategorySliderBackground(slider.backgroundColor),
       productIds: slider.productIds || []
     };
     console.log('📝 New form data being set:', newFormData);
@@ -148,6 +212,56 @@ export default function CategorySliderPage() {
     setEditingIdx(sliderId);
     setShowForm(true);
     console.log('📝 === EDIT SLIDER COMPLETED ===');
+  };
+
+  const handleSideImageUpload = async (file) => {
+    if (!file) return;
+
+    try {
+      setUploadingSideImage(true);
+      let token = await getToken();
+      if (!token) {
+        toast.error('Please sign in again');
+        return;
+      }
+
+      const compressed = await compressImageForUpload(file);
+      const body = new FormData();
+      body.append('image', compressed);
+      body.append('type', 'category');
+
+      const attemptUpload = async (authToken) => {
+        const response = await fetch('/api/store/upload-image', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${authToken}` },
+          body,
+        });
+        const data = await response.json().catch(() => ({}));
+        return { response, data };
+      };
+
+      let { response, data } = await attemptUpload(token);
+      if (response.status === 401) {
+        token = await getToken(true);
+        if (!token) {
+          toast.error('Please sign in again');
+          return;
+        }
+        ({ response, data } = await attemptUpload(token));
+      }
+
+      if (!response.ok || !data?.url) {
+        throw new Error(data?.error || `Upload failed (${response.status})`);
+      }
+
+      setFormData((prev) => ({ ...prev, sideImage: data.url }));
+      toast.success('Side image uploaded');
+    } catch (error) {
+      console.error('Side image upload failed:', error);
+      toast.error(error?.message || 'Failed to upload image');
+    } finally {
+      setUploadingSideImage(false);
+    }
   };
 
   const handleSaveSlider = async () => {
@@ -159,9 +273,12 @@ export default function CategorySliderPage() {
       toast.error('Please select at least one product');
       return;
     }
-    if (showAllSliders && editingIdx !== null) {
-      toast.error('Turn off "Show all sliders" to edit your own store sliders');
-      return;
+    if (!isPlatformAdmin && showAllSliders && editingIdx !== null) {
+      const editingSlider = sliders.find((slider) => normalizeId(slider.id) === normalizeId(editingIdx));
+      if (editingSlider && !sliderBelongsToCurrentStore(editingSlider)) {
+        toast.error('Cannot edit sliders from other stores');
+        return;
+      }
     }
 
     try {
@@ -189,8 +306,11 @@ export default function CategorySliderPage() {
         
         const updatePayload = { 
           title: formData.title.trim(), 
-          subtitle: subtitleValue, 
-          productIds: formData.productIds 
+          subtitle: subtitleValue,
+          sideImage: formData.sideImage ? String(formData.sideImage).trim() : '',
+          cardsPerRow: formData.cardsPerRow === 5 ? 5 : 6,
+          backgroundColor: normalizeCategorySliderBackground(formData.backgroundColor),
+          productIds: normalizeProductIds(formData.productIds),
         };
         console.log('💾 Final update payload:', JSON.stringify(updatePayload));
         console.log('💾 === UPDATE PAYLOAD READY ===');
@@ -230,7 +350,10 @@ export default function CategorySliderPage() {
         const createPayload = {
           title: formData.title.trim(),
           subtitle: subtitleValue,
-          productIds: formData.productIds
+          sideImage: formData.sideImage ? String(formData.sideImage).trim() : '',
+          cardsPerRow: formData.cardsPerRow === 5 ? 5 : 6,
+          backgroundColor: normalizeCategorySliderBackground(formData.backgroundColor),
+          productIds: normalizeProductIds(formData.productIds),
         };
         console.log('💾 Create payload:', createPayload);
         await axios.post('/api/store/category-slider', createPayload, {
@@ -287,13 +410,14 @@ export default function CategorySliderPage() {
   };
 
   const toggleProductSelection = (productId) => {
-    if (!productId) return; // Safety check
-    
-    setFormData(prev => ({
+    const normalizedId = normalizeId(productId);
+    if (!normalizedId) return;
+
+    setFormData((prev) => ({
       ...prev,
-      productIds: prev.productIds.includes(productId)
-        ? prev.productIds.filter(id => id !== productId)
-        : [...prev.productIds, productId]
+      productIds: prev.productIds.includes(normalizedId)
+        ? prev.productIds.filter((id) => id !== normalizedId)
+        : [...prev.productIds, normalizedId],
     }));
   };
 
@@ -338,7 +462,13 @@ export default function CategorySliderPage() {
               </div>
               <div className="ml-3">
                 <p className="text-sm text-yellow-700">
-                  <strong>Viewing all sliders in database.</strong> Sliders with an <span className="bg-orange-100 text-orange-700 px-2 py-0.5 rounded text-xs font-semibold">Other Store</span> badge belong to different stores and cannot be edited or deleted. Only your sliders (blue border) can be managed.
+                  <strong>Viewing all sliders in database.</strong>{' '}
+                  Sliders with an <span className="bg-orange-100 text-orange-700 px-2 py-0.5 rounded text-xs font-semibold">Other Store</span> badge belong to different stores.
+                  {isPlatformAdmin ? (
+                    <> As admin, you can edit and delete any slider. Orange styling is kept to show which store owns each slider.</>
+                  ) : (
+                    <> Only your sliders (blue border) can be edited or deleted.</>
+                  )}
                 </p>
               </div>
             </div>
@@ -363,7 +493,8 @@ export default function CategorySliderPage() {
             ) : (
               <div className="space-y-4">
                 {sliders.map((slider) => {
-                  const isOwnSlider = !showAllSliders || !slider.storeId || slider.storeId === user?.uid;
+                  const isOwnSlider = sliderBelongsToCurrentStore(slider);
+                  const canManage = canManageSlider(slider);
                   return (
                   <div key={slider.id} className={`bg-white rounded-xl shadow-sm p-6 hover:shadow-md transition border-l-4 ${isOwnSlider ? 'border-blue-500' : 'border-orange-500'}`}>
                     <div className="flex justify-between items-start mb-4">
@@ -379,7 +510,18 @@ export default function CategorySliderPage() {
                         {slider.subtitle && slider.subtitle.trim() !== '' && (
                           <p className="text-sm text-gray-600 mb-2 italic">"{slider.subtitle}"</p>
                         )}
-                        <p className="text-sm text-gray-500 mt-1">📦 {slider.productIds?.length || 0} products</p>
+                        {slider.sideImage ? (
+                          <div className="mb-2 flex items-center gap-2">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={slider.sideImage}
+                              alt=""
+                              className="h-12 w-12 rounded-lg border border-gray-200 object-cover"
+                            />
+                            <span className="text-xs text-gray-500">Desktop side image</span>
+                          </div>
+                        ) : null}
+                        <p className="text-sm text-gray-500 mt-1">📦 {slider.productIds?.length || 0} products · 🖥️ {slider.cardsPerRow === 5 ? 5 : 6} cards/row</p>
                         {slider.storeId && showAllSliders && (
                           <p className="text-xs text-gray-400 mt-1">Store ID: {slider.storeId.substring(0, 8)}...</p>
                         )}
@@ -387,25 +529,25 @@ export default function CategorySliderPage() {
                       <div className="flex gap-2">
                         <button
                           onClick={() => handleEditSlider(slider)}
-                          disabled={!isOwnSlider}
+                          disabled={!canManage}
                           className={`p-2 rounded-lg transition ${
-                            isOwnSlider 
+                            canManage
                               ? 'bg-blue-100 text-blue-600 hover:bg-blue-200' 
                               : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                           }`}
-                          title={isOwnSlider ? 'Edit' : 'Cannot edit other store\'s slider'}
+                          title={canManage ? 'Edit' : 'Cannot edit other store\'s slider'}
                         >
                           <FiEdit2 size={18} />
                         </button>
                         <button
                           onClick={() => handleDeleteSlider(slider.id)}
-                          disabled={!isOwnSlider}
+                          disabled={!canManage}
                           className={`p-2 rounded-lg transition ${
-                            isOwnSlider 
+                            canManage
                               ? 'bg-red-100 text-red-600 hover:bg-red-200' 
                               : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                           }`}
-                          title={isOwnSlider ? 'Delete' : 'Cannot delete other store\'s slider'}
+                          title={canManage ? 'Delete' : 'Cannot delete other store\'s slider'}
                         >
                           <FiTrash2 size={18} />
                         </button>
@@ -489,6 +631,133 @@ export default function CategorySliderPage() {
                       className="w-full border-2 border-gray-200 rounded-lg p-3 focus:outline-none focus:border-blue-500 text-sm"
                       autoComplete="off"
                     />
+                  </div>
+
+                  {/* Side Image Upload (optional, desktop storefront) */}
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                      Side Image (Optional)
+                    </label>
+                    <p className="mb-2 text-xs text-gray-500">
+                      Shown on desktop only — image on the left, product slider on the right.
+                    </p>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      disabled={uploadingSideImage}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleSideImageUpload(file);
+                        e.target.value = '';
+                      }}
+                      className="w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:font-medium file:text-slate-700 hover:file:bg-slate-200"
+                    />
+                    {uploadingSideImage ? (
+                      <p className="mt-2 text-xs text-blue-600">Uploading image...</p>
+                    ) : null}
+                    {formData.sideImage ? (
+                      <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={formData.sideImage}
+                          alt="Side image preview"
+                          className="mx-auto max-h-40 w-full rounded-lg object-contain"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setFormData((prev) => ({ ...prev, sideImage: '' }))}
+                          className="mt-2 w-full rounded-lg border border-red-200 py-2 text-xs font-semibold text-red-600 hover:bg-red-50"
+                        >
+                          Remove Image
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                      Slider panel background
+                    </label>
+                    <p className="mb-3 text-xs text-gray-500">
+                      Background color for the product slider panel on desktop{formData.sideImage ? '' : ' (shown when a side image is added)'}.
+                    </p>
+                    <div className="mb-3 flex flex-wrap gap-2">
+                      {CATEGORY_SLIDER_BACKGROUND_PRESETS.map((preset) => {
+                        const selected = normalizeCategorySliderBackground(formData.backgroundColor) === preset.value;
+                        return (
+                          <button
+                            key={preset.value}
+                            type="button"
+                            onClick={() => setFormData((prev) => ({ ...prev, backgroundColor: preset.value }))}
+                            className={`inline-flex items-center gap-2 rounded-lg border-2 px-3 py-2 text-xs font-semibold transition ${
+                              selected
+                                ? 'border-blue-600 bg-blue-50 text-blue-700'
+                                : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                            }`}
+                          >
+                            <span
+                              className="h-4 w-4 rounded-full border border-gray-200"
+                              style={{ backgroundColor: preset.value }}
+                              aria-hidden="true"
+                            />
+                            {preset.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="color"
+                        value={normalizeCategorySliderBackground(formData.backgroundColor)}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, backgroundColor: e.target.value }))}
+                        className="h-10 w-14 cursor-pointer rounded border border-gray-200 bg-white p-1"
+                        aria-label="Custom background color"
+                      />
+                      <input
+                        type="text"
+                        value={normalizeCategorySliderBackground(formData.backgroundColor)}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, backgroundColor: e.target.value }))}
+                        placeholder="#f3f0ff"
+                        className="flex-1 rounded-lg border-2 border-gray-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                      />
+                    </div>
+                    <div
+                      className="mt-3 rounded-lg border border-gray-200 px-4 py-3"
+                      style={{ backgroundColor: normalizeCategorySliderBackground(formData.backgroundColor) }}
+                    >
+                      <p className="text-sm font-semibold text-gray-900">Panel preview</p>
+                      <p className="text-xs text-gray-600">
+                        Saved color: {normalizeCategorySliderBackground(formData.backgroundColor)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                      Product cards per row (desktop)
+                    </label>
+                    <p className="mb-3 text-xs text-gray-500">
+                      How many product cards are visible in one row on large screens.
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      {[5, 6].map((count) => {
+                        const selected = Number(formData.cardsPerRow) === count;
+                        return (
+                          <button
+                            key={count}
+                            type="button"
+                            onClick={() => setFormData((prev) => ({ ...prev, cardsPerRow: count }))}
+                            className={`rounded-lg border-2 px-4 py-3 text-sm font-semibold transition ${
+                              selected
+                                ? 'border-blue-600 bg-blue-50 text-blue-700'
+                                : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                            }`}
+                          >
+                            {count} cards
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
 
                   {/* Subtitle Preview */}

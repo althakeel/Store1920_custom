@@ -6,9 +6,10 @@ import { getAuth } from '@/lib/firebase-admin'
 import Order from '@/models/Order'
 import Product from '@/models/Product'
 import User from '@/models/User'
-import { allocateShortOrderNumber, syncOrderCounterFloor } from '@/lib/orderNumber'
+import { parseOrderImportBuffer } from '@/lib/parseOrderImportSheet'
 
 export const runtime = 'nodejs'
+export const maxDuration = 300
 
 async function getStoreIdFromRequest(request) {
   const authHeader = request.headers.get('authorization') || ''
@@ -633,12 +634,27 @@ async function importOrderRow(row, storeId) {
     order.total = orderItems.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.quantity || 1)), 0)
   }
 
-  const createdAt = parseDate(pick.fuzzy('createdAt', 'orderDate', 'datecreated', 'ordercreated', 'date') || pick('createdAt', 'orderDate', 'date'))
+  const createdAt = parseDate(pick.fuzzy(
+    'createdAt',
+    'orderDate',
+    'datecreated',
+    'ordercreated',
+    'date',
+    'dateCreated',
+    'date_created',
+    'postdate',
+    'post_date',
+  ) || pick('createdAt', 'orderDate', 'date'))
+    || parseDate(pick('dateCompleted', 'datecompleted'))
+    || parseDate(pick('datePaid', 'datepaid'))
+
   const updatedAt = parseDate(pick('updatedAt', 'datemodified', 'modifiedAt')) || createdAt
 
   if (createdAt) {
     order.createdAt = createdAt
     order.updatedAt = updatedAt || createdAt
+    order.markModified('createdAt')
+    order.markModified('updatedAt')
   }
 
   await order.save({ timestamps: !createdAt })
@@ -695,14 +711,8 @@ async function processImportRows(rows, storeId, { rowOffset = 0 } = {}) {
 
 async function parseRowsFromUpload(file) {
   const arrayBuffer = await file.arrayBuffer()
-  const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: true })
-  const sheetName = workbook.SheetNames[0]
-
-  if (!sheetName) {
-    throw new Error('No worksheet found in CSV file')
-  }
-
-  return filterImportRows(XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' }))
+  const fileName = typeof file.name === 'string' ? file.name : ''
+  return parseOrderImportBuffer(arrayBuffer, fileName)
 }
 
 export async function POST(request) {
@@ -725,10 +735,23 @@ export async function POST(request) {
     } else {
       const formData = await request.formData()
       const file = formData.get('file')
+      const mode = String(formData.get('mode') || 'import').trim().toLowerCase()
+
       if (!file || typeof file !== 'object' || !('arrayBuffer' in file)) {
         return NextResponse.json({ error: 'CSV file is required' }, { status: 400 })
       }
-      rows = await parseRowsFromUpload(file)
+
+      const parsed = await parseRowsFromUpload(file)
+      const stats = parsed.stats || {}
+      rows = parsed.rows || []
+
+      if (mode === 'parse') {
+        return NextResponse.json({
+          message: 'Order file parsed',
+          stats,
+          total: rows.length,
+        })
+      }
     }
 
     if (!rows.length) {
@@ -739,6 +762,7 @@ export async function POST(request) {
 
     return NextResponse.json({
       message: 'Order CSV import completed',
+      totalParsed: rows.length,
       ...result,
     })
   } catch (error) {

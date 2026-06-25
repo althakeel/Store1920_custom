@@ -82,7 +82,7 @@ if (!class_exists('Rohith_Order_Confirm')) {
                         <p style="color:#646970;"><b>Trash (not exported):</b> <?php echo esc_html(number_format_i18n($stats['trash'])); ?></p>
                     <?php endif; ?>
                     <p style="color:#646970;">WordPress “All” may show <?php echo esc_html(number_format_i18n($stats['wp_all'])); ?> including trash. Export uses every active status (not trash). Re-import on Store1920 replaces orders matched by <code>wc-{order id}</code>.</p>
-                    <p style="color:#b32d2e;"><b>Important:</b> Your CSV should have <b><?php echo esc_html(number_format_i18n($stats['exportable'])); ?></b> data rows. If you only see ~7,605 rows, update this plugin and export again.</p>
+                    <p style="color:#b32d2e;"><b>Important:</b> Your CSV should have <b><?php echo esc_html(number_format_i18n($stats['exportable'])); ?></b> data rows. Check the last row <code># EXPORT_META</code> — if <code>exported_rows</code> is lower than <code>expected_rows</code>, some orders could not be loaded from WooCommerce.</p>
                     <table class="widefat striped" style="margin-top:12px;">
                         <thead>
                             <tr>
@@ -165,66 +165,103 @@ if (!class_exists('Rohith_Order_Confirm')) {
             fprintf($out, chr(0xEF) . chr(0xBB) . chr(0xBF));
             fputcsv($out, self::headers());
 
-            $exported = self::stream_export_rows($out, $days);
+            $result = self::stream_export_rows($out, $days);
+            $exported = is_array($result) ? (int) ($result['exported'] ?? 0) : (int) $result;
+            $expected = is_array($result) ? (int) ($result['expected'] ?? 0) : (int) self::order_stats()['exportable'];
+            $skipped = is_array($result) ? (int) ($result['skipped'] ?? 0) : max(0, $expected - $exported);
 
             // Trailing comment row helps verify export completeness in Excel / LibreOffice.
-            fputcsv($out, ['# EXPORT_META', 'exported_rows', (string) $exported, 'expected_rows', (string) self::order_stats()['exportable']]);
+            fputcsv($out, ['# EXPORT_META', 'exported_rows', (string) $exported, 'expected_rows', (string) $expected, 'skipped_rows', (string) $skipped]);
 
             fclose($out);
             exit;
         }
 
         /**
-         * Export per WooCommerce status to avoid HPOS pagination bugs when
-         * querying many statuses at once (wc_get_orders can under-report max_num_pages).
+         * Collect every shop_order ID from HPOS + legacy posts so custom statuses
+         * and HPOS pagination quirks cannot drop rows (8200 WP vs ~7600 export).
+         */
+        private static function collect_export_order_ids($days = 0)
+        {
+            global $wpdb;
+
+            $ids = [];
+            $since = $days > 0 ? gmdate('Y-m-d H:i:s', time() - (int) $days * DAY_IN_SECONDS) : '';
+
+            if (self::is_hpos_enabled()) {
+                $table = $wpdb->prefix . 'wc_orders';
+                $sql = "SELECT id FROM {$table} WHERE type = 'shop_order' AND status NOT IN ('trash', 'auto-draft', 'wc-trash')";
+                if ($since) {
+                    $sql .= $wpdb->prepare(' AND date_created_gmt >= %s', $since);
+                }
+                foreach ($wpdb->get_col($sql) as $id) {
+                    $ids[(int) $id] = true;
+                }
+            }
+
+            $post_sql = "SELECT ID FROM {$wpdb->posts} WHERE post_type IN ('shop_order', 'shop_order_placehold') AND post_status NOT IN ('trash', 'auto-draft', 'wc-trash') AND post_parent = 0";
+            if ($since) {
+                $post_sql .= $wpdb->prepare(' AND post_date_gmt >= %s', $since);
+            }
+            foreach ($wpdb->get_col($post_sql) as $id) {
+                $ids[(int) $id] = true;
+            }
+
+            return array_values(array_filter(array_map('intval', array_keys($ids))));
+        }
+
+        private static function is_hpos_enabled()
+        {
+            if (!class_exists('\Automattic\WooCommerce\Utilities\OrderUtil')) {
+                return false;
+            }
+
+            return \Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled();
+        }
+
+        /**
+         * Export by resolved order IDs (HPOS + legacy) so every status is included.
          */
         private static function stream_export_rows($out, $days = 0)
         {
             $exported = 0;
-            $seen = [];
+            $skipped = 0;
+            $order_ids = self::collect_export_order_ids($days);
+            rsort($order_ids, SORT_NUMERIC);
 
-            foreach (self::export_status_list() as $status) {
-                $page = 1;
-                $max_pages = 1;
-
-                do {
-                    $args = [
-                        'limit' => self::BATCH,
-                        'paginate' => true,
-                        'page' => $page,
-                        'orderby' => 'date',
-                        'order' => 'DESC',
-                        'status' => $status,
-                        'type' => 'shop_order',
-                        'return' => 'objects',
-                    ];
-                    if ($days > 0) {
-                        $args['date_created'] = '>' . (time() - $days * DAY_IN_SECONDS);
-                    }
-
-                    $batch = wc_get_orders($args);
-                    if (!is_object($batch) || empty($batch->orders)) {
-                        break;
-                    }
-
-                    $max_pages = max(1, (int) ($batch->max_num_pages ?? 1));
-                    foreach ($batch->orders as $order) {
-                        if (!$order instanceof WC_Order) {
-                            continue;
-                        }
-                        $order_id = (int) $order->get_id();
-                        if (isset($seen[$order_id])) {
-                            continue;
-                        }
-                        $seen[$order_id] = true;
-                        fputcsv($out, self::row($order));
-                        $exported++;
-                    }
-                    $page++;
-                } while ($page <= $max_pages);
+            foreach ($order_ids as $order_id) {
+                $line = self::export_order_line($order_id);
+                if (!$line) {
+                    $skipped++;
+                    continue;
+                }
+                fputcsv($out, $line);
+                $exported++;
             }
 
-            return $exported;
+            return [
+                'exported' => $exported,
+                'skipped' => $skipped,
+                'expected' => count($order_ids),
+            ];
+        }
+
+        private static function export_order_line($order_id)
+        {
+            $order = wc_get_order((int) $order_id);
+            if ($order instanceof WC_Order && $order->get_type() === 'shop_order') {
+                return self::row($order);
+            }
+
+            $post = get_post((int) $order_id);
+            if ($post && in_array($post->post_type, ['shop_order', 'shop_order_placehold'], true)) {
+                $order = wc_get_order($post->ID);
+                if ($order instanceof WC_Order) {
+                    return self::row($order);
+                }
+            }
+
+            return null;
         }
 
         private static function headers()
@@ -242,7 +279,7 @@ if (!class_exists('Rohith_Order_Confirm')) {
                 'shippingName', 'shippingPhone',
                 'shippingAddress1', 'shippingAddress2', 'shippingCity', 'shippingState',
                 'shippingCountry', 'shippingPostcode',
-                'createdAt', 'updatedAt', 'dateCompleted', 'datePaid',
+                'createdAt', 'orderDate', 'updatedAt', 'dateCompleted', 'datePaid',
             ];
         }
 
@@ -363,6 +400,7 @@ if (!class_exists('Rohith_Order_Confirm')) {
                 'shippingCountry' => $addr['country'],
                 'shippingPostcode' => $addr['postcode'],
                 'createdAt' => self::iso($order->get_date_created()),
+                'orderDate' => self::iso($order->get_date_created()),
                 'updatedAt' => self::iso($order->get_date_modified()),
                 'dateCompleted' => self::iso($order->get_date_completed()),
                 'datePaid' => self::iso($order->get_date_paid()),
@@ -666,12 +704,7 @@ if (!class_exists('Rohith_Order_Confirm')) {
                 return ['exportable' => 0, 'trash' => 0, 'wp_all' => 0];
             }
 
-            $exportable = 0;
-            foreach (array_keys(wc_get_order_statuses()) as $status) {
-                $slug = str_replace('wc-', '', $status);
-                $exportable += (int) wc_orders_count($slug);
-            }
-
+            $exportable = count(self::collect_export_order_ids(0));
             $trash = (int) wc_orders_count('trash');
 
             return [

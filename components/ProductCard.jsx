@@ -74,6 +74,8 @@ const ProductCard = ({
   priorityImages = false,
   className = '',
   onCardClick,
+  compact = false,
+  compactDesktopOnly = false,
 }) => {
   if (!product || typeof product !== 'object') return null
   if (!product.name) return null
@@ -299,9 +301,14 @@ const ProductCard = ({
 
   const hasCarouselWidth = /flex-\[0_0|flex-shrink-0|shrink-0|w-\[calc|min-w-\[calc|basis-\[calc/.test(className)
   const hasCustomGridWidth = /w-\[calc/.test(className)
-  const imageAspectClass = hasCarouselWidth
-    ? getAspectRatioClass(product.imageAspectRatio || product.aspectRatio)
-    : 'aspect-square'
+  const useCompactLayout = compact && hasCarouselWidth
+  const compactLg = useCompactLayout && compactDesktopOnly
+  const compactAll = useCompactLayout && !compactDesktopOnly
+  const imageAspectClass = compactAll
+    ? 'min-h-0 flex-1'
+    : hasCarouselWidth
+      ? getAspectRatioClass(product.imageAspectRatio || product.aspectRatio)
+      : 'aspect-square'
 
   return (
     <Link
@@ -311,7 +318,7 @@ const ProductCard = ({
       onClick={onCardClick}
       onMouseEnter={hasSecondary ? () => setHovered(true) : undefined}
       onMouseLeave={hasSecondary ? () => setHovered(false) : undefined}
-      className={`group ${PRODUCT_CARD_SHELL_CLASS} transition-colors duration-200 ${hasCarouselWidth ? 'hover:-translate-y-0.5 hover:shadow-md' : 'shadow-none hover:bg-slate-50/80'} ${hasCarouselWidth ? '' : hasCustomGridWidth ? 'min-w-0' : PRODUCT_CARD_CELL_CLASS} ${className}`.trim()}
+      className={`group ${PRODUCT_CARD_SHELL_CLASS} transition-colors duration-200 ${hasCarouselWidth ? 'hover:-translate-y-0.5 hover:shadow-md' : 'shadow-none hover:bg-slate-50/80'} ${hasCarouselWidth ? '' : hasCustomGridWidth ? 'min-w-0' : PRODUCT_CARD_CELL_CLASS} ${compactAll ? 'h-full' : ''} ${className}`.trim()}
     >
       <div className={`relative w-full shrink-0 overflow-hidden bg-white ${imageAspectClass}`}>
         {cardPreview.type === 'delayed-video' && !showCardVideo ? (
@@ -388,16 +395,16 @@ const ProductCard = ({
         {renderCartControl()}
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col p-2 sm:p-2.5">
-        <h3 className="mb-1.5 line-clamp-2 min-h-[2.5em] text-xs font-semibold leading-tight text-slate-900 sm:min-h-[2.75em] sm:text-sm">
+      <div className={`flex min-h-0 flex-col ${compactAll ? 'shrink-0 p-1.5' : compactLg ? 'flex-1 p-2 sm:p-2.5 lg:shrink-0 lg:p-1.5' : 'flex-1 p-2 sm:p-2.5'}`}>
+        <h3 className={`font-semibold leading-tight text-slate-900 ${compactAll ? 'mb-1 line-clamp-1 text-[10px]' : compactLg ? 'mb-1.5 line-clamp-2 min-h-[2.5em] text-xs sm:min-h-[2.75em] sm:text-sm lg:mb-1 lg:line-clamp-1 lg:min-h-0 lg:text-[10px]' : 'mb-1.5 line-clamp-2 min-h-[2.5em] text-xs sm:min-h-[2.75em] sm:text-sm'}`}>
           {productName}
         </h3>
 
-        <div className="mt-auto">
+        <div className={compactAll || compactLg ? '' : 'mt-auto'}>
           {(priceNum > 0 || AEDNum > 0) ? (
-            <div className="mb-1 flex flex-wrap items-center gap-1">
+            <div className={`flex flex-wrap items-center gap-1 ${compactAll || compactLg ? '' : 'mb-1'}`}>
               {priceNum > 0 ? (
-                <p className="inline-flex items-center gap-1.5 text-base font-medium leading-none text-slate-950 sm:text-lg">
+                <p className={`inline-flex items-center gap-1 font-medium leading-none text-slate-950 ${compactAll ? 'text-xs' : compactLg ? 'text-base sm:text-lg lg:text-xs' : 'gap-1.5 text-base sm:text-lg'}`}>
                   <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-600">
                     {market.currency}
                   </span>
@@ -418,18 +425,20 @@ const ProductCard = ({
             </div>
           ) : null}
 
-          <div className="flex min-w-0 items-center">
-            {[...Array(5)].map((_, i) => (
-              <FaStar
-                key={i}
-                size={9}
-                className={i < ratingValue ? 'text-yellow-400' : 'text-gray-300'}
-              />
-            ))}
-            <span className="ml-1 truncate text-[9px] text-gray-500 sm:text-xs">
-              {reviewCount > 0 ? `(${reviewCount})` : t('common.noReviewsYet')}
-            </span>
-          </div>
+          {!compactAll ? (
+            <div className={`flex min-w-0 items-center ${compactLg ? 'lg:hidden' : ''}`}>
+              {[...Array(5)].map((_, i) => (
+                <FaStar
+                  key={i}
+                  size={9}
+                  className={i < ratingValue ? 'text-yellow-400' : 'text-gray-300'}
+                />
+              ))}
+              <span className="ml-1 truncate text-[9px] text-gray-500 sm:text-xs">
+                {reviewCount > 0 ? `(${reviewCount})` : t('common.noReviewsYet')}
+              </span>
+            </div>
+          ) : null}
         </div>
       </div>
     </Link>

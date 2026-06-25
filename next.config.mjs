@@ -77,7 +77,7 @@ const nextConfig = {
             'react-redux',
         ],
     },
-    serverExternalPackages: ['mongoose', 'firebase-admin'],
+    serverExternalPackages: ['mongoose', 'firebase-admin', 'sharp'],
     turbopack: {},
 
     webpack: (config, { dev }) => {

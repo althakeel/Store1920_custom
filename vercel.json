@@ -1,4 +1,10 @@
 {
+  "crons": [
+    {
+      "path": "/api/cron/product-ai-autofill",
+      "schedule": "* * * * *"
+    }
+  ],
   "functions": {
     "app/api/store/product/bulk-import/route.js": {
       "maxDuration": 300,
