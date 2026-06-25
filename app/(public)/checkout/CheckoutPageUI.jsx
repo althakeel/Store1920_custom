@@ -25,7 +25,7 @@ import Image from "next/image";
 import BnplLogo from "@/components/BnplLogo";
 import { useStorefrontI18n } from "@/lib/useStorefrontI18n";
 import { useStorefrontMarket } from "@/lib/useStorefrontMarket";
-import { trackCustomerEvent, withOrderTrackingFields } from '@/lib/trackingClient';
+import { trackCustomerEvent, withOrderTrackingFields, getOrCreateAnonymousId, getOrCreateSessionId } from '@/lib/trackingClient';
 import { pushGtmEcommerceEvent } from '@/lib/pushGtmEcommerceEvent';
 import { cartLinesToGtmItems } from '@/lib/gtmEcommerceHelpers';
 import { runTrackedOnce } from '@/lib/trackingDedupe';
@@ -310,13 +310,13 @@ export default function CheckoutPage() {
     return () => clearInterval(interval);
   }, [placingOrder, payingNow]);
 
-  // Capture abandoned checkout (debounced)
+  // Capture abandoned checkout (debounced) — includes anonymous browser sessions
   useEffect(() => {
-    if (placingOrder || payingNow) return;
+    if (placingOrder || payingNow) return undefined;
     const cartEntries = Object.entries(cartItems || {});
-    if (cartEntries.length === 0) return;
+    if (cartEntries.length === 0) return undefined;
 
-    const timer = setTimeout(async () => {
+    const captureAbandonedCheckout = async () => {
       try {
         const items = cartEntries.map(([id, value]) => {
           const productId = getCartEntryProductId(id, value);
@@ -333,17 +333,21 @@ export default function CheckoutPage() {
             variantOptions: typeof value === 'object' ? value?.variantOptions || null : null,
             isFreeGift: isFreeGiftEntry(value),
           };
-        }).filter(it => it.quantity > 0 && it.productId);
+        }).filter((it) => it.quantity > 0 && it.productId);
 
         if (items.length === 0) return;
 
         const cartTotal = items.reduce((sum, it) => sum + (Number(it.price) * Number(it.quantity)), 0);
+        const anonymousId = typeof window !== 'undefined' ? getOrCreateAnonymousId() : null;
+        const sessionId = typeof window !== 'undefined' ? getOrCreateSessionId() : null;
 
         const payload = {
           items,
           cartTotal,
           currency: process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || 'AED',
           userId: user?.uid || null,
+          anonymousId,
+          sessionId,
           customer: {
             name: form.name || null,
             email: form.email || user?.email || null,
@@ -371,20 +375,34 @@ export default function CheckoutPage() {
           } catch (_) {}
         }
 
-        await fetch('/api/abandoned-checkout', {
+        const response = await fetch('/api/abandoned-checkout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
           keepalive: true,
         });
 
-        setAbandonSaved(true);
+        if (response.ok) {
+          setAbandonSaved(true);
+        }
       } catch (e) {
-        // Silent fail
+        console.warn('[checkout] abandoned capture failed:', e?.message || e);
       }
-    }, 1500);
+    };
 
-    return () => clearTimeout(timer);
+    const timer = setTimeout(captureAbandonedCheckout, 500);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        captureAbandonedCheckout();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, [form, cartItems, products, user, placingOrder, payingNow, abandonHeartbeat]);
 
   // Fetch addresses for logged-in users
@@ -704,10 +722,6 @@ export default function CheckoutPage() {
     : hasCheckoutFormBlockers
       ? 'bg-amber-600 hover:bg-amber-700'
       : placeOrderButtonActiveColors;
-  const isGuestAreaMissing = !user
-    && isUaeCountry(form.country)
-    && String(form.state || '').trim()
-    && !String(form.district || '').trim();
   const selectedAddressForView = form.addressId ? addressList.find((a) => a._id === form.addressId) : null;
   const isLoggedInAreaMissing = Boolean(
     user
@@ -903,7 +917,7 @@ export default function CheckoutPage() {
   const guestLabelClass = 'mb-1.5 block text-sm font-semibold text-slate-700';
 
   const guestSectionClass =
-    'grid w-full min-w-0 gap-5 rounded-[24px] border border-[#f1e4d3] bg-white/88 p-5 shadow-[0_12px_32px_rgba(15,23,42,0.05)] sm:p-6';
+    'grid w-full min-w-0 gap-4 rounded-2xl border border-[#f1e4d3] bg-white/88 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)] sm:gap-5 sm:p-5 md:rounded-[24px] md:p-6 md:shadow-[0_12px_32px_rgba(15,23,42,0.05)]';
 
   const guestStepBadgeClass =
     'rounded-full bg-[#fff5db] px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-[#b45309]';
@@ -911,6 +925,12 @@ export default function CheckoutPage() {
   const fieldHasError = (fieldId) => invalidFieldIds.has(fieldId);
   const fieldErrorClass = (fieldId) =>
     fieldHasError(fieldId) ? 'border-red-400 ring-4 ring-red-100 focus:border-red-400 focus:ring-red-100' : '';
+  const getStreetRequiredMessage = () => {
+    if (String(form.district || '').trim() && !String(form.street || '').trim()) {
+      return t('checkout.streetRequiredWithArea');
+    }
+    return t('checkout.street');
+  };
   const getFieldRequiredMessage = (fieldId) => {
     const messageMap = {
       'guest-area': t('checkout.selectAreaRequired'),
@@ -920,7 +940,7 @@ export default function CheckoutPage() {
       'guest-name': t('checkout.fullName'),
       'guest-email': t('checkout.emailAddress'),
       'guest-phone': t('checkout.phoneNumber'),
-      'guest-street': t('checkout.street'),
+      'guest-street': getStreetRequiredMessage(),
       'guest-pincode': 'Pincode',
       'checkout-payment': t('checkout.selectPaymentRequired'),
       'checkout-address': t('checkout.fillAddress'),
@@ -978,12 +998,19 @@ export default function CheckoutPage() {
     setValidationAlertOpen(true);
     scrollToCheckoutField(issues[0]?.id);
 
-    const areaIssue = rawIssues.find((issue) => issue.id === 'guest-area' || issue.id === 'checkout-address-area');
-    const districtIssue = rawIssues.find((issue) => issue.id === 'guest-district' || issue.id === 'checkout-address-district');
-    const message = areaIssue
-      ? t('checkout.selectAreaRequired')
-      : districtIssue
-        ? t('checkout.selectDistrict')
+    const firstIssue = rawIssues[0];
+    const streetIssue = rawIssues.find(
+      (issue) => issue.id === 'guest-street' || (issue.id === 'checkout-address' && issue.label === 'Street address'),
+    );
+    const message = streetIssue
+      && firstIssue?.id === streetIssue.id
+      && String(form.district || '').trim()
+      ? t('checkout.streetRequiredWithArea')
+      : issues.length > 1
+        ? t('checkout.pleaseCompleteFields').replace(
+          '{fields}',
+          issues.map((issue) => issue.label).join(', '),
+        )
         : t('checkout.pleaseCompleteField').replace('{field}', issues[0]?.label || '');
 
     setFormError(message);
@@ -2081,13 +2108,13 @@ export default function CheckoutPage() {
 
   return (
     <>
-      <div className="py-10 bg-white pb-24 md:pb-14 min-h-0 md:min-h-[35dvh]">
-      <div className="max-w-[1250px] mx-auto grid grid-cols-1 md:grid-cols-3 gap-8" dir={isArabic ? 'rtl' : 'ltr'}>
+      <div className="bg-white pb-24 pt-0 md:min-h-[35dvh] md:pb-14 md:py-10">
+      <div className="mx-auto grid max-w-[1250px] grid-cols-1 gap-0 md:grid-cols-3 md:gap-8 md:px-4" dir={isArabic ? 'rtl' : 'ltr'}>
         {/* Left column: address, form, payment */}
         <div className="md:col-span-2">
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8">
+          <div className="border-y border-gray-100 bg-white px-4 pb-4 pt-2 md:rounded-xl md:border md:p-8 md:shadow-sm">
             {/* Cart Items Section */}
-            <div className="mb-6">
+            <div className="mb-4 md:mb-6">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-xl font-bold text-gray-900">{t('checkout.yourOrder')}</h2>
                 {checkoutOrderHiddenCount > 0 ? (
@@ -2114,7 +2141,7 @@ export default function CheckoutPage() {
               </div>
             </div>
             {/* Shipping Method Section */}
-            <div className="mb-6">
+            <div className="mb-4 md:mb-6">
               <h2 className="mb-1 text-xl font-bold text-gray-900">{t('checkout.deliveryMethod')}</h2>
               <p className="mb-4 text-sm text-slate-500">Choose how fast you want your order delivered.</p>
               <div className="space-y-3">
@@ -2451,21 +2478,6 @@ export default function CheckoutPage() {
                       <span className={guestStepBadgeClass}>Step 2</span>
                     </div>
 
-                    <div className="min-w-0">
-                      <label htmlFor="guest-street" className={guestLabelClass}>{t('checkout.street')}</label>
-                      <input
-                        id="guest-street"
-                        className={`${guestFieldClass} ${fieldErrorClass('guest-street')}`}
-                        type="text"
-                        name="street"
-                        placeholder={t('checkout.street')}
-                        value={form.street || ''}
-                        onChange={handleChange}
-                        required
-                      />
-                      {fieldRequiredHint('guest-street')}
-                    </div>
-
                     <div className={`grid min-w-0 gap-5 ${isUaeCountry(form.country) && form.state ? 'sm:grid-cols-2' : ''}`}>
                       <div id="guest-state" className="min-w-0">
                         <label className={guestLabelClass}>
@@ -2529,17 +2541,31 @@ export default function CheckoutPage() {
                             allowCustomValue
                             formatCustomOption={(area) => t('checkout.useCustomArea', { area })}
                             required
-                            hasError={fieldHasError('guest-area') || isGuestAreaMissing}
+                            hasError={fieldHasError('guest-area')}
                             triggerClassName={checkoutSelectClass}
                           />
                           {fieldRequiredHint('guest-area')}
-                          {isGuestAreaMissing && !fieldHasError('guest-area') ? (
-                            <p className="mt-1 text-xs font-medium text-red-600">
-                              {t('checkout.selectAreaRequired')}
-                            </p>
+                          {!fieldHasError('guest-area') ? (
+                            <p className="mt-1 text-xs text-slate-500">{t('checkout.areaHint')}</p>
                           ) : null}
                         </div>
                       ) : null}
+                    </div>
+
+                    <div className="min-w-0">
+                      <label htmlFor="guest-street" className={guestLabelClass}>{t('checkout.street')}</label>
+                      <input
+                        id="guest-street"
+                        className={`${guestFieldClass} ${fieldErrorClass('guest-street')}`}
+                        type="text"
+                        name="street"
+                        placeholder={t('checkout.streetHint')}
+                        value={form.street || ''}
+                        onChange={handleChange}
+                        required
+                      />
+                      <p className="mt-1 text-xs text-slate-500">{t('checkout.streetHint')}</p>
+                      {fieldRequiredHint('guest-street')}
                     </div>
 
                     {form.country === 'India' && form.state ? (
@@ -2793,7 +2819,7 @@ export default function CheckoutPage() {
           </div>
         </div>
         {/* Right column: discount input, order summary and place order button */}
-        <div className="bg-white rounded-xl shadow-sm border-2 border-slate-200 p-6 md:p-8 h-fit flex flex-col">
+        <div className="flex h-fit flex-col border-t border-slate-200 bg-white px-4 pb-4 pt-2 md:rounded-xl md:border-2 md:border-slate-200 md:p-8">
           <div className="mb-4 pb-4 border-b border-slate-100">
             <h2 className="text-lg font-bold text-slate-900">{t('checkout.orderSummary')}</h2>
             <p className="mt-1 text-sm text-slate-500">
@@ -2953,7 +2979,7 @@ export default function CheckoutPage() {
             >
               {sidebarPayError}
             </p>
-          ) : isGuestAreaMissing || isLoggedInAreaMissing || isLoggedInDistrictMissing ? (
+          ) : isLoggedInAreaMissing || isLoggedInDistrictMissing ? (
             <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
               {isLoggedInDistrictMissing ? t('checkout.selectDistrict') : t('checkout.selectAreaRequired')}
             </p>
@@ -3046,8 +3072,8 @@ export default function CheckoutPage() {
       </div>
 
       {/* Sticky Footer - Only Total and Place Order on Mobile */}
-      <div className="fixed bottom-0 left-0 right-0 md:hidden bg-white border-t border-gray-200 shadow-lg z-40 p-4">
-        <div className="max-w-6xl mx-auto">
+      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-gray-200 bg-white p-3 shadow-lg md:hidden">
+        <div className="mx-auto max-w-6xl">
           {sidebarPayError ? (
             <p
               role="alert"
@@ -3055,7 +3081,7 @@ export default function CheckoutPage() {
             >
               {sidebarPayError}
             </p>
-          ) : isGuestAreaMissing || isLoggedInAreaMissing || isLoggedInDistrictMissing ? (
+          ) : isLoggedInAreaMissing || isLoggedInDistrictMissing ? (
             <p className="mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
               {isLoggedInDistrictMissing ? t('checkout.selectDistrict') : t('checkout.selectAreaRequired')}
             </p>

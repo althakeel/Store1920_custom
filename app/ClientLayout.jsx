@@ -47,6 +47,7 @@ function shouldHideStorefrontChrome(pathname) {
 export default function ClientLayout({ children, initialStorefrontLanguage = 'en' }) {
   const pathname = usePathname();
   const hideStorefrontChrome = shouldHideStorefrontChrome(pathname);
+  const isCheckoutPage = pathname === '/checkout';
 
   return (
     <ReduxProvider>
@@ -58,10 +59,12 @@ export default function ClientLayout({ children, initialStorefrontLanguage = 'en
         <>
           <TopBar initialLanguage={initialStorefrontLanguage} />
           <Navbar />
-          <div
-            className="h-3 w-full bg-white sm:h-4 lg:h-5"
-            aria-hidden="true"
-          />
+          {!isCheckoutPage ? (
+            <div
+              className="h-3 w-full bg-white sm:h-4 lg:h-5"
+              aria-hidden="true"
+            />
+          ) : null}
         </>
       )}
       <Toaster

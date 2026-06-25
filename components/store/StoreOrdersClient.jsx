@@ -8,7 +8,8 @@ import PageSkeleton from "@/components/PageSkeleton";
 import { readPageCache, writePageCache } from "@/lib/storePageCache";
 import axios from "axios";
 import toast from "react-hot-toast";
-import { Package, Truck, X, Download, Printer, RefreshCw, MapPin, Trash2, CalendarClock, AlertTriangle, Search, MessageCircle } from "lucide-react";
+import { Package, Truck, X, Download, Printer, RefreshCw, MapPin, Trash2, CalendarClock, AlertTriangle, Search, MessageCircle, Plus } from "lucide-react";
+import StoreCreateOrderModal from '@/components/store/StoreCreateOrderModal';
 import { downloadInvoice, printInvoice } from "@/lib/generateInvoice";
 import { schedulePickup } from '@/lib/delhivery';
 import { STORE_ORDER_NOTIFICATION_EVENT, STORE_ORDER_TOAST_ID, dispatchStoreOrdersImportEnd, dispatchStoreOrdersImportStart } from '@/lib/storeOrderNotifications';
@@ -155,6 +156,7 @@ export default function StoreOrders() {
     const [importingOrdersCsv, setImportingOrdersCsv] = useState(false);
     const [importProgress, setImportProgress] = useState({ current: 0, total: 0, phase: 'idle' });
     const [showImportExportPanel, setShowImportExportPanel] = useState(false);
+    const [showCreateOrderModal, setShowCreateOrderModal] = useState(false);
     const suppressLiveAlertsRef = useRef(false);
     const [selectedOrderIds, setSelectedOrderIds] = useState([]);
     const [deletingBulkOrders, setDeletingBulkOrders] = useState(false);
@@ -1556,7 +1558,17 @@ export default function StoreOrders() {
 
     return (
         <>
-            <h1 className="text-2xl text-slate-500 mb-6">Store <span className="text-slate-800 font-medium">Orders</span></h1>
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+                <h1 className="text-2xl text-slate-500">Store <span className="text-slate-800 font-medium">Orders</span></h1>
+                <button
+                    type="button"
+                    onClick={() => setShowCreateOrderModal(true)}
+                    className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
+                >
+                    <Plus size={16} />
+                    Create order
+                </button>
+            </div>
 
             <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4">
                 <label htmlFor="order-search" className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -2911,6 +2923,16 @@ export default function StoreOrders() {
                     </div>
                 </div>
             )}
+
+            <StoreCreateOrderModal
+                open={showCreateOrderModal}
+                onClose={() => setShowCreateOrderModal(false)}
+                getToken={getToken}
+                currency={currency}
+                onCreated={() => {
+                    fetchOrders();
+                }}
+            />
         </>
     );
 }

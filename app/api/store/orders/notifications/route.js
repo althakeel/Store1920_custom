@@ -11,6 +11,8 @@ import { visibleStoreOrderMatch } from '@/lib/visibleStoreOrderMatch';
 export const dynamic = 'force-dynamic';
 
 const DEFERRED_METHODS = [...DEFERRED_PAYMENT_METHODS, 'CARD'];
+const BLOCKED_STORE_ALERT_STATUSES = ['PAYMENT_FAILED', 'CANCELLED', 'AWAITING_PAYMENT'];
+const PAID_PAYMENT_STATUSES = ['PAID', 'paid', 'Paid'];
 
 function getCustomerName(order = {}) {
   return getOrderCustomerDisplayName(order);
@@ -50,6 +52,14 @@ export async function GET(request) {
     const orders = await Order.find({
       $and: [
         visibleStoreOrderMatch({ storeId: String(access.storeId) }),
+        { status: { $nin: BLOCKED_STORE_ALERT_STATUSES } },
+        {
+          $or: [
+            { paymentMethod: { $regex: /^cod$/i } },
+            { isPaid: true },
+            { paymentStatus: { $in: PAID_PAYMENT_STATUSES } },
+          ],
+        },
         {
           $or: [
             { createdAt: { $gt: since } },

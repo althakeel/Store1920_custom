@@ -19,6 +19,7 @@ import { GTM_EVENTS, gtmDedupeKey } from "@/lib/gtmEvents";
 import { STORE_CURRENCY } from "@/lib/storeCurrency";
 import { getCartEntryProductId, getCartEntryQuantity, isFreeGiftEntry } from "@/lib/freeGiftUtils";
 import { resolveCartLinePricing } from "@/lib/bulkBundleCart";
+import { getOrCreateAnonymousId, getOrCreateSessionId } from '@/lib/trackingClient';
 
 export const dynamic = "force-dynamic";
 
@@ -236,7 +237,9 @@ export default function Cart() {
 
             const guestEmail = guestContact?.email?.trim() || null;
             const guestPhone = guestContact?.phone?.trim() || null;
-            if (!guestEmail && !guestPhone) return;
+            const anonymousId = getOrCreateAnonymousId();
+            const sessionId = getOrCreateSessionId();
+            if (!guestEmail && !guestPhone && !anonymousId) return;
 
             const items = cartEntries.map(([key, value]) => {
                 const productId = getCartEntryProductId(key, value);
@@ -265,6 +268,8 @@ export default function Cart() {
                         guestPhone,
                         guestName: guestContact?.name || null,
                         guestPhoneCode: guestContact?.phoneCode || '+971',
+                        anonymousId,
+                        sessionId,
                     }),
                     keepalive: true,
                 });

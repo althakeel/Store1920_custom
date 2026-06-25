@@ -1199,31 +1199,39 @@ export default function AbandonedCheckoutPage() {
     [carts]
   );
 
+  const pendingPaymentCarts = useMemo(
+    () => activeCarts.filter((cart) => cart.status === 'pending_payment'),
+    [activeCarts]
+  );
+
   const stats = useMemo(() => {
     const convertedValue = convertedCarts.reduce((sum, cart) => sum + getCartTotal(cart), 0);
 
     return {
-      active: identifiedActiveCarts.length,
+      active: activeCarts.length,
+      identified: identifiedActiveCarts.length,
       guest: guestActiveCarts.length,
-      cart: identifiedActiveCarts.filter((cart) => cart.source === 'cart').length,
-      checkout: identifiedActiveCarts.filter((cart) => cart.source === 'checkout').length,
+      pendingPayment: pendingPaymentCarts.length,
+      cart: activeCarts.filter((cart) => cart.source === 'cart' || cart.source === 'guest-cart').length,
+      checkout: activeCarts.filter((cart) => cart.source === 'checkout').length,
       converted: convertedCarts.length,
       emailSent: emailSentCarts.length,
-      activeValue: identifiedActiveCarts.reduce((sum, cart) => sum + getCartTotal(cart), 0),
+      activeValue: activeCarts.reduce((sum, cart) => sum + getCartTotal(cart), 0),
       convertedValue,
     };
-  }, [identifiedActiveCarts, guestActiveCarts, convertedCarts, emailSentCarts]);
+  }, [activeCarts, identifiedActiveCarts, guestActiveCarts, pendingPaymentCarts, convertedCarts, emailSentCarts]);
 
   const filteredCarts = useMemo(() => {
     if (filter === 'converted') return convertedCarts;
     if (filter === 'email_sent') return emailSentCarts;
     if (filter === 'guest') return guestActiveCarts;
-    if (filter === 'all') return identifiedActiveCarts;
+    if (filter === 'pending_payment') return pendingPaymentCarts;
+    if (filter === 'all') return activeCarts;
     if (filter === 'cart') {
-      return identifiedActiveCarts.filter((cart) => cart.source === 'cart' || cart.source === 'guest-cart');
+      return activeCarts.filter((cart) => cart.source === 'cart' || cart.source === 'guest-cart');
     }
-    return identifiedActiveCarts.filter((cart) => cart.source === filter);
-  }, [identifiedActiveCarts, guestActiveCarts, convertedCarts, emailSentCarts, filter]);
+    return activeCarts.filter((cart) => cart.source === filter);
+  }, [activeCarts, guestActiveCarts, convertedCarts, emailSentCarts, pendingPaymentCarts, filter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredCarts.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -1496,10 +1504,11 @@ export default function AbandonedCheckoutPage() {
   };
 
   const filters = [
-    { id: 'all', label: 'All', count: stats.active },
-    { id: 'cart', label: 'Added to cart', count: stats.cart },
+    { id: 'all', label: 'All active', count: stats.active },
     { id: 'checkout', label: 'Checkout', count: stats.checkout },
-    { id: 'guest', label: 'Guest', count: stats.guest },
+    { id: 'cart', label: 'Added to cart', count: stats.cart },
+    { id: 'guest', label: 'Guest only', count: stats.guest },
+    { id: 'pending_payment', label: 'Awaiting payment', count: stats.pendingPayment },
     { id: 'email_sent', label: 'Email sent', count: stats.emailSent },
     { id: 'converted', label: 'Converted', count: stats.converted },
   ];
@@ -1511,7 +1520,7 @@ export default function AbandonedCheckoutPage() {
       <div>
         <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">Abandoned Checkout</h1>
         <p className="mt-1 text-xs text-slate-600 sm:text-sm">
-          Tap a row to see details. Convert recovered orders when the customer completes the purchase.
+          Tracks checkout sessions, cart abandons, and awaiting-payment orders. Meta purchases are separate — this list fills as customers browse checkout (including guests before they enter email).
         </p>
       </div>
 
@@ -1527,8 +1536,9 @@ export default function AbandonedCheckoutPage() {
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Identified</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Active abandons</p>
           <p className="mt-1 text-2xl font-bold text-slate-900">{stats.active}</p>
+          <p className="mt-0.5 text-[10px] text-slate-500">{stats.identified} with contact · {stats.guest} guest</p>
         </div>
         <div className="rounded-xl border border-violet-100 bg-violet-50 p-3 shadow-sm">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-violet-700">Guest</p>
@@ -1573,6 +1583,8 @@ export default function AbandonedCheckoutPage() {
               ? 'No converted carts yet'
               : filter === 'guest'
                 ? 'No guest abandons yet'
+                : filter === 'pending_payment'
+                  ? 'No awaiting-payment carts'
                 : filter === 'email_sent'
                   ? 'No emails sent yet'
                   : 'No abandoned carts found'}
@@ -1581,10 +1593,12 @@ export default function AbandonedCheckoutPage() {
             {filter === 'converted'
               ? 'When you convert a recovered cart, it will appear here.'
               : filter === 'guest'
-                ? 'Carts with no email, phone, or address appear here as Guest.'
+                ? 'Guests who reached checkout or cart without entering email or phone.'
+                : filter === 'pending_payment'
+                  ? 'Stripe, Tabby, or Tamara checkouts that started but did not finish payment.'
                 : filter === 'email_sent'
                   ? 'Carts appear here after you send a discount link email or a conversion/payment email.'
-                  : 'Abandoned carts with customer details will show up here.'}
+                  : 'New sessions appear within seconds of customers opening checkout. Completed orders move to Converted.'}
           </p>
         </div>
       ) : (

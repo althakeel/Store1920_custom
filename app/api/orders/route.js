@@ -18,6 +18,7 @@ import FreeGiftCampaign from '@/models/FreeGiftCampaign';
 import AbandonedCart from '@/models/AbandonedCart';
 import { cartItemsMatchAbandoned, findActiveRecoveryCart } from '@/lib/abandonedCartRecoveryOffer';
 import { sendOrderCreatedConfirmationNotifications } from '@/lib/orderConfirmationNotifications';
+import { markAbandonedCartsConvertedForOrder } from '@/lib/markAbandonedCartsConverted';
 import {
   applyDeferredPaymentOrderDefaults,
   isDeferredPaymentMethod,
@@ -767,6 +768,14 @@ export async function POST(request) {
             // Assign sequential store order number starting at 612345
             order.shortOrderNumber = await allocateShortOrderNumber(storeId);
             await order.save();
+
+            if (!isDeferredPaymentMethod(paymentMethod)) {
+                try {
+                    await markAbandonedCartsConvertedForOrder(order, { orderId: order._id });
+                } catch (convertError) {
+                    console.error('[orders] Failed to convert abandoned carts:', convertError);
+                }
+            }
 
             if (shouldRecordPurchaseOnCreate(order, paymentMethod)) {
                 try {

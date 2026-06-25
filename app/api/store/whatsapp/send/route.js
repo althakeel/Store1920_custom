@@ -15,6 +15,8 @@ import {
   sendPromotionalOfferWhatsApp,
 } from '@/lib/whatsapp/orderNotifications';
 import { WABA_TEMPLATE_NAMES } from '@/lib/whatsapp/templates';
+import { isConfirmedPaidOrder } from '@/lib/orderConfirmationPolicy';
+import { isAwaitingPaymentOrder } from '@/lib/deferredOrderStatus';
 
 const ALLOWED_TEMPLATES = new Set([
   'cart_reminder',
@@ -97,6 +99,16 @@ export async function POST(request) {
 
     if (!order) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+    }
+
+    const confirmationTemplates = new Set(['order_confirmation', 'order_paid']);
+    if (confirmationTemplates.has(template) && !isConfirmedPaidOrder(order)) {
+      const awaiting = isAwaitingPaymentOrder(order);
+      return NextResponse.json({
+        error: awaiting
+          ? 'Payment is not confirmed yet. Wait for Tabby/Tamara/Card payment before sending order confirmation.'
+          : 'This order is not paid or has failed. Order confirmation cannot be sent.',
+      }, { status: 400 });
     }
 
     let whatsapp;

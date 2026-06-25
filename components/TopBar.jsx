@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { ChevronDown, Check, Globe2 } from 'lucide-react';
+import { isProductDetailPath } from '@/lib/productUrl';
 import {
   STORE1920_CUSTOMER_SUPPORT_PHONE,
   STORE1920_CUSTOMER_SUPPORT_TEL,
@@ -33,6 +34,8 @@ const BNPL_PARTNERS = [
 
 export default function TopBar({ initialLanguage = 'en' }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const hideBnplBanner = isProductDetailPath(pathname);
   const { market: storefrontMarket, setMarketCode } = useStorefrontMarket();
   const [storefrontLanguage, setStorefrontLanguage] = useState(() => normalizeStorefrontLanguage(initialLanguage));
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -86,14 +89,16 @@ export default function TopBar({ initialLanguage = 'en' }) {
   }, [dropdownOpen]);
 
   useEffect(() => {
-    if (!showBnplBanner) return undefined;
+    if (!showBnplBanner || hideBnplBanner) return undefined;
     const flipIntervalId = window.setInterval(() => {
       setActiveBnplIndex((current) => (current + 1) % BNPL_PARTNERS.length);
     }, 2500);
     return () => window.clearInterval(flipIntervalId);
-  }, [showBnplBanner]);
+  }, [showBnplBanner, hideBnplBanner]);
 
   useEffect(() => {
+    if (hideBnplBanner) return undefined;
+
     let hideTimerId;
     let showTimerId;
 
@@ -112,7 +117,7 @@ export default function TopBar({ initialLanguage = 'en' }) {
       window.clearTimeout(hideTimerId);
       window.clearTimeout(showTimerId);
     };
-  }, []);
+  }, [hideBnplBanner]);
 
   const handleLanguageChange = (lang) => {
     const nextLanguage = normalizeStorefrontLanguage(lang);
@@ -297,6 +302,7 @@ export default function TopBar({ initialLanguage = 'en' }) {
         </div>
       </div>
 
+      {!hideBnplBanner ? (
       <div
         className={`overflow-hidden border-y border-[#ececec] bg-white transition-[max-height,opacity,transform] duration-[650ms] ease-in-out ${showBnplBanner ? 'max-h-11 opacity-100' : 'max-h-0 opacity-0 -translate-y-1.5'}`}
         aria-hidden={!showBnplBanner}
@@ -322,6 +328,7 @@ export default function TopBar({ initialLanguage = 'en' }) {
           </span>
         </div>
       </div>
+      ) : null}
 
       <style>{`
         @keyframes bnplFlip {

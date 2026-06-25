@@ -7,30 +7,40 @@ import { scheduleAbandonedCartWhatsAppReminder } from '@/lib/abandonedCheckoutWh
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { items, guestEmail, guestPhone, guestName, guestPhoneCode } = body || {};
+    const {
+      items,
+      guestEmail,
+      guestPhone,
+      guestName,
+      guestPhoneCode,
+      anonymousId: anonymousIdInput,
+      sessionId,
+    } = body || {};
 
     if (!Array.isArray(items) || items.length === 0) {
       return NextResponse.json({ error: 'No items provided' }, { status: 400 });
     }
 
-    // Guest cart must have at least email or phone to track
     const email = guestEmail?.toLowerCase()?.trim() || null;
-    const phone = guestPhone?.trim() || null;
+    const phone = guestPhone ? String(guestPhone).replace(/\D/g, '') : null;
+    const anonymousId = String(anonymousIdInput || '').trim() || null;
 
-    if (!email && !phone) {
-      return NextResponse.json({ error: 'Email or phone required for guest cart tracking' }, { status: 400 });
+    if (!email && !phone && !anonymousId) {
+      return NextResponse.json(
+        { error: 'Email, phone, or browser session required for guest cart tracking' },
+        { status: 400 },
+      );
     }
 
     await dbConnect();
 
-    const productIds = items.map(it => it.productId || it.id).filter(Boolean);
+    const productIds = items.map((it) => it.productId || it.id).filter(Boolean);
     const products = await Product.find({ _id: { $in: productIds } })
       .select('_id storeId name price')
       .lean();
 
-    const productMap = new Map(products.map(p => [String(p._id), p]));
+    const productMap = new Map(products.map((p) => [String(p._id), p]));
 
-    // Group items by storeId
     const grouped = new Map();
     for (const it of items) {
       const productId = String(it.productId || it.id);
@@ -49,23 +59,32 @@ export async function POST(request) {
       });
     }
 
-    const now = new Date();
+    if (grouped.size === 0) {
+      return NextResponse.json(
+        { error: 'No products with a valid store could be tracked', skipped: true },
+        { status: 422 },
+      );
+    }
 
+    const now = new Date();
     const phoneCode = guestPhoneCode?.trim() || '+971';
 
-    // Save guest cart to each store
     for (const [storeId, storeItems] of grouped.entries()) {
-      const cartTotal = storeItems.reduce(
-        (sum, item) => sum + (Number(item.price || 0) * Number(item.quantity || 0)),
-        0
-      );
+      const orClauses = [];
+      if (email) orClauses.push({ email });
+      if (phone) orClauses.push({ phone });
+      if (anonymousId) orClauses.push({ anonymousId });
+
       const filter = {
         storeId,
-        $or: [
-          ...(email ? [{ email }] : []),
-          ...(phone ? [{ phone }] : []),
-        ],
+        status: { $ne: 'converted' },
+        ...(orClauses.length ? { $or: orClauses } : {}),
       };
+
+      const cartTotal = storeItems.reduce(
+        (sum, item) => sum + (Number(item.price || 0) * Number(item.quantity || 0)),
+        0,
+      );
 
       await AbandonedCart.updateOne(
         filter,
@@ -73,6 +92,8 @@ export async function POST(request) {
           $set: {
             storeId,
             userId: null,
+            anonymousId,
+            sessionId: sessionId ? String(sessionId).trim() : null,
             name: guestName?.trim() || null,
             email,
             phone,
@@ -86,13 +107,13 @@ export async function POST(request) {
             status: 'active',
           },
         },
-        { upsert: true }
+        { upsert: true },
       );
 
       if (phone) {
         await scheduleAbandonedCartWhatsAppReminder(
           { storeId, ...filter, status: 'active' },
-          { now, phone }
+          { now, phone },
         );
       }
     }

@@ -20,8 +20,6 @@ import ProductCard from "./ProductCard";
 import ProductCarousel from "./ProductCarousel";
 import ProductDescription from "./ProductDescription";
 import ProductReviewsSection from "./ProductReviewsSection";
-import BnplLogo from "./BnplLogo";
-import PayLaterModal from "./PayLaterModal";
 import StorefrontActionToast from "./StorefrontActionToast";
 import { useAuth } from '@/lib/useAuth';
 import { trackMetaEvent } from "@/lib/metaPixelClient";
@@ -397,7 +395,6 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const [isOrderingNow, setIsOrderingNow] = useState(false);
   const [showRatingBreakdown, setShowRatingBreakdown] = useState(false);
   const ratingBreakdownRef = useRef(null);
-  const [payLaterProvider, setPayLaterProvider] = useState(null);
   const [categoryMap, setCategoryMap] = useState({});
   const { user, getToken } = useAuth();
   const isSignedIn = Boolean(user);
@@ -1090,8 +1087,6 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const convertedLineRegularTotal = Number(convertedEffAED || 0) * pricingQuantity;
   const buyBoxSalePrice = pricingQuantity > 1 ? convertedLineTotal : convertedEffPrice;
   const buyBoxRegularPrice = pricingQuantity > 1 ? convertedLineRegularTotal : convertedEffAED;
-  const tabbyInstallmentAmount = convertedLineTotal / 12;
-  const tamaraInstallmentAmount = convertedLineTotal / 4;
   const storedSalePriceAr = String(product?.attributes?.priceAr || '').trim();
   const storedRegularPriceAr = String(product?.attributes?.AEDAr || '').trim();
   const lineSavingsAmount = Math.max(0, convertedLineRegularTotal - convertedLineTotal);
@@ -1107,8 +1102,6 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const displayMobileRegularPrice = (isArabic && storedRegularPriceAr && pricingQuantity <= 1)
     ? storedRegularPriceAr
     : formatMoney(buyBoxRegularPrice, true);
-  const displayTabbyInstallmentAmount = formatMoney(tabbyInstallmentAmount, true);
-  const displayTamaraInstallmentAmount = formatMoney(tamaraInstallmentAmount, true);
   const displaySavingsAmount = formatMoney(savingsAmount, true);
   const displayMobileSavingsAmount = formatMoney(
     pricingQuantity > 1 ? lineSavingsAmount : savingsAmount,
@@ -1208,112 +1201,6 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       </div>
     );
   };
-
-  const renderBnplInstallmentRow = ({
-    provider,
-    lead,
-    amount,
-    className = '',
-    textClass = 'text-[11px]',
-    amountClass = 'font-medium text-gray-800',
-    logoSize = 'sm',
-  }) => (
-    <button
-      type="button"
-      onClick={() => setPayLaterProvider(provider)}
-      className={`block w-full py-0.5 text-start ${className}`.trim()}
-    >
-      <span className={`block leading-snug text-gray-500 ${textClass}`}>{lead}</span>
-      <span className="mt-0.5 flex w-full items-center gap-x-1.5">
-        <bdi dir="ltr" className={`${textClass} ${amountClass} whitespace-nowrap`}>{amount}</bdi>
-        <span className={`${textClass} text-gray-500`}>{t('product.installmentsWith')}</span>
-        <span className="ms-auto shrink-0">
-          <BnplLogo provider={provider} size={logoSize} />
-        </span>
-      </span>
-    </button>
-  );
-  const tabbyPromoSelector = `#tabbyPromoProduct-${String(product?._id || product?.id || 'default')}`;
-  const tabbyPublicKey = process.env.NEXT_PUBLIC_TABBY_PUBLIC_KEY || '';
-  const tabbyMerchantCode = process.env.NEXT_PUBLIC_TABBY_MERCHANT_CODE || process.env.TABBY_MERCHANT_CODE || 'Store1920';
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return undefined;
-
-    const initTabbyPromo = () => {
-      if (!window.TabbyPromo || !tabbyPublicKey || !tabbyMerchantCode) return;
-
-      const price = Number(convertedLineTotal || 0).toFixed(2);
-      if (Number(price) <= 0) return;
-
-      try {
-        new window.TabbyPromo({
-          selector: tabbyPromoSelector,
-          currency: currency || 'AED',
-          price,
-          lang: isArabic ? 'ar' : 'en',
-          source: 'product',
-          shouldInheritBg: false,
-          publicKey: tabbyPublicKey,
-          merchantCode: tabbyMerchantCode,
-        });
-      } catch (error) {
-        console.error('TabbyPromo init failed on product page:', error);
-      }
-    };
-
-    const loadTabbyScript = () => {
-      if (window.TabbyPromo) {
-        initTabbyPromo();
-        return;
-      }
-
-      const existing = document.querySelector('script[data-tabby-promo="true"]');
-      if (existing) {
-        existing.addEventListener('load', initTabbyPromo, { once: true });
-        return;
-      }
-
-      const script = document.createElement('script');
-      script.src = 'https://checkout.tabby.ai/tabby-promo.js';
-      script.async = true;
-      script.dataset.tabbyPromo = 'true';
-      script.onload = initTabbyPromo;
-      document.body.appendChild(script);
-    };
-
-    const node = document.querySelector(tabbyPromoSelector);
-    if (!node) return undefined;
-
-    let observer;
-    let idleId;
-    let timerId;
-
-    const scheduleLoad = () => {
-      if ('requestIdleCallback' in window) {
-        idleId = window.requestIdleCallback(loadTabbyScript, { timeout: 4000 });
-      } else {
-        timerId = window.setTimeout(loadTabbyScript, 2000);
-      }
-    };
-
-    if ('IntersectionObserver' in window) {
-      observer = new IntersectionObserver((entries) => {
-        if (!entries.some((entry) => entry.isIntersecting)) return;
-        observer?.disconnect();
-        scheduleLoad();
-      }, { rootMargin: '240px' });
-      observer.observe(node);
-    } else {
-      scheduleLoad();
-    }
-
-    return () => {
-      observer?.disconnect();
-      if (idleId && 'cancelIdleCallback' in window) window.cancelIdleCallback(idleId);
-      if (timerId) window.clearTimeout(timerId);
-    };
-  }, [tabbyPromoSelector, convertedLineTotal, isArabic, tabbyPublicKey, tabbyMerchantCode, currency]);
 
   const STORE_SOLD_BY_NAME = 'store1920';
 
@@ -2152,9 +2039,9 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     selectedBundleQty,
   ]);
 
+  // Reset quantity/tier when the product or color/size changes — not when the user
+  // picks a different bundle tier than what is already in the cart.
   useEffect(() => {
-    if (cartMatchesSelection) return;
-
     if (bulkBundleTiers.length > 0) {
       const firstTier = bulkBundleTiers[0] ?? 1;
       setQuantity(firstTier);
@@ -2162,7 +2049,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     } else {
       setQuantity(1);
     }
-  }, [product?._id, selectedOptions, cartMatchesSelection, bulkBundleTiers]);
+  }, [product?._id, selectedOptions, bulkBundleTiers]);
 
   useEffect(() => {
     if (!cartMatchesSelection) return;
@@ -2620,7 +2507,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
             </div>
             </div>
 
-            {/* Mobile: title, price, brand card, BNPL, services */}
+            {/* Mobile: title, price, brand card, services */}
             <div className="lg:hidden relative z-30 mt-3 w-full min-w-0 max-w-full space-y-2" dir={isArabic ? 'rtl' : 'ltr'}>
               <div className="space-y-1.5">
                 {renderSoldByLine('mb-0.5', true)}
@@ -2699,20 +2586,6 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                     ) : null}
                   </div>
                 ) : null}
-
-                {renderBnplInstallmentRow({
-                  provider: 'tabby',
-                  lead: t('product.installmentsTabbyLead'),
-                  amount: displayTabbyInstallmentAmount,
-                  className: 'border-b border-gray-100 bg-[#EAF9F4] px-3.5 py-2.5 active:bg-[#dff5ec]',
-                })}
-
-                {renderBnplInstallmentRow({
-                  provider: 'tamara',
-                  lead: t('product.installmentsTamaraLead'),
-                  amount: displayTamaraInstallmentAmount,
-                  className: 'bg-[#FFF1F3] px-3.5 py-2.5 active:bg-[#ffe8ec]',
-                })}
 
                 <div className="grid grid-cols-2 divide-x divide-y divide-gray-100 border-t border-gray-100">
                   <div className="flex items-start gap-2 px-3 py-2.5">
@@ -2952,13 +2825,6 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   {renderBundleOptions()}
                 </div>
               ) : null}
-
-              <div className="mt-3 space-y-4" dir="ltr">
-                <div
-                  id={`tabbyPromoProduct-${String(product?._id || product?.id || 'default')}`}
-                  className="product-tabby-promo w-full"
-                />
-              </div>
 
               <ProductDescription
                 product={product}
@@ -3339,23 +3205,6 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 {isInWishlist ? t('common.saved') : t('common.save')}
               </button>
 
-              <div className="mt-5 w-full rounded-lg border border-slate-100 bg-white px-3.5 py-3.5 shadow-sm" dir={isArabic ? 'rtl' : 'ltr'}>
-                <div className="space-y-3">
-                  {renderBnplInstallmentRow({
-                    provider: 'tabby',
-                    lead: t('product.installmentsTabbyLead'),
-                    amount: displayTabbyInstallmentAmount,
-                    className: 'transition hover:opacity-80',
-                  })}
-                  {renderBnplInstallmentRow({
-                    provider: 'tamara',
-                    lead: t('product.installmentsTamaraLead'),
-                    amount: displayTamaraInstallmentAmount,
-                    className: 'transition hover:opacity-80',
-                  })}
-                </div>
-              </div>
-
             </div>
 
           </div>
@@ -3424,18 +3273,6 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
       {renderFullViewGallery()}
       {renderFbtPopup()}
-
-      <PayLaterModal
-        provider={payLaterProvider}
-        installmentAmount={
-          payLaterProvider === 'tabby'
-            ? displayTabbyInstallmentAmount
-            : payLaterProvider === 'tamara'
-              ? displayTamaraInstallmentAmount
-              : ''
-        }
-        onClose={() => setPayLaterProvider(null)}
-      />
 
       {/* Mobile Actions Bar */}
       <MobileProductActions
@@ -3530,22 +3367,6 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
         .scrollbar-thin {
           scrollbar-width: thin;
           scrollbar-color: #d1d5db transparent;
-        }
-        :global(.product-tabby-promo) {
-          text-align: start;
-          font-size: 11px;
-          line-height: 1.4;
-          color: #6b7280;
-          width: 100%;
-        }
-        :global(.product-tabby-promo > *) {
-          margin-inline-start: 0 !important;
-          margin-inline-end: auto !important;
-        }
-        :global(.product-tabby-promo iframe) {
-          margin-inline-start: 0 !important;
-          margin-inline-end: auto !important;
-          max-width: 100%;
         }
         .product-page-grid {
           display: grid;

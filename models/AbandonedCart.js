@@ -3,6 +3,8 @@ import mongoose from "mongoose";
 const AbandonedCartSchema = new mongoose.Schema({
   storeId: { type: String, required: true },
   userId: String,
+  anonymousId: { type: String, default: null, index: true },
+  sessionId: { type: String, default: null },
   name: { type: String, default: null },
   email: { type: String, default: null },
   phone: String,

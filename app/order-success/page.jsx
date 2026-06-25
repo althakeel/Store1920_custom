@@ -66,6 +66,14 @@ function OrderSuccessContent() {
         setOrders(loadedOrders);
 
         const loadedOrder = loadedOrders?.[0];
+        if (loadedOrder?._id) {
+          const status = String(loadedOrder.status || '').toUpperCase();
+          if (status === 'PAYMENT_FAILED' || status === 'CANCELLED') {
+            router.replace(`/order-failed?orderId=${orderId}&reason=${encodeURIComponent('Payment was not completed')}`);
+            return;
+          }
+        }
+
         if (loadedOrder?._id && !purchaseTrackedRef.current) {
           purchaseTrackedRef.current = true;
           trackPurchase(loadedOrder, { user });
