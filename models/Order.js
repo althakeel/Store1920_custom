@@ -51,6 +51,7 @@ const OrderSchema = new mongoose.Schema({
   paymentRecoveryNotifiedAt: { type: Date, default: null },
   orderPlacedEmailSentAt: { type: Date, default: null },
   orderConfirmedEmailSentAt: { type: Date, default: null },
+  adminOrderEmailSentAt: { type: Date, default: null },
   returnReason: String,
   notes: String,
   coinsRedeemed: { type: Number, default: 0 },
