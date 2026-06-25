@@ -113,7 +113,7 @@ function OrderToastShell({ toastInstance, title, children, onDismissAll = false 
 
 function showNewOrderToast(order) {
   toast.custom((toastInstance) => (
-    <OrderToastShell toastInstance={toastInstance} title="New order received">
+    <OrderToastShell toastInstance={toastInstance} title="New confirmed order">
       <p className="mt-1 text-sm text-slate-800">{formatOrderLabel(order)}</p>
       <p className="mt-1 text-xs text-slate-500">
         {order.customerName || 'Customer'}
@@ -133,7 +133,7 @@ function showBatchOrderToast(orders) {
   toast.custom((toastInstance) => (
     <OrderToastShell
       toastInstance={toastInstance}
-      title={`${orders.length} new orders received`}
+      title={`${orders.length} new confirmed orders`}
       onDismissAll
     >
       <p className="mt-1 text-sm text-slate-800">

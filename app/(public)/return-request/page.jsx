@@ -7,16 +7,17 @@ import toast from 'react-hot-toast';
 import { Upload, X, RefreshCw, Undo2, StarIcon } from 'lucide-react';
 import Loading from '@/components/Loading';
 import PageTitle from '@/components/PageTitle';
+import { useAuth } from '@/lib/useAuth';
+import { getOrderLineProduct } from '@/lib/orderDisplay';
 
 
 function ReturnRequestForm() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const orderId = searchParams.get('orderId');
-    // TODO: Integrate Firebase Auth for user and token if needed
-    const getToken = async () => null;
-    const isLoaded = true;
-    const isSignedIn = false;
+    const { user, loading: authLoading, getToken } = useAuth();
+    const isLoaded = !authLoading;
+    const isSignedIn = Boolean(user);
 
     const [loading, setLoading] = useState(true);
     const [order, setOrder] = useState(null);
@@ -53,10 +54,14 @@ function ReturnRequestForm() {
     const fetchOrder = async () => {
         try {
             const token = await getToken();
-            const { data } = await axios.get('/api/orders', {
+            if (!token) {
+                router.push('/sign-in');
+                return;
+            }
+            const { data } = await axios.get(`/api/orders?orderId=${encodeURIComponent(orderId)}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            const foundOrder = data.orders.find(o => o.id === orderId);
+            const foundOrder = data.order;
             if (!foundOrder) {
                 toast.error('Order not found');
                 router.push('/orders');
@@ -187,8 +192,8 @@ function ReturnRequestForm() {
     if (!isLoaded || loading) return <Loading />;
 
     // Filter eligible products
-    const returnEligible = order?.orderItems?.filter(item => item.product?.allowReturn) || [];
-    const replacementEligible = order?.orderItems?.filter(item => item.product?.allowReplacement) || [];
+    const returnEligible = order?.orderItems?.filter((item) => getOrderLineProduct(item).allowReturn !== false) || [];
+    const replacementEligible = order?.orderItems?.filter((item) => getOrderLineProduct(item).allowReplacement !== false) || [];
 
     return (
         <div className="bg-gray-50 py-8 px-4">

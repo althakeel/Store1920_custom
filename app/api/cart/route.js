@@ -1,11 +1,13 @@
 import dbConnect from "@/lib/mongodb";
 import User from "@/models/User";
+import Address from "@/models/Address";
 import AbandonedCart from "@/models/AbandonedCart";
 import Product from "@/models/Product";
 import { getAuth } from "@/lib/firebase-admin";
 import { NextResponse } from "next/server";
 import { getCartEntryProductId, getCartEntryQuantity, isFreeGiftEntry } from "@/lib/freeGiftUtils";
 import { isPlaceholderName } from "@/lib/abandonedCartUtils";
+import { scheduleAbandonedCartWhatsAppReminder } from "@/lib/abandonedCheckoutWhatsAppReminder";
 
 
 // Update user cart 
@@ -73,27 +75,45 @@ export async function POST(request){
                         userId,
                         status: { $ne: 'converted' },
                     })
-                        .select('name email phone address')
+                        .select('name email phone phoneCode address')
+                        .lean();
+
+                    const latestAddress = await Address.findOne({ userId })
+                        .sort({ updatedAt: -1, createdAt: -1 })
+                        .select('phone phoneCode')
                         .lean();
 
                     const userName = String(user.name || '').trim();
                     const safeUserName = !isPlaceholderName(userName) ? userName : null;
                     const userEmail = user.email?.toLowerCase()?.trim() || null;
-                    const userPhone = user.phone?.trim() || null;
+                    const userPhone = user.phone?.trim()
+                        || latestAddress?.phone?.trim()
+                        || existingCart?.phone?.trim()
+                        || null;
+                    const phoneCode = latestAddress?.phoneCode
+                        || existingCart?.phoneCode
+                        || '+971';
+                    const cartTotal = storeItems.reduce(
+                        (sum, item) => sum + (Number(item.price || 0) * Number(item.quantity || 0)),
+                        0
+                    );
+
+                    const filter = { storeId, userId, status: { $ne: 'converted' } };
 
                     await AbandonedCart.updateOne(
-                        { storeId, userId, status: { $ne: 'converted' } },
+                        filter,
                         {
                             $set: {
                                 storeId,
                                 userId,
                                 name: safeUserName || existingCart?.name || null,
                                 email: userEmail || existingCart?.email || null,
-                                phone: userPhone || existingCart?.phone || null,
+                                phone: userPhone,
+                                phoneCode,
                                 address: customerInfo?.address || existingCart?.address || null,
                                 items: storeItems,
-                                cartTotal: null,
-                                currency: null,
+                                cartTotal,
+                                currency: process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || 'AED',
                                 lastSeenAt: now,
                                 source: 'cart',
                                 status: 'active',
@@ -101,6 +121,13 @@ export async function POST(request){
                         },
                         { upsert: true }
                     );
+
+                    if (userPhone) {
+                        await scheduleAbandonedCartWhatsAppReminder(
+                            { storeId, userId, status: 'active' },
+                            { now, phone: userPhone }
+                        );
+                    }
                 }));
             } catch (err) {
                 console.warn('[cart] Could not track abandoned cart:', err.message);

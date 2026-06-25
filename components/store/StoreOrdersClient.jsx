@@ -20,7 +20,7 @@ import {
     getOrderExpectedDeliveryDate,
     summarizeDeliveryBuckets,
 } from '@/lib/storeOrderInsights';
-import { getDisplayOrderNumber } from '@/lib/orderDisplay';
+import { getDisplayOrderNumber, getOrderCustomerDisplayName } from '@/lib/orderDisplay';
 import { isAwaitingPaymentOrder, isVisibleStoreOrder } from '@/lib/deferredOrderStatus';
 
 function normalizeOrderSearchQuery(value = '') {
@@ -1194,9 +1194,7 @@ export default function StoreOrders() {
     const getOrderCsvRows = (exportOrders) => {
         return exportOrders.map((order) => {
             const shipping = order?.shippingAddress || {};
-            const customerName = order?.isGuest
-                ? (order?.guestName || '')
-                : (order?.userId?.name || order?.userId?.email || order?.guestName || '');
+            const customerName = getOrderCustomerDisplayName(order);
             const customerEmail = order?.isGuest
                 ? (order?.guestEmail || '')
                 : (order?.userId?.email || order?.guestEmail || '');
@@ -1995,9 +1993,7 @@ export default function StoreOrders() {
                                     <td className="px-4 py-3">
                                         <div className="flex flex-col gap-1">
                                             <span className="font-medium text-slate-800">
-                                                {order.isGuest 
-                                                    ? (order.guestName || 'Guest User')
-                                                    : (order.userId?.name || order.userId?.email || 'Unknown')}
+                                                {getOrderCustomerDisplayName(order)}
                                             </span>
                                             {order.isGuest && (
                                                 <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full w-fit font-semibold">
@@ -2464,7 +2460,7 @@ export default function StoreOrders() {
                                         </p>
                                         {selectedOrder.userId && (
                                             <p className="text-yellow-700 text-xs mt-2">
-                                                Customer: {selectedOrder.userId.name || selectedOrder.userId.email || 'Unknown'}
+                                                Customer: {getOrderCustomerDisplayName(selectedOrder)}
                                             </p>
                                         )}
                                     </div>

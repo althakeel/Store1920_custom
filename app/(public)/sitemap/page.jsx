@@ -148,6 +148,13 @@ export default function SitemapPage() {
           <p className="text-blue-100 text-lg max-w-2xl">
             Find all pages and sections of Store1920 in one place. Navigate easily to any part of our platform.
           </p>
+          <p className="mt-3 text-sm text-blue-100/90">
+            For Google Search Console, submit the XML sitemap index at{' '}
+            <a href="/sitemap.xml" className="underline font-medium text-white">
+              /sitemap.xml
+            </a>
+            {' '}(not this HTML page).
+          </p>
         </div>
       </div>
 

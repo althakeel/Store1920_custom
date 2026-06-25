@@ -10,7 +10,7 @@ import Link from "next/link";
 import axios from "axios";
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
 import { getProductThumbnailUrl } from '@/lib/productMedia';
-import { getDisplayOrderNumber } from '@/lib/orderDisplay';
+import { getDisplayOrderNumber, getOrderLineProduct, getOrderMongoId } from '@/lib/orderDisplay';
 
 const OrderItem = ({ order: initialOrder }) => {
 
@@ -89,8 +89,9 @@ const OrderItem = ({ order: initialOrder }) => {
     const withinReturnWindow = isDelivered && daysSinceDelivery <= 7;
     
     // Check if any product in the order allows return or replacement
-    const hasReturnableProduct = order.orderItems?.some(item => item.product?.allowReturn);
-    const hasReplaceableProduct = order.orderItems?.some(item => item.product?.allowReplacement);
+    const orderMongoId = getOrderMongoId(order);
+    const hasReturnableProduct = order.orderItems?.some((item) => getOrderLineProduct(item).allowReturn !== false);
+    const hasReplaceableProduct = order.orderItems?.some((item) => getOrderLineProduct(item).allowReplacement !== false);
     const canReturnReplace = withinReturnWindow && (hasReturnableProduct || hasReplaceableProduct);
 
     return (
@@ -134,7 +135,7 @@ const OrderItem = ({ order: initialOrder }) => {
                             <p className="text-xs text-slate-500 font-medium">Products:</p>
                             <div className="flex gap-2 flex-wrap">
                                 {order.orderItems.slice(0, 4).map((item, idx) => {
-                                    const product = item.product || {}
+                                    const product = getOrderLineProduct(item)
                                     return (
                                         <div key={idx} className="relative">
                                             <div className="w-16 h-16 bg-slate-100 rounded-lg overflow-hidden border border-slate-200">
@@ -176,7 +177,7 @@ const OrderItem = ({ order: initialOrder }) => {
                             <h3 className="text-sm font-semibold text-slate-800 mb-3">Order Items ({order.orderItems.length})</h3>
                             <div className="space-y-3">
                                 {order.orderItems.map((item, idx) => {
-                                    const product = item.product || {}
+                                    const product = getOrderLineProduct(item)
                                     return (
                                         <div key={idx} className="flex items-start gap-4 pb-4 border-b border-slate-100 last:border-0">
                                             <div className="w-24 h-24 bg-slate-100 rounded-lg overflow-hidden flex-shrink-0 border border-slate-200">
@@ -205,11 +206,11 @@ const OrderItem = ({ order: initialOrder }) => {
                                                     </div>
                                                 </div>
                                                 <div className="mt-2">
-                                                    {ratings.find(rating => order.id === rating.orderId && product._id === rating.productId)
-                                                        ? <Rating value={ratings.find(rating => order.id === rating.orderId && product.id === rating.productId).rating} />
+                                                    {ratings.find(rating => orderMongoId === rating.orderId && product._id === rating.productId)
+                                                        ? <Rating value={ratings.find(rating => orderMongoId === rating.orderId && product.id === rating.productId).rating} />
                                                         : order.status === "DELIVERED" && (
                                                             <button 
-                                                                onClick={() => setRatingModal({ orderId: order.id, productId: product._id })} 
+                                                                onClick={() => setRatingModal({ orderId: orderMongoId, productId: product._id })} 
                                                                 className="text-green-600 hover:bg-green-50 px-2 py-1 rounded text-xs transition"
                                                             >
                                                                 Rate Product
@@ -489,7 +490,7 @@ const OrderItem = ({ order: initialOrder }) => {
                             </button>
                             {canReturnReplace && (
                                 <Link 
-                                    href={`/return-request?orderId=${order.id}`}
+                                    href={`/return-request?orderId=${orderMongoId}`}
                                     className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition text-sm font-medium"
                                 >
                                     <RefreshCw size={16} />

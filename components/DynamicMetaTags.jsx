@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { usePathname } from "next/navigation"
 import axios from "axios"
+import { HOME_PAGE_META_DESCRIPTION, HOME_PAGE_META_TITLE } from "@/lib/homepageSeo"
 
 function normalizePath(path = "/") {
   const raw = String(path || "").trim()
@@ -57,19 +58,21 @@ export default function DynamicMetaTags() {
 
   useEffect(() => {
     const current = seoMap?.[normalizedPath]
-    if (!current) return
+    const isHomePage = normalizedPath === '/'
+    const title = current?.title || (isHomePage ? HOME_PAGE_META_TITLE : '')
+    const description = current?.description || (isHomePage ? HOME_PAGE_META_DESCRIPTION : '')
 
-    if (current.title) {
-      document.title = current.title
+    if (title) {
+      document.title = title
     }
 
     const descriptionTag = ensureMetaTag("description")
-    if (current.description) {
-      descriptionTag.setAttribute("content", current.description)
+    if (description) {
+      descriptionTag.setAttribute("content", description)
     }
 
     const keywordsTag = ensureMetaTag("keywords")
-    const keywordsValue = Array.isArray(current.keywords) ? current.keywords.join(", ") : ""
+    const keywordsValue = Array.isArray(current?.keywords) ? current.keywords.join(", ") : ""
     if (keywordsValue) {
       keywordsTag.setAttribute("content", keywordsValue)
     }

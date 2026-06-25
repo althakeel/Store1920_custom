@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Product from '@/models/Product';
 import AbandonedCart from '@/models/AbandonedCart';
+import {
+  scheduleAbandonedCartWhatsAppReminder,
+} from '@/lib/abandonedCheckoutWhatsAppReminder';
 
 export async function POST(request) {
   try {
@@ -53,32 +56,41 @@ export async function POST(request) {
       // Validate that at least email or phone is provided for tracking
       const email = customer?.email?.toLowerCase() || null;
       const phone = customer?.phone || null;
+      const phoneCode = customer?.phoneCode || '+971';
       
       if (!email && !phone && !userId) {
         console.warn('[abandoned-checkout] Skipping cart without email, phone, or userId');
         continue;
       }
 
+      const cartFields = {
+        storeId,
+        userId: userId || null,
+        name: customer?.name?.trim() || null,
+        email,
+        phone,
+        phoneCode,
+        address: customer?.address || null,
+        items: storeItems,
+        cartTotal: typeof cartTotal === 'number' ? cartTotal : null,
+        currency: currency || null,
+        lastSeenAt: now,
+        source: 'checkout',
+        status: 'active',
+      };
+
       await AbandonedCart.updateOne(
         { ...filter, status: { $ne: 'converted' } },
-        {
-          $set: {
-            storeId,
-            userId: userId || null,
-            name: customer?.name?.trim() || null,
-            email,
-            phone,
-            address: customer?.address || null,
-            items: storeItems,
-            cartTotal: typeof cartTotal === 'number' ? cartTotal : null,
-            currency: currency || null,
-            lastSeenAt: now,
-            source: 'checkout',
-            status: 'active',
-          },
-        },
+        { $set: cartFields },
         { upsert: true }
       );
+
+      if (phone) {
+        await scheduleAbandonedCartWhatsAppReminder(
+          { ...filter, status: 'active' },
+          { now, phone }
+        );
+      }
     }
 
     return NextResponse.json({ ok: true });

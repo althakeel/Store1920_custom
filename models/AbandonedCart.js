@@ -6,6 +6,7 @@ const AbandonedCartSchema = new mongoose.Schema({
   name: { type: String, default: null },
   email: { type: String, default: null },
   phone: String,
+  phoneCode: { type: String, default: '+971' },
   address: Object,
   items: Array,
   cartTotal: Number,
@@ -40,6 +41,14 @@ const AbandonedCartSchema = new mongoose.Schema({
   recoveryLinkExpiresAt: { type: Date, default: null },
   recoveryLinkSentAt: { type: Date, default: null },
   recoveryLinkSentTo: { type: String, default: null },
+  whatsappCheckoutReminderDueAt: { type: Date, default: null, index: true },
+  whatsappCheckoutReminderSentAt: { type: Date, default: null },
+  whatsappCheckoutReminderStatus: {
+    type: String,
+    enum: ['pending', 'processing', 'sent', 'skipped', 'failed'],
+    default: null,
+  },
+  whatsappCheckoutReminderError: { type: String, default: null },
 }, { timestamps: true });
 
 // Indexes for query performance

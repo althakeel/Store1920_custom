@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import connectDB from "@/lib/mongodb";
 import Coupon from "@/models/Coupon";
 import Order from "@/models/Order";
+import SpinLog from "@/models/SpinLog";
+import { getAuth } from "@/lib/firebase-admin";
+import { getCouponAccessErrorAsync, isCouponVisibleToUser, resolveCouponWinnerUserId } from "@/lib/couponAccess";
 
 // GET - Fetch active coupons for display
 export async function GET(request) {
@@ -18,14 +21,34 @@ export async function GET(request) {
 
     await connectDB();
 
+    let userId = null;
+    const authHeader = request.headers.get("authorization");
+    if (authHeader?.startsWith("Bearer ")) {
+      try {
+        const decoded = await getAuth().verifyIdToken(authHeader.split(" ")[1]);
+        userId = decoded.uid;
+      } catch {
+        userId = null;
+      }
+    }
+
     const now = new Date();
 
     const allCoupons = await Coupon.find({ storeId })
-      .select('code title description discountType discountValue discount minOrderValue minPrice maxDiscount badgeColor specificProducts expiresAt isActive usedCount maxUses freeShipping')
+      .select('code title description discountType discountValue discount minOrderValue minPrice maxDiscount badgeColor specificProducts expiresAt isActive usedCount maxUses freeShipping isPublic assignedUserId')
       .lean();
 
-    const coupons = allCoupons
-      .filter(c => c.isActive)
+    const coupons = (await Promise.all(
+      allCoupons
+        .filter((coupon) => coupon.isActive)
+        .map(async (coupon) => {
+          const winnerUserId = await resolveCouponWinnerUserId(coupon, SpinLog);
+          const visibleCoupon = winnerUserId
+            ? { ...coupon, assignedUserId: winnerUserId, isPublic: false }
+            : coupon;
+          return isCouponVisibleToUser(visibleCoupon, userId) ? coupon : null;
+        })
+    )).filter(Boolean)
       .map(coupon => {
         const isExpired = coupon.expiresAt && new Date(coupon.expiresAt) < now;
         const isExhausted = coupon.maxUses && coupon.usedCount >= coupon.maxUses;
@@ -85,6 +108,14 @@ export async function POST(request) {
     if (!coupon) {
       return NextResponse.json(
         { error: "Invalid coupon code", valid: false },
+        { status: 400 }
+      );
+    }
+
+    const accessError = await getCouponAccessErrorAsync(coupon, userId, SpinLog);
+    if (accessError) {
+      return NextResponse.json(
+        { error: accessError, valid: false },
         { status: 400 }
       );
     }

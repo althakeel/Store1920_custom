@@ -133,6 +133,19 @@ export async function POST(request) {
             }
         }
 
+        if (normalizedStatus === 'DELIVERED') {
+            try {
+                const { sendOrderDeliveredWhatsApp } = await import('@/lib/whatsapp/orderNotifications');
+                const populated = await Order.findById(order._id)
+                    .populate({ path: 'orderItems.productId', model: 'Product' })
+                    .lean();
+                const whatsappResult = await sendOrderDeliveredWhatsApp(populated || order.toObject?.() || order);
+                console.log('[store/update-status] WhatsApp delivered result:', whatsappResult);
+            } catch (whatsappError) {
+                console.error('[store/update-status] WhatsApp delivered failed:', whatsappError);
+            }
+        }
+
         return NextResponse.json({ 
             success: true, 
             message: 'Order status updated and notifications sent',

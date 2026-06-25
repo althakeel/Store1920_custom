@@ -4,14 +4,16 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/useAuth';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { FiTrash2, FiPlus, FiEdit2, FiX, FiSearch } from 'react-icons/fi';
+import { FiTrash2, FiPlus, FiEdit2, FiX, FiSearch, FiChevronUp, FiChevronDown } from 'react-icons/fi';
 import Loading from '@/components/Loading';
 import { compressImageForUpload } from '@/lib/compressImageForUpload';
 import {
   CATEGORY_SLIDER_BACKGROUND_PRESETS,
   DEFAULT_CATEGORY_SLIDER_BACKGROUND,
   normalizeCategorySliderBackground,
+  normalizeCategorySliderSideImagePosition,
 } from '@/lib/categorySliderTheme';
+import { sortCategorySliders } from '@/lib/categorySliderOrder';
 
 export default function CategorySliderPage() {
   const { user, getToken, loading: authLoading } = useAuth();
@@ -28,11 +30,13 @@ export default function CategorySliderPage() {
     title: '',
     subtitle: '',
     sideImage: '',
+    sideImagePosition: 'left',
     cardsPerRow: 6,
     backgroundColor: DEFAULT_CATEGORY_SLIDER_BACKGROUND,
     productIds: [],
   });
   const [uploadingSideImage, setUploadingSideImage] = useState(false);
+  const [reorderingId, setReorderingId] = useState(null);
   const [myStoreScopeIds, setMyStoreScopeIds] = useState(() => new Set());
 
   const normalizeProductIds = (ids = []) => (
@@ -82,9 +86,9 @@ export default function CategorySliderPage() {
     console.log('💾 FormData updated:', formData);
   }, [formData]);
 
-  const fetchData = async () => {
+  const fetchData = async ({ silent = false } = {}) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
 
       const getWithAuth = async (url) => {
         let token = await getToken();
@@ -141,13 +145,14 @@ export default function CategorySliderPage() {
           id: normalizedId,
           subtitle: subtitleValue,
           sideImage: section.sideImage ? String(section.sideImage).trim() : '',
+          sideImagePosition: normalizeCategorySliderSideImagePosition(section.sideImagePosition),
           cardsPerRow: section.cardsPerRow === 5 ? 5 : 6,
           backgroundColor: normalizeCategorySliderBackground(section.backgroundColor),
         };
       });
       console.log('📊 Fetched sliders:', normalizedSliders);
       console.log('📊 First slider subtitle:', normalizedSliders[0]?.subtitle);
-      setSliders(normalizedSliders);
+      setSliders(sortCategorySliders(normalizedSliders));
 
       const scopeIds = new Set();
       if (user?.uid) scopeIds.add(String(user.uid));
@@ -172,16 +177,16 @@ export default function CategorySliderPage() {
       
       setProducts(normalizedProducts);
 
-      setLoading(false);
+      if (!silent) setLoading(false);
     } catch (error) {
       console.error('Error fetching data:', error);
       toast.error('Failed to load data');
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   const handleAddSlider = () => {
-    setFormData({ title: '', subtitle: '', sideImage: '', cardsPerRow: 6, backgroundColor: DEFAULT_CATEGORY_SLIDER_BACKGROUND, productIds: [] });
+    setFormData({ title: '', subtitle: '', sideImage: '', sideImagePosition: 'left', cardsPerRow: 6, backgroundColor: DEFAULT_CATEGORY_SLIDER_BACKGROUND, productIds: [] });
     setEditingIdx(null);
     setShowForm(true);
   };
@@ -203,6 +208,7 @@ export default function CategorySliderPage() {
       title: slider.title || '',
       subtitle: subtitleValue,
       sideImage: slider.sideImage ? String(slider.sideImage).trim() : '',
+      sideImagePosition: normalizeCategorySliderSideImagePosition(slider.sideImagePosition),
       cardsPerRow: slider.cardsPerRow === 5 ? 5 : 6,
       backgroundColor: normalizeCategorySliderBackground(slider.backgroundColor),
       productIds: slider.productIds || []
@@ -212,6 +218,45 @@ export default function CategorySliderPage() {
     setEditingIdx(sliderId);
     setShowForm(true);
     console.log('📝 === EDIT SLIDER COMPLETED ===');
+  };
+
+  const handleMoveSlider = async (sliderId, direction) => {
+    const normalizedSliderId = normalizeId(sliderId);
+    const slider = sliders.find((item) => normalizeId(item.id) === normalizedSliderId);
+    if (!slider || !canManageSlider(slider)) return;
+
+    try {
+      setReorderingId(normalizedSliderId);
+      let token = await getToken();
+      if (!token) {
+        toast.error('Please sign in again');
+        return;
+      }
+
+      const payload = { id: normalizedSliderId, direction };
+      const putReorder = async (authToken) => axios.put('/api/store/category-slider/reorder', payload, {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+
+      try {
+        await putReorder(token);
+      } catch (error) {
+        if (error?.response?.status === 401) {
+          token = await getToken(true);
+          await putReorder(token);
+        } else {
+          throw error;
+        }
+      }
+
+      await fetchData({ silent: true });
+      toast.success('Slider order updated');
+    } catch (error) {
+      console.error('Error reordering slider:', error);
+      toast.error(error?.response?.data?.error || 'Failed to reorder slider');
+    } finally {
+      setReorderingId(null);
+    }
   };
 
   const handleSideImageUpload = async (file) => {
@@ -308,6 +353,7 @@ export default function CategorySliderPage() {
           title: formData.title.trim(), 
           subtitle: subtitleValue,
           sideImage: formData.sideImage ? String(formData.sideImage).trim() : '',
+          sideImagePosition: normalizeCategorySliderSideImagePosition(formData.sideImagePosition),
           cardsPerRow: formData.cardsPerRow === 5 ? 5 : 6,
           backgroundColor: normalizeCategorySliderBackground(formData.backgroundColor),
           productIds: normalizeProductIds(formData.productIds),
@@ -351,6 +397,7 @@ export default function CategorySliderPage() {
           title: formData.title.trim(),
           subtitle: subtitleValue,
           sideImage: formData.sideImage ? String(formData.sideImage).trim() : '',
+          sideImagePosition: normalizeCategorySliderSideImagePosition(formData.sideImagePosition),
           cardsPerRow: formData.cardsPerRow === 5 ? 5 : 6,
           backgroundColor: normalizeCategorySliderBackground(formData.backgroundColor),
           productIds: normalizeProductIds(formData.productIds),
@@ -492,13 +539,49 @@ export default function CategorySliderPage() {
               </div>
             ) : (
               <div className="space-y-4">
-                {sliders.map((slider) => {
+                {sortCategorySliders(sliders).map((slider, sliderIndex, orderedSliders) => {
                   const isOwnSlider = sliderBelongsToCurrentStore(slider);
                   const canManage = canManageSlider(slider);
+                  const previousSlider = orderedSliders[sliderIndex - 1];
+                  const nextSlider = orderedSliders[sliderIndex + 1];
+                  const canMoveUp = canManage && sliderIndex > 0 && (isPlatformAdmin || sliderBelongsToCurrentStore(previousSlider));
+                  const canMoveDown = canManage && sliderIndex < orderedSliders.length - 1 && (isPlatformAdmin || sliderBelongsToCurrentStore(nextSlider));
+                  const isReordering = reorderingId === normalizeId(slider.id);
                   return (
                   <div key={slider.id} className={`bg-white rounded-xl shadow-sm p-6 hover:shadow-md transition border-l-4 ${isOwnSlider ? 'border-blue-500' : 'border-orange-500'}`}>
-                    <div className="flex justify-between items-start mb-4">
-                      <div className="flex-1">
+                    <div className="flex justify-between items-start mb-4 gap-3">
+                      <div className="flex items-start gap-3 flex-1 min-w-0">
+                        <div className="flex flex-col gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleMoveSlider(slider.id, 'up')}
+                            disabled={!canMoveUp || isReordering}
+                            className={`p-2 rounded-lg transition ${
+                              canMoveUp && !isReordering
+                                ? 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                : 'bg-gray-50 text-gray-300 cursor-not-allowed'
+                            }`}
+                            title={canMoveUp ? 'Move up' : 'Cannot move up'}
+                            aria-label="Move slider up"
+                          >
+                            <FiChevronUp size={18} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleMoveSlider(slider.id, 'down')}
+                            disabled={!canMoveDown || isReordering}
+                            className={`p-2 rounded-lg transition ${
+                              canMoveDown && !isReordering
+                                ? 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                : 'bg-gray-50 text-gray-300 cursor-not-allowed'
+                            }`}
+                            title={canMoveDown ? 'Move down' : 'Cannot move down'}
+                            aria-label="Move slider down"
+                          >
+                            <FiChevronDown size={18} />
+                          </button>
+                        </div>
+                      <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <h3 className="text-xl font-bold text-gray-900">{slider.title}</h3>
                           {!isOwnSlider && (
@@ -526,7 +609,8 @@ export default function CategorySliderPage() {
                           <p className="text-xs text-gray-400 mt-1">Store ID: {slider.storeId.substring(0, 8)}...</p>
                         )}
                       </div>
-                      <div className="flex gap-2">
+                      </div>
+                      <div className="flex gap-2 shrink-0">
                         <button
                           onClick={() => handleEditSlider(slider)}
                           disabled={!canManage}
@@ -639,7 +723,7 @@ export default function CategorySliderPage() {
                       Side Image (Optional)
                     </label>
                     <p className="mb-2 text-xs text-gray-500">
-                      Shown on desktop only — image on the left, product slider on the right.
+                      Shown on desktop only. Choose whether the image sits on the left or right of the product slider (left in English appears on the right in Arabic).
                     </p>
                     <input
                       type="file"
@@ -670,6 +754,28 @@ export default function CategorySliderPage() {
                         >
                           Remove Image
                         </button>
+                        <div className="mt-4 border-t border-gray-200 pt-4">
+                          <p className="mb-2 text-xs font-semibold text-gray-700">Side image position (desktop)</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            {['left', 'right'].map((position) => {
+                              const selected = normalizeCategorySliderSideImagePosition(formData.sideImagePosition) === position;
+                              return (
+                                <button
+                                  key={position}
+                                  type="button"
+                                  onClick={() => setFormData((prev) => ({ ...prev, sideImagePosition: position }))}
+                                  className={`rounded-lg border-2 px-3 py-2 text-sm font-semibold capitalize transition ${
+                                    selected
+                                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                                      : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                                  }`}
+                                >
+                                  {position}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
                       </div>
                     ) : null}
                   </div>

@@ -4,7 +4,8 @@ import Product from '@/models/Product';
 import { NextResponse } from 'next/server';
 import { getCachedData, setCachedData } from '@/lib/cache';
 import { FEATURED_SECTIONS_CACHE_KEY } from '@/lib/categorySliderCache';
-import { normalizeCategorySliderBackground } from '@/lib/categorySliderTheme';
+import { normalizeCategorySliderBackground, normalizeCategorySliderSideImagePosition } from '@/lib/categorySliderTheme';
+import { sortCategorySliders, backfillCategorySliderSortOrdersIfNeeded } from '@/lib/categorySliderOrder';
 import mongoose from 'mongoose';
 
 const CACHE_KEY = FEATURED_SECTIONS_CACHE_KEY;
@@ -31,10 +32,13 @@ export async function GET() {
 
     await dbConnect();
 
-    const sections = await CategorySlider.find({})
-      .select('title subtitle sideImage cardsPerRow backgroundColor productIds storeId createdAt updatedAt')
-      .sort({ createdAt: -1 })
-      .lean();
+    await backfillCategorySliderSortOrdersIfNeeded(CategorySlider);
+
+    const sections = sortCategorySliders(
+      await CategorySlider.find({})
+        .select('title subtitle sideImage sideImagePosition cardsPerRow backgroundColor productIds storeId sortOrder createdAt updatedAt')
+        .lean()
+    );
 
     const allProductIds = [
       ...new Set(
@@ -57,6 +61,8 @@ export async function GET() {
         return {
           ...section,
           cardsPerRow: section.cardsPerRow === 5 ? 5 : 6,
+          sideImagePosition: normalizeCategorySliderSideImagePosition(section.sideImagePosition),
+          sortOrder: Number.isFinite(Number(section.sortOrder)) ? Number(section.sortOrder) : 0,
           backgroundColor: normalizeCategorySliderBackground(section.backgroundColor),
           products: orderProductsByIds(products, productIds),
         };

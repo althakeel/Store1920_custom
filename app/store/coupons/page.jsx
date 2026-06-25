@@ -3,17 +3,22 @@
 export const dynamic = 'force-dynamic'
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/lib/useAuth'
-import { PlusIcon, EditIcon, TrashIcon, TicketIcon, XIcon, PercentIcon, DollarSignIcon, PackageIcon, UserIcon, ClockIcon, ToggleLeftIcon, ToggleRightIcon } from 'lucide-react'
+import { PlusIcon, EditIcon, TrashIcon, TicketIcon, XIcon, PercentIcon, DollarSignIcon, PackageIcon, UserIcon, ClockIcon, ToggleLeftIcon, ToggleRightIcon, SearchIcon } from 'lucide-react'
+
+const getProductId = (product) => String(product?._id || product?.id || '').trim()
 
 
 export default function StoreCouponsPage() {
     const { getToken } = useAuth();
     const [coupons, setCoupons] = useState([])
-    const [products, setProducts] = useState([])
     const [loading, setLoading] = useState(true)
     const [showModal, setShowModal] = useState(false)
     const [editingCoupon, setEditingCoupon] = useState(null)
     const [submitting, setSubmitting] = useState(false)
+    const [productSearch, setProductSearch] = useState('')
+    const [searchResults, setSearchResults] = useState([])
+    const [searchLoading, setSearchLoading] = useState(false)
+    const [selectedProductMeta, setSelectedProductMeta] = useState({})
     
     const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || 'AED'
 
@@ -34,14 +39,102 @@ export default function StoreCouponsPage() {
         expiresAt: ''
     })
 
-    // Fetch coupons and products
+    // Fetch coupons
 
     useEffect(() => {
         fetchCoupons();
-        fetchProducts();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    useEffect(() => {
+        const query = productSearch.trim();
+        if (!query) {
+            setSearchResults([]);
+            setSearchLoading(false);
+            return undefined;
+        }
+
+        const timer = setTimeout(async () => {
+            setSearchLoading(true);
+            try {
+                const token = await getToken();
+                const res = await fetch(
+                    `/api/store/product?page=1&limit=20&search=${encodeURIComponent(query)}`,
+                    { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+                );
+                const data = await res.json();
+                setSearchResults(Array.isArray(data.products) ? data.products : []);
+            } catch (error) {
+                console.error('Error searching products:', error);
+                setSearchResults([]);
+            } finally {
+                setSearchLoading(false);
+            }
+        }, 300);
+
+        return () => clearTimeout(timer);
+    }, [productSearch, getToken]);
+
+    const loadSelectedProductMeta = async (productIds = []) => {
+        const ids = [...new Set(productIds.map(String).filter(Boolean))];
+        if (!ids.length) {
+            setSelectedProductMeta({});
+            return;
+        }
+
+        try {
+            const token = await getToken();
+            const res = await fetch(
+                `/api/store/product?ids=${encodeURIComponent(ids.join(','))}`,
+                { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+            );
+            const data = await res.json();
+            const nextMeta = {};
+            (data.products || []).forEach((product) => {
+                const id = getProductId(product);
+                if (!id) return;
+                nextMeta[id] = {
+                    name: product.name || 'Product',
+                    image: Array.isArray(product.images) ? product.images[0] : null,
+                };
+            });
+            setSelectedProductMeta(nextMeta);
+        } catch (error) {
+            console.error('Error loading selected products:', error);
+        }
+    };
+
+    const addSpecificProduct = (product) => {
+        const id = getProductId(product);
+        if (!id) return;
+
+        setFormData((prev) => {
+            const current = prev.specificProducts.map(String);
+            if (current.includes(id)) return prev;
+            return { ...prev, specificProducts: [...current, id] };
+        });
+
+        setSelectedProductMeta((prev) => ({
+            ...prev,
+            [id]: {
+                name: product.name || 'Product',
+                image: Array.isArray(product.images) ? product.images[0] : null,
+            },
+        }));
+    };
+
+    const removeSpecificProduct = (productId) => {
+        const id = String(productId);
+        setFormData((prev) => ({
+            ...prev,
+            specificProducts: prev.specificProducts.filter((item) => String(item) !== id),
+        }));
+        setSelectedProductMeta((prev) => {
+            const next = { ...prev };
+            delete next[id];
+            return next;
+        });
+    };
     const fetchCoupons = async () => {
         try {
             const token = await getToken();
@@ -57,21 +150,6 @@ export default function StoreCouponsPage() {
             console.error('Error fetching coupons:', error);
         } finally {
             setLoading(false);
-        }
-    };
-
-    const fetchProducts = async () => {
-        try {
-            const token = await getToken();
-            const res = await fetch('/api/store/product', {
-                headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-            });
-            const data = await res.json();
-            if (data.products) {
-                setProducts(data.products);
-            }
-        } catch (error) {
-            console.error('Error fetching products:', error);
         }
     };
 
@@ -172,7 +250,10 @@ export default function StoreCouponsPage() {
 
     // Handle edit
     const handleEdit = (coupon) => {
+        const specificProducts = (coupon.specificProducts || []).map(String).filter(Boolean)
         setEditingCoupon(coupon)
+        setProductSearch('')
+        setSearchResults([])
         setFormData({
             code: coupon.code,
             description: coupon.description,
@@ -180,7 +261,7 @@ export default function StoreCouponsPage() {
             discountType: coupon.discountType,
             minPrice: (coupon.minPrice || coupon.minOrderValue || '').toString(),
             minProductCount: coupon.minProductCount?.toString() || '',
-            specificProducts: coupon.specificProducts || [],
+            specificProducts,
             forNewUser: coupon.forNewUser || false,
             forMember: coupon.forMember || false,
             firstOrderOnly: coupon.firstOrderOnly || false,
@@ -189,6 +270,7 @@ export default function StoreCouponsPage() {
             isPublic: coupon.isPublic !== undefined ? coupon.isPublic : true,
             expiresAt: coupon.expiresAt ? new Date(coupon.expiresAt).toISOString().slice(0, 16) : ''
         })
+        loadSelectedProductMeta(specificProducts)
         setShowModal(true)
     }
 
@@ -209,6 +291,9 @@ export default function StoreCouponsPage() {
             isPublic: true,
             expiresAt: ''
         })
+        setProductSearch('')
+        setSearchResults([])
+        setSelectedProductMeta({})
     }
 
     if (loading) {
@@ -504,23 +589,80 @@ export default function StoreCouponsPage() {
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
                                     Specific Products (Optional)
                                 </label>
-                                <select
-                                    multiple
-                                    value={formData.specificProducts}
-                                    onChange={(e) => {
-                                        const selected = Array.from(e.target.selectedOptions, option => option.value)
-                                        setFormData(prev => ({ ...prev, specificProducts: selected }))
-                                    }}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 h-24"
-                                >
-                                    {products.map(product => (
-                                        <option key={product.id} value={product.id}>
-                                            {product.name}
-                                        </option>
-                                    ))}
-                                </select>
+
+                                {formData.specificProducts.length > 0 && (
+                                    <div className="flex flex-wrap gap-2 mb-3">
+                                        {formData.specificProducts.map((productId) => {
+                                            const id = String(productId)
+                                            const meta = selectedProductMeta[id]
+                                            return (
+                                                <span
+                                                    key={id}
+                                                    className="flex items-center gap-1.5 bg-orange-50 text-orange-800 text-xs font-medium px-2.5 py-1 rounded-full border border-orange-200"
+                                                >
+                                                    {meta?.name || 'Product'}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeSpecificProduct(id)}
+                                                        className="hover:text-orange-600"
+                                                        aria-label={`Remove ${meta?.name || 'product'}`}
+                                                    >
+                                                        <XIcon size={12} />
+                                                    </button>
+                                                </span>
+                                            )
+                                        })}
+                                    </div>
+                                )}
+
+                                <div className="relative mb-2">
+                                    <SearchIcon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                                    <input
+                                        type="text"
+                                        value={productSearch}
+                                        onChange={(e) => setProductSearch(e.target.value)}
+                                        placeholder="Search products to add..."
+                                        className="w-full px-3 py-2 pl-8 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                    />
+                                </div>
+
+                                <div className="max-h-56 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100">
+                                    {!productSearch.trim() ? (
+                                        <p className="text-sm text-gray-400 text-center py-6">
+                                            Type a product name or SKU to search
+                                        </p>
+                                    ) : searchLoading ? (
+                                        <p className="text-sm text-gray-400 text-center py-6">Searching...</p>
+                                    ) : searchResults.length === 0 ? (
+                                        <p className="text-sm text-gray-400 text-center py-6">No products found</p>
+                                    ) : (
+                                        searchResults.map((product) => {
+                                            const id = getProductId(product)
+                                            const selected = formData.specificProducts.map(String).includes(id)
+                                            const thumb = Array.isArray(product.images) && product.images[0] ? product.images[0] : null
+                                            return (
+                                                <button
+                                                    key={id}
+                                                    type="button"
+                                                    onClick={() => (selected ? removeSpecificProduct(id) : addSpecificProduct(product))}
+                                                    className={`w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-50 ${selected ? 'bg-orange-50/70' : ''}`}
+                                                >
+                                                    {thumb ? (
+                                                        <img src={thumb} alt="" className="h-9 w-9 rounded object-cover border border-gray-200" />
+                                                    ) : (
+                                                        <div className="h-9 w-9 rounded bg-gray-100 border border-gray-200" />
+                                                    )}
+                                                    <span className="text-sm text-gray-700 flex-1 min-w-0 truncate">{product.name}</span>
+                                                    <span className={`text-xs font-semibold shrink-0 ${selected ? 'text-orange-700' : 'text-gray-500'}`}>
+                                                        {selected ? 'Remove' : 'Add'}
+                                                    </span>
+                                                </button>
+                                            )
+                                        })
+                                    )}
+                                </div>
                                 <p className="text-xs text-gray-500 mt-1">
-                                    Hold Ctrl/Cmd to select multiple. Leave empty for all products.
+                                    {formData.specificProducts.length} product(s) selected. Leave empty to apply to all products.
                                 </p>
                             </div>
 

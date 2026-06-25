@@ -9,6 +9,7 @@ import User from '@/models/User';
 import Address from '@/models/Address';
 import Store from '@/models/Store';
 import Coupon from '@/models/Coupon';
+import SpinLog from '@/models/SpinLog';
 import GuestUser from '@/models/GuestUser';
 import Wallet from '@/models/Wallet';
 import PersonalizedOffer from '@/models/PersonalizedOffer';
@@ -26,8 +27,11 @@ import { allocateShortOrderNumber } from '@/lib/orderNumber';
 import { ensurePersistedShortOrderNumber, ensurePersistedShortOrderNumbers } from '@/lib/orderDisplayServer';
 import { fetchNormalizedDelhiveryTracking } from '@/lib/delhivery';
 import { createTamaraSession } from '@/lib/tamara';
+import { buildCheckoutRedirectUrl, resolveTamaraMerchantBaseUrl } from '@/lib/checkoutOrigin';
+import { getProductAbsoluteUrl } from '@/lib/productUrl';
 import { createTabbySession } from '@/lib/tabby';
 import { normalizeEmail } from '@/lib/orderIdentity';
+import { getCouponAccessErrorAsync } from '@/lib/couponAccess';
 import { linkGuestOrdersToUser, resolveContactForGuestLinking } from '@/lib/linkGuestOrders';
 import { getAuth } from '@/lib/firebase-admin';
 import { recordPurchaseFromOrder, shouldRecordPurchaseOnCreate } from '@/lib/serverCustomerTracking';
@@ -249,6 +253,10 @@ export async function POST(request) {
         if (normalizedCouponCode) {
             coupon = await Coupon.findOne({ code: normalizedCouponCode }).lean();
             if (!coupon) return NextResponse.json({ error: 'Coupon not found' }, { status: 400 });
+            const couponAccessError = await getCouponAccessErrorAsync(coupon, userId, SpinLog);
+            if (couponAccessError) {
+                return NextResponse.json({ error: couponAccessError }, { status: 400 });
+            }
             if (coupon.forNewUser) {
                 const userorders = await Order.find({ userId }).lean();
                 if (userorders.length > 0) return NextResponse.json({ error: 'Coupon valid for new users' }, { status: 400 });
@@ -918,7 +926,7 @@ export async function POST(request) {
 
         // Tamara BNPL payment
         if (paymentMethod === 'TAMARA') {
-            const origin = request.headers.get('origin') || process.env.NEXT_PUBLIC_BASE_URL || 'https://store1920.com';
+            const origin = resolveTamaraMerchantBaseUrl(request);
             const primaryOrderId = orderIds[0] || '';
             // Build consumer info from the saved order address
             const primaryOrder = await Order.findById(primaryOrderId).populate('addressId').lean();
@@ -933,35 +941,49 @@ export async function POST(request) {
             // Build items from all orders
             const allOrders = await Order.find({ _id: { $in: orderIds } }).populate('orderItems.productId').lean();
             const tamaraItems = allOrders.flatMap(o =>
-                (o.orderItems || []).map(item => ({
-                    productId: item.productId?._id?.toString() || String(item.productId),
-                    name: item.productId?.name || 'Product',
-                    sku: item.productId?._id?.toString() || String(item.productId),
-                    quantity: item.quantity,
-                    unit_price: item.price,
-                    total_amount: Number((item.price * item.quantity).toFixed(2)),
-                }))
+                (o.orderItems || []).map(item => {
+                    const product = item.productId && typeof item.productId === 'object' ? item.productId : null;
+                    return {
+                        productId: product?._id?.toString() || String(item.productId),
+                        name: product?.name || 'Product',
+                        slug: product?.slug || '',
+                        useProductsPath: product?.useProductsPath === true,
+                        sku: product?._id?.toString() || String(item.productId),
+                        quantity: item.quantity,
+                        unit_price: item.price,
+                        total_amount: Number((item.price * item.quantity).toFixed(2)),
+                        item_url: product ? getProductAbsoluteUrl(product, origin) : undefined,
+                    };
+                })
             );
-
-            const notificationUrl = `${origin}/api/tamara/webhook?tamaraToken=__TOKEN__`;
 
             const tamaraResult = await createTamaraSession({
                 orderId: primaryOrderId,
                 amount: fullAmount,
+                siteUrl: origin,
                 consumer: { first_name: firstName, last_name: lastName, email, phone_number: phoneNumber },
                 shippingAddress: {
                     first_name: firstName,
                     last_name: lastName,
-                    line1: addr.street || '',
-                    city: addr.city || '',
+                    line1: addr.street || addr.address || addr.line1 || 'UAE',
+                    city: addr.city || 'Dubai',
                     country_code: 'AE',
                     phone_number: phoneNumber,
                 },
                 items: tamaraItems,
-                successUrl: `${origin}/order-success?orderId=${primaryOrderId}&tamara=1`,
-                failureUrl: `${origin}/order-failed?orderId=${primaryOrderId}&reason=${encodeURIComponent('Tamara payment failed')}`,
-                cancelUrl: `${origin}/order-failed?orderId=${primaryOrderId}&reason=${encodeURIComponent('Payment cancelled')}`,
-                notificationUrl: `${origin}/api/tamara/webhook`,
+                successUrl: buildCheckoutRedirectUrl(origin, '/order-success', {
+                    orderId: primaryOrderId,
+                    tamara: '1',
+                }),
+                failureUrl: buildCheckoutRedirectUrl(origin, '/order-failed', {
+                    orderId: primaryOrderId,
+                    reason: 'Tamara payment failed',
+                }),
+                cancelUrl: buildCheckoutRedirectUrl(origin, '/order-failed', {
+                    orderId: primaryOrderId,
+                    reason: 'Payment cancelled',
+                }),
+                notificationUrl: buildCheckoutRedirectUrl(origin, '/api/tamara/webhook'),
                 description: `Order #${primaryOrderId}`,
             });
 

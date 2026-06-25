@@ -5,6 +5,7 @@ import Link from 'next/link'
 import axios from 'axios'
 import { auth } from '@/lib/firebase'
 import { onAuthStateChanged } from 'firebase/auth'
+import { STORE1920_SUPPORT_EMAIL } from '@/lib/storeContact'
 
 export default function SupportPage() {
   const [user, setUser] = useState(null)
@@ -103,7 +104,7 @@ export default function SupportPage() {
   const supportOptions = [
     { icon: '❓', title: 'Quick Answers', desc: 'Find answers to common questions', link: '/faq' },
     { icon: '✓', title: 'Track Order', desc: 'Check your order status', link: '/track-order' },
-    { icon: '↩️', title: 'Return Items', desc: 'Start a return or replacement', link: '/return-request' },
+    { icon: '↩️', title: 'Return Items', desc: 'Start a return or replacement', link: '/orders' },
     { icon: '💬', title: 'FAQ & Help', desc: 'Browse our help center', link: '/help' },
   ]
 
@@ -272,7 +273,7 @@ export default function SupportPage() {
                     <span className="text-2xl">📧</span>
                     <div>
                       <p className="font-medium text-slate-800">Email</p>
-                      <a href="mailto:support@Store1920.com" className="text-blue-600 hover:underline">support@Store1920.com</a>
+                      <a href={`mailto:${STORE1920_SUPPORT_EMAIL}`} className="text-blue-600 hover:underline">{STORE1920_SUPPORT_EMAIL}</a>
                       <p className="text-sm text-slate-600 mt-1">We reply within 24 hours</p>
                     </div>
                   </div>

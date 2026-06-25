@@ -3,7 +3,8 @@ import CategorySlider from '@/models/CategorySlider';
 import { NextResponse } from 'next/server';
 import { invalidateCategorySliderCaches } from '@/lib/categorySliderCache';
 import { resolveCategorySliderAccess, buildCategorySliderFilter } from '@/lib/categorySliderAccess';
-import { normalizeCategorySliderBackground } from '@/lib/categorySliderTheme';
+import { normalizeCategorySliderBackground, normalizeCategorySliderSideImagePosition } from '@/lib/categorySliderTheme';
+import { sortCategorySliders, backfillCategorySliderSortOrdersIfNeeded } from '@/lib/categorySliderOrder';
 
 function parseAuthHeader(req) {
   const auth = req.headers.get('authorization') || req.headers.get('Authorization');
@@ -30,15 +31,21 @@ export async function GET(req) {
       return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
     }
 
-    const sliders = await CategorySlider.find({ storeId: { $in: scope.storeIds } }).lean();
+    await backfillCategorySliderSortOrdersIfNeeded(CategorySlider);
+
+    const sliders = sortCategorySliders(
+      await CategorySlider.find({ storeId: { $in: scope.storeIds } }).lean()
+    );
     
     // Ensure all fields including subtitle are present
     const slidersWithDefaults = sliders.map(slider => ({
       ...slider,
       subtitle: slider.subtitle || '',
       sideImage: slider.sideImage || '',
+      sideImagePosition: normalizeCategorySliderSideImagePosition(slider.sideImagePosition),
       cardsPerRow: slider.cardsPerRow === 5 ? 5 : 6,
       backgroundColor: normalizeCategorySliderBackground(slider.backgroundColor),
+      sortOrder: Number.isFinite(Number(slider.sortOrder)) ? Number(slider.sortOrder) : 0,
     }));
     
     console.log('📊 API returning sliders:', slidersWithDefaults);
@@ -67,7 +74,7 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
     }
 
-    const { title, subtitle, productIds, sideImage, cardsPerRow, backgroundColor } = await req.json();
+    const { title, subtitle, productIds, sideImage, sideImagePosition, cardsPerRow, backgroundColor } = await req.json();
     console.log('=== 💾 POST SLIDER START ===');
     console.log('💾 Raw request body - subtitle:', subtitle);
     console.log('💾 Subtitle is null:', subtitle === null);
@@ -107,14 +114,22 @@ export async function POST(req) {
       );
     }
 
+    const lastSlider = await CategorySlider.findOne()
+      .sort({ sortOrder: -1 })
+      .select('sortOrder')
+      .lean();
+    const nextSortOrder = (Number.isFinite(Number(lastSlider?.sortOrder)) ? Number(lastSlider.sortOrder) : -1) + 1;
+
     const sliderData = {
       storeId: scope.storeId,
       title: title.trim(),
       subtitle: subtitleValue,
       productIds,
       sideImage: sideImageValue,
+      sideImagePosition: normalizeCategorySliderSideImagePosition(sideImagePosition),
       cardsPerRow: Number(cardsPerRow) === 5 ? 5 : 6,
       backgroundColor: normalizeCategorySliderBackground(backgroundColor),
+      sortOrder: nextSortOrder,
     };
     console.log('💾 About to save with:', JSON.stringify(sliderData));
 

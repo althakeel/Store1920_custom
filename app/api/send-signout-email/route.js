@@ -36,7 +36,8 @@ export async function POST(req) {
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
                 line-height: 1.6;
                 color: #333;
-                max-width: 600px;
+                max-width: 620px;
+                width: 100%;
                 margin: 0 auto;
                 padding: 20px;
               }

@@ -27,8 +27,8 @@ const GCC_MARKETS = [
 ];
 
 const BNPL_PARTNERS = [
-  { key: 'tamara', name: 'Tamara', logoUrl: tamaraLogo.src, logoWidth: 74 },
-  { key: 'tabby', name: 'Tabby', logoUrl: tabbyLogo.src, logoWidth: 62 },
+  { key: 'tamara', name: 'Tamara', nameAr: 'تمارا', logoUrl: tamaraLogo.src, logoWidth: 74 },
+  { key: 'tabby', name: 'Tabby', nameAr: 'تابي', logoUrl: tabbyLogo.src, logoWidth: 62 },
 ];
 
 export default function TopBar({ initialLanguage = 'en' }) {
@@ -130,6 +130,13 @@ export default function TopBar({ initialLanguage = 'en' }) {
 
   const activeBnplPartner = BNPL_PARTNERS[activeBnplIndex];
   const isArabic = storefrontLanguage === 'ar';
+  const activeBnplPartnerName = isArabic ? activeBnplPartner.nameAr : activeBnplPartner.name;
+  const bnplBannerDesktop = isArabic
+    ? `قسّم مشترياتك إلى 4 دفعات مع ${activeBnplPartnerName}`
+    : `Split your purchase into 4 payments with ${activeBnplPartnerName}`;
+  const bnplBannerMobile = isArabic
+    ? `ادفع على 4 دفعات مع ${activeBnplPartnerName}`
+    : `Pay in 4 with ${activeBnplPartnerName}`;
   const languageLabel = isArabic ? 'العربية' : 'English';
   const languageShort = isArabic ? 'AR' : 'EN';
   const activeMarket = GCC_MARKETS.find((market) => market.code === storefrontMarket?.code) || GCC_MARKETS[0];
@@ -310,8 +317,8 @@ export default function TopBar({ initialLanguage = 'en' }) {
             <span className="text-xs font-bold text-gray-900">{activeBnplPartner.name}</span>
           )}
           <span className="min-w-0 text-[11px] leading-snug text-gray-700 sm:text-xs">
-            <span className="hidden sm:inline">Split your purchase into 4 payments with {activeBnplPartner.name}</span>
-            <span className="sm:hidden">Pay in 4 with {activeBnplPartner.name}</span>
+            <span className="hidden sm:inline">{bnplBannerDesktop}</span>
+            <span className="sm:hidden">{bnplBannerMobile}</span>
           </span>
         </div>
       </div>

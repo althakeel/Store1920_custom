@@ -12,7 +12,7 @@ import axios from "axios";
 import { useDispatch, useSelector } from "react-redux";
 
 import { addToCart, removeFromCart, deleteItemFromCart, setCartItemQuantity, setCartEntry, uploadCart } from "@/lib/features/cart/cartSlice";
-import { buildBundleCartEntry, resolveCartLinePricing, adjustBundleCartTier } from "@/lib/bulkBundleCart";
+import { buildBundleCartEntry, resolveCartLinePricing, adjustBundleCartTier, bundleCartSelectionMatches } from "@/lib/bulkBundleCart";
 import { decrementCartItem, incrementCartItem } from "@/lib/bundleCartActions";
 import MobileProductActions from "./MobileProductActions";
 import ProductShareButton from "./ProductShareButton";
@@ -397,7 +397,6 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const [isOrderingNow, setIsOrderingNow] = useState(false);
   const [showRatingBreakdown, setShowRatingBreakdown] = useState(false);
   const ratingBreakdownRef = useRef(null);
-  const [addedToCart, setAddedToCart] = useState(false);
   const [payLaterProvider, setPayLaterProvider] = useState(null);
   const [categoryMap, setCategoryMap] = useState({});
   const { user, getToken } = useAuth();
@@ -893,6 +892,10 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     setQuantity(qty);
   }, [bulkBundleTiers]);
 
+  const handleBundleTierSelect = useCallback((tier) => {
+    selectBulkBundleTier(tier);
+  }, [selectBulkBundleTier]);
+
   const cartLinePricing = useMemo(() => {
     if (!cartEntry || cartQty <= 0) {
       return { displayQuantity: cartQty, isBulkBundle: false, bundleTier: null };
@@ -1145,7 +1148,11 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
               <button
                 key={`${qty}-${idx}`}
                 type="button"
-                onClick={() => selectBulkBundleTier(qty)}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  handleBundleTierSelect(qty);
+                }}
                 disabled={rowOutOfStock}
                 className={`flex w-full items-center justify-between gap-3 rounded-lg border p-3 text-left transition-all ${
                   rowOutOfStock
@@ -2128,13 +2135,22 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     }
 
     notifyCartAdded();
-    setAddedToCart(true);
   };
 
-  const cartMatchesSelection = useMemo(
-    () => cartQty > 0 && cartVariantOptionsMatch(cartEntry?.variantOptions, cartVariantOptions),
-    [cartQty, cartEntry, cartVariantOptions],
-  );
+  const cartMatchesSelection = useMemo(() => {
+    if (cartQty <= 0) return false;
+    if (isBulkBundleProduct && !bundleCartSelectionMatches(cartEntry, product, selectedBundleQty)) {
+      return false;
+    }
+    return cartVariantOptionsMatch(cartEntry?.variantOptions, cartVariantOptions);
+  }, [
+    cartQty,
+    cartEntry,
+    cartVariantOptions,
+    isBulkBundleProduct,
+    product,
+    selectedBundleQty,
+  ]);
 
   useEffect(() => {
     if (cartMatchesSelection) return;
@@ -2157,10 +2173,6 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     }
     setQuantity(cartQty);
   }, [cartMatchesSelection, product?._id, cartQty, isCartBundleLine, cartBundleTier]);
-
-  useEffect(() => {
-    setAddedToCart(cartMatchesSelection);
-  }, [cartMatchesSelection]);
 
   // Toggle FBT product selection
   const toggleFbtProduct = (productId) => {
@@ -2243,6 +2255,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       productId: cartProductId,
       price: effPrice,
       variantOptions: cartVariantOptions,
+      maxQty: maxOrderQty,
     }));
     
     // Add selected FBT products
@@ -2659,7 +2672,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 </div>
               ) : null}
 
-              {isSelectionInStock ? (
+              {isSelectionInStock && !isBulkBundleProduct ? (
                 <ProductQuantitySelector
                   quantity={quantity}
                   maxOrderQty={maxOrderQty}
@@ -3163,7 +3176,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
             </div>
 
             {/* Quantity */}
-            {isSelectionInStock && !addedToCart ? (
+            {isSelectionInStock && !cartMatchesSelection ? (
               <ProductQuantitySelector
                 quantity={quantity}
                 maxOrderQty={maxOrderQty}
@@ -3178,7 +3191,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
             {/* Action Buttons */}
             <div className="mt-5" dir={isArabic ? 'rtl' : 'ltr'}>
-              {!addedToCart ? (
+              {!cartMatchesSelection ? (
                 <div className="space-y-3">
                   <button
                     onClick={handleAddToCart}
@@ -3225,6 +3238,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                       <button
                         type="button"
                         onClick={async () => {
+                          if (cartQty <= 0) return;
                           const pid = cartProductId;
                           if (isCartBundleLine) {
                             if (canDecreaseCartBundle) {
@@ -3259,6 +3273,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                       <button
                         type="button"
                         onClick={async () => {
+                          if (cartQty <= 0) return;
                           if (isCartBundleLine) {
                             if (!canIncreaseCartBundle) return;
                             incrementCartItem(dispatch, {

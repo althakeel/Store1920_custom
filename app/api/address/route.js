@@ -1,6 +1,7 @@
 import dbConnect from '@/lib/mongodb'
 import Address from '@/models/Address'
 import { getAuth } from '@/lib/firebase-admin'
+import { validateAddressPayload } from '@/lib/addressValidation'
 
 function parseAuthHeader(req) {
   const auth = req.headers.get('authorization') || req.headers.get('Authorization')
@@ -49,7 +50,7 @@ export async function POST(req) {
       name: addr.name,
       email: addr.email,
       street: addr.street,
-      city: addr.city,
+      city: addr.city || addr.district || addr.state || '',
       state: addr.state,
       district: addr.district || '',
       zip: addr.zip || '',
@@ -60,12 +61,9 @@ export async function POST(req) {
       alternatePhoneCode: addr.alternatePhoneCode || addr.phoneCode || '+971',
     }
 
-    // Basic validation
-    const required = ['name', 'street', 'city', 'state', 'country', 'phone']
-    for (const k of required) {
-      if (!data[k] || String(data[k]).trim() === '') {
-        return Response.json({ error: `Missing field: ${k}` }, { status: 400 })
-      }
+    const validationError = validateAddressPayload(data)
+    if (validationError) {
+      return Response.json({ error: validationError.message }, { status: 400 })
     }
 
     const newAddress = await Address.create(data)
@@ -110,6 +108,15 @@ export async function PUT(req) {
       phoneCode: addr.phoneCode ?? existing.phoneCode,
       alternatePhone: addr.alternatePhone ?? existing.alternatePhone,
       alternatePhoneCode: addr.alternatePhoneCode ?? existing.alternatePhoneCode,
+    }
+
+    if (!String(data.city || '').trim()) {
+      data.city = String(data.district || data.state || existing.city || '').trim()
+    }
+
+    const validationError = validateAddressPayload(data)
+    if (validationError) {
+      return Response.json({ error: validationError.message }, { status: 400 })
     }
 
     const updated = await Address.findByIdAndUpdate(id, data, { new: true })

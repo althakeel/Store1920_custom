@@ -10,7 +10,7 @@ import { getAppBaseUrl } from '@/lib/appUrl';
 
 function buildInviteEmailHtml({ storeName, inviteUrl }) {
   return `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto;">
+    <div style="font-family: Arial, sans-serif; max-width: 620px; width: 100%; margin: auto;">
       <h2 style="color: #ff6600;">Store1920 Store Invitation</h2>
       <p>Hello,</p>
       <p><b>${storeName}</b> has invited you to join their store team on <a href="https://store1920.store" style="color: #ff6600;">Store1920</a>.</p>

@@ -387,6 +387,19 @@ export async function PATCH(request) {
         buttonPath: body?.buttonPath,
       });
 
+      if (whatsapp?.success) {
+        await AbandonedCart.updateOne(
+          { _id: cartId, storeId },
+          {
+            $set: {
+              whatsappCheckoutReminderStatus: 'sent',
+              whatsappCheckoutReminderSentAt: new Date(),
+              whatsappCheckoutReminderError: null,
+            },
+          }
+        );
+      }
+
       return NextResponse.json({
         success: true,
         whatsapp,

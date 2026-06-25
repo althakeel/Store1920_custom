@@ -8,9 +8,12 @@ import { toast } from "react-hot-toast"
 import { useDispatch } from "react-redux"
 
 import { useAuth } from '@/lib/useAuth';
-import { UAE_EMIRATES, getUaeAreasForEmirate, isUaeCountry } from '@/lib/uaeEmirateAreas';
+import { UAE_EMIRATES, getUaeAreaOptionsForEmirate, isUaeCountry } from '@/lib/uaeEmirateAreas';
 import SearchableSelect from '@/components/SearchableSelect';
 import PhoneNumberField from '@/components/PhoneNumberField';
+import {
+    validateAddressPayload,
+} from '@/lib/addressValidation';
 import {
     getPhoneInputError,
     getPhoneValidationMessage,
@@ -56,6 +59,7 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
     const [editingAddress, setEditingAddress] = useState(null) // Track which address is being edited
     const [pincodeLoading, setPincodeLoading] = useState(false)
     const [pincodeError, setPincodeError] = useState('')
+    const [areaError, setAreaError] = useState('')
     const [pendingAddressId, setPendingAddressId] = useState(selectedAddressId || null)
     const [deletingAddressId, setDeletingAddressId] = useState(null)
 
@@ -169,6 +173,7 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
                 alternatePhoneCode: '+971',
                 id: null,
             })
+            setAreaError('')
         }
     }, [isEdit, initialAddress, editingAddress])
 
@@ -202,11 +207,15 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
                 state: value,
                 district: '',
             })
+            setAreaError('')
         } else {
             setAddress({
                 ...address,
                 [name]: value
             })
+            if (name === 'district') {
+                setAreaError('')
+            }
         }
     }
 
@@ -291,6 +300,20 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
                     return;
                 }
             }
+
+            const addressForValidation = {
+                ...address,
+                zip: normalizedZip,
+                phone: cleanedPhone,
+            };
+            const validationError = validateAddressPayload(addressForValidation);
+            if (validationError) {
+                if (validationError.field === 'district') {
+                    setAreaError(validationError.message);
+                }
+                toast.error(validationError.message);
+                return;
+            }
             
             const token = await getToken()
             
@@ -303,10 +326,6 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
             
             if (!addressData.zip || addressData.zip.trim() === '') {
                 delete addressData.zip
-            }
-            // Remove district if not present or empty (to match Prisma schema)
-            if (!addressData.district) {
-                delete addressData.district;
             }
             
             if (isEdit && addressData.id) {
@@ -325,6 +344,7 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
                     onAddressAdded(data.newAddress);
                 }
             }
+            setAreaError('')
             setShowAddressModal(false)
             // Reset form state after save
             setAddress({
@@ -644,16 +664,26 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
 
                     {isUaeCountry(address.country) && address.state ? (
                         <div>
-                            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Area/District</label>
+                            <label className="mb-1.5 block text-sm font-semibold text-slate-700">Select area</label>
                             <SearchableSelect
                                 value={address.district}
-                                onChange={(value) => setAddress({ ...address, district: value })}
-                                options={getUaeAreasForEmirate(address.state)}
-                                placeholder="Select Area"
+                                onChange={(value) => {
+                                    setAreaError('');
+                                    setAddress({ ...address, district: value });
+                                }}
+                                options={getUaeAreaOptionsForEmirate(address.state, address.district)}
+                                placeholder="Select area"
                                 searchPlaceholder="Search area..."
                                 emptyMessage="No areas found"
+                                listHint={`Showing ${getUaeAreaOptionsForEmirate(address.state, address.district).length} areas in ${address.state} — scroll or type to search`}
+                                allowCustomValue
+                                formatCustomOption={(area) => `Use "${area}"`}
+                                hasError={Boolean(areaError)}
                                 required
                             />
+                            {areaError ? (
+                                <p className="mt-1 text-xs font-medium text-red-600">{areaError}</p>
+                            ) : null}
                         </div>
                     ) : !isUaeCountry(address.country) ? (
                         <div>

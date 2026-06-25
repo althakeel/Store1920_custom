@@ -39,7 +39,7 @@ import {
   getPhoneValidationMessage,
   isValidPhoneNumber,
 } from '@/lib/phoneValidation';
-import { UAE_EMIRATES, getUaeAreasForEmirate, isUaeCountry } from "@/lib/uaeEmirateAreas";
+import { UAE_EMIRATES, getUaeAreaOptionsForEmirate, getUaeAreasForEmirate, isUaeCountry } from "@/lib/uaeEmirateAreas";
 import SearchableSelect from "@/components/SearchableSelect";
 import PhoneNumberField from "@/components/PhoneNumberField";
 import Creditimage1 from '../../../assets/creditcards/19 - Copy.webp';
@@ -121,6 +121,7 @@ export default function CheckoutPage() {
   const [showAllOrderItemsModal, setShowAllOrderItemsModal] = useState(false);
   const [editingAddressId, setEditingAddressId] = useState(null);
   const [abandonSaved, setAbandonSaved] = useState(false);
+  const [abandonHeartbeat, setAbandonHeartbeat] = useState(0);
   const [tabbyCardLoaded, setTabbyCardLoaded] = useState(false);
 
   // Coupon logic
@@ -162,9 +163,10 @@ export default function CheckoutPage() {
     return '';
   };
   
-  const handleApplyCoupon = async (e) => {
-    e.preventDefault();
-    if (!coupon.trim()) {
+  const handleApplyCoupon = async (e, codeOverride) => {
+    if (e?.preventDefault) e.preventDefault();
+    const codeToApply = String(codeOverride ?? coupon ?? '').trim();
+    if (!codeToApply) {
       setCouponError("Enter a coupon code to see discount.");
       return;
     }
@@ -185,6 +187,7 @@ export default function CheckoutPage() {
       return;
     }
     
+    setCoupon(codeToApply);
     setCouponLoading(true);
     setCouponError("");
     
@@ -209,7 +212,7 @@ export default function CheckoutPage() {
       
       const cartProductIds = cartItemsArray.map((item) => item.productId);
       
-      console.log('Applying coupon:', coupon.toUpperCase());
+      console.log('Applying coupon:', codeToApply.toUpperCase());
       console.log('Order total:', itemsTotal);
       console.log('Cart products:', cartProductIds);
       
@@ -217,7 +220,7 @@ export default function CheckoutPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          code: coupon.toUpperCase(),
+          code: codeToApply.toUpperCase(),
           storeId: storeId,
           orderTotal: itemsTotal,
           userId: user.uid,
@@ -297,6 +300,16 @@ export default function CheckoutPage() {
     return () => { ignore = true; };
   }, [cartItems, dispatch, products]);
 
+  // Keep abandoned-checkout timer alive while customer is still on the page
+  useEffect(() => {
+    if (placingOrder || payingNow) return undefined;
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      setAbandonHeartbeat((count) => count + 1);
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [placingOrder, payingNow]);
+
   // Capture abandoned checkout (debounced)
   useEffect(() => {
     if (placingOrder || payingNow) return;
@@ -335,6 +348,7 @@ export default function CheckoutPage() {
             name: form.name || null,
             email: form.email || user?.email || null,
             phone: form.phone || null,
+            phoneCode: form.phoneCode || '+971',
             address: {
               country: form.country,
               state: form.state,
@@ -345,6 +359,17 @@ export default function CheckoutPage() {
             },
           },
         };
+
+        if (typeof window !== 'undefined' && (form.email || form.phone)) {
+          try {
+            localStorage.setItem('store1920_guest_contact', JSON.stringify({
+              name: form.name || null,
+              email: form.email || null,
+              phone: form.phone || null,
+              phoneCode: form.phoneCode || '+971',
+            }));
+          } catch (_) {}
+        }
 
         await fetch('/api/abandoned-checkout', {
           method: 'POST',
@@ -360,7 +385,7 @@ export default function CheckoutPage() {
     }, 1500);
 
     return () => clearTimeout(timer);
-  }, [form, cartItems, products, user, placingOrder, payingNow]);
+  }, [form, cartItems, products, user, placingOrder, payingNow, abandonHeartbeat]);
 
   // Fetch addresses for logged-in users
   useEffect(() => {
@@ -424,8 +449,11 @@ export default function CheckoutPage() {
         console.log('Fetching coupons for store:', storeIdValue);
         const couponUrl = `/api/coupons?storeId=${storeIdValue}`;
         console.log('Coupon URL:', couponUrl);
-        
-        const res = await fetch(couponUrl);
+
+        const token = user ? await getToken() : null;
+        const res = await fetch(couponUrl, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
         
         if (!res.ok) {
           console.error('Coupons API returned status:', res.status);
@@ -489,7 +517,7 @@ export default function CheckoutPage() {
     }, 500);
     
     return () => clearTimeout(timer);
-  }, []);
+  }, [user, getToken]);
 
   // Check if Razorpay is already loaded (in case script loaded before state update)
   useEffect(() => {
@@ -680,6 +708,21 @@ export default function CheckoutPage() {
     && isUaeCountry(form.country)
     && String(form.state || '').trim()
     && !String(form.district || '').trim();
+  const selectedAddressForView = form.addressId ? addressList.find((a) => a._id === form.addressId) : null;
+  const isLoggedInAreaMissing = Boolean(
+    user
+    && selectedAddressForView
+    && isUaeCountry(selectedAddressForView.country || form.country)
+    && String(selectedAddressForView.state || '').trim()
+    && !String(selectedAddressForView.district || '').trim(),
+  );
+  const isLoggedInDistrictMissing = Boolean(
+    user
+    && selectedAddressForView
+    && isIndiaCountry(selectedAddressForView.country || form.country)
+    && String(selectedAddressForView.state || '').trim()
+    && !String(selectedAddressForView.district || '').trim(),
+  );
   const renderPayByMethodLabel = (methodKey) => (
     <span className="font-normal">
       {t('checkout.payBy')}{' '}
@@ -694,7 +737,6 @@ export default function CheckoutPage() {
     if (form.payment === 'wallet') return renderPayByMethodLabel('Wallet');
     return needsPaymentSelection ? t('checkout.selectPayment') : t('checkout.placeOrder');
   };
-  const selectedAddressForView = form.addressId ? addressList.find((a) => a._id === form.addressId) : null;
   const shouldShowPhoneRequired =
     !!user &&
     addressList.length > 0 &&
@@ -882,6 +924,8 @@ export default function CheckoutPage() {
       'guest-pincode': 'Pincode',
       'checkout-payment': t('checkout.selectPaymentRequired'),
       'checkout-address': t('checkout.fillAddress'),
+      'checkout-address-area': t('checkout.selectAreaRequired'),
+      'checkout-address-district': t('checkout.selectDistrict'),
     };
     return messageMap[fieldId] || (isArabic ? 'هذا الحقل مطلوب' : 'This field is required');
   };
@@ -934,10 +978,13 @@ export default function CheckoutPage() {
     setValidationAlertOpen(true);
     scrollToCheckoutField(issues[0]?.id);
 
-    const areaIssue = rawIssues.find((issue) => issue.id === 'guest-area');
+    const areaIssue = rawIssues.find((issue) => issue.id === 'guest-area' || issue.id === 'checkout-address-area');
+    const districtIssue = rawIssues.find((issue) => issue.id === 'guest-district' || issue.id === 'checkout-address-district');
     const message = areaIssue
       ? t('checkout.selectAreaRequired')
-      : t('checkout.pleaseCompleteField').replace('{field}', issues[0]?.label || '');
+      : districtIssue
+        ? t('checkout.selectDistrict')
+        : t('checkout.pleaseCompleteField').replace('{field}', issues[0]?.label || '');
 
     setFormError(message);
     setSidebarPayError(message);
@@ -2197,7 +2244,15 @@ export default function CheckoutPage() {
               {addressList.length > 0 && !addressFetchError ? (
                 <div id="checkout-address">
                   {/* Shipping Address Section - Noon.com Style */}
-                  <div className={`bg-white rounded-lg border ${fieldHasError('checkout-address') ? 'border-red-300 ring-2 ring-red-100' : 'border-gray-200'}`}>
+                  <div className={`bg-white rounded-lg border ${
+                    fieldHasError('checkout-address')
+                    || fieldHasError('checkout-address-area')
+                    || fieldHasError('checkout-address-district')
+                    || isLoggedInAreaMissing
+                    || isLoggedInDistrictMissing
+                      ? 'border-red-300 ring-2 ring-red-100'
+                      : 'border-gray-200'
+                  }`}>
                     <div className="px-4 py-3 border-b border-gray-200">
                       <div className="flex items-center justify-between">
                         <span className="text-sm font-semibold text-gray-700">{t('checkout.address')}</span>
@@ -2267,6 +2322,27 @@ export default function CheckoutPage() {
                     )}
                   </div>
                 {fieldRequiredHint('checkout-address')}
+                {fieldRequiredHint('checkout-address-area')}
+                {fieldRequiredHint('checkout-address-district')}
+                {(isLoggedInAreaMissing || isLoggedInDistrictMissing) && !fieldHasError('checkout-address-area') && !fieldHasError('checkout-address-district') ? (
+                  <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+                    <p className="text-sm font-medium text-red-700">
+                      {isLoggedInAreaMissing ? t('checkout.selectAreaRequired') : t('checkout.selectDistrict')}
+                    </p>
+                    <button
+                      type="button"
+                      className="mt-2 text-sm font-semibold text-red-700 underline"
+                      onClick={() => {
+                        if (selectedAddressForView?._id) {
+                          setEditingAddressId(selectedAddressForView._id);
+                        }
+                        setShowAddressModal(true);
+                      }}
+                    >
+                      {isArabic ? 'تحديث العنوان' : 'Update address'}
+                    </button>
+                  </div>
+                ) : null}
                 
                 {/* Phone Number Section - Show for logged-in users if missing from address */}
                 {shouldShowPhoneRequired && (
@@ -2442,10 +2518,16 @@ export default function CheckoutPage() {
                               setSidebarPayError('');
                               setForm((f) => ({ ...f, district: value }));
                             }}
-                            options={districts}
+                            options={getUaeAreaOptionsForEmirate(form.state, form.district)}
                             placeholder={t('checkout.selectArea')}
                             searchPlaceholder="Search area..."
-                            emptyMessage="No areas found"
+                            emptyMessage={t('checkout.noAreasFound')}
+                            listHint={t('checkout.areaListHint', {
+                              count: getUaeAreaOptionsForEmirate(form.state, form.district).length,
+                              emirate: form.state,
+                            })}
+                            allowCustomValue
+                            formatCustomOption={(area) => t('checkout.useCustomArea', { area })}
                             required
                             hasError={fieldHasError('guest-area') || isGuestAreaMissing}
                             triggerClassName={checkoutSelectClass}
@@ -2871,9 +2953,9 @@ export default function CheckoutPage() {
             >
               {sidebarPayError}
             </p>
-          ) : isGuestAreaMissing ? (
+          ) : isGuestAreaMissing || isLoggedInAreaMissing || isLoggedInDistrictMissing ? (
             <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
-              {t('checkout.selectAreaRequired')}
+              {isLoggedInDistrictMissing ? t('checkout.selectDistrict') : t('checkout.selectAreaRequired')}
             </p>
           ) : null}
           <button
@@ -2973,9 +3055,9 @@ export default function CheckoutPage() {
             >
               {sidebarPayError}
             </p>
-          ) : isGuestAreaMissing ? (
+          ) : isGuestAreaMissing || isLoggedInAreaMissing || isLoggedInDistrictMissing ? (
             <p className="mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
-              {t('checkout.selectAreaRequired')}
+              {isLoggedInDistrictMissing ? t('checkout.selectDistrict') : t('checkout.selectAreaRequired')}
             </p>
           ) : null}
           <button
@@ -3287,13 +3369,11 @@ export default function CheckoutPage() {
                         {isEligible ? (
                           <button
                             type="button"
-                            onClick={() => {
-                              setCoupon(cpn.code);
-                              setCouponError('');
-                            }}
-                            className="ml-2 whitespace-nowrap px-3 py-1.5 rounded-md bg-green-600 hover:bg-green-700 text-white text-xs font-semibold"
+                            disabled={couponLoading}
+                            onClick={() => handleApplyCoupon({ preventDefault: () => {} }, cpn.code)}
+                            className="ml-2 whitespace-nowrap px-3 py-1.5 rounded-md bg-green-600 hover:bg-green-700 text-white text-xs font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
                           >
-                            {t('checkout.useCode')}
+                            {couponLoading ? 'Applying...' : t('checkout.useCode')}
                           </button>
                         ) : (
                           <button
@@ -3306,9 +3386,6 @@ export default function CheckoutPage() {
                         )}
                       </div>
                       <p className="text-xs text-gray-600">{cpn.description}</p>
-                      {isEligible && (
-                        <p className="text-[11px] text-gray-500 mt-2">Select code, then click Apply above.</p>
-                      )}
                     </div>
                   );
                 })

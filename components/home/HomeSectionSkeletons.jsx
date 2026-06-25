@@ -1,5 +1,6 @@
 import {
   CAROUSEL_PRODUCT_CARD_CLASS,
+  CATEGORY_SLIDER_LAYOUT_CLASS,
   CATEGORY_SLIDER_SIDE_IMAGE_SIZE_CLASS,
   HOME_PRODUCT_GRID_CLASS,
   HOME_SECTION_CLASS,
@@ -124,7 +125,7 @@ export function HomeSideImageSliderSkeleton({
   return (
     <div className="w-full min-w-0" aria-hidden="true">
       <div
-        className={`${withSideImage ? 'lg:grid lg:w-full lg:max-w-full lg:grid-cols-[auto_minmax(0,1fr)] lg:items-stretch lg:gap-4 xl:gap-5' : ''}`}
+        className={`${withSideImage ? CATEGORY_SLIDER_LAYOUT_CLASS : ''}`}
       >
         {withSideImage ? (
           <div
@@ -133,7 +134,7 @@ export function HomeSideImageSliderSkeleton({
         ) : null}
 
         <div
-          className={`min-w-0 ${withSideImage ? 'max-lg:bg-white lg:rounded-2xl lg:bg-[#f3f0ff] lg:px-4 lg:py-3' : ''}`}
+          className={`min-w-0 ${withSideImage ? 'max-lg:bg-white lg:min-w-0 lg:flex-1 lg:rounded-2xl lg:bg-[#f3f0ff] lg:px-4 lg:py-3' : ''}`}
         >
           {showTitle ? <HomeSectionTitleSkeleton /> : null}
           <div className={`flex gap-3 overflow-hidden ${withSideImage ? 'lg:w-full' : ''}`}>

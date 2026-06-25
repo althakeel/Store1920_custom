@@ -1,7 +1,9 @@
 import dbConnect from "@/lib/mongodb";
 import Coupon from "@/models/Coupon";
 import Order from "@/models/Order";
+import SpinLog from "@/models/SpinLog";
 import { getAuth } from "@/lib/firebase-admin";
+import { getCouponAccessErrorAsync } from "@/lib/couponAccess";
 import { NextResponse } from "next/server";
 
 async function getUserOrderCount(userId, storeId = null) {
@@ -44,6 +46,11 @@ export async function POST(request) {
 
         if (!coupon) {
             return NextResponse.json({ error: "Coupon not found or expired" }, { status: 404 });
+        }
+
+        const accessError = await getCouponAccessErrorAsync(coupon, userId, SpinLog);
+        if (accessError) {
+            return NextResponse.json({ error: accessError }, { status: 403 });
         }
 
         if (coupon.storeId && storeId && coupon.storeId !== storeId) {

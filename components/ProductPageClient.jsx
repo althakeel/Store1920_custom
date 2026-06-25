@@ -4,6 +4,7 @@ import { Component, useEffect, useRef, useState } from "react";
 import axios from "axios";
 import { useStorefrontI18n } from "@/lib/useStorefrontI18n";
 import ProductDetails from "@/components/ProductDetails";
+import ProductPageSkeleton from "@/components/ProductPageSkeleton";
 
 function ProductDetailsLoadError({ onRetry, detail }) {
   return (
@@ -189,25 +190,13 @@ export default function ProductPageClient({ slug, initialData }) {
     }
   };
 
-  if (!product) {
-    return (
-      <div className="py-16 text-center">
-        <div className="text-lg text-slate-400">Product not found.</div>
-        <p className="mt-2 text-sm text-slate-500">
-          The product you&apos;re looking for doesn&apos;t exist or has been removed.
-        </p>
-      </div>
-    );
+  if (!product || refreshingLanguage) {
+    return <ProductPageSkeleton />;
   }
 
   return (
-    <div className="w-full">
-      {refreshingLanguage ? (
-        <div className="pointer-events-none mx-auto w-full max-w-[1400px] px-4 py-6 pb-8 opacity-60 sm:px-6">
-          <div className="h-96 animate-pulse rounded-xl bg-slate-100" />
-        </div>
-      ) : (
-        <ProductDetailsErrorBoundary>
+    <div className="relative w-full">
+      <ProductDetailsErrorBoundary>
           <ProductDetails
             product={product}
             reviews={reviews}
@@ -219,7 +208,6 @@ export default function ProductPageClient({ slug, initialData }) {
             fbtPreloaded
           />
         </ProductDetailsErrorBoundary>
-      )}
     </div>
   );
 }

@@ -40,6 +40,7 @@ export default function Cart() {
     const shippingFee = 0;
     const [deletingKeys, setDeletingKeys] = useState({});
     const [pendingRemove, setPendingRemove] = useState(null);
+    const [cartHeartbeat, setCartHeartbeat] = useState(0);
 
 
     // Load only cart product IDs via batch API (never download full catalog)
@@ -204,6 +205,74 @@ export default function Cart() {
             window.removeEventListener('focus', syncFromServer);
         };
     }, [user, dispatch]);
+
+    // Keep abandoned-cart timer alive while customer is still on the cart page
+    useEffect(() => {
+        const interval = setInterval(() => {
+            if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+            setCartHeartbeat((count) => count + 1);
+        }, 30000);
+        return () => clearInterval(interval);
+    }, []);
+
+    // Refresh signed-in abandoned cart activity while the page stays open
+    useEffect(() => {
+        if (!user) return;
+        if (!Object.keys(cartItems || {}).length) return;
+        dispatch(uploadCart({ getToken }));
+    }, [user, cartItems, cartHeartbeat, dispatch, getToken]);
+
+    // Track guest abandoned carts (debounced)
+    useEffect(() => {
+        if (user) return;
+        const cartEntries = Object.entries(cartItems || {});
+        if (!cartEntries.length || !productsLoaded) return;
+
+        const timer = setTimeout(async () => {
+            let guestContact = null;
+            try {
+                guestContact = JSON.parse(localStorage.getItem('store1920_guest_contact') || 'null');
+            } catch (_) {}
+
+            const guestEmail = guestContact?.email?.trim() || null;
+            const guestPhone = guestContact?.phone?.trim() || null;
+            if (!guestEmail && !guestPhone) return;
+
+            const items = cartEntries.map(([key, value]) => {
+                const productId = getCartEntryProductId(key, value);
+                const quantity = getCartEntryQuantity(value);
+                const product = products.find((p) => String(p._id) === String(productId));
+                if (!productId || quantity <= 0 || isFreeGiftEntry(value)) return null;
+                const pricing = resolveCartLinePricing(product, value, quantity);
+                return {
+                    productId,
+                    quantity,
+                    price: pricing.unitPrice,
+                    name: product?.name || 'Product',
+                    variantOptions: typeof value === 'object' ? value?.variantOptions || null : null,
+                };
+            }).filter(Boolean);
+
+            if (!items.length) return;
+
+            try {
+                await fetch('/api/guest/abandoned-cart', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        items,
+                        guestEmail,
+                        guestPhone,
+                        guestName: guestContact?.name || null,
+                        guestPhoneCode: guestContact?.phoneCode || '+971',
+                    }),
+                    keepalive: true,
+                });
+            } catch (_) {}
+        }, 1500);
+
+        return () => clearTimeout(timer);
+    }, [user, cartItems, products, productsLoaded, cartHeartbeat]);
 
     const handleDeleteItemFromCart = async (cartKey) => {
         const key = String(cartKey || '');

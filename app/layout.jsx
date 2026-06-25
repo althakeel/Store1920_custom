@@ -10,8 +10,11 @@ import {
 } from "@/lib/storefrontLanguage";
 import { GTM_ID, getGtmHeadScript, getGtmNoscriptSrc } from "@/lib/gtm";
 import { META_PIXEL_ID, getMetaPixelBootstrapScript } from "@/lib/metaPixelConfig";
+import OrganizationJsonLd from "@/components/OrganizationJsonLd";
+import { SITE_URL } from "@/lib/sitemapData";
 
 export const metadata = {
+  metadataBase: new URL(SITE_URL),
   title: "store1920 - Shop smarter",
   description:
     "Discover trending gadgets, fashion, home essentials & more at the best price. Fast delivery, secure checkout, and deals you don't want to miss.",
@@ -71,6 +74,7 @@ export default async function RootLayout({ children }) {
         )}
         <link rel="dns-prefetch" href="https://www.googletagmanager.com" />
         <link rel="preconnect" href="https://www.googletagmanager.com" crossOrigin="anonymous" />
+        <link rel="sitemap" type="application/xml" title="Sitemap" href="/sitemap.xml" />
       </head>
       <body className="overflow-x-clip antialiased" suppressHydrationWarning>
         <Script
@@ -99,6 +103,7 @@ export default async function RootLayout({ children }) {
         />
         {/* Add Navbar and Footer globally via ClientLayout */}
         <ClientLayout initialStorefrontLanguage={storefrontLanguage}>{children}</ClientLayout>
+        <OrganizationJsonLd />
       </body>
     </html>
   );

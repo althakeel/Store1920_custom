@@ -80,6 +80,15 @@ const nextConfig = {
     serverExternalPackages: ['mongoose', 'firebase-admin', 'sharp'],
     turbopack: {},
 
+    async rewrites() {
+        return [
+            {
+                source: '/sitemap.xml',
+                destination: '/sitemap-index.xml',
+            },
+        ];
+    },
+
     webpack: (config, { dev }) => {
         config.module.rules.push({
             test: /\.mp3$/i,

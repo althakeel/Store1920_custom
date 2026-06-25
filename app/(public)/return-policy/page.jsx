@@ -1,100 +1,294 @@
 'use client';
 
+import Link from 'next/link';
 import PolicyPageLayout from '@/components/PolicyPageLayout';
+import { useStorefrontI18n } from '@/lib/useStorefrontI18n';
+import {
+  STORE1920_CUSTOMER_SUPPORT_PHONE,
+  STORE1920_CUSTOMER_SUPPORT_TEL,
+  STORE1920_SUPPORT_EMAIL,
+} from '@/lib/storeContact';
+import PolicyContactBlock from '@/components/PolicyContactBlock';
+
+const EMAIL_SPLIT_PATTERN = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g;
+const EMAIL_MATCH_PATTERN = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+const PHONE_SPLIT_PATTERN = /(\b8007861920\b)/g;
+
+function PolicyText({ children, className = 'text-gray-700 mt-2 first:mt-0' }) {
+  if (typeof children !== 'string') {
+    return <p className={className}>{children}</p>;
+  }
+
+  const withPhoneParts = children.split(PHONE_SPLIT_PATTERN);
+
+  return (
+    <p className={className}>
+      {withPhoneParts.map((segment, segmentIndex) => {
+        if (segment === STORE1920_CUSTOMER_SUPPORT_PHONE) {
+          return (
+            <a
+              key={`phone-${segmentIndex}`}
+              href={STORE1920_CUSTOMER_SUPPORT_TEL}
+              className="text-orange-600 underline"
+            >
+              {segment}
+            </a>
+          );
+        }
+
+        const parts = segment.split(EMAIL_SPLIT_PATTERN);
+        return parts.map((part, index) => (
+          EMAIL_MATCH_PATTERN.test(part) ? (
+            <a key={`${part}-${segmentIndex}-${index}`} href={`mailto:${part}`} className="text-orange-600 underline">
+              {part}
+            </a>
+          ) : (
+            <span key={`${part}-${segmentIndex}-${index}`}>{part}</span>
+          )
+        ));
+      })}
+    </p>
+  );
+}
+
+function buildPageCopy() {
+  const supportLineEn = `Need help? Email ${STORE1920_SUPPORT_EMAIL} or call our toll-free number ${STORE1920_CUSTOMER_SUPPORT_PHONE}.`;
+  const supportLineAr = `للمساعدة، راسلنا على ${STORE1920_SUPPORT_EMAIL} أو اتصل على الرقم المجاني ${STORE1920_CUSTOMER_SUPPORT_PHONE}.`;
+
+  return {
+  en: {
+    title: 'Return, Refund & Exchange Policy',
+    intro:
+      'At Store1920, your satisfaction is our priority. Please read the policy below before requesting a return or refund.',
+    sections: [
+      {
+        title: '1. Return Window & Eligible Cases',
+        paragraphs: [
+          'Items can be returned after notifying us within 3 days from the date of delivery in either of these cases:',
+          'All returns must be in original packaging and in the same condition in which they were received.',
+          'You can request a return directly on our website — sign in, go to My Orders, open your delivered order, and submit a Return Request.',
+        ],
+        bullets: [
+          'Products that are damaged',
+          'Orders that arrive incomplete (not total order)',
+          'Fastest option: use the online Return Request form from your order page',
+        ],
+      },
+      {
+        title: '2. Return Conditions',
+        paragraphs: [
+          'To be eligible for a return, your item must be unused, in the same condition you received it, and in original packaging.',
+        ],
+      },
+      {
+        title: '3. Non-Returnable Items',
+        paragraphs: ['Several types of goods are exempt from being returned:'],
+        bullets: [
+          'Non-brand electronics, cosmetics, and similar items (contact us to confirm eligibility)',
+          'Intimate or sanitary goods',
+          'Hazardous materials, flammable liquids, or gases',
+          'Gift cards',
+          'Downloadable software products',
+          'Some health and personal care items',
+        ],
+      },
+      {
+        title: '4. Return Requirements',
+        bullets: [
+          'A receipt or proof of purchase is required to complete your return.',
+          'Please do not send your purchase back to the manufacturer.',
+        ],
+      },
+      {
+        title: '5. Partial Refund Cases (if applicable)',
+        paragraphs: ['Only partial refunds may be granted in certain situations, including:'],
+        bullets: [
+          'Book with obvious signs of use',
+          'Opened CD, DVD, VHS tape, software, video game, cassette tape, or vinyl record',
+          'Any item not in original condition, damaged, or missing parts for reasons not due to our error',
+        ],
+      },
+      {
+        title: '6. Refunds (if applicable)',
+        paragraphs: [
+          'Once your return is received and inspected, we will notify you by email about approval or rejection of your refund.',
+          'If approved, your refund will be processed and credited to your original payment method within a certain number of days.',
+          'For returns, we can arrange return collection. Courier charges must be paid by the customer, or the customer can return directly to our partner store in Deira.',
+        ],
+      },
+      {
+        title: '7. Late or Missing Refunds',
+        paragraphs: ['If you still have not received your refund, contact our support team:', supportLineEn],
+        bullets: [
+          'Check your bank account again.',
+          'Contact your credit card company; posting can take time.',
+          'Contact your bank; processing times can vary.',
+        ],
+      },
+      {
+        title: '8. Sale Items',
+        paragraphs: ['Only regular-priced items may be refunded. Sale items are non-refundable.'],
+      },
+      {
+        title: '9. Exchanges',
+        paragraphs: ['We currently do not offer exchanges.'],
+      },
+      {
+        title: '10. Gifts',
+        paragraphs: ['We currently do not offer refunds if your item was a gift.'],
+      },
+      {
+        title: '11. Shipping for Returns',
+        paragraphs: [
+          `To return your product, submit a Return Request from My Orders or contact customer service at ${STORE1920_SUPPORT_EMAIL}.`,
+          'You are responsible for paying return shipping costs. Shipping costs are non-refundable. If a refund is issued, return shipping cost will be deducted from your refund.',
+          'Delivery times for returned/replaced products may vary depending on your location.',
+        ],
+      },
+    ],
+  },
+  ar: {
+    title: 'سياسة الإرجاع والاسترداد والاستبدال',
+    intro:
+      'في Store1920، رضاك أولويتنا. يرجى قراءة السياسة أدناه قبل طلب الإرجاع أو الاسترداد.',
+    sections: [
+      {
+        title: '1. مدة الإرجاع والحالات المؤهلة',
+        paragraphs: [
+          'يمكن إرجاع المنتجات بعد إخطارنا خلال 3 أيام من تاريخ التسليم في إحدى الحالتين التاليتين:',
+          'يجب أن تكون جميع المرتجعات في عبوتها الأصلية وبنفس الحالة التي استلمتها بها.',
+          'يمكنك طلب الإرجاع مباشرة من موقعنا — سجّل الدخول، ثم اذهب إلى طلباتي، وافتح الطلب المُسلّم، وقدّم طلب إرجاع.',
+        ],
+        bullets: [
+          'المنتجات التالفة',
+          'الطلبات التي تصل ناقصة (وليس الطلب بالكامل)',
+          'الخيار الأسرع: استخدم نموذج طلب الإرجاع من صفحة الطلب',
+        ],
+      },
+      {
+        title: '2. شروط الإرجاع',
+        paragraphs: [
+          'لتكون مؤهلاً للإرجاع، يجب أن يكون المنتج غير مستخدم، وبنفس الحالة التي استلمته بها، وفي عبوته الأصلية.',
+        ],
+      },
+      {
+        title: '3. المنتجات غير القابلة للإرجاع',
+        paragraphs: ['هناك عدة أنواع من السلع مستثناة من الإرجاع:'],
+        bullets: [
+          'الإلكترونيات غير العلامة التجارية ومستحضرات التجميل وما شابه (تواصل معنا للتأكد من الأهلية)',
+          'السلع الحميمة أو الصحية',
+          'المواد الخطرة أو السوائل أو الغازات القابلة للاشتعال',
+          'بطاقات الهدايا',
+          'منتجات البرمجيات القابلة للتنزيل',
+          'بعض منتجات الصحة والعناية الشخصية',
+        ],
+      },
+      {
+        title: '4. متطلبات الإرجاع',
+        bullets: [
+          'مطلوب إيصال أو إثبات شراء لإتمام الإرجاع.',
+          'يرجى عدم إرسال مشترياتك مباشرة إلى الشركة المصنعة.',
+        ],
+      },
+      {
+        title: '5. حالات الاسترداد الجزئي (إن وجدت)',
+        paragraphs: ['قد يُمنح استرداد جزئي فقط في حالات معينة، بما في ذلك:'],
+        bullets: [
+          'كتاب بعلامات استخدام واضحة',
+          'قرص مضغوط أو DVD أو شريط VHS أو برنامج أو لعبة فيديو أو شريط كاسيت أو أسطوانة فينيل مفتوح',
+          'أي منتج ليس في حالته الأصلية أو تالف أو تنقصه أجزاء لأسباب لا تعود إلى خطأ من جانبنا',
+        ],
+      },
+      {
+        title: '6. الاسترداد (إن وجد)',
+        paragraphs: [
+          'بمجرد استلام مرتجعك وفحصه، سنخطرك عبر البريد الإلكتروني بالموافقة على الاسترداد أو رفضه.',
+          'إذا تمت الموافقة، سيتم معالجة الاسترداد وإضافته إلى طريقة الدفع الأصلية خلال عدد معين من الأيام.',
+          'للإرجاع، يمكننا ترتيب استلام المرتجع. يتحمل العميل رسوم شركة الشحن، أو يمكن للعميل الإرجاع مباشرة إلى متجر شريكنا في ديرة.',
+        ],
+      },
+      {
+        title: '7. تأخر الاسترداد أو فقده',
+        paragraphs: ['إذا لم تستلم الاسترداد بعد، تواصل مع فريق الدعم:', supportLineAr],
+        bullets: [
+          'تحقق من حسابك البنكي مرة أخرى.',
+          'تواصل مع شركة بطاقتك الائتمانية؛ قد يستغرق الإيداع وقتًا.',
+          'تواصل مع بنكك؛ قد تختلف أوقات المعالجة.',
+        ],
+      },
+      {
+        title: '8. منتجات التخفيضات',
+        paragraphs: ['يمكن استرداد المنتجات بسعرها العادي فقط. منتجات التخفيضات غير قابلة للاسترداد.'],
+      },
+      {
+        title: '9. الاستبدال',
+        paragraphs: ['لا نقدم حاليًا خدمة الاستبدال.'],
+      },
+      {
+        title: '10. الهدايا',
+        paragraphs: ['لا نقدم حاليًا استردادًا إذا كان المنتج هدية.'],
+      },
+      {
+        title: '11. شحن المرتجعات',
+        paragraphs: [
+          `لإرجاع منتجك، قدّم طلب إرجاع من صفحة طلباتي أو تواصل مع خدمة العملاء عبر ${STORE1920_SUPPORT_EMAIL}.`,
+          'أنت مسؤول عن دفع تكاليف شحن الإرجاع. تكاليف الشحن غير قابلة للاسترداد. إذا تم إصدار استرداد، سيتم خصم تكلفة شحن الإرجاع من مبلغ الاسترداد.',
+          'قد تختلف مواعيد تسليم المنتجات المرتجعة أو المستبدلة حسب موقعك.',
+        ],
+      },
+    ],
+  },
+  };
+}
 
 export default function ReturnPolicyPage() {
+  const { isArabic } = useStorefrontI18n();
+  const pageCopy = buildPageCopy();
+  const copy = isArabic ? pageCopy.ar : pageCopy.en;
+
   return (
-    <PolicyPageLayout>
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Return, Refund & Exchange Policy</h1>
-        <p className="text-gray-600 mb-8">At Store1920, your satisfaction is our priority. Please read the policy below before requesting a return or refund.</p>
+    <PolicyPageLayout dir={isArabic ? 'rtl' : undefined}>
+      <h1 className="text-3xl font-bold text-gray-900 mb-2">{copy.title}</h1>
+      <p className="text-gray-600 mb-4">{copy.intro}</p>
+      <div className="mb-8 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-gray-800">
+        {isArabic ? (
+          <>
+            اطلب الإرجاع من الموقع مباشرة من{' '}
+            <Link href="/orders" className="font-semibold text-orange-700 underline">طلباتي</Link>
+            {' '}أو صفحة{' '}
+            <Link href="/return-request" className="font-semibold text-orange-700 underline">طلب الإرجاع</Link>.
+          </>
+        ) : (
+          <>
+            Request a return on the website from{' '}
+            <Link href="/orders" className="font-semibold text-orange-700 underline">My Orders</Link>
+            {' '}or the{' '}
+            <Link href="/return-request" className="font-semibold text-orange-700 underline">Return Request</Link>
+            {' '}page.
+          </>
+        )}
+      </div>
 
-        <div className="space-y-6 border border-gray-200 rounded-xl p-6">
-          <section>
-            <h2 className="font-semibold text-gray-900 mb-2">1. Return Window & Eligible Cases</h2>
-            <p className="text-gray-700 mb-2">Items can be returned after notifying us within <span className="font-medium">3 days</span> from the date of delivery in either of these cases:</p>
-            <ul className="list-disc pl-6 text-gray-700 space-y-1">
-              <li>Products that are damaged</li>
-              <li>Orders that arrive incomplete (not total order)</li>
-            </ul>
-            <p className="text-gray-700 mt-3">All returns must be in original packaging and in the same condition in which they were received.</p>
-            <p className="text-gray-700 mt-2">For returns, contact: <a href="mailto:Store192065@gmail.com" className="text-orange-600 underline">Store192065@gmail.com</a></p>
+      <div className="space-y-6 border border-gray-200 rounded-xl p-6">
+        {copy.sections.map((section) => (
+          <section key={section.title}>
+            <h2 className="font-semibold text-gray-900 mb-2">{section.title}</h2>
+            {section.paragraphs?.map((paragraph) => (
+              <PolicyText key={paragraph}>{paragraph}</PolicyText>
+            ))}
+            {section.bullets?.length ? (
+              <ul className="list-disc ml-6 text-gray-700 mt-2 space-y-1">
+                {section.bullets.map((bullet) => (
+                  <li key={bullet}>{bullet}</li>
+                ))}
+              </ul>
+            ) : null}
           </section>
-
-          <section>
-            <h2 className="font-semibold text-gray-900 mb-2">2. Return Conditions</h2>
-            <p className="text-gray-700">To be eligible for a return, your item must be unused, in the same condition you received it, and in original packaging.</p>
-          </section>
-
-          <section>
-            <h2 className="font-semibold text-gray-900 mb-2">3. Non-Returnable Items</h2>
-            <p className="text-gray-700 mb-2">Several types of goods are exempt from being returned:</p>
-            <ul className="list-disc pl-6 text-gray-700 space-y-1">
-              <li>Non-brand electronics, cosmetics, and similar items (contact us to confirm eligibility)</li>
-              <li>Intimate or sanitary goods</li>
-              <li>Hazardous materials, flammable liquids, or gases</li>
-              <li>Gift cards</li>
-              <li>Downloadable software products</li>
-              <li>Some health and personal care items</li>
-            </ul>
-          </section>
-
-          <section>
-            <h2 className="font-semibold text-gray-900 mb-2">4. Return Requirements</h2>
-            <ul className="list-disc pl-6 text-gray-700 space-y-1">
-              <li>A receipt or proof of purchase is required to complete your return.</li>
-              <li>Please do not send your purchase back to the manufacturer.</li>
-            </ul>
-          </section>
-
-          <section>
-            <h2 className="font-semibold text-gray-900 mb-2">5. Partial Refund Cases (if applicable)</h2>
-            <p className="text-gray-700 mb-2">Only partial refunds may be granted in certain situations, including:</p>
-            <ul className="list-disc pl-6 text-gray-700 space-y-1">
-              <li>Book with obvious signs of use</li>
-              <li>Opened CD, DVD, VHS tape, software, video game, cassette tape, or vinyl record</li>
-              <li>Any item not in original condition, damaged, or missing parts for reasons not due to our error</li>
-            </ul>
-          </section>
-
-          <section>
-            <h2 className="font-semibold text-gray-900 mb-2">6. Refunds (if applicable)</h2>
-            <p className="text-gray-700">Once your return is received and inspected, we will notify you by email about approval or rejection of your refund.</p>
-            <p className="text-gray-700 mt-2">If approved, your refund will be processed and credited to your original payment method within a certain number of days.</p>
-            <p className="text-gray-700 mt-2">For returns, we can arrange return collection. Courier charges must be paid by the customer, or the customer can return directly to our partner store in Deira.</p>
-          </section>
-
-          <section>
-            <h2 className="font-semibold text-gray-900 mb-2">7. Late or Missing Refunds</h2>
-            <ul className="list-disc pl-6 text-gray-700 space-y-1">
-              <li>Check your bank account again.</li>
-              <li>Contact your credit card company; posting can take time.</li>
-              <li>Contact your bank; processing times can vary.</li>
-            </ul>
-            <p className="text-gray-700 mt-2">If you still have not received your refund, contact: <a href="mailto:Store192065@gmail.com" className="text-orange-600 underline">Store192065@gmail.com</a></p>
-          </section>
-
-          <section>
-            <h2 className="font-semibold text-gray-900 mb-2">8. Sale Items</h2>
-            <p className="text-gray-700">Only regular-priced items may be refunded. Sale items are non-refundable.</p>
-          </section>
-
-          <section>
-            <h2 className="font-semibold text-gray-900 mb-2">9. Exchanges</h2>
-            <p className="text-gray-700">We currently do not offer exchanges.</p>
-          </section>
-
-          <section>
-            <h2 className="font-semibold text-gray-900 mb-2">10. Gifts</h2>
-            <p className="text-gray-700">We currently do not offer refunds if your item was a gift.</p>
-          </section>
-
-          <section>
-            <h2 className="font-semibold text-gray-900 mb-2">11. Shipping for Returns</h2>
-            <p className="text-gray-700">To return your product, contact customer service at <a href="mailto:support@Store1920.com" className="text-orange-600 underline">support@Store1920.com</a>.</p>
-            <p className="text-gray-700 mt-2">You are responsible for paying return shipping costs. Shipping costs are non-refundable. If a refund is issued, return shipping cost will be deducted from your refund.</p>
-            <p className="text-gray-700 mt-2">Delivery times for returned/replaced products may vary depending on your location.</p>
-          </section>
-        </div>
+        ))}
+      </div>
+      <div className="mt-6 border border-gray-200 rounded-xl p-6">
+        <PolicyContactBlock isArabic={isArabic} />
+      </div>
     </PolicyPageLayout>
   );
 }

@@ -393,7 +393,13 @@ export async function POST(request) {
             // Fetch active coupons
             const coupons = await Coupon.find({
                 isActive: true,
-                expiresAt: { $gte: new Date() }
+                expiresAt: { $gte: new Date() },
+                $or: [
+                    { assignedUserId: { $exists: false } },
+                    { assignedUserId: null },
+                    { assignedUserId: '' },
+                ],
+                isPublic: { $ne: false },
             })
                 .select('code discountValue discountType description minOrderValue forNewUser forMember')
                 .lean();

@@ -7,7 +7,7 @@ import { NextResponse } from 'next/server'
 const DEFAULT_TEMPLATE = {
   subject: 'New Product Alert: {{productName}}',
   template: `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+    <div style="font-family: Arial, sans-serif; max-width: 620px; width: 100%; margin: 0 auto;">
       <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center; color: white;">
         <h1 style="margin: 0;">🎉 New Product Arrived!</h1>
       </div>

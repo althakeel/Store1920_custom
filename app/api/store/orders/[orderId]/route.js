@@ -84,8 +84,13 @@ export async function PUT(request, { params }) {
                     },
                     body: JSON.stringify({
                         orderId: updatedOrder._id.toString(),
-                        email: existingOrder.userId.email,
-                        customerName: existingOrder.userId.name,
+                        shortOrderNumber: existingOrder.shortOrderNumber,
+                        email: existingOrder.userId?.email
+                          || existingOrder.guestEmail
+                          || existingOrder.shippingAddress?.email,
+                        customerName: existingOrder.userId?.name
+                          || existingOrder.guestName
+                          || existingOrder.shippingAddress?.name,
                         status: statusForEmail,
                         trackingId: updatedOrder.trackingId,
                         trackingUrl: updatedOrder.trackingUrl,

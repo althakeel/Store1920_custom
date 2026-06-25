@@ -11,7 +11,10 @@ import {
   sendOrderPaidWhatsApp,
   sendOrderReminderWhatsApp,
   sendOrderShippedWhatsApp,
+  sendOrderDeliveredWhatsApp,
+  sendPromotionalOfferWhatsApp,
 } from '@/lib/whatsapp/orderNotifications';
+import { WABA_TEMPLATE_NAMES } from '@/lib/whatsapp/templates';
 
 const ALLOWED_TEMPLATES = new Set([
   'cart_reminder',
@@ -20,6 +23,8 @@ const ALLOWED_TEMPLATES = new Set([
   'order_confirmation',
   'order_paid',
   'order_shipped',
+  'order_delivered',
+  'promotional_offer',
 ]);
 
 function getOrderPhone(order = {}) {
@@ -118,6 +123,32 @@ export async function POST(request) {
       case 'order_shipped':
         whatsapp = await sendOrderShippedWhatsApp(order);
         break;
+      case 'order_delivered':
+        whatsapp = await sendOrderDeliveredWhatsApp(order);
+        break;
+      case 'promotional_offer': {
+        const customer = getOrderPhone(order);
+        if (!customer.phone) {
+          return NextResponse.json({ error: 'No customer phone on this order' }, { status: 400 });
+        }
+        const { buildWhatsAppProductPayload } = await import('@/lib/whatsapp/productPayload');
+        const firstItem = Array.isArray(order.orderItems) ? order.orderItems[0] : null;
+        const product = firstItem?.productId && typeof firstItem.productId === 'object'
+          ? buildWhatsAppProductPayload(firstItem.productId)
+          : null;
+        whatsapp = await sendPromotionalOfferWhatsApp({
+          customerName: customer.customerName,
+          phone: customer.phone,
+          phoneCode: customer.phoneCode,
+          couponCode: body?.couponCode || order?.coupon?.code,
+          discountLabel: body?.discountLabel
+            || (order?.coupon?.discountType === 'percentage'
+              ? `${order?.coupon?.discount}%`
+              : order?.coupon?.discount),
+          product,
+        });
+        break;
+      }
       default:
         return NextResponse.json({ error: 'Unsupported WhatsApp template' }, { status: 400 });
     }
@@ -135,12 +166,15 @@ export async function GET() {
   return NextResponse.json({
     success: true,
     templates: {
-      cartReminder: 'cart_reminder_1920',
-      abandonedCheckout: 'cart_reminder_1920',
-      orderConfirmation: 'order_confirmation_final',
-      paidOrderConfirmation: 'confirmation_paid_order',
-      orderShipped: 'order_shipped',
-      orderReminder: 'order_reminder_',
+      cartReminder: WABA_TEMPLATE_NAMES.cartReminder,
+      abandonedCheckout: WABA_TEMPLATE_NAMES.abandonedCheckout,
+      codConfirmation: WABA_TEMPLATE_NAMES.codConfirmation,
+      orderDelivered: WABA_TEMPLATE_NAMES.orderDelivered,
+      promotionalOffer: WABA_TEMPLATE_NAMES.promotionalOffer,
+      orderConfirmation: WABA_TEMPLATE_NAMES.codConfirmation,
+      paidOrderConfirmation: WABA_TEMPLATE_NAMES.paidOrderConfirmation,
+      orderShipped: WABA_TEMPLATE_NAMES.orderShipped,
+      orderReminder: WABA_TEMPLATE_NAMES.orderReminder,
     },
     usage: 'POST with { template, cartId? | orderId? }',
   });

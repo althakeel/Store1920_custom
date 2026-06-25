@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import Logo from "@/assets/logo/Store1920.png";
 import { useStorefrontI18n } from '@/lib/useStorefrontI18n';
 import { HOME_SECTION_INNER_CLASS } from '@/lib/storefrontCarousel';
+import { STORE1920_SUPPORT_EMAIL } from '@/lib/storeContact';
 
 const NAVBAR_APPEARANCE_CACHE_KEY = 'navbarAppearanceCacheV1';
 
@@ -135,6 +136,7 @@ const Footer = () => {
                 { text: t('footer.termsOfSale'), path: '/terms-of-sale', icon: null },
                 { text: t('footer.shippingPolicy'), path: '/shipping-policy', icon: null },
                 { text: t('footer.privacyPolicy'), path: '/privacy-policy', icon: null },
+                { text: t('footer.returnRefund'), path: '/return-policy', icon: null },
                 { text: t('footer.cancellationRefunds'), path: '/cancellation-and-refunds', icon: null },
                 { text: t('footer.contactUs'), path: '/contact-us', icon: null },
                 { text: t('footer.sitemap'), path: '/sitemap', icon: null },
@@ -225,8 +227,8 @@ const Footer = () => {
                         <div className="space-y-3 mb-6">
                             <div className="flex items-center gap-2 text-sm">
                                 <MailIcon />
-                                <a href="mailto:support@Store1920.com" className="text-slate-400 hover:text-white transition">
-                                    support@Store1920.com
+                                <a href={`mailto:${STORE1920_SUPPORT_EMAIL}`} className="text-slate-400 hover:text-white transition">
+                                    {STORE1920_SUPPORT_EMAIL}
                                 </a>
                             </div>
                             <div className="flex items-center gap-2 text-sm">

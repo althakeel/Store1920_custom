@@ -2,11 +2,12 @@ import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Product from '@/models/Product';
 import AbandonedCart from '@/models/AbandonedCart';
+import { scheduleAbandonedCartWhatsAppReminder } from '@/lib/abandonedCheckoutWhatsAppReminder';
 
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { items, guestEmail, guestPhone, guestName } = body || {};
+    const { items, guestEmail, guestPhone, guestName, guestPhoneCode } = body || {};
 
     if (!Array.isArray(items) || items.length === 0) {
       return NextResponse.json({ error: 'No items provided' }, { status: 400 });
@@ -50,8 +51,14 @@ export async function POST(request) {
 
     const now = new Date();
 
+    const phoneCode = guestPhoneCode?.trim() || '+971';
+
     // Save guest cart to each store
     for (const [storeId, storeItems] of grouped.entries()) {
+      const cartTotal = storeItems.reduce(
+        (sum, item) => sum + (Number(item.price || 0) * Number(item.quantity || 0)),
+        0
+      );
       const filter = {
         storeId,
         $or: [
@@ -69,16 +76,25 @@ export async function POST(request) {
             name: guestName?.trim() || null,
             email,
             phone,
+            phoneCode,
             address: null,
             items: storeItems,
-            cartTotal: null,
-            currency: null,
+            cartTotal,
+            currency: process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || 'AED',
             lastSeenAt: now,
             source: 'guest-cart',
+            status: 'active',
           },
         },
         { upsert: true }
       );
+
+      if (phone) {
+        await scheduleAbandonedCartWhatsAppReminder(
+          { storeId, ...filter, status: 'active' },
+          { now, phone }
+        );
+      }
     }
 
     return NextResponse.json({ ok: true, message: 'Guest cart tracked' });

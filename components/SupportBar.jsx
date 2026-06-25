@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useStorefrontI18n } from '@/lib/useStorefrontI18n';
 import { HOME_SECTION_INNER_CLASS } from '@/lib/storefrontCarousel';
+import { STORE1920_SUPPORT_EMAIL } from '@/lib/storeContact';
 
 const NAVBAR_APPEARANCE_CACHE_KEY = 'navbarAppearanceCache';
 const DEFAULT_NAVBAR_BG = '#8f3404';
@@ -91,14 +92,14 @@ export default function SupportBar() {
         </div>
 
         <a
-          href="mailto:support@Store1920.com"
-          title="support@Store1920.com"
-          aria-label="Email support at support@Store1920.com"
+          href={`mailto:${STORE1920_SUPPORT_EMAIL}`}
+          title={STORE1920_SUPPORT_EMAIL}
+          aria-label={`Email support at ${STORE1920_SUPPORT_EMAIL}`}
           className="inline-flex shrink-0 items-center gap-1 rounded-full bg-white/10 px-2 py-1 text-[10px] font-medium text-white transition hover:bg-white/16 sm:gap-1.5 sm:bg-white/12 sm:px-3 sm:py-1 sm:text-[13px] sm:hover:bg-white/18"
         >
           <MailIcon className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
           <span className="sm:hidden">{t('support.emailShort')}</span>
-          <span className="hidden sm:inline">support@Store1920.com</span>
+          <span className="hidden sm:inline">{STORE1920_SUPPORT_EMAIL}</span>
         </a>
       </div>
     </section>

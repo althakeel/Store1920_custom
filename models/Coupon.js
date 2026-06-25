@@ -30,11 +30,13 @@ const CouponSchema = new mongoose.Schema({
   oneTimePerUser: { type: Boolean, default: false },
   usageLimit: { type: Number },
   isPublic: { type: Boolean, default: true },
+  assignedUserId: { type: String, default: '', index: true },
 }, { timestamps: true });
 
 // Indexes for query performance
 CouponSchema.index({ code: 1, isActive: 1, expiresAt: 1 });        // Main validation on checkout
 CouponSchema.index({ storeId: 1, isActive: 1, expiresAt: -1 });    // Store coupon listings
+CouponSchema.index({ assignedUserId: 1, isActive: 1, expiresAt: -1 });
 CouponSchema.index({ forNewUser: 1, isActive: 1 });                 // New-user coupon lookups
 
 export default mongoose.models.Coupon || mongoose.model("Coupon", CouponSchema);

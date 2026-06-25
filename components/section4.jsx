@@ -6,12 +6,14 @@ import ProductCarousel from '@/components/ProductCarousel'
 import {
   CAROUSEL_PRODUCT_CARD_CLASS,
   CATEGORY_SLIDER_SIDE_IMAGE_CLASS,
+  CATEGORY_SLIDER_LAYOUT_CLASS,
   HOME_SECTION_CLASS,
   HOME_SECTION_GRID_INNER_CLASS,
   SIDE_IMAGE_SLIDER_PANEL_CLASS,
   getSideImageLayoutCardsPerRow,
 } from '@/lib/storefrontCarousel'
-import { normalizeCategorySliderBackground } from '@/lib/categorySliderTheme'
+import { normalizeCategorySliderBackground, normalizeCategorySliderSideImagePosition } from '@/lib/categorySliderTheme'
+import { useStorefrontI18n } from '@/lib/useStorefrontI18n'
 import { HomeSideImageSliderSkeleton } from '@/components/home/HomeSectionSkeletons'
 import BannerSlider from '@/components/BannerSlider'
 
@@ -79,6 +81,7 @@ function resolveSectionProducts(section) {
 }
 
 const HorizontalSlider = ({ section }) => {
+  const { isArabic } = useStorefrontI18n()
   const embeddedProducts = useMemo(() => resolveSectionProducts(section), [section.products])
   const [sectionProducts, setSectionProducts] = useState(embeddedProducts)
   const [loading, setLoading] = useState(
@@ -145,60 +148,69 @@ const HorizontalSlider = ({ section }) => {
 
   const sideImage = String(section.sideImage || '').trim()
   const hasSideImage = Boolean(sideImage)
+  const sideImagePosition = normalizeCategorySliderSideImagePosition(section.sideImagePosition)
+  const imageFirst = sideImagePosition === 'left'
   const cardsPerRow = getSideImageLayoutCardsPerRow(hasSideImage, section.cardsPerRow)
   const panelBackground = normalizeCategorySliderBackground(section.backgroundColor)
 
-  return (
-    <div className="w-full min-w-0">
-      <div
-        className={`${hasSideImage ? 'lg:grid lg:w-full lg:max-w-full lg:grid-cols-[auto_minmax(0,1fr)] lg:items-stretch lg:gap-4 xl:gap-5' : ''}`}
-      >
-        {hasSideImage ? (
-          <div className={CATEGORY_SLIDER_SIDE_IMAGE_CLASS}>
-            <Image
-              src={sideImage}
-              alt={section.title || 'Featured collection'}
-              fill
-              className="object-cover"
-              sizes="(min-width: 1536px) 320px, (min-width: 1280px) 280px, 240px"
-              priority={false}
-            />
-          </div>
+  const sideImageBlock = hasSideImage ? (
+    <div className={CATEGORY_SLIDER_SIDE_IMAGE_CLASS}>
+      <Image
+        src={sideImage}
+        alt={section.title || 'Featured collection'}
+        fill
+        className="object-cover"
+        sizes="(min-width: 1536px) 320px, (min-width: 1280px) 280px, 240px"
+        priority={false}
+      />
+    </div>
+  ) : null
+
+  const sliderPanel = (
+    <div
+      className={`min-w-0 ${hasSideImage
+        ? `${SIDE_IMAGE_SLIDER_PANEL_CLASS} lg:overflow-hidden lg:rounded-2xl lg:px-4 lg:py-3`
+        : 'w-full'}`}
+      style={hasSideImage ? { backgroundColor: panelBackground } : undefined}
+    >
+      <div className={`${hasSideImage ? 'mb-4 sm:mb-5 lg:mb-2 lg:shrink-0' : 'mb-4 sm:mb-5'}`}>
+        <h2 className={`font-bold text-gray-900 ${hasSideImage ? 'text-xl sm:text-2xl lg:line-clamp-1 lg:text-base xl:text-lg' : 'text-xl sm:text-2xl'}`}>
+          {section.title || section.category}
+        </h2>
+        {section.subtitle ? (
+          <p className={`text-gray-500 ${hasSideImage ? 'mt-0.5 text-xs sm:text-sm lg:line-clamp-1 lg:text-[10px] xl:text-xs' : 'mt-0.5 text-xs sm:text-sm'}`}>{section.subtitle}</p>
         ) : null}
+      </div>
 
-        <div
-          className={`min-w-0 ${hasSideImage
-            ? `${SIDE_IMAGE_SLIDER_PANEL_CLASS} lg:overflow-hidden lg:rounded-2xl lg:px-4 lg:py-3`
-            : 'w-full'}`}
-          style={hasSideImage ? { backgroundColor: panelBackground } : undefined}
-        >
-          <div className={`${hasSideImage ? 'mb-4 sm:mb-5 lg:mb-2 lg:shrink-0' : 'mb-4 sm:mb-5'}`}>
-            <h2 className={`font-bold text-gray-900 ${hasSideImage ? 'text-xl sm:text-2xl lg:line-clamp-1 lg:text-base xl:text-lg' : 'text-xl sm:text-2xl'}`}>
-              {section.title || section.category}
-            </h2>
-            {section.subtitle ? (
-              <p className={`text-gray-500 ${hasSideImage ? 'mt-0.5 text-xs sm:text-sm lg:line-clamp-1 lg:text-[10px] xl:text-xs' : 'mt-0.5 text-xs sm:text-sm'}`}>{section.subtitle}</p>
-            ) : null}
-          </div>
-
-          {loading ? (
-            <div className={`px-0 ${hasSideImage ? 'lg:min-h-0 lg:flex-1' : ''}`}>
-              <SkeletonLoader hasSideImage={hasSideImage} cardsPerRow={cardsPerRow} />
-            </div>
-          ) : (
-            <div className={hasSideImage ? 'lg:min-h-0 lg:flex-1 lg:w-full' : ''}>
-              <ProductCarousel
-                products={sectionProducts}
-                priorityCount={hasSideImage ? 5 : 4}
-                cardsPerRow={cardsPerRow}
-                compact={hasSideImage}
-                compactDesktopOnly={hasSideImage}
-                compactBottom={hasSideImage}
-                className="w-full"
-              />
-            </div>
-          )}
+      {loading ? (
+        <div className={`px-0 ${hasSideImage ? 'lg:min-h-0 lg:flex-1' : ''}`}>
+          <SkeletonLoader hasSideImage={hasSideImage} cardsPerRow={cardsPerRow} />
         </div>
+      ) : (
+        <div className={hasSideImage ? 'lg:min-h-0 lg:flex-1 lg:w-full' : ''}>
+          <ProductCarousel
+            products={sectionProducts}
+            priorityCount={hasSideImage ? 5 : 4}
+            cardsPerRow={cardsPerRow}
+            compact={hasSideImage}
+            compactDesktopOnly={hasSideImage}
+            compactBottom={hasSideImage}
+            className="w-full lg:overflow-hidden"
+          />
+        </div>
+      )}
+    </div>
+  )
+
+  return (
+    <div className="w-full min-w-0 max-w-full">
+      <div
+        className={`${hasSideImage ? CATEGORY_SLIDER_LAYOUT_CLASS : ''}`}
+        dir={hasSideImage ? (isArabic ? 'rtl' : 'ltr') : undefined}
+      >
+        {imageFirst ? sideImageBlock : null}
+        {sliderPanel}
+        {!imageFirst ? sideImageBlock : null}
       </div>
     </div>
   )

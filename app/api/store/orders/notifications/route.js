@@ -4,19 +4,16 @@ import Order from '@/models/Order';
 import { getAuth } from '@/lib/firebase-admin';
 import { resolveDashboardAccess } from '@/lib/storeAccessControl';
 import { canAccessDashboardArea } from '@/lib/storeDashboardPermissions';
+import { DEFERRED_PAYMENT_METHODS } from '@/lib/orderConfirmationPolicy';
+import { getOrderCustomerDisplayName } from '@/lib/orderDisplay';
+import { visibleStoreOrderMatch } from '@/lib/visibleStoreOrderMatch';
 
 export const dynamic = 'force-dynamic';
 
+const DEFERRED_METHODS = [...DEFERRED_PAYMENT_METHODS, 'CARD'];
+
 function getCustomerName(order = {}) {
-  if (order.isGuest) {
-    return order.guestName || order.guestEmail || 'Guest customer';
-  }
-
-  if (order.userId && typeof order.userId === 'object') {
-    return order.userId.name || order.userId.email || 'Customer';
-  }
-
-  return 'Customer';
+  return getOrderCustomerDisplayName(order);
 }
 
 export async function GET(request) {
@@ -51,10 +48,21 @@ export async function GET(request) {
     await connectDB();
 
     const orders = await Order.find({
-      storeId: String(access.storeId),
-      createdAt: { $gt: since },
+      $and: [
+        visibleStoreOrderMatch({ storeId: String(access.storeId) }),
+        {
+          $or: [
+            { createdAt: { $gt: since } },
+            {
+              updatedAt: { $gt: since },
+              isPaid: true,
+              paymentMethod: { $in: DEFERRED_METHODS },
+            },
+          ],
+        },
+      ],
     })
-      .select('_id total status shortOrderNumber guestName guestEmail isGuest userId orderItems createdAt paymentMethod')
+      .select('_id total status shortOrderNumber guestName guestEmail guestPhone isGuest userId shippingAddress orderItems createdAt paymentMethod')
       .sort({ createdAt: -1 })
       .limit(20)
       .lean();

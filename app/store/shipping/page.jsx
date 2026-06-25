@@ -7,7 +7,6 @@ import axios from 'axios'
 import toast from 'react-hot-toast'
 import { SaveIcon, TruckIcon, PackageIcon, DollarSignIcon, SearchIcon, XIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 import { useAuth } from '@/lib/useAuth'
-import { indiaStatesAndDistricts } from '@/assets/indiaStatesAndDistricts'
 import { UAE_EMIRATES } from '@/lib/uaeEmirateAreas'
 import {
   createEmptyShippingOption,
@@ -22,7 +21,7 @@ import {
 export default function StoreShippingSettings() {
   const { getToken } = useAuth()
   const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || 'AED'
-  const stateOptions = [...UAE_EMIRATES, ...indiaStatesAndDistricts.map((entry) => entry.state)]
+  const emirateOptions = UAE_EMIRATES
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [allProducts, setAllProducts] = useState([])
@@ -503,26 +502,26 @@ export default function StoreShippingSettings() {
 
                     <div className='mt-4'>
                       <label className='mb-2 block text-sm font-medium text-slate-700'>
-                        State / Emirate Restrictions (Optional)
+                        Emirate Restrictions (Optional)
                       </label>
                       <p className='mb-2 text-xs text-slate-500'>
-                        Leave empty to show this option everywhere. Select states to limit availability.
+                        Leave empty to show this option in all UAE emirates. Select emirates to limit availability.
                       </p>
                       <div className='flex max-h-36 flex-wrap gap-2 overflow-y-auto rounded-lg border border-slate-200 bg-white p-3'>
-                        {stateOptions.map((stateName) => {
-                          const selected = (option.availableStates || []).includes(stateName);
+                        {emirateOptions.map((emirateName) => {
+                          const selected = (option.availableStates || []).includes(emirateName);
                           return (
                             <button
-                              key={`${option.id}-${stateName}`}
+                              key={`${option.id}-${emirateName}`}
                               type='button'
-                              onClick={() => toggleOptionStateRestriction(option.id, stateName)}
+                              onClick={() => toggleOptionStateRestriction(option.id, emirateName)}
                               className={`rounded-full border px-2.5 py-1 text-xs font-medium transition ${
                                 selected
                                   ? 'border-slate-700 bg-slate-700 text-white'
                                   : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-400'
                               }`}
                             >
-                              {stateName}
+                              {emirateName}
                             </button>
                           );
                         })}

@@ -130,9 +130,11 @@ const Navbar = () => {
   const [walletCoins, setWalletCoins] = useState(0);
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchSuggestionResults, setSearchSuggestionResults] = useState([]);
+  const [searchSuggestionTotal, setSearchSuggestionTotal] = useState(0);
   const [searchSuggestionsLoading, setSearchSuggestionsLoading] = useState(false);
   const searchDebounceRef = useRef(null);
   const mobileSearchInputRef = useRef(null);
+  const SEARCH_SUGGESTIONS_PREVIEW = 3;
   const [showAddressModal, setShowAddressModal] = useState(false);
   const [selectedAddressId, setSelectedAddressId] = useState(null);
   // Initialize with safe defaults to avoid hydration mismatch
@@ -985,8 +987,9 @@ const Navbar = () => {
       clearTimeout(searchDebounceRef.current);
     }
 
-    if (query.length < 2) {
+    if (query.length < 1) {
       setSearchSuggestionResults([]);
+      setSearchSuggestionTotal(0);
       setSearchSuggestionsLoading(false);
       return undefined;
     }
@@ -995,15 +998,17 @@ const Navbar = () => {
       setSearchSuggestionsLoading(true);
       try {
         const { data } = await axios.get('/api/search-products', {
-          params: { keyword: query, limit: 8, includeOutOfStock: true },
+          params: { keyword: query, limit: SEARCH_SUGGESTIONS_PREVIEW, includeOutOfStock: true },
         });
         setSearchSuggestionResults(Array.isArray(data?.products) ? data.products : []);
+        setSearchSuggestionTotal(Number(data?.total) || 0);
       } catch {
         setSearchSuggestionResults([]);
+        setSearchSuggestionTotal(0);
       } finally {
         setSearchSuggestionsLoading(false);
       }
-    }, 280);
+    }, 220);
 
     return () => {
       if (searchDebounceRef.current) {
@@ -1016,12 +1021,12 @@ const Navbar = () => {
 
   const renderSearchSuggestionsDropdown = (wrapperClassName, onSelect) => {
     const query = search.trim();
-    if (!searchFocused || query.length < 2) return null;
+    if (!searchFocused || query.length < 1) return null;
 
     if (searchSuggestionsLoading) {
       return (
         <div className={wrapperClassName}>
-          <div className="px-4 py-3 text-sm text-gray-500">Searching...</div>
+          <div className="px-4 py-3 text-sm text-gray-500">{t('navbar.searchSearching')}</div>
         </div>
       );
     }
@@ -1029,18 +1034,22 @@ const Navbar = () => {
     if (!searchSuggestions.length) {
       return (
         <div className={wrapperClassName}>
-          <div className="px-4 py-3 text-sm text-gray-500">No products found</div>
+          <div className="px-4 py-3 text-sm text-gray-500">{t('navbar.searchNoProducts')}</div>
         </div>
       );
     }
 
+    const previewSuggestions = searchSuggestions.slice(0, SEARCH_SUGGESTIONS_PREVIEW);
+    const hasMoreResults = searchSuggestionTotal > SEARCH_SUGGESTIONS_PREVIEW;
+
     return (
       <div className={wrapperClassName}>
-        {searchSuggestions.map((product) => (
+        {previewSuggestions.map((product) => (
           <Link
             key={product._id || product.slug}
             href={getProductPath(product)}
             className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-slate-50"
+            onMouseDown={(event) => event.preventDefault()}
             onClick={() => {
               setSearchFocused(false);
               onSelect?.();
@@ -1065,20 +1074,22 @@ const Navbar = () => {
             </div>
           </Link>
         ))}
-        <button
-          type="button"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => {
-            const queryValue = search.trim();
-            if (!queryValue) return;
-            setSearchFocused(false);
-            onSelect?.();
-            router.push(`/shop?search=${encodeURIComponent(queryValue)}`);
-          }}
-          className="w-full border-t border-slate-100 px-4 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
-        >
-          View all results for &quot;{query}&quot;
-        </button>
+        {hasMoreResults ? (
+          <button
+            type="button"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              const queryValue = search.trim();
+              if (!queryValue) return;
+              setSearchFocused(false);
+              onSelect?.();
+              router.push(`/shop?search=${encodeURIComponent(queryValue)}`);
+            }}
+            className="w-full border-t border-slate-100 px-4 py-2.5 text-center text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            {t('navbar.searchShowMore')}
+          </button>
+        ) : null}
       </div>
     );
   };
@@ -1377,7 +1388,7 @@ const Navbar = () => {
           borderColor: 'rgba(15, 23, 42, 0.12)',
         }}
       >
-        <div className="flex min-w-0 items-center gap-1 overflow-hidden px-2 py-2 sm:gap-1.5 sm:px-3 sm:py-2.5">
+        <div className="flex min-w-0 items-center gap-1 overflow-visible px-2 py-2 sm:gap-1.5 sm:px-3 sm:py-2.5">
           <button
             type="button"
             onClick={() => setMobileMenuOpen((prev) => !prev)}
@@ -1403,7 +1414,7 @@ const Navbar = () => {
             />
           </Link>
 
-          <form onSubmit={handleSearch} className="relative min-w-0 flex-1">
+          <form onSubmit={handleSearch} className="relative z-[70] min-w-0 flex-1">
             <div
               className={`relative flex h-9 min-w-0 items-center rounded-full pl-2.5 pr-1 sm:pl-3 ${
                 mobileNavbarUsesBrandColor
@@ -1419,7 +1430,7 @@ const Navbar = () => {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 onFocus={() => setSearchFocused(true)}
-                onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
+                onBlur={() => setTimeout(() => setSearchFocused(false), 200)}
                 className="min-w-0 flex-1 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
               />
               {search.trim() ? (
@@ -1443,7 +1454,7 @@ const Navbar = () => {
             </div>
 
             {renderSearchSuggestionsDropdown(
-              'absolute left-0 right-0 top-full z-50 mt-2 max-h-80 overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-xl',
+              'absolute left-0 right-0 top-full z-[80] mt-2 max-h-80 overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-xl',
             )}
           </form>
 
@@ -1546,7 +1557,7 @@ const Navbar = () => {
           {/* Center — today's deals + search */}
           <div className="relative hidden min-w-0 flex-1 items-center justify-center gap-3 lg:flex xl:gap-4">
             {renderTodaysDealsButton({ variant: 'desktop' })}
-            <div className="relative min-w-0 w-full max-w-[440px] lg:max-w-[min(48vw,540px)] xl:max-w-[min(44vw,600px)] 2xl:max-w-[640px]">
+            <div className="relative z-[70] min-w-0 w-full max-w-[440px] lg:max-w-[min(48vw,540px)] xl:max-w-[min(44vw,600px)] 2xl:max-w-[640px]">
             <form
               onSubmit={handleSearch}
               className="w-full"
@@ -1579,7 +1590,7 @@ const Navbar = () => {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   onFocus={() => setSearchFocused(true)}
-                  onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
+                  onBlur={() => setTimeout(() => setSearchFocused(false), 200)}
                   className="min-w-0 flex-1 bg-transparent text-[14px] leading-none text-slate-800 outline-none placeholder:text-slate-400"
                 />
                 <button
@@ -1593,7 +1604,7 @@ const Navbar = () => {
               </div>
             </form>
             {renderSearchSuggestionsDropdown(
-              'absolute left-0 right-0 top-full z-[60] mt-2 max-h-80 overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-xl',
+              'absolute left-0 right-0 top-full z-[80] mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl',
             )}
             </div>
           </div>

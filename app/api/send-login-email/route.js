@@ -29,7 +29,8 @@ export async function POST(req) {
                 background: #f0f2f5;
               }
               .container {
-                max-width: 600px;
+                max-width: 620px;
+                width: 100%;
                 margin: 20px auto;
                 background: #fff;
                 border-radius: 16px;

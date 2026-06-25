@@ -28,6 +28,11 @@ const CategorySliderSchema = new mongoose.Schema(
       default: '',
       trim: true,
     },
+    sideImagePosition: {
+      type: String,
+      default: 'left',
+      enum: ['left', 'right'],
+    },
     cardsPerRow: {
       type: Number,
       default: 6,
@@ -38,12 +43,25 @@ const CategorySliderSchema = new mongoose.Schema(
       default: '#f3f0ff',
       trim: true,
     },
+    sortOrder: {
+      type: Number,
+      default: 0,
+      index: true,
+    },
   },
   { timestamps: true }
 );
 
 // Create compound index for efficient querying
 CategorySliderSchema.index({ storeId: 1, createdAt: -1 });
+
+if (mongoose.models.CategorySlider && !mongoose.models.CategorySlider.schema.paths.sortOrder) {
+  delete mongoose.models.CategorySlider;
+}
+
+if (mongoose.models.CategorySlider && !mongoose.models.CategorySlider.schema.paths.sideImagePosition) {
+  delete mongoose.models.CategorySlider;
+}
 
 if (mongoose.models.CategorySlider && !mongoose.models.CategorySlider.schema.paths.backgroundColor) {
   delete mongoose.models.CategorySlider;

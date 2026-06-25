@@ -125,7 +125,8 @@ export async function POST(request) {
         oneTimePerUser: true,
         expiresAt,
         isActive: true,
-        isPublic: true,
+        isPublic: false,
+        assignedUserId: userId,
         badgeColor: isFreeShipping ? "blue" : "green",
       });
     }
