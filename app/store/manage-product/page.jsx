@@ -91,7 +91,9 @@ export default function StoreManageProducts() {
         getProductThumbnailUrl(product, { fallback: '' })
     )
 
-    const [loading, setLoading] = useState(true)
+    const [initialLoading, setInitialLoading] = useState(true)
+    const [listLoading, setListLoading] = useState(false)
+    const hasLoadedOnceRef = useRef(false)
     const [products, setProducts] = useState([])
     const [totalProducts, setTotalProducts] = useState(0)
     const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -133,7 +135,8 @@ export default function StoreManageProducts() {
 
     const fetchStoreProducts = useCallback(async ({ page = currentPage, search = debouncedSearch, category = selectedCategory, silent = false } = {}) => {
         try {
-            if (!silent) setLoading(true)
+            if (silent) setListLoading(true)
+            else setInitialLoading(true)
              const token = await getToken()
              const { data } = await axios.get('/api/store/product', {
                 headers: { Authorization: `Bearer ${token}` },
@@ -156,7 +159,8 @@ export default function StoreManageProducts() {
         } catch (error) {
             toast.error(error?.response?.data?.error || error.message)
         } finally {
-            setLoading(false)
+            setInitialLoading(false)
+            setListLoading(false)
         }
     }, [currentPage, debouncedSearch, selectedCategory, pageSize, getToken])
 
@@ -508,7 +512,7 @@ export default function StoreManageProducts() {
         setShowEditModal(false)
         setEditingProduct(null)
         dispatch(fetchProductsAction(STOREFRONT_CATALOG_FETCH))
-        await fetchStoreProducts()
+        await fetchStoreProducts({ silent: true })
     }
 
     useEffect(() => {
@@ -529,11 +533,17 @@ export default function StoreManageProducts() {
 
     useEffect(() => {
         if (!user) return
-        fetchStoreProducts({ page: currentPage, search: debouncedSearch, category: selectedCategory })
+        fetchStoreProducts({
+            page: currentPage,
+            search: debouncedSearch,
+            category: selectedCategory,
+            silent: hasLoadedOnceRef.current,
+        })
+        hasLoadedOnceRef.current = true
     }, [user, currentPage, debouncedSearch, selectedCategory, pageSize, fetchStoreProducts])
 
     const handleImportComplete = async () => {
-        await fetchStoreProducts()
+        await fetchStoreProducts({ silent: true })
         dispatch(fetchProductsAction(STOREFRONT_CATALOG_FETCH))
     }
 
@@ -571,7 +581,7 @@ export default function StoreManageProducts() {
         }
     }, [currentPage, safeCurrentPage])
 
-    if (loading) return <Loading />
+    if (initialLoading && products.length === 0) return <Loading />
 
     const selectedVisibleProductIds = paginatedProducts
         .map((product) => String(product._id))
@@ -670,7 +680,7 @@ export default function StoreManageProducts() {
 
             toast.success(data?.message || 'Selected products deleted successfully')
             setSelectedProductIds([])
-            await fetchStoreProducts()
+            await fetchStoreProducts({ silent: true })
             dispatch(fetchProductsAction(STOREFRONT_CATALOG_FETCH))
         } catch (error) {
             toast.error(error?.response?.data?.error || error.message || 'Failed to delete selected products')
@@ -714,7 +724,7 @@ export default function StoreManageProducts() {
             })
 
             toast.success(data?.message || 'Products updated successfully')
-            await fetchStoreProducts()
+            await fetchStoreProducts({ silent: true })
             dispatch(fetchProductsAction(STOREFRONT_CATALOG_FETCH))
             closeBulkEditModal()
         } catch (error) {
@@ -799,7 +809,7 @@ export default function StoreManageProducts() {
         }
 
         setAiAutofillRunning(false)
-        await fetchStoreProducts()
+        await fetchStoreProducts({ silent: true })
         dispatch(fetchProductsAction(STOREFRONT_CATALOG_FETCH))
     }
 
@@ -811,17 +821,18 @@ export default function StoreManageProducts() {
             <div className="mb-6 flex w-full gap-4 flex-wrap">
                 <div className="flex-1 min-w-xs">
                     <input
-                        type="text"
+                        type="search"
                         placeholder="Search products by name, SKU, category, tags, or description..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
+                        autoComplete="off"
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
-                    {searchQuery && (
+                    {searchQuery ? (
                         <p className="text-sm text-slate-600 mt-2">
-                            Found {totalProducts} product{totalProducts !== 1 ? 's' : ''}
+                            {listLoading ? 'Searching…' : `Found ${totalProducts} product${totalProducts !== 1 ? 's' : ''}`}
                         </p>
-                    )}
+                    ) : null}
                 </div>
                 
                 {/* Category Filter */}
@@ -1113,8 +1124,13 @@ export default function StoreManageProducts() {
                 </div>
             )}
 
-            <div className="w-full overflow-x-auto">
-            <table className="w-full min-w-[1200px] text-left ring ring-slate-200 rounded overflow-hidden text-sm">
+            <div className="relative w-full overflow-x-auto">
+            {listLoading ? (
+                <div className="pointer-events-none absolute inset-0 z-10 flex items-start justify-center bg-white/50 pt-20">
+                    <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700" />
+                </div>
+            ) : null}
+            <table className={`w-full min-w-[1200px] text-left ring ring-slate-200 rounded overflow-hidden text-sm transition-opacity ${listLoading ? 'opacity-60' : ''}`}>
                 <thead className="bg-slate-50 text-gray-700 uppercase tracking-wider">
                     <tr>
                         <th className="px-4 py-3">

@@ -1308,14 +1308,8 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     };
   }, [tabbyPromoSelector, convertedLineTotal, isArabic, tabbyPublicKey, tabbyMerchantCode, currency]);
 
-  const soldByText = String(
-    product?.attributes?.soldBy ??
-    product?.sellerName ??
-    product?.store?.name ??
-    ''
-  ).trim();
+  const STORE_SOLD_BY_NAME = 'store1920';
 
-  const displaySellerName = soldByText || product?.store?.name || 'Store1920';
   const localizedProductName = (isArabic && String(product?.nameAr || '').trim())
     ? product.nameAr
     : (product?.name || product?.title || '');
@@ -1332,8 +1326,6 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     ).replace(/<[^>]*>/g, ' ')
   );
   const mobileShortDescription = localizedShortDescription || localizedShortDescription2;
-  const safeDisplaySellerName = sanitizeDisplayText(displaySellerName);
-  const shopUsername = String(product?.store?.username || '').trim();
 
   const renderSoldByLine = (className = '', mobile = false) => (
     <p
@@ -1341,19 +1333,12 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       className={`w-full text-start leading-snug ${mobile ? 'text-xs' : 'text-sm'} ${className}`.trim()}
     >
       <span className="font-normal text-gray-500">{t('product.soldBy')} </span>
-      {shopUsername ? (
-        <a
-          href={`/shop/${shopUsername}`}
-          className={mobile ? 'font-semibold hover:underline' : 'font-bold hover:underline'}
-          style={{ color: navbarBrandColor }}
-        >
-          {safeDisplaySellerName}
-        </a>
-      ) : (
-        <span className={mobile ? 'font-semibold' : 'font-bold'} style={{ color: navbarBrandColor }}>
-          {safeDisplaySellerName}
-        </span>
-      )}
+      <Link
+        href="/"
+        className={`${mobile ? 'font-semibold' : 'font-bold'} text-blue-600 hover:underline`}
+      >
+        {STORE_SOLD_BY_NAME}
+      </Link>
     </p>
   );
 
