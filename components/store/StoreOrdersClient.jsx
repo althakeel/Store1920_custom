@@ -21,6 +21,7 @@ import {
     summarizeDeliveryBuckets,
 } from '@/lib/storeOrderInsights';
 import { getDisplayOrderNumber } from '@/lib/orderDisplay';
+import { isAwaitingPaymentOrder, isVisibleStoreOrder } from '@/lib/deferredOrderStatus';
 
 function normalizeOrderSearchQuery(value = '') {
     return String(value || '').trim().toLowerCase();
@@ -299,6 +300,8 @@ export default function StoreOrders() {
 
     // Unified payment-status resolver for dashboard
     const isOrderPaid = (order) => {
+        if (isAwaitingPaymentOrder(order)) return false;
+
         const paymentMethod = String(order?.paymentMethod || '').trim().toLowerCase();
         const orderStatus = String(order?.status || '').trim().toUpperCase();
         const paymentStatus = String(order?.paymentStatus || '').trim().toLowerCase();
@@ -347,20 +350,19 @@ export default function StoreOrders() {
         { value: 'WALLET', label: 'Wallet' },
     ];
     const getOrderStats = () => {
+        const confirmedOrders = orders.filter(isVisibleStoreOrder);
         const stats = {
-            TOTAL: orders.length,
-            ORDER_PLACED: orders.filter(o => o.status === 'ORDER_PLACED').length,
-            PROCESSING: orders.filter(o => o.status === 'PROCESSING').length,
-            SHIPPED: orders.filter(o => o.status === 'SHIPPED').length,
-            DELIVERED: orders.filter(o => o.status === 'DELIVERED').length,
-            CANCELLED: orders.filter(o => o.status === 'CANCELLED').length,
+            TOTAL: confirmedOrders.length,
+            ORDER_PLACED: confirmedOrders.filter(o => o.status === 'ORDER_PLACED').length,
+            PROCESSING: confirmedOrders.filter(o => o.status === 'PROCESSING').length,
+            SHIPPED: confirmedOrders.filter(o => o.status === 'SHIPPED').length,
+            DELIVERED: confirmedOrders.filter(o => o.status === 'DELIVERED').length,
+            CANCELLED: confirmedOrders.filter(o => o.status === 'CANCELLED').length,
             PAYMENT_FAILED: orders.filter(o => o.status === 'PAYMENT_FAILED').length,
-            RETURNED: orders.filter(o => o.status === 'RETURNED').length,
-            RETURN_REQUESTED: orders.filter(o => o.returns && o.returns.some(r => r.status === 'REQUESTED')).length,
-            PENDING_PAYMENT: orders.filter(o => {
-                return !isOrderPaid(o);
-            }).length,
-            PENDING_SHIPMENT: orders.filter(o => !o.trackingId && ['ORDER_PLACED', 'PROCESSING'].includes(o.status)).length,
+            RETURNED: confirmedOrders.filter(o => o.status === 'RETURNED').length,
+            RETURN_REQUESTED: confirmedOrders.filter(o => o.returns && o.returns.some(r => r.status === 'REQUESTED')).length,
+            PENDING_PAYMENT: orders.filter(isAwaitingPaymentOrder).length,
+            PENDING_SHIPMENT: confirmedOrders.filter(o => !o.trackingId && ['ORDER_PLACED', 'PROCESSING'].includes(o.status)).length,
         };
         return stats;
     };
@@ -386,9 +388,9 @@ export default function StoreOrders() {
         let dateFiltered = orders.filter(isOrderInRange);
 
         if (filterStatus === 'ALL') {
-            // keep all
+            dateFiltered = dateFiltered.filter(isVisibleStoreOrder);
         } else if (filterStatus === 'PENDING_PAYMENT') {
-            dateFiltered = dateFiltered.filter((o) => !isOrderPaid(o));
+            dateFiltered = dateFiltered.filter(isAwaitingPaymentOrder);
         } else if (filterStatus === 'PENDING_SHIPMENT') {
             dateFiltered = dateFiltered.filter((o) => !o.trackingId && ['ORDER_PLACED', 'PROCESSING'].includes(o.status));
         } else if (filterStatus === 'RETURN_REQUESTED') {
@@ -424,9 +426,11 @@ export default function StoreOrders() {
     };
 
     const paymentStats = useMemo(() => {
-        const counts = { ALL: orders.length, COD: 0, CARD: 0, TABBY: 0, TAMARA: 0, WALLET: 0 };
+        const counts = { ALL: 0, COD: 0, CARD: 0, TABBY: 0, TAMARA: 0, WALLET: 0 };
         orders.forEach((order) => {
+            if (!isVisibleStoreOrder(order)) return;
             const method = normalizeOrderPaymentMethod(order);
+            counts.ALL += 1;
             if (counts[method] !== undefined) {
                 counts[method] += 1;
             }
@@ -1611,11 +1615,12 @@ export default function StoreOrders() {
                     <p className="text-2xl font-bold">{stats.TOTAL}</p>
                 </div>
                 <div 
-                    onClick={() => setFilterStatus('PENDING_PAYMENT')}
-                    className={`p-4 rounded-lg cursor-pointer transition-all ${filterStatus === 'PENDING_PAYMENT' ? 'bg-orange-600 text-white shadow-lg' : 'bg-white border border-gray-200 text-slate-700'}`}
+                    onClick={() => router.push('/store/abandoned-checkout')}
+                    className="p-4 rounded-lg cursor-pointer transition-all bg-white border border-gray-200 text-slate-700 hover:border-orange-300 hover:bg-orange-50"
                 >
-                    <p className="text-xs opacity-75">Pending Payment</p>
+                    <p className="text-xs opacity-75">Awaiting Payment</p>
                     <p className="text-2xl font-bold">{stats.PENDING_PAYMENT}</p>
+                    <p className="mt-1 text-[10px] font-medium text-orange-700">View in Abandoned Checkout</p>
                 </div>
                 <div 
                     onClick={() => setFilterStatus('PROCESSING')}

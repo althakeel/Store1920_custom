@@ -48,6 +48,7 @@ const OrderSchema = new mongoose.Schema({
   orderItems: [OrderItemSchema],
   items: Array,
   cancelReason: String,
+  paymentRecoveryNotifiedAt: { type: Date, default: null },
   returnReason: String,
   notes: String,
   coinsRedeemed: { type: Number, default: 0 },

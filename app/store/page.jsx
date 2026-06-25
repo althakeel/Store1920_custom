@@ -1,24 +1,22 @@
 'use client';
 
-import axios from 'axios';
-import { UserPlusIcon, UploadCloudIcon, FolderTreeIcon } from 'lucide-react';
+import { UserPlusIcon, UploadCloudIcon, FolderTreeIcon, ShoppingBag, Package, Users, RefreshCw } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/lib/useAuth';
+import { useStoreDashboardData } from '@/lib/useStoreDashboardData';
 
 const StoreDashboardCharts = dynamic(() => import('@/components/store/StoreDashboardCharts'), {
   ssr: false,
   loading: () => (
-    <div className="mt-6 animate-pulse rounded-xl border border-slate-200 bg-white p-6">
+    <div className="mt-6 animate-pulse rounded-2xl border border-slate-200 bg-white p-6">
       <div className="h-6 w-48 rounded bg-slate-100" />
-      <div className="mt-6 h-64 rounded bg-slate-100" />
+      <div className="mt-6 h-64 rounded-xl bg-slate-50" />
     </div>
   ),
 });
-
-const DASHBOARD_REFRESH_MS = 60 * 1000;
 
 const StoreLiveAnalytics = dynamic(() => import('@/components/store/StoreLiveAnalytics'), { ssr: false });
 
@@ -27,107 +25,24 @@ const ContactMessagesSeller = dynamic(() => import('./ContactMessagesSeller.jsx'
   loading: () => null,
 });
 
-const EMPTY_DASHBOARD = {
-  totalProducts: 0,
-  totalEarnings: 0,
-  totalOrders: 0,
-  totalCustomers: 0,
-  abandonedCarts: 0,
-  analytics: {
-    ordersTrend: [],
-    ordersStatusTrend: [],
-    statusTotals: {
-      total: 0,
-      processing: 0,
-      shipping: 0,
-      delivered: 0,
-      returned: 0,
-      cancelled: 0,
-    },
-    orderStatusBreakdown: [],
-    ratingBreakdown: [],
-    avgOrderValue: 0,
-    avgRating: 0,
-    ordersThisWeek: 0,
-    revenueThisWeek: 0,
-  },
-};
-
 export default function Dashboard() {
   const { user, loading: authLoading, getToken } = useAuth();
   const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || 'AED';
-  const [dashboardData, setDashboardData] = useState(EMPTY_DASHBOARD);
-  const [chartsRefreshing, setChartsRefreshing] = useState(true);
 
-  const withTokenRetry = async (requestFn) => {
-    try {
-      return await requestFn(false);
-    } catch (error) {
-      if (error?.response?.status === 401) {
-        return requestFn(true);
-      }
-      throw error;
-    }
-  };
+  const onDashboardError = useCallback((error) => {
+    console.error('Dashboard fetch error:', error);
+    toast.error(error?.response?.data?.error || 'Failed to load dashboard');
+  }, []);
 
-  const fetchDashboard = useCallback(async ({ silent = false } = {}) => {
-    if (!user) {
-      setChartsRefreshing(false);
-      return;
-    }
-
-    if (!silent) {
-      setChartsRefreshing(true);
-    }
-
-    try {
-      const { data } = await withTokenRetry(async (forceRefresh) => {
-        const token = await getToken(forceRefresh);
-        return axios.get('/api/store/dashboard', {
-          params: { _t: Date.now() },
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Cache-Control': 'no-cache',
-          },
-        });
-      });
-
-      if (data?.dashboardData) {
-        setDashboardData(data.dashboardData);
-      }
-    } catch (error) {
-      console.error('Dashboard fetch error:', error);
-      toast.error(error?.response?.data?.error || 'Failed to load dashboard');
-    } finally {
-      setChartsRefreshing(false);
-    }
-  }, [getToken, user]);
-
-  useEffect(() => {
-    if (authLoading || !user) return;
-
-    fetchDashboard();
-
-    const interval = window.setInterval(() => {
-      if (document.visibilityState !== 'visible') return;
-      fetchDashboard({ silent: true });
-    }, DASHBOARD_REFRESH_MS);
-
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        fetchDashboard({ silent: true });
-      }
-    };
-
-    window.addEventListener('focus', handleVisibility);
-    document.addEventListener('visibilitychange', handleVisibility);
-
-    return () => {
-      window.clearInterval(interval);
-      window.removeEventListener('focus', handleVisibility);
-      document.removeEventListener('visibilitychange', handleVisibility);
-    };
-  }, [authLoading, user, fetchDashboard]);
+  const {
+    dashboardData,
+    liveData,
+    initialLoading,
+    silentRefreshing,
+    lastUpdated,
+    liveLastUpdated,
+    refresh,
+  } = useStoreDashboardData({ user, getToken, onError: onDashboardError });
 
   if (authLoading) {
     return (
@@ -149,45 +64,96 @@ export default function Dashboard() {
 
   return (
     <div className="mb-16 w-full max-w-none text-slate-500">
-      <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-lg font-medium text-slate-800 sm:text-xl">Seller Dashboard</h1>
-          {chartsRefreshing ? (
-            <p className="text-xs text-slate-400">Refreshing stats…</p>
-          ) : null}
+      <div className="mb-6 flex flex-col gap-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-lg font-medium text-slate-800 sm:text-xl">Seller Dashboard</h1>
+            <p className="text-sm text-slate-500">Sales overview, orders, and live visitors in one place.</p>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-400">
+              {lastUpdated ? (
+                <span>
+                  Stats · {lastUpdated.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              ) : null}
+              {silentRefreshing ? (
+                <span className="inline-flex items-center gap-1 text-slate-500">
+                  <RefreshCw size={11} className="animate-spin" />
+                  Updating…
+                </span>
+              ) : null}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => refresh()}
+              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              <RefreshCw size={14} className={silentRefreshing ? 'animate-spin' : ''} />
+              Refresh
+            </button>
+            <Link
+              href="/store/categories"
+              className="flex items-center gap-1.5 rounded-md bg-amber-600 px-3 py-1.5 text-sm text-white transition hover:bg-amber-700"
+            >
+              <FolderTreeIcon size={15} />
+              <span>Import Categories</span>
+            </Link>
+            <Link
+              href="/store/bulk-import"
+              className="flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-sm text-white transition hover:bg-emerald-700"
+            >
+              <UploadCloudIcon size={15} />
+              <span>Bulk Import</span>
+            </Link>
+            <Link
+              href="/store/settings/users"
+              className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white transition hover:bg-blue-700"
+            >
+              <UserPlusIcon size={15} />
+              <span>Invite Team</span>
+            </Link>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href="/store/categories"
-            className="flex items-center gap-1.5 rounded-md bg-amber-600 px-3 py-1.5 text-sm text-white transition hover:bg-amber-700"
-          >
-            <FolderTreeIcon size={15} />
-            <span>Import Categories</span>
-          </Link>
-          <Link
-            href="/store/bulk-import"
-            className="flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-sm text-white transition hover:bg-emerald-700"
-          >
-            <UploadCloudIcon size={15} />
-            <span>Bulk Import</span>
-          </Link>
-          <Link
-            href="/store/settings/users"
-            className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white transition hover:bg-blue-700"
-          >
-            <UserPlusIcon size={15} />
-            <span>Invite Team Members</span>
-          </Link>
-        </div>
+
+        <nav className="flex flex-wrap gap-2" aria-label="Dashboard shortcuts">
+          {[
+            { href: '/store/orders', label: 'Orders', icon: ShoppingBag },
+            { href: '/store/abandoned-checkout', label: 'Abandoned checkout', icon: Package },
+            { href: '/store/manage-product', label: 'Products', icon: Package },
+            { href: '/store/customer-tracking', label: 'Visitor tracking', icon: Users },
+          ].map(({ href, label, icon: Icon }) => (
+            <Link
+              key={href}
+              href={href}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+            >
+              <Icon size={15} className="text-slate-500" />
+              {label}
+            </Link>
+          ))}
+        </nav>
       </div>
 
-      <StoreLiveAnalytics getToken={getToken} currency={currency} />
+      <StoreLiveAnalytics
+        currency={currency}
+        liveData={liveData}
+        loading={initialLoading && !liveData}
+        lastUpdated={liveLastUpdated}
+      />
 
-      <div className={chartsRefreshing ? 'opacity-90 transition-opacity' : ''}>
-        <StoreDashboardCharts data={dashboardData} currency={currency} />
+      <div className="mt-8">
+        <StoreDashboardCharts
+          data={dashboardData}
+          currency={currency}
+          getToken={getToken}
+          loading={initialLoading}
+        />
       </div>
 
-      <ContactMessagesSeller />
+      <div className="mt-8">
+        <ContactMessagesSeller />
+      </div>
     </div>
   );
 }

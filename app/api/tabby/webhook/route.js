@@ -2,8 +2,10 @@ import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import { captureTabbyPayment, updateTabbyPayment } from '@/lib/tabby';
+import { sendPaidOrderConfirmationNotifications } from '@/lib/orderConfirmationNotifications';
+import { handlePaymentCancellationRecovery } from '@/lib/paymentCancellationRecovery';
+import { markOrderPaymentSucceeded } from '@/lib/deferredOrderFlow';
 import { recordPurchaseFromOrder } from '@/lib/serverCustomerTracking';
-import { sendDeferredPaymentWhatsApp } from '@/lib/whatsapp/orderNotifications';
 import { sendMetaPurchaseFromOrder } from '@/lib/metaConversionsApi';
 
 export async function POST(request) {
@@ -30,12 +32,12 @@ export async function POST(request) {
         await connectDB();
 
         if (status === 'authorized') {
-            const order = await Order.findById(orderId);
-            if (order && order.paymentStatus !== 'PAID') {
-                order.paymentStatus = 'PAID';
-                order.isPaid = true;
-                if (paymentId) order.tabbyPaymentId = paymentId;
-                await order.save();
+            const existing = await Order.findById(orderId).lean();
+            if (existing && existing.paymentStatus !== 'PAID') {
+                const order = await markOrderPaymentSucceeded(orderId, { paymentStatus: 'PAID' });
+                if (paymentId) {
+                    await Order.findByIdAndUpdate(orderId, { tabbyPaymentId: paymentId });
+                }
 
                 try {
                     await recordPurchaseFromOrder({
@@ -65,10 +67,10 @@ export async function POST(request) {
                 }
 
                 try {
-                    const whatsappResult = await sendDeferredPaymentWhatsApp(order);
-                    console.log('[tabby] WhatsApp paid confirmation:', whatsappResult);
-                } catch (whatsappError) {
-                    console.error('[tabby] WhatsApp failed:', whatsappError);
+                    const notificationResult = await sendPaidOrderConfirmationNotifications(orderId);
+                    console.log('[tabby] Paid confirmation notifications:', notificationResult);
+                } catch (notificationError) {
+                    console.error('[tabby] Confirmation notifications failed:', notificationError);
                 }
 
                 try {
@@ -78,10 +80,9 @@ export async function POST(request) {
                 }
             }
         } else if (status === 'rejected' || status === 'expired' || status === 'closed') {
-            await Order.findByIdAndUpdate(orderId, {
-                paymentStatus: 'FAILED',
-                isPaid: false,
-                ...(paymentId ? { tabbyPaymentId: paymentId } : {}),
+            await handlePaymentCancellationRecovery({
+                orderId,
+                reason: `Tabby payment ${status}`,
             });
         }
 

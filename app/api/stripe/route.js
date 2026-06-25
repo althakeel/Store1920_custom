@@ -3,10 +3,12 @@ import Order from "@/models/Order";
 import User from "@/models/User";
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
+import { sendPaidOrderConfirmationNotifications } from '@/lib/orderConfirmationNotifications';
 import { recordPurchaseFromOrder } from "@/lib/serverCustomerTracking";
-import { sendDeferredPaymentWhatsApp } from '@/lib/whatsapp/orderNotifications';
 import { sendMetaPurchaseFromOrder } from '@/lib/metaConversionsApi';
 import { finalizeAbandonedCartFromStripeSession } from '@/lib/abandonedCartConversion';
+import { handlePaymentCancellationRecovery } from '@/lib/paymentCancellationRecovery';
+import { markOrderPaymentSucceeded } from '@/lib/deferredOrderFlow';
 
 export async function POST(request){
     try {
@@ -25,13 +27,12 @@ export async function POST(request){
         const markOrdersPaid = async (orderIds, userId) => {
             await dbConnect()
             await Promise.all(orderIds.map(async (orderId) => {
-                const order = await Order.findByIdAndUpdate(orderId, {
-                    paymentStatus: 'paid',
-                    stripePaymentStatus: 'paid',
-                    isPaid: true,
-                }, { new: true })
+                const order = await markOrderPaymentSucceeded(orderId, { paymentStatus: 'PAID' })
 
                 if (order) {
+                    await Order.findByIdAndUpdate(orderId, {
+                        stripePaymentStatus: 'paid',
+                    });
                     try {
                         await recordPurchaseFromOrder({
                             order,
@@ -46,10 +47,10 @@ export async function POST(request){
                     }
 
                     try {
-                        const whatsappResult = await sendDeferredPaymentWhatsApp(order)
-                        console.log('[stripe] WhatsApp paid confirmation:', whatsappResult)
-                    } catch (whatsappError) {
-                        console.error('[stripe] WhatsApp failed for order', orderId, whatsappError)
+                        const notificationResult = await sendPaidOrderConfirmationNotifications(orderId)
+                        console.log('[stripe] Paid confirmation notifications:', notificationResult)
+                    } catch (notificationError) {
+                        console.error('[stripe] Confirmation notifications failed for order', orderId, notificationError)
                     }
 
                     try {
@@ -64,9 +65,15 @@ export async function POST(request){
             }
         }
 
-        const deleteOrders = async (orderIds) => {
+        const cancelUnpaidOrders = async (orderIds, reason = 'Payment cancelled') => {
             await dbConnect()
-            await Promise.all(orderIds.map((orderId) => Order.findByIdAndDelete(orderId)))
+            await Promise.all(orderIds.map(async (orderId) => {
+                try {
+                    await handlePaymentCancellationRecovery({ orderId, reason })
+                } catch (error) {
+                    console.error('[stripe] cancellation recovery failed for order', orderId, error)
+                }
+            }))
         }
 
         const extractMeta = (metadata = {}) => ({
@@ -105,7 +112,7 @@ export async function POST(request){
             case 'checkout.session.async_payment_failed': {
                 const session = event.data.object
                 const { orderIds } = extractMeta(session.metadata)
-                if (orderIds.length) await deleteOrders(orderIds)
+                if (orderIds.length) await cancelUnpaidOrders(orderIds, 'Payment failed')
                 break
             }
 
@@ -129,7 +136,7 @@ export async function POST(request){
                 const sess = sessions.data[0]
                 if (sess) {
                     const { orderIds } = extractMeta(sess.metadata)
-                    if (orderIds.length) await deleteOrders(orderIds)
+                    if (orderIds.length) await cancelUnpaidOrders(orderIds, 'Payment failed')
                 }
                 break
             }

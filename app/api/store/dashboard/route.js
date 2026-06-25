@@ -6,10 +6,12 @@ import AbandonedCart from "@/models/AbandonedCart";
 import authSeller from "@/middlewares/authSeller";
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/firebase-admin";
+import { visibleStoreOrderMatch } from "@/lib/visibleStoreOrderMatch";
 
 export const dynamic = 'force-dynamic';
 
 const STATUS_LABELS = {
+  AWAITING_PAYMENT: 'Awaiting payment',
   ORDER_PLACED: 'Placed',
   PROCESSING: 'Processing',
   WAITING_FOR_PICKUP: 'Waiting for pickup',
@@ -64,6 +66,31 @@ function buildTrendMaps(days, today) {
   return { trendMap, statusTrendMap };
 }
 
+function buildHourlyBuckets(timezone = 'Asia/Dubai') {
+  const buckets = [];
+  for (let h = 0; h < 24; h += 1) {
+    const label = `${String(h).padStart(2, '0')}:00`;
+    buckets.push({ hour: h, label, shortLabel: h % 3 === 0 ? label : '', orders: 0, revenue: 0 });
+  }
+  return buckets;
+}
+
+function buildPaymentLabel(method = '') {
+  const key = String(method || 'UNKNOWN').toUpperCase();
+  const labels = {
+    COD: 'Cash on delivery',
+    STRIPE: 'Card (Stripe)',
+    CARD: 'Card',
+    TABBY: 'Tabby',
+    TAMARA: 'Tamara',
+    WALLET: 'Wallet',
+    RAZORPAY: 'Razorpay',
+  };
+  return labels[key] || key.replace(/_/g, ' ');
+}
+
+const PAYMENT_COLORS = ['#8B5CF6', '#10B981', '#3B82F6', '#F59E0B', '#EC4899', '#6366F1', '#14B8A6'];
+
 export async function GET(request) {
    try {
       const authHeader = request.headers.get('authorization');
@@ -93,6 +120,28 @@ export async function GET(request) {
       trendStart.setDate(trendStart.getDate() - (days - 1));
       const weekAgo = new Date(today);
       weekAgo.setDate(weekAgo.getDate() - 6);
+      const lastWeekEnd = new Date(weekAgo);
+      lastWeekEnd.setMilliseconds(-1);
+      const lastWeekStart = new Date(today);
+      lastWeekStart.setDate(lastWeekStart.getDate() - 13);
+
+      const visibleMatch = visibleStoreOrderMatch({ storeId: storeIdString });
+      const visibleTrendMatch = visibleStoreOrderMatch({
+        storeId: storeIdString,
+        createdAt: { $gte: trendStart },
+      });
+      const visibleWeekMatch = visibleStoreOrderMatch({
+        storeId: storeIdString,
+        createdAt: { $gte: weekAgo },
+      });
+      const visibleTodayMatch = visibleStoreOrderMatch({
+        storeId: storeIdString,
+        createdAt: { $gte: today },
+      });
+      const visibleLastWeekMatch = visibleStoreOrderMatch({
+        storeId: storeIdString,
+        createdAt: { $gte: lastWeekStart, $lte: lastWeekEnd },
+      });
 
       const productIdStrings = (await Product.distinct('_id', { storeId: storeIdString })).map((id) => String(id));
 
@@ -101,13 +150,18 @@ export async function GET(request) {
         statusBreakdownRows,
         trendRows,
         weekTotalsRows,
+        todayTotalsRows,
+        lastWeekTotalsRows,
+        todayHourlyRows,
+        paymentMethodRows,
+        awaitingPaymentCount,
         totalProducts,
         abandonedCarts,
         totalCustomers,
         ratingStats,
       ] = await Promise.all([
         Order.aggregate([
-          { $match: { storeId: storeIdString } },
+          { $match: visibleMatch },
           {
             $group: {
               _id: null,
@@ -117,11 +171,11 @@ export async function GET(request) {
           },
         ]),
         Order.aggregate([
-          { $match: { storeId: storeIdString } },
+          { $match: visibleMatch },
           { $group: { _id: '$status', count: { $sum: 1 } } },
         ]),
         Order.aggregate([
-          { $match: { storeId: storeIdString, createdAt: { $gte: trendStart } } },
+          { $match: visibleTrendMatch },
           {
             $group: {
               _id: {
@@ -134,7 +188,7 @@ export async function GET(request) {
           },
         ]),
         Order.aggregate([
-          { $match: { storeId: storeIdString, createdAt: { $gte: weekAgo } } },
+          { $match: visibleWeekMatch },
           {
             $group: {
               _id: null,
@@ -143,13 +197,67 @@ export async function GET(request) {
             },
           },
         ]),
+        Order.aggregate([
+          { $match: visibleTodayMatch },
+          {
+            $group: {
+              _id: null,
+              orders: { $sum: 1 },
+              revenue: { $sum: { $ifNull: ['$total', 0] } },
+            },
+          },
+        ]),
+        Order.aggregate([
+          { $match: visibleLastWeekMatch },
+          {
+            $group: {
+              _id: null,
+              orders: { $sum: 1 },
+              revenue: { $sum: { $ifNull: ['$total', 0] } },
+            },
+          },
+        ]),
+        Order.aggregate([
+          { $match: visibleTodayMatch },
+          {
+            $group: {
+              _id: { $hour: { date: '$createdAt', timezone: 'Asia/Dubai' } },
+              orders: { $sum: 1 },
+              revenue: { $sum: { $ifNull: ['$total', 0] } },
+            },
+          },
+          { $sort: { _id: 1 } },
+        ]),
+        Order.aggregate([
+          { $match: visibleMatch },
+          {
+            $group: {
+              _id: '$paymentMethod',
+              count: { $sum: 1 },
+              revenue: { $sum: { $ifNull: ['$total', 0] } },
+            },
+          },
+          { $sort: { count: -1 } },
+        ]),
+        Order.countDocuments({
+          storeId: storeIdString,
+          $or: [
+            { status: 'AWAITING_PAYMENT' },
+            {
+              status: 'ORDER_PLACED',
+              paymentMethod: { $in: ['STRIPE', 'TABBY', 'TAMARA', 'CARD'] },
+              isPaid: { $ne: true },
+              paymentStatus: { $nin: ['PAID', 'paid', 'Paid'] },
+            },
+          ],
+        }),
         Product.countDocuments({ storeId: storeIdString }),
         AbandonedCart.countDocuments({
           storeId: storeIdString,
           status: { $ne: 'converted' },
         }),
         Order.aggregate([
-          { $match: { storeId: storeIdString } },
+          { $match: visibleMatch },
           {
             $group: {
               _id: {
@@ -225,6 +333,45 @@ export async function GET(request) {
       const ordersThisWeek = weekTotals.orders || 0;
       const revenueThisWeek = weekTotals.revenue || 0;
 
+      const todayTotals = todayTotalsRows[0] || { orders: 0, revenue: 0 };
+      const ordersToday = todayTotals.orders || 0;
+      const revenueToday = Math.round(todayTotals.revenue || 0);
+
+      const lastWeekTotals = lastWeekTotalsRows[0] || { orders: 0, revenue: 0 };
+      const ordersLastWeek = lastWeekTotals.orders || 0;
+      const revenueLastWeek = Math.round(lastWeekTotals.revenue || 0);
+
+      const todayHourlyTrend = buildHourlyBuckets();
+      todayHourlyRows.forEach((row) => {
+        const hour = Number(row._id);
+        if (hour >= 0 && hour < 24 && todayHourlyTrend[hour]) {
+          todayHourlyTrend[hour].orders = row.orders || 0;
+          todayHourlyTrend[hour].revenue = Math.round(row.revenue || 0);
+        }
+      });
+
+      let peakHourToday = null;
+      let peakHourOrders = 0;
+      todayHourlyTrend.forEach((bucket) => {
+        if (bucket.orders > peakHourOrders) {
+          peakHourOrders = bucket.orders;
+          peakHourToday = bucket.label;
+        }
+      });
+
+      const paymentMethodBreakdown = paymentMethodRows.map((row, index) => ({
+        method: row._id || 'UNKNOWN',
+        label: buildPaymentLabel(row._id),
+        count: row.count || 0,
+        revenue: Math.round(row.revenue || 0),
+        fill: PAYMENT_COLORS[index % PAYMENT_COLORS.length],
+      }));
+
+      const weekComparison = [
+        { period: 'Last week', orders: ordersLastWeek, revenue: revenueLastWeek },
+        { period: 'This week', orders: ordersThisWeek, revenue: Math.round(revenueThisWeek) },
+      ];
+
       const ordersTrend = Object.values(trendMap).map((entry) => ({
         ...entry,
         revenue: Math.round(entry.revenue),
@@ -272,6 +419,15 @@ export async function GET(request) {
            avgRating,
            ordersThisWeek,
            revenueThisWeek: Math.round(revenueThisWeek),
+           ordersToday,
+           revenueToday,
+           ordersLastWeek,
+           revenueLastWeek,
+           todayHourlyTrend,
+           peakHourToday: peakHourOrders > 0 ? peakHourToday : null,
+           paymentMethodBreakdown,
+           weekComparison,
+           awaitingPaymentCount,
          },
       };
 

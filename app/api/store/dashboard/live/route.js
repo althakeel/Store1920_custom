@@ -7,6 +7,7 @@ import Product from '@/models/Product';
 import { getAuth } from '@/lib/firebase-admin';
 import { NextResponse } from 'next/server';
 import { buildLiveAnalytics } from '@/lib/storeLiveAnalytics';
+import { visibleStoreOrderMatch } from '@/lib/visibleStoreOrderMatch';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,11 +56,11 @@ export async function GET(request) {
         .sort({ createdAt: -1 })
         .limit(5000)
         .lean(),
-      Order.find({
+      Order.find(visibleStoreOrderMatch({
         storeId: storeIdString,
         createdAt: { $gte: since },
-      })
-        .select('_id total status orderItems createdAt')
+      }))
+        .select('_id total status orderItems createdAt paymentMethod isPaid paymentStatus')
         .sort({ createdAt: -1 })
         .limit(200)
         .lean(),

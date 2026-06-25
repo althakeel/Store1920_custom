@@ -3,19 +3,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import {
-  Area,
   Bar,
   BarChart,
   CartesianGrid,
-  ComposedChart,
-  Legend,
-  Line,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts';
-import { Activity, Eye, Package, Radio, ShoppingBag, UserCheck, Users } from 'lucide-react';
+import { Eye, Radio, ShoppingBag, UserCheck, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
@@ -42,20 +38,6 @@ function StatChip({ label, value, icon: Icon, tone }) {
         {label}
       </div>
       <p className="mt-1 text-2xl font-bold">{value}</p>
-    </div>
-  );
-}
-
-function LiveTooltip({ active, payload, label }) {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-md">
-      <p className="font-semibold text-slate-800">{label}</p>
-      {payload.map((entry) => (
-        <p key={entry.dataKey} style={{ color: entry.color }}>
-          {entry.name}: <strong>{entry.value}</strong>
-        </p>
-      ))}
     </div>
   );
 }
@@ -231,9 +213,17 @@ function smoothLiveCount(previous, incoming, { hasActivity = false, graceMs = 20
   return 0;
 }
 
-export default function StoreLiveAnalytics({ getToken, currency = 'AED' }) {
+export default function StoreLiveAnalytics({
+  currency = 'AED',
+  liveData,
+  loading = false,
+  lastUpdated: externalLastUpdated = null,
+  getToken,
+}) {
   const router = useRouter();
-  const [data, setData] = useState(null);
+  const isControlled = liveData !== undefined;
+  const [internalData, setInternalData] = useState(null);
+  const data = isControlled ? liveData : internalData;
   const [displayProducts, setDisplayProducts] = useState([]);
   const [productsStale, setProductsStale] = useState(false);
   const [displayActiveVisitors, setDisplayActiveVisitors] = useState(0);
@@ -243,9 +233,9 @@ export default function StoreLiveAnalytics({ getToken, currency = 'AED' }) {
     productsOpenNow: 0,
     productViewersNow: 0,
   });
-  const [initialLoading, setInitialLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(!isControlled);
   const [error, setError] = useState('');
-  const [lastUpdated, setLastUpdated] = useState(null);
+  const [lastUpdated, setLastUpdated] = useState(externalLastUpdated);
   const hasDataRef = useRef(false);
   const fetchGenerationRef = useRef(0);
   const lastProductsAtRef = useRef(0);
@@ -266,7 +256,7 @@ export default function StoreLiveAnalytics({ getToken, currency = 'AED' }) {
       });
       if (generation !== fetchGenerationRef.current) return;
 
-      setData(payload);
+      setInternalData(payload);
       hasDataRef.current = true;
       setLastUpdated(new Date());
     } catch (err) {
@@ -280,6 +270,9 @@ export default function StoreLiveAnalytics({ getToken, currency = 'AED' }) {
   }, [getToken]);
 
   useEffect(() => {
+    if (isControlled) return undefined;
+    if (!getToken) return undefined;
+
     fetchLive(true);
 
     const poll = () => {
@@ -302,7 +295,11 @@ export default function StoreLiveAnalytics({ getToken, currency = 'AED' }) {
       document.removeEventListener('visibilitychange', handleVisibility);
       fetchGenerationRef.current += 1;
     };
-  }, [fetchLive]);
+  }, [fetchLive, getToken, isControlled]);
+
+  useEffect(() => {
+    if (externalLastUpdated) setLastUpdated(externalLastUpdated);
+  }, [externalLastUpdated]);
 
   const staleDisplayMs = data?.staleDisplayMs || 20000;
 
@@ -384,27 +381,14 @@ export default function StoreLiveAnalytics({ getToken, currency = 'AED' }) {
     router.push(`/store/customer-tracking?${params.toString()}`);
   }, [router]);
 
-  const timeline = data?.timeline || [];
-  const recentOrders = data?.recentOrders || [];
-  const recentProductViews = displayProducts.length
-    ? displayProducts.map((item) => ({
-        productId: item.productId,
-        name: item.name,
-        slug: item.slug,
-        viewers: item.viewers,
-        viewerList: item.viewerList,
-        timeAgo: productsStale ? 'Just left' : 'Open now',
-      }))
-    : (data?.recentProductViews || []);
-
   return (
-    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-gradient-to-r from-slate-900 to-slate-800 px-5 py-4 text-white">
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-900 px-5 py-4 text-white">
         <div className="flex items-center gap-3">
           <LiveDot />
           <div>
-            <h2 className="text-base font-semibold">Live store activity</h2>
-            <p className="text-xs text-slate-300">Live counts · updates quietly in the background</p>
+            <h2 className="text-base font-semibold">Live visitors</h2>
+            <p className="text-xs text-slate-300">Real-time storefront activity</p>
           </div>
         </div>
         <div className="flex items-center gap-3 text-sm">
@@ -426,7 +410,7 @@ export default function StoreLiveAnalytics({ getToken, currency = 'AED' }) {
         </div>
       </div>
 
-      {initialLoading && !data ? (
+      {((isControlled ? loading : initialLoading) && !data) ? (
         <div className="flex h-48 items-center justify-center text-sm text-slate-500">
           <Radio className="mr-2 animate-pulse" size={18} />
           Loading live data…
@@ -434,120 +418,25 @@ export default function StoreLiveAnalytics({ getToken, currency = 'AED' }) {
       ) : error && !data ? (
         <div className="p-6 text-center text-sm text-red-500">{error}</div>
       ) : (
-        <div className="space-y-5 p-5">
-          <div className="grid gap-3 sm:grid-cols-3">
+        <div className="p-5">
+          <div className="grid gap-3 sm:grid-cols-3 lg:max-w-xl">
             <StatChip label="Visitors (5 min)" value={displayLiveNow.visitorsLast5Min ?? 0} icon={Users} tone="blue" />
             <StatChip label="Orders (5 min)" value={displayLiveNow.ordersLast5Min ?? 0} icon={ShoppingBag} tone="green" />
-            <StatChip label="Products open now" value={displayLiveNow.productsOpenNow ?? 0} icon={Eye} tone="violet" />
+            <StatChip label="Products open" value={displayLiveNow.productsOpenNow ?? 0} icon={Eye} tone="violet" />
           </div>
 
-          <div className="grid gap-5 lg:grid-cols-2">
-            <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-4">
-              <h3 className="text-sm font-semibold text-slate-900">Visitors & orders over time</h3>
-              <p className="text-xs text-slate-500">Blue area = unique visitors · Green line = orders per minute</p>
-              <div className="mt-3 h-[240px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={timeline} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="visitorGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#3B82F6" stopOpacity={0.35} />
-                        <stop offset="100%" stopColor="#3B82F6" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid stroke="#E2E8F0" vertical={false} />
-                    <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#64748B' }} interval="preserveStartEnd" minTickGap={20} />
-                    <YAxis yAxisId="visitors" allowDecimals={false} tick={{ fontSize: 10 }} width={28} />
-                    <YAxis yAxisId="orders" orientation="right" allowDecimals={false} tick={{ fontSize: 10 }} width={28} />
-                    <Tooltip content={<LiveTooltip />} />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Area yAxisId="visitors" type="monotone" dataKey="visitors" name="Visitors" stroke="#3B82F6" fill="url(#visitorGrad)" strokeWidth={2} />
-                    <Line yAxisId="orders" type="monotone" dataKey="orders" name="Orders" stroke="#10B981" strokeWidth={2.5} dot={false} />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>
+          <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50/50 p-4">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-slate-900">Who is browsing right now</h3>
+              <Link href="/store/customer-tracking" className="text-xs font-medium text-violet-700 hover:underline">
+                View all →
+              </Link>
             </div>
-
-            <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-4">
-              <h3 className="text-sm font-semibold text-slate-900">Products open right now</h3>
-              <p className="text-xs text-slate-500">
-                Chart = quick overview · list below shows names · hover bar or click a viewer for tracking
-              </p>
-              <div className="mt-3">
-                <OpenProductsLivePanel
-                  products={displayProducts}
-                  onViewerClick={handleViewerClick}
-                  isStale={productsStale}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="grid gap-5 lg:grid-cols-2">
-            <div className="rounded-xl border border-slate-100 p-4">
-              <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
-                <ShoppingBag size={16} className="text-emerald-600" />
-                Recent orders
-              </h3>
-              {recentOrders.length > 0 ? (
-                <ul className="max-h-[220px] space-y-2 overflow-y-auto">
-                  {recentOrders.map((order) => (
-                    <li key={order.orderId} className="flex items-center justify-between rounded-lg bg-emerald-50/80 px-3 py-2 text-sm">
-                      <div>
-                        <p className="font-medium text-slate-900">
-                          {currency} {Number(order.total || 0).toLocaleString()}
-                          <span className="ml-2 text-xs font-normal text-slate-500">
-                            · {order.itemCount} item{order.itemCount !== 1 ? 's' : ''}
-                          </span>
-                        </p>
-                        <p className="text-xs text-slate-500">{order.status?.replace(/_/g, ' ')}</p>
-                      </div>
-                      <span className="text-xs font-medium text-emerald-700">{order.timeAgo}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-slate-500">No orders in the last hour.</p>
-              )}
-            </div>
-
-            <div className="rounded-xl border border-slate-100 p-4">
-              <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
-                <Package size={16} className="text-violet-600" />
-                Recent open products
-              </h3>
-              {recentProductViews.length > 0 ? (
-                <ul className="max-h-[220px] space-y-2 overflow-y-auto">
-                  {recentProductViews.map((view, index) => (
-                    <li key={`${view.productId || view.name}-${index}`} className="rounded-lg bg-violet-50/80 px-3 py-2 text-sm">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="truncate font-medium text-slate-900">{view.name}</p>
-                        <span className="ml-2 shrink-0 text-xs font-medium text-violet-700">
-                          {view.viewers || 1} open · {view.timeAgo}
-                        </span>
-                      </div>
-                      {view.viewerList?.length ? (
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {view.viewerList.map((viewer) => (
-                            <ViewerChip
-                              key={viewer.sessionId}
-                              viewer={viewer}
-                              onClick={handleViewerClick}
-                            />
-                          ))}
-                        </div>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-slate-500">No product pages open right now.</p>
-              )}
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
-            <Activity size={14} className="mr-1 inline" />
-            Live data uses customer tracking on your storefront. Open your shop in another tab to see visitors and product views update here.
+            <OpenProductsLivePanel
+              products={displayProducts}
+              onViewerClick={handleViewerClick}
+              isStale={productsStale}
+            />
           </div>
         </div>
       )}

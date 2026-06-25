@@ -2,32 +2,41 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 
-const NAVBAR_APPEARANCE_CACHE_KEY = 'navbarAppearanceCache';
-const DEFAULT_BG = '#8f3404';
-
 function OrderFailedContent() {
   const router = useRouter();
   const params = useSearchParams();
-  const reason = params.get('reason') || 'Unknown error';
+  const reason = params.get('reason') || 'Payment was not completed';
+  const orderId = params.get('orderId') || '';
 
-  const [navBg, setNavBg] = useState(DEFAULT_BG);
+  const [recoverySent, setRecoverySent] = useState(false);
 
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(NAVBAR_APPEARANCE_CACHE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed?.backgroundColor) setNavBg(parsed.backgroundColor);
+  useEffect(() => {    if (!orderId || recoverySent) return;
+
+    const notifyCancellation = async () => {
+      try {
+        await fetch('/api/payment-cancelled', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            orderId,
+            reason: decodeURIComponent(reason),
+          }),
+        });
+      } catch (error) {
+        console.error('Payment cancellation recovery failed:', error);
+      } finally {
+        setRecoverySent(true);
       }
-    } catch {}
-  }, []);
+    };
+
+    notifyCancellation();
+  }, [orderId, reason, recoverySent]);
 
   return (
-    <div className="flex items-center justify-center px-4 py-12" style={{ backgroundColor: navBg }}>
+    <div className="flex min-h-[70vh] items-center justify-center bg-white px-4 py-12">
       <div className="w-full max-w-md">
         {/* Card */}
-        <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
-          {/* Top accent bar */}
+        <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-lg">          {/* Top accent bar */}
           <div className="h-1.5 w-full bg-gradient-to-r from-red-400 via-orange-400 to-red-500" />
 
           <div className="p-8 flex flex-col items-center text-center">
@@ -41,7 +50,7 @@ function OrderFailedContent() {
 
             <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight">Payment Failed</h1>
             <p className="text-gray-500 mt-2 text-sm leading-relaxed">
-              We couldn't process your payment.<br />Your order has not been placed.
+              We couldn't process your payment.<br />Your order was cancelled and has not been placed.
             </p>
 
             {/* Reason chip */}
@@ -90,6 +99,7 @@ function OrderFailedContent() {
 
             {/* Support link */}
             <p className="mt-5 text-xs text-gray-400">
+              {orderId ? 'We emailed you a link to complete your order. ' : ''}
               Need help?{' '}
               <a href="/contact" className="text-orange-500 hover:underline font-medium">Contact support</a>
             </p>
@@ -107,7 +117,7 @@ function OrderFailedContent() {
 
 export default function OrderFailed() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center py-20"><div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"/></div>}>
+    <Suspense fallback={<div className="flex min-h-[70vh] items-center justify-center bg-white py-20"><div className="h-8 w-8 animate-spin rounded-full border-4 border-orange-500 border-t-transparent" /></div>}>
       <OrderFailedContent />
     </Suspense>
   );

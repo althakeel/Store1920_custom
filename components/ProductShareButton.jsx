@@ -4,7 +4,7 @@ import Image from 'next/image'
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 
-import shareIcon from '@/assets/icons/share.png'
+import shareIcon from '@/assets/icons/share/share.png'
 import shareWhatsAppIcon from '@/assets/icons/share/whatsapp.svg'
 import shareFacebookIcon from '@/assets/icons/share/facebook.svg'
 import shareEmailIcon from '@/assets/icons/emails.png'
@@ -33,6 +33,28 @@ function ShareOptionButton({ label, onClick, children, tileClass = '' }) {
   )
 }
 
+function OverlayShareGlyph() {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.25"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="text-slate-900"
+      aria-hidden
+    >
+      <circle cx="18" cy="5" r="3" />
+      <circle cx="6" cy="12" r="3" />
+      <circle cx="18" cy="19" r="3" />
+      <path d="M8.59 13.51l6.83 3.98" />
+      <path d="M15.41 6.51l-6.82 3.98" />
+    </svg>
+  )
+}
 function ShareBrandIcon({ src, alt = '', className = 'h-7 w-7 object-contain' }) {
   return (
     <Image
@@ -142,12 +164,12 @@ export default function ProductShareButton({
   }, [open])
 
   const sizeStyles = variant === 'overlay'
-    ? { button: 'h-10 w-10 rounded-full border border-gray-200 bg-white shadow-sm', image: 'h-5 w-5', width: 20, height: 20 }
+    ? { button: 'h-[26px] w-[26px] rounded-full bg-white p-[5px] shadow-[0_1px_3px_rgba(0,0,0,0.12)]' }
     : size === 'sm'
       ? { button: 'h-7 w-7', image: 'h-6 w-6', width: 24, height: 24 }
       : { button: 'h-10 w-10', image: 'h-10 w-10', width: 40, height: 40 }
 
-  const buttonHoverClass = variant === 'overlay' ? 'hover:border-gray-300' : 'hover:opacity-90'
+  const buttonHoverClass = variant === 'overlay' ? 'hover:bg-white active:scale-95' : 'hover:opacity-90'
   const previewImage = productImage || PLACEHOLDER_IMAGE
 
   const shareSheet = open && portalReady ? createPortal(
@@ -278,7 +300,11 @@ export default function ProductShareButton({
           className={`flex items-center justify-center transition ${buttonHoverClass} ${sizeStyles.button}`}
           aria-label={t('product.shareTo')}
         >
-          <Image src={shareIcon} alt="" width={sizeStyles.width} height={sizeStyles.height} className={`${sizeStyles.image} object-contain`} />
+          {variant === 'overlay' ? (
+            <OverlayShareGlyph />
+          ) : (
+            <Image src={shareIcon} alt="" width={sizeStyles.width} height={sizeStyles.height} className={`${sizeStyles.image} object-contain`} />
+          )}
         </button>
       </div>
       {shareSheet}

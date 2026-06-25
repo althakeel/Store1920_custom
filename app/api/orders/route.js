@@ -16,8 +16,12 @@ import StorePreference from '@/models/StorePreference';
 import FreeGiftCampaign from '@/models/FreeGiftCampaign';
 import AbandonedCart from '@/models/AbandonedCart';
 import { cartItemsMatchAbandoned, findActiveRecoveryCart } from '@/lib/abandonedCartRecoveryOffer';
-import { sendOrderConfirmationEmail, sendGuestAccountCreationEmail } from '@/lib/email';
-import { sendOrderCreatedWhatsApp } from '@/lib/whatsapp/orderNotifications';
+import { sendOrderCreatedConfirmationNotifications } from '@/lib/orderConfirmationNotifications';
+import {
+  applyDeferredPaymentOrderDefaults,
+  isDeferredPaymentMethod,
+  upsertAbandonedCartForPendingOrder,
+} from '@/lib/deferredOrderFlow';
 import { allocateShortOrderNumber } from '@/lib/orderNumber';
 import { ensurePersistedShortOrderNumber, ensurePersistedShortOrderNumbers } from '@/lib/orderDisplayServer';
 import { fetchNormalizedDelhiveryTracking } from '@/lib/delhivery';
@@ -534,6 +538,7 @@ export async function POST(request) {
                 walletDiscount,
                 orderItems: sellerItems.map(item => ({
                     productId: item.id,
+                    name: item.name || item.productName || item.title || '',
                     quantity: item.quantity,
                     price: item.price
                 }))
@@ -545,10 +550,15 @@ export async function POST(request) {
             if (normalizedPaymentMethod === 'COD') {
                 orderData.isPaid = false;
                 orderData.paymentStatus = paymentStatus || 'PENDING';
-            } else if (paidOnlineMethods.has(normalizedPaymentMethod)) {
+            } else if (paidOnlineMethods.has(normalizedPaymentMethod) && normalizedPaymentMethod !== 'CARD') {
                 orderData.isPaid = true;
                 orderData.paymentStatus = paymentStatus || 'PAID';
             }
+
+            Object.assign(
+                orderData,
+                applyDeferredPaymentOrderDefaults(orderData, paymentMethod),
+            );
 
             if (razorpayPaymentId) orderData.razorpayPaymentId = razorpayPaymentId;
             if (razorpayOrderId) orderData.razorpayOrderId = razorpayOrderId;
@@ -790,7 +800,7 @@ export async function POST(request) {
                 });
             orderIds.push(order._id.toString());
 
-            // Email notification using sendOrderConfirmationEmail
+            // Customer notifications — deferred for Stripe/Tabby/Tamara until payment succeeds
             try {
                 let customerEmail = '';
                 let customerName = '';
@@ -804,57 +814,25 @@ export async function POST(request) {
                     customerName = user?.name || '';
                 }
 
-                if (customerEmail) {
-                    console.log('Sending order confirmation email with:', {
-                        email: customerEmail,
-                        name: customerName,
-                        orderId: order._id,
-                        shortOrderNumber: order.shortOrderNumber,
-                        total: order.total,
-                        orderItems: order.orderItems,
-                        shippingAddress: order.shippingAddress,
-                        createdAt: order.createdAt,
-                        paymentMethod: order.paymentMethod || paymentMethod
-                    });
-                    await sendOrderConfirmationEmail({
-                        email: customerEmail,
-                        name: customerName,
-                        orderId: order._id,
-                        shortOrderNumber: order.shortOrderNumber,
-                        total: order.total,
-                        orderItems: order.orderItems,
-                        shippingAddress: order.shippingAddress,
-                        createdAt: order.createdAt,
-                        paymentMethod: order.paymentMethod || paymentMethod
-                    });
-                    console.log('Order confirmation email sent to customer:', customerEmail);
-                    
-                    // Send guest account creation invitation if guest checkout
-                    if (isGuest && customerEmail) {
-                        try {
-                            await sendGuestAccountCreationEmail({
-                                email: customerEmail,
-                                name: customerName,
-                                orderId: order._id,
-                                shortOrderNumber: order.shortOrderNumber
-                            });
-                            console.log('Guest account creation email sent to:', customerEmail);
-                        } catch (guestEmailError) {
-                            console.error('Error sending guest account creation email:', guestEmailError);
-                            // Don't fail the order if email fails
-                        }
-                    }
-                }
-            } catch (emailError) {
-                console.error('Error sending order confirmation email:', emailError);
-                // Don't fail the order if email fails
+                const notificationResult = await sendOrderCreatedConfirmationNotifications(
+                    populatedOrder || order,
+                    paymentMethod,
+                    { customerEmail, customerName, isGuest },
+                );
+                console.log('[orders] Confirmation notifications:', notificationResult);
+            } catch (notificationError) {
+                console.error('Error sending order confirmation notifications:', notificationError);
+                // Don't fail the order if notifications fail
             }
 
-            try {
-                const whatsappResult = await sendOrderCreatedWhatsApp(populatedOrder || order, paymentMethod);
-                console.log('[orders] WhatsApp confirmation result:', whatsappResult);
-            } catch (whatsappError) {
-                console.error('Error sending order confirmation WhatsApp:', whatsappError);
+            if (isDeferredPaymentMethod(paymentMethod)) {
+                try {
+                    await upsertAbandonedCartForPendingOrder(populatedOrder || order, {
+                        source: 'checkout_payment',
+                    });
+                } catch (abandonedError) {
+                    console.error('[orders] Failed to save awaiting-payment abandoned cart:', abandonedError);
+                }
             }
             // Decrement stock for each item in this store order (batched)
             const stockUpdates = sellerItems
@@ -865,7 +843,7 @@ export async function POST(request) {
                 }))
                 .filter((item) => item.qty > 0 && item.id);
 
-            if (stockUpdates.length > 0) {
+            if (stockUpdates.length > 0 && !isDeferredPaymentMethod(paymentMethod)) {
                 try {
                     await Product.bulkWrite(
                         stockUpdates.map(({ id, qty }) => ({
@@ -928,7 +906,7 @@ export async function POST(request) {
                 expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
                 mode: 'payment',
                 success_url: `${origin}/order-success?orderId=${primaryOrderId}&stripe=1`,
-                cancel_url: `${origin}/order-failed?reason=${encodeURIComponent('Payment cancelled')}`,
+                cancel_url: `${origin}/order-failed?orderId=${primaryOrderId}&reason=${encodeURIComponent('Payment cancelled')}`,
                 metadata: {
                     orderIds: orderIds.join(','),
                     userId: userId || '',
@@ -981,8 +959,8 @@ export async function POST(request) {
                 },
                 items: tamaraItems,
                 successUrl: `${origin}/order-success?orderId=${primaryOrderId}&tamara=1`,
-                failureUrl: `${origin}/order-failed?reason=${encodeURIComponent('Tamara payment failed')}`,
-                cancelUrl: `${origin}/order-failed?reason=${encodeURIComponent('Payment cancelled')}`,
+                failureUrl: `${origin}/order-failed?orderId=${primaryOrderId}&reason=${encodeURIComponent('Tamara payment failed')}`,
+                cancelUrl: `${origin}/order-failed?orderId=${primaryOrderId}&reason=${encodeURIComponent('Payment cancelled')}`,
                 notificationUrl: `${origin}/api/tamara/webhook`,
                 description: `Order #${primaryOrderId}`,
             });
@@ -1030,8 +1008,8 @@ export async function POST(request) {
                 },
                 items: tabbyItems,
                 successUrl: `${origin}/order-success?orderId=${primaryOrderId}&tabby=1`,
-                failureUrl: `${origin}/order-failed?reason=${encodeURIComponent('Tabby payment failed')}`,
-                cancelUrl: `${origin}/order-failed?reason=${encodeURIComponent('Payment cancelled')}`,
+                failureUrl: `${origin}/order-failed?orderId=${primaryOrderId}&reason=${encodeURIComponent('Tabby payment failed')}`,
+                cancelUrl: `${origin}/order-failed?orderId=${primaryOrderId}&reason=${encodeURIComponent('Payment cancelled')}`,
             });
 
             if (!tabbyResult.web_url) {

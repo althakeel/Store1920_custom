@@ -2,8 +2,10 @@ import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import { verifyTamaraWebhookToken, captureTamaraPayment } from '@/lib/tamara';
+import { sendPaidOrderConfirmationNotifications } from '@/lib/orderConfirmationNotifications';
+import { handlePaymentCancellationRecovery } from '@/lib/paymentCancellationRecovery';
+import { markOrderPaymentSucceeded } from '@/lib/deferredOrderFlow';
 import { recordPurchaseFromOrder } from '@/lib/serverCustomerTracking';
-import { sendDeferredPaymentWhatsApp } from '@/lib/whatsapp/orderNotifications';
 import { sendMetaPurchaseFromOrder } from '@/lib/metaConversionsApi';
 
 export async function POST(request) {
@@ -27,13 +29,12 @@ export async function POST(request) {
         await connectDB();
 
         if (event_type === 'order_approved') {
-            // Find and update the order
-            const order = await Order.findById(orderId);
-            if (order && order.paymentStatus !== 'PAID') {
-                order.paymentStatus = 'PAID';
-                order.isPaid = true;
-                order.tamaraOrderId = tamaraOrderId;
-                await order.save();
+            const existing = await Order.findById(orderId).lean();
+            if (existing && existing.paymentStatus !== 'PAID') {
+                const order = await markOrderPaymentSucceeded(orderId, { paymentStatus: 'PAID' });
+                if (tamaraOrderId && order) {
+                    await Order.findByIdAndUpdate(orderId, { tamaraOrderId });
+                }
 
                 try {
                     await recordPurchaseFromOrder({
@@ -60,10 +61,10 @@ export async function POST(request) {
                 }
 
                 try {
-                    const whatsappResult = await sendDeferredPaymentWhatsApp(order);
-                    console.log('[tamara] WhatsApp paid confirmation:', whatsappResult);
-                } catch (whatsappError) {
-                    console.error('[tamara] WhatsApp failed:', whatsappError);
+                    const notificationResult = await sendPaidOrderConfirmationNotifications(orderId);
+                    console.log('[tamara] Paid confirmation notifications:', notificationResult);
+                } catch (notificationError) {
+                    console.error('[tamara] Confirmation notifications failed:', notificationError);
                 }
 
                 try {
@@ -73,9 +74,9 @@ export async function POST(request) {
                 }
             }
         } else if (event_type === 'order_declined' || event_type === 'order_expired') {
-            await Order.findByIdAndUpdate(orderId, {
-                paymentStatus: 'FAILED',
-                isPaid: false,
+            await handlePaymentCancellationRecovery({
+                orderId,
+                reason: event_type === 'order_declined' ? 'Tamara payment declined' : 'Tamara payment expired',
             });
         }
 

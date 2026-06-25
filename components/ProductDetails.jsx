@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { createPortal } from "react-dom";
+import { AnimatePresence, motion } from "framer-motion";
 
 import { useRouter } from "next/navigation";
 import axios from "axios";
@@ -39,6 +40,7 @@ import { useHorizontalCarouselDrag } from '@/lib/useHorizontalCarouselDrag';
 import ProductVariantPicker from './ProductVariantPicker';
 import {
   buildVariantOptionGroups,
+  cartVariantOptionsMatch,
   findVariantBySelectedOptions,
   getInitialSelectedOptions,
   getVariantMediaIndex,
@@ -48,26 +50,53 @@ import {
 
 const PLACEHOLDER_IMAGE = 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png';
 const NAVBAR_BRAND_COLOR = '#8f3404';
+const GALLERY_CROSSFADE = { duration: 0.55, ease: [0.22, 1, 0.36, 1] };
 
-function ZoomInIcon({ className = '', size = 18 }) {
+function CrossfadeProductMedia({
+  mediaKey,
+  type = 'image',
+  src,
+  poster,
+  alt,
+  sizes,
+  imageClassName = 'object-contain bg-white pointer-events-none',
+  priority = false,
+}) {
+  const displaySrc = src || poster || PLACEHOLDER_IMAGE;
+
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-      aria-hidden="true"
-    >
-      <circle cx="11" cy="11" r="8" />
-      <path d="m21 21-4.3-4.3" />
-      <path d="M11 8v6" />
-      <path d="M8 11h6" />
-    </svg>
+    <AnimatePresence initial={false}>
+      <motion.div
+        key={mediaKey}
+        className="absolute inset-0"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={GALLERY_CROSSFADE}
+      >
+        {type === 'video' ? (
+          <video
+            src={src}
+            poster={poster || PLACEHOLDER_IMAGE}
+            controls
+            playsInline
+            preload="metadata"
+            className="h-full w-full object-contain bg-white"
+          />
+        ) : (
+          <Image
+            src={displaySrc}
+            alt={alt}
+            fill
+            sizes={sizes}
+            quality={90}
+            className={imageClassName}
+            priority={priority}
+            onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE; }}
+          />
+        )}
+      </motion.div>
+    </AnimatePresence>
   );
 }
 
@@ -992,7 +1021,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       return addAmount;
     }
 
-    const targetQty = Math.min(safeMax, cartQty + addAmount);
+    const targetQty = Math.min(safeMax, normalizedQty);
     dispatch(setCartEntry({
       productId: cartProductId,
       entry: {
@@ -1053,19 +1082,35 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const convertedEffPrice = convertPrice(effPrice);
   const convertedEffAED = convertPrice(effAED);
   const savingsAmount = Math.max(0, Number(convertedEffAED || 0) - Number(convertedEffPrice || 0));
-  const tabbyInstallmentAmount = Number(convertedEffPrice || 0) / 12;
-  const tamaraInstallmentAmount = Number(convertedEffPrice || 0) / 4;
+  const pricingQuantity = isBundleTierQty(quantity) ? 1 : Math.max(1, Number(quantity) || 1);
+  const convertedLineTotal = Number(convertedEffPrice || 0) * pricingQuantity;
+  const convertedLineRegularTotal = Number(convertedEffAED || 0) * pricingQuantity;
+  const buyBoxSalePrice = pricingQuantity > 1 ? convertedLineTotal : convertedEffPrice;
+  const buyBoxRegularPrice = pricingQuantity > 1 ? convertedLineRegularTotal : convertedEffAED;
+  const tabbyInstallmentAmount = convertedLineTotal / 12;
+  const tamaraInstallmentAmount = convertedLineTotal / 4;
   const storedSalePriceAr = String(product?.attributes?.priceAr || '').trim();
   const storedRegularPriceAr = String(product?.attributes?.AEDAr || '').trim();
+  const lineSavingsAmount = Math.max(0, convertedLineRegularTotal - convertedLineTotal);
   const displaySalePrice = isArabic && storedSalePriceAr
     ? storedSalePriceAr
     : formatMoney(convertedEffPrice, true);
   const displayRegularPrice = isArabic && storedRegularPriceAr
     ? storedRegularPriceAr
     : formatMoney(convertedEffAED, true);
+  const displayMobileSalePrice = (isArabic && storedSalePriceAr && pricingQuantity <= 1)
+    ? storedSalePriceAr
+    : formatMoney(buyBoxSalePrice, true);
+  const displayMobileRegularPrice = (isArabic && storedRegularPriceAr && pricingQuantity <= 1)
+    ? storedRegularPriceAr
+    : formatMoney(buyBoxRegularPrice, true);
   const displayTabbyInstallmentAmount = formatMoney(tabbyInstallmentAmount, true);
   const displayTamaraInstallmentAmount = formatMoney(tamaraInstallmentAmount, true);
   const displaySavingsAmount = formatMoney(savingsAmount, true);
+  const displayMobileSavingsAmount = formatMoney(
+    pricingQuantity > 1 ? lineSavingsAmount : savingsAmount,
+    true,
+  );
 
   const renderBundleOptions = () => {
     if (bulkVariants.length === 0) return null;
@@ -1191,7 +1236,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     const initTabbyPromo = () => {
       if (!window.TabbyPromo || !tabbyPublicKey || !tabbyMerchantCode) return;
 
-      const price = Number(convertedEffPrice || 0).toFixed(2);
+      const price = Number(convertedLineTotal || 0).toFixed(2);
       if (Number(price) <= 0) return;
 
       try {
@@ -1261,7 +1306,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       if (idleId && 'cancelIdleCallback' in window) window.cancelIdleCallback(idleId);
       if (timerId) window.clearTimeout(timerId);
     };
-  }, [tabbyPromoSelector, convertedEffPrice, isArabic, tabbyPublicKey, tabbyMerchantCode, currency]);
+  }, [tabbyPromoSelector, convertedLineTotal, isArabic, tabbyPublicKey, tabbyMerchantCode, currency]);
 
   const soldByText = String(
     product?.attributes?.soldBy ??
@@ -1821,6 +1866,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const goToMobileImage = (index, smooth = true) => {
     if (!mediaGallery.length) return;
     const safeIndex = Math.max(0, Math.min(index, mediaGallery.length - 1));
+    setShowZoom(false);
     setActiveMediaIndex(safeIndex);
     const carousel = mobileCarouselRef.current;
     if (carousel) {
@@ -1851,6 +1897,13 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       carousel.scrollLeft = 0;
     }
   }, [product._id]);
+
+  const selectGalleryIndex = useCallback((index) => {
+    if (!mediaGallery.length) return;
+    const safeIndex = Math.max(0, Math.min(index, mediaGallery.length - 1));
+    setShowZoom(false);
+    setActiveMediaIndex(safeIndex);
+  }, [mediaGallery.length]);
 
   useEffect(() => {
     const container = mobileThumbnailsRef.current;
@@ -2093,8 +2146,14 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     setAddedToCart(true);
   };
 
+  const cartMatchesSelection = useMemo(
+    () => cartQty > 0 && cartVariantOptionsMatch(cartEntry?.variantOptions, cartVariantOptions),
+    [cartQty, cartEntry, cartVariantOptions],
+  );
+
   useEffect(() => {
-    setAddedToCart(false);
+    if (cartMatchesSelection) return;
+
     if (bulkBundleTiers.length > 0) {
       const firstTier = bulkBundleTiers[0] ?? 1;
       setQuantity(firstTier);
@@ -2102,27 +2161,21 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     } else {
       setQuantity(1);
     }
-    // Only reset quantity when switching product or color/size — not on every render.
-  }, [product?._id, selectedOptions]);
+  }, [product?._id, selectedOptions, cartMatchesSelection, bulkBundleTiers]);
 
   useEffect(() => {
-    if (!addedToCart || cartQty <= 0) return;
+    if (!cartMatchesSelection) return;
     if (isCartBundleLine && cartBundleTier) {
       setQuantity(cartBundleTier);
       setSelectedBundleQty(cartBundleTier);
       return;
     }
     setQuantity(cartQty);
-  }, [addedToCart, product?._id, cartQty, isCartBundleLine, cartBundleTier]);
+  }, [cartMatchesSelection, product?._id, cartQty, isCartBundleLine, cartBundleTier]);
 
-  // Keep addedToCart in sync with actual cart state (do not override manual quantity before add-to-cart)
   useEffect(() => {
-    if (cartQty > 0) {
-      setAddedToCart(true);
-    } else {
-      setAddedToCart(false);
-    }
-  }, [cartQty]);
+    setAddedToCart(cartMatchesSelection);
+  }, [cartMatchesSelection]);
 
   // Toggle FBT product selection
   const toggleFbtProduct = (productId) => {
@@ -2348,8 +2401,8 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 {mediaGallery.map((item, index) => (
                   <button
                     key={`${item.src}-${index}`}
-                    onClick={() => setActiveMediaIndex(index)}
-                    className={`relative w-[44px] h-[44px] xl:w-[48px] xl:h-[48px] border-2 rounded overflow-hidden transition-all bg-white flex-shrink-0 cursor-pointer ${
+                    onClick={() => selectGalleryIndex(index)}
+                    className={`relative w-[44px] h-[44px] xl:w-[48px] xl:h-[48px] border-2 rounded overflow-hidden transition-all duration-300 ease-out bg-white flex-shrink-0 cursor-pointer ${
                       activeMediaIndex === index ? 'border-orange-500' : 'border-gray-200 hover:border-gray-300'
                     }`}
                   >
@@ -2385,19 +2438,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   </div>
                 )}
 
-                <div className="absolute top-4 right-4 z-10 flex flex-col gap-2">
-                  <button
-                    onClick={handleWishlist}
-                    disabled={wishlistLoading}
-                    className="w-10 h-10 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center hover:border-gray-300 transition"
-                  >
-                    <HeartIcon
-                      size={18}
-                      fill={isInWishlist ? '#ef4444' : 'none'}
-                      className={isInWishlist ? 'text-red-500' : 'text-gray-600'}
-                      strokeWidth={2}
-                    />
-                  </button>
+                <div className="absolute bottom-3 right-3 z-20">
                   <ProductShareButton
                     productName={safeProductName}
                     productId={product._id}
@@ -2407,19 +2448,6 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                     variant="overlay"
                   />
                 </div>
-
-                {activeMedia?.type !== 'video' ? (
-                  <div className="absolute top-4 left-4 z-20">
-                    <button
-                      type="button"
-                      onClick={openFullViewGallery}
-                      className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white shadow-sm transition hover:border-gray-300"
-                      aria-label={t('product.viewFullImage')}
-                    >
-                      <ZoomInIcon size={18} className="text-gray-600" />
-                    </button>
-                  </div>
-                ) : null}
 
                 <div
                   ref={imageContainerRef}
@@ -2434,25 +2462,21 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   onMouseMove={activeMedia?.type === 'video' ? undefined : handleImageMouseMove}
                 >
                   {activeMedia?.type === 'video' ? (
-                    <video
-                      key={activeMedia.src}
+                    <CrossfadeProductMedia
+                      mediaKey={`${activeMediaIndex}-${activeMedia.src}`}
+                      type="video"
                       src={activeMedia.src}
                       poster={activeMedia.poster || PLACEHOLDER_IMAGE}
-                      controls
-                      playsInline
-                      preload="metadata"
-                      className="w-full h-full object-contain bg-white"
+                      alt={safeProductName}
                     />
                   ) : (
-                    <Image
+                    <CrossfadeProductMedia
+                      mediaKey={`${activeMediaIndex}-${mainImage}`}
+                      type="image"
                       src={mainImage || PLACEHOLDER_IMAGE}
                       alt={safeProductName}
-                      fill
                       sizes="(max-width: 1024px) 100vw, 640px"
-                      quality={90}
-                      className="object-contain bg-white pointer-events-none"
                       priority
-                      onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE; }}
                     />
                   )}
                   {showZoom && activeMedia?.type !== 'video' && isRtlLayout() && (
@@ -2492,19 +2516,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   </div>
                 )}
 
-                <div className="absolute top-4 right-4 z-10 flex flex-col gap-2">
-                  <button
-                    onClick={handleWishlist}
-                    disabled={wishlistLoading}
-                    className="w-10 h-10 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center hover:border-gray-300 transition"
-                  >
-                    <HeartIcon 
-                      size={18} 
-                      fill={isInWishlist ? '#ef4444' : 'none'} 
-                      className={isInWishlist ? 'text-red-500' : 'text-gray-600'}
-                      strokeWidth={2} 
-                    />
-                  </button>
+                <div className="absolute bottom-3 right-3 z-20">
                   <ProductShareButton
                     productName={safeProductName}
                     productId={product._id}
@@ -2514,19 +2526,6 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                     variant="overlay"
                   />
                 </div>
-
-                {activeMedia?.type !== 'video' ? (
-                  <div className="absolute top-4 left-4 z-10">
-                    <button
-                      type="button"
-                      onClick={openFullViewGallery}
-                      className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white shadow-sm transition hover:border-gray-300"
-                      aria-label={t('product.viewFullImage')}
-                    >
-                      <ZoomInIcon size={18} className="text-gray-600" />
-                    </button>
-                  </div>
-                ) : null}
 
                 {mediaGallery.length > 1 ? (
                   <div
@@ -2565,25 +2564,22 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                     ))}
                   </div>
                 ) : activeMedia?.type === 'video' ? (
-                  <video
-                    key={activeMedia.src}
+                  <CrossfadeProductMedia
+                    mediaKey={`mobile-${activeMediaIndex}-${activeMedia.src}`}
+                    type="video"
                     src={activeMedia.src}
                     poster={activeMedia.poster || PLACEHOLDER_IMAGE}
-                    controls
-                    playsInline
-                    preload="metadata"
-                    className="absolute inset-0 h-full w-full object-cover"
+                    alt={safeProductName}
                   />
                 ) : (
-                  <Image
+                  <CrossfadeProductMedia
+                    mediaKey={`mobile-${activeMediaIndex}-${mainImage}`}
+                    type="image"
                     src={mainImage || PLACEHOLDER_IMAGE}
                     alt={safeProductName}
-                    fill
                     sizes="100vw"
-                    quality={90}
-                    className="object-cover"
+                    imageClassName="object-cover"
                     priority
-                    onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMAGE; }}
                   />
                 )}
               </div>
@@ -2600,7 +2596,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   key={`${item.src}-${index}-thumb`}
                   type="button"
                   onClick={() => goToMobileImage(index)}
-                  className={`relative flex-shrink-0 w-14 h-14 border-2 rounded overflow-hidden transition-all duration-200 bg-white cursor-pointer ${
+                  className={`relative flex-shrink-0 w-14 h-14 border-2 rounded overflow-hidden transition-all duration-300 ease-out bg-white cursor-pointer ${
                     activeImageIndex === index
                       ? 'border-[#E52721] ring-1 ring-red-200'
                       : 'border-gray-200 opacity-80 hover:opacity-100'
@@ -2643,12 +2639,12 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2.5">
                   <bdi dir={isArabic ? 'rtl' : 'ltr'} className="text-[24px] font-semibold leading-none text-[#E52721]">
-                    {displaySalePrice}
+                    {displayMobileSalePrice}
                   </bdi>
                   {effAED > effPrice ? (
                     <>
                       <bdi dir={isArabic ? 'rtl' : 'ltr'} className="text-sm text-gray-400 line-through">
-                        {displayRegularPrice}
+                        {displayMobileRegularPrice}
                       </bdi>
                       <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-1 text-[11px] font-semibold text-[#E52721]">
                         <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -2659,10 +2655,15 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                     </>
                   ) : null}
                 </div>
-                {savingsAmount > 0 ? (
+                {pricingQuantity > 1 ? (
+                  <p className="text-[13px] text-gray-500">
+                    {formatMoney(convertedEffPrice, true)} × {formatCount(pricingQuantity)}
+                  </p>
+                ) : null}
+                {(pricingQuantity > 1 ? lineSavingsAmount : savingsAmount) > 0 ? (
                   <p className="flex items-center gap-1.5 text-[13px] font-semibold text-[#E52721]">
                     <span aria-hidden="true">🔥</span>
-                    {t('product.mobile.saveAmount', { amount: displaySavingsAmount })}
+                    {t('product.mobile.saveAmount', { amount: displayMobileSavingsAmount })}
                   </p>
                 ) : null}
               </div>
@@ -3129,7 +3130,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
               )}
               <div className="flex flex-wrap items-end gap-2">
                 <span className={`${isSpecialOffer ? 'text-green-600' : 'text-gray-900'}`}>
-                  {renderSplitPrice(convertedEffPrice, {
+                  {renderSplitPrice(buyBoxSalePrice, {
                     currencyClass: `text-[15px] font-medium ${isSpecialOffer ? 'text-green-600' : 'text-gray-900'}`,
                     mainClass: `text-[52px] font-semibold leading-none ${isSpecialOffer ? 'text-green-600' : 'text-gray-900'}`,
                     decimalClass: `text-[18px] font-semibold leading-none ${isSpecialOffer ? 'text-green-600' : 'text-gray-900'}`,
@@ -3139,7 +3140,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
                 {effAED > effPrice && (
                   <bdi dir="ltr" className="text-sm text-gray-500 line-through whitespace-nowrap pb-1">
-                    {formatMoney(convertedEffAED, true)}
+                    {formatMoney(buyBoxRegularPrice, true)}
                   </bdi>
                 )}
 
@@ -3155,6 +3156,11 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   </span>
                 )}
               </div>
+              {pricingQuantity > 1 ? (
+                <p className="text-[13px] text-gray-500">
+                  {formatMoney(convertedEffPrice, true)} × {formatCount(pricingQuantity)}
+                </p>
+              ) : null}
             </div>
 
             {/* Delivery & Returns (buybox info) */}
