@@ -35,6 +35,11 @@ import { resolveCartLinePricing } from "@/lib/bulkBundleCart";
 import { decrementCartItem, incrementCartItem } from "@/lib/bundleCartActions";
 import { STORE1920_LOGO_PATH } from "@/lib/brandLogo";
 import {
+  rememberPendingCheckoutOrder,
+  getPendingCheckoutOrderId,
+  clearPendingCheckoutOrder,
+} from '@/lib/pendingCheckoutOrder';
+import {
   getPhoneInputError,
   getPhoneValidationMessage,
   isValidPhoneNumber,
@@ -254,6 +259,32 @@ export default function CheckoutPage() {
   };
 
   const router = useRouter();
+
+  // If the customer returns to checkout after abandoning Tabby/Tamara/Stripe, cancel the unpaid order.
+  useEffect(() => {
+    const pendingOrderId = getPendingCheckoutOrderId();
+    if (!pendingOrderId) return undefined;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        await fetch('/api/payment-cancelled', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            orderId: pendingOrderId,
+            reason: 'Returned to checkout without completing payment',
+          }),
+        });
+      } catch (error) {
+        console.error('Failed to cancel pending checkout order:', error);
+      } finally {
+        if (!cancelled) clearPendingCheckoutOrder();
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, []);
 
   // Fetch only the products that are in the cart (fast targeted batch fetch)
   useEffect(() => {
@@ -1240,9 +1271,9 @@ export default function CheckoutPage() {
 
       const data = await res.json();
 
-      // Orders API returns { session: { url, id } } for STRIPE paymentMethod
       const sessionUrl = data?.session?.url;
       if (sessionUrl) {
+        if (data?.orderId) rememberPendingCheckoutOrder(data.orderId);
         // Redirect to Stripe-hosted checkout page
         window.location.href = sessionUrl;
         return true;
@@ -1285,6 +1316,7 @@ export default function CheckoutPage() {
       const data = await res.json();
       const checkoutUrl = data?.checkout_url;
       if (checkoutUrl) {
+        if (data?.orderId) rememberPendingCheckoutOrder(data.orderId);
         window.location.href = checkoutUrl;
         return true;
       }
@@ -1326,6 +1358,7 @@ export default function CheckoutPage() {
       const data = await res.json();
       const checkoutUrl = data?.checkout_url;
       if (checkoutUrl) {
+        if (data?.orderId) rememberPendingCheckoutOrder(data.orderId);
         window.location.href = checkoutUrl;
         return true;
       }

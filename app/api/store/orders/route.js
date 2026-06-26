@@ -93,6 +93,13 @@ export async function GET(request){
             return NextResponse.json({ error: 'not authorized' }, { status: 401 })
         }
 
+        try {
+            const { expireStaleAwaitingPaymentOrders } = await import('@/lib/deferredOrderFlow');
+            await expireStaleAwaitingPaymentOrders(storeId);
+        } catch (expireError) {
+            debugLog('stale awaiting-payment expiry failed:', expireError?.message || expireError);
+        }
+
         const [orders, convertedCarts] = await Promise.all([
             Order.find({ storeId })
                 .populate('addressId')

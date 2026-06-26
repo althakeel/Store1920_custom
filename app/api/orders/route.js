@@ -942,7 +942,7 @@ export async function POST(request) {
                     appId: 'Qui'
                 }
             });
-            return NextResponse.json({ session });
+            return NextResponse.json({ session, orderId: primaryOrderId });
         }
 
         // Tamara BNPL payment
@@ -1011,7 +1011,11 @@ export async function POST(request) {
             // Store Tamara order ID on our order
             await Order.findByIdAndUpdate(primaryOrderId, { tamaraOrderId: tamaraResult.tamara_order_id });
 
-            return NextResponse.json({ checkout_url: tamaraResult.checkout_url, tamara_order_id: tamaraResult.tamara_order_id });
+            return NextResponse.json({
+                checkout_url: tamaraResult.checkout_url,
+                tamara_order_id: tamaraResult.tamara_order_id,
+                orderId: primaryOrderId,
+            });
         }
 
         // Tabby BNPL payment
@@ -1061,7 +1065,11 @@ export async function POST(request) {
 
             await Order.findByIdAndUpdate(primaryOrderId, { tabbyPaymentId: tabbyResult.payment_id || '' });
 
-            return NextResponse.json({ checkout_url: tabbyResult.web_url, tabby_payment_id: tabbyResult.payment_id || '' });
+            return NextResponse.json({
+                checkout_url: tabbyResult.web_url,
+                tabby_payment_id: tabbyResult.payment_id || '',
+                orderId: primaryOrderId,
+            });
         }
 
         // Clear cart for logged-in users

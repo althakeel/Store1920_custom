@@ -20,6 +20,7 @@ import {
     getDeliveryBucket,
     getOrderDiscountLines,
     getOrderExpectedDeliveryDate,
+    getOrderTableTags,
     summarizeDeliveryBuckets,
     isDashboardConvertedOrder,
 } from '@/lib/storeOrderInsights';
@@ -30,7 +31,12 @@ import {
     isManualStoreDashboardOrder,
     orderPaymentReferenceLabel,
 } from '@/lib/storeCreateOrder';
-import { normalizeImportedOrderItems } from '@/lib/importedOrderItems';
+import { getStoreOrderDisplayItems } from '@/lib/storeOrderLineItems';
+import {
+  WOOCOMMERCE_ORDER_EXPORT_HEADERS,
+  buildWooCommerceOrderExportRows,
+  buildWooCommerceOrderExportCsv,
+} from '@/lib/storeOrderWooExport';
 import { isAwaitingPaymentOrder, isVisibleStoreOrder } from '@/lib/deferredOrderStatus';
 
 function normalizeOrderSearchQuery(value = '') {
@@ -567,7 +573,7 @@ export default function StoreOrders() {
                         }}
                         className="rounded-lg border border-gray-300 px-2 py-1 text-sm bg-white"
                     >
-                        {[10, 20, 50, 100].map((size) => (
+                        {[10, 20, 50, 100, 500].map((size) => (
                             <option key={size} value={size}>{size}</option>
                         ))}
                     </select>
@@ -1059,58 +1065,6 @@ export default function StoreOrders() {
         }
     };
 
-    const toExcelSafeValue = (value) => {
-        if (value === null || value === undefined) return '';
-        return String(value).replace(/\t|\r|\n/g, ' ').trim();
-    };
-
-    const getCurrencyCode = () => {
-        return 'AED';
-    };
-
-    const normalizeUaeMobile = (phoneCode, phone, fallbackPhone) => {
-        const raw = [phoneCode, phone].filter(Boolean).join(' ').trim() || (fallbackPhone || '');
-        if (!raw) return '';
-
-        let digits = String(raw).replace(/\D/g, '');
-
-        if (digits.startsWith('971')) digits = digits.slice(3);
-        if (digits.startsWith('0')) digits = digits.slice(1);
-        if (digits.length > 9) digits = digits.slice(-9);
-
-        return digits;
-    };
-
-    const getProductShortDescription = (orderItems) => {
-        if (!Array.isArray(orderItems) || orderItems.length === 0) return '';
-        const first = orderItems[0] || {};
-        const name = first?.product?.name || first?.name || first?.productName || '';
-        return name ? String(name) : '';
-    };
-
-    const getProductsNote = (orderItems) => {
-        if (!Array.isArray(orderItems) || orderItems.length === 0) return '';
-        return orderItems
-            .map((item) => item?.product?.name || item?.name || item?.productName || '')
-            .filter(Boolean)
-            .join(', ');
-    };
-
-    const getDestinationFlatValue = (shipping) => {
-        return (
-            shipping?.flat ||
-            shipping?.flatNo ||
-            shipping?.flatNumber ||
-            shipping?.apartment ||
-            shipping?.apartmentNumber ||
-            shipping?.villa ||
-            shipping?.villaNumber ||
-            shipping?.landmark ||
-            shipping?.street ||
-            ''
-        );
-    };
-
     const getExportFilteredOrders = () => {
         const baseOrders = filteredOrders;
 
@@ -1148,92 +1102,18 @@ export default function StoreOrders() {
             return;
         }
 
-        const headers = [
-            'Customer',
-            'Payment Type',
-            'Service Type',
-            'Courier Type',
-            'Currency',
-            'Cod',
-            'Description',
-            'Shipper Name',
-            'Shipper Phone',
-            'Origin Country',
-            'Origin City',
-            'Origin Address',
-            'Origin Flat Or Villa Number',
-            'Reciever Name',
-            'Reciever Phone Number',
-            'Destination Country',
-            'Destination City',
-            'Destination Address',
-            'Destination Flat Or Villa Number',
-            'Number Of Pieces',
-            'Length',
-            'Width',
-            'Height',
-            'Dimension',
-            'Weight',
-            'Weight Unit',
-            'Value',
-            'Note'
-        ];
-
-        const rows = exportOrders.map((order) => {
-            const shipping = order?.shippingAddress || {};
-            const orderItems = Array.isArray(order?.orderItems) ? order.orderItems : [];
-            const paymentMethod = String(order?.paymentMethod || order?.payment_method || '').toLowerCase();
-            const isCod = paymentMethod === 'cod';
-            const receiverPhone = normalizeUaeMobile(shipping?.phoneCode, shipping?.phone, order?.guestPhone);
-            const productName = getProductsNote(orderItems);
-            const description = productName || '';
-            const note = productName || '';
-
-            return [
-                order?.isGuest
-                    ? (order?.guestName || '')
-                    : (order?.userId?.name || order?.userId?.email || ''),
-                order?.paymentMethod || order?.payment_method || '',
-                'UAE DOM',
-                'DOCUMENTS',
-                getCurrencyCode(),
-                isCod ? (order?.total ?? '') : '',
-                description,
-                'Store1920.com',
-                process.env.NEXT_PUBLIC_INVOICE_CONTACT || '',
-                'United Arab Emirates',
-                'Dubai',
-                'Firj Murar',
-                'Nil',
-                shipping?.name || order?.guestName || '',
-                receiverPhone || order?.guestPhone || '',
-                'United Arab Emirates',
-                shipping?.city || '',
-                shipping?.street || '',
-                getDestinationFlatValue(shipping),
-                1,
-                10,
-                5,
-                3,
-                'CM',
-                2.5,
-                'Kg',
-                isCod ? (order?.total ?? '') : '',
-                note
-            ].map(toExcelSafeValue);
-        });
-
         try {
             const XLSX = await import('xlsx');
-            const worksheetData = [headers, ...rows];
+            const rows = buildWooCommerceOrderExportRows(exportOrders);
+            const worksheetData = [WOOCOMMERCE_ORDER_EXPORT_HEADERS, ...rows];
             const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
 
-            worksheet['!cols'] = headers.map((header) => {
+            worksheet['!cols'] = WOOCOMMERCE_ORDER_EXPORT_HEADERS.map((header, columnIndex) => {
                 const maxCellLength = Math.max(
                     header.length,
-                    ...rows.map((row) => (row[headers.indexOf(header)] || '').length)
+                    ...rows.map((row) => String(row[columnIndex] || '').length),
                 );
-                return { wch: Math.min(Math.max(maxCellLength + 2, 12), 40) };
+                return { wch: Math.min(Math.max(maxCellLength + 2, 12), 48) };
             });
 
             const workbook = XLSX.utils.book_new();
@@ -1242,58 +1122,11 @@ export default function StoreOrders() {
             const dateLabel = new Date().toISOString().slice(0, 10);
             XLSX.writeFile(workbook, `store-orders-${dateLabel}.xlsx`);
 
-            toast.success(`Exported ${exportOrders.length} order(s)`);
+            toast.success(`Exported ${rows.length} row(s) from ${exportOrders.length} order(s)`);
         } catch (error) {
             console.error('Excel export failed:', error);
             toast.error('Failed to export Excel file');
         }
-    };
-
-    const getOrderCsvRows = (exportOrders) => {
-        return exportOrders.map((order) => {
-            const shipping = order?.shippingAddress || {};
-            const customerName = getOrderCustomerDisplayName(order);
-            const customerEmail = order?.isGuest
-                ? (order?.guestEmail || '')
-                : (order?.userId?.email || order?.guestEmail || '');
-            const items = Array.isArray(order?.orderItems)
-                ? order.orderItems.map((item) => ({
-                    name: item?.productId?.name || item?.name || '',
-                    quantity: item?.quantity || 1,
-                    price: item?.price || 0,
-                })).filter((item) => item.name)
-                : [];
-
-            return {
-                orderId: order?._id || '',
-                shortOrderNumber: order?.shortOrderNumber || '',
-                legacySourceId: order?.legacySourceId || '',
-                customerName,
-                customerEmail,
-                customerPhone: order?.guestPhone || shipping?.phone || '',
-                total: order?.total ?? 0,
-                shippingFee: order?.shippingFee ?? 0,
-                status: order?.status || '',
-                paymentMethod: order?.paymentMethod || '',
-                paymentStatus: order?.paymentStatus || '',
-                isPaid: Boolean(order?.isPaid),
-                trackingId: order?.trackingId || '',
-                trackingUrl: order?.trackingUrl || '',
-                courier: order?.courier || '',
-                notes: order?.notes || '',
-                shippingName: shipping?.name || customerName,
-                shippingPhone: shipping?.phone || order?.guestPhone || '',
-                shippingAddress1: shipping?.street || shipping?.address1 || '',
-                shippingAddress2: shipping?.address2 || '',
-                shippingCity: shipping?.city || '',
-                shippingState: shipping?.state || '',
-                shippingCountry: shipping?.country || '',
-                shippingPostcode: shipping?.postcode || '',
-                orderItems: JSON.stringify(items),
-                createdAt: order?.createdAt || '',
-                updatedAt: order?.updatedAt || '',
-            };
-        });
     };
 
     const exportOrdersToCsv = async () => {
@@ -1305,20 +1138,8 @@ export default function StoreOrders() {
         }
 
         try {
-            const rows = getOrderCsvRows(exportOrders);
-            const headers = Object.keys(rows[0] || {});
-            const escapeCsv = (value) => {
-                const text = value === null || value === undefined ? '' : String(value);
-                if (/[",\n]/.test(text)) {
-                    return `"${text.replace(/"/g, '""')}"`;
-                }
-                return text;
-            };
-
-            const csv = [
-                headers.join(','),
-                ...rows.map((row) => headers.map((header) => escapeCsv(row[header])).join(',')),
-            ].join('\n');
+            const csv = buildWooCommerceOrderExportCsv(exportOrders);
+            const rowCount = csv.split('\n').length - 1;
 
             const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
@@ -1330,7 +1151,7 @@ export default function StoreOrders() {
             link.remove();
             URL.revokeObjectURL(url);
 
-            toast.success(`Exported ${exportOrders.length} order(s) to CSV`);
+            toast.success(`Exported ${rowCount} row(s) from ${exportOrders.length} order(s) to CSV`);
         } catch (error) {
             console.error('CSV export failed:', error);
             toast.error('Failed to export CSV file');
@@ -2156,35 +1977,25 @@ export default function StoreOrders() {
                                         </span>
                                     </td>
                                     <td className="px-4 py-3">
-                                        <div className="flex max-w-[220px] flex-wrap gap-1">
-                                            {isDashboardConvertedOrder(order) ? (
-                                                <span
-                                                    className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800"
-                                                    title={order.conversion.note || `Converted by ${order.conversion.convertedByName}`}
-                                                >
-                                                    Converted · {order.conversion.convertedByName}
-                                                </span>
-                                            ) : null}
-                                            {isDashboardConvertedOrder(order) && formatConversionDiscount(order.conversion, currency) ? (
-                                                <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-medium text-violet-800">
-                                                    {formatConversionDiscount(order.conversion, currency)}
-                                                </span>
-                                            ) : null}
-                                            {getOrderDiscountLines(order, currency).filter((line) => line.label !== 'Recovery discount').map((line) => (
-                                                <span key={`${order._id}-${line.label}`} className="rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-medium text-green-800">
-                                                    {line.label}
-                                                </span>
-                                            ))}
-                                            {getDeliveryBucket(order) === 'today' ? (
-                                                <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-800">Today</span>
-                                            ) : null}
-                                            {getDeliveryBucket(order) === 'tomorrow' ? (
-                                                <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-semibold text-indigo-800">Tomorrow</span>
-                                            ) : null}
-                                            {getDeliveryBucket(order) === 'delayed' ? (
-                                                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">Delayed</span>
-                                            ) : null}
-                                        </div>
+                                        {(() => {
+                                            const tableTags = getOrderTableTags(order, currency);
+                                            if (!tableTags.length) {
+                                                return <span className="text-xs text-slate-300">—</span>;
+                                            }
+                                            return (
+                                                <div className="flex max-w-[220px] flex-wrap gap-1">
+                                                    {tableTags.map((tag) => (
+                                                        <span
+                                                            key={`${order._id}-${tag.key}`}
+                                                            className={tag.className}
+                                                            title={tag.title || undefined}
+                                                        >
+                                                            {tag.label}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            );
+                                        })()}
                                     </td>
                                     <td className="px-4 py-3" onClick={e => { e.stopPropagation(); }}>
                                         <div className="flex min-w-[180px] items-center gap-2">
@@ -2711,15 +2522,21 @@ export default function StoreOrders() {
                                     Order Items
                                 </h3>
                                 <div className="space-y-3">
-                                    {(selectedOrder.orderItems || []).length === 0 ? (
-                                        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-                                            No products were found on this order.
-                                        </div>
-                                    ) : normalizeImportedOrderItems(selectedOrder.orderItems || []).map((item, i) => {
-                                        const itemName = item.productId?.name || item.product?.name || item.name || 'Imported product'
-                                        const itemImage = item.productId?.images?.[0] || item.product?.images?.[0] || null
-                                        const unitPrice = Number(item.price || 0)
-                                        const quantity = Number(item.quantity || 1)
+                                    {(() => {
+                                        const displayItems = getStoreOrderDisplayItems(selectedOrder);
+                                        if (!displayItems.length) {
+                                            return (
+                                                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+                                                    No products were found on this order.
+                                                </div>
+                                            );
+                                        }
+
+                                        return displayItems.map((item, i) => {
+                                        const itemName = item.name || item.productId?.name || item.product?.name || 'Product';
+                                        const itemImage = item.image || item.productId?.images?.[0] || item.product?.images?.[0] || null;
+                                        const unitPrice = Number(item.price || 0);
+                                        const quantity = Number(item.quantity || 1);
 
                                         return (
                                         <div key={i} className="flex items-center gap-4 border border-slate-200 rounded-xl p-3 bg-white hover:shadow-md transition-shadow">
@@ -2748,7 +2565,8 @@ export default function StoreOrders() {
                                                 <p className="text-lg font-bold text-slate-900">{currency}{(unitPrice * quantity).toFixed(0)}</p>
                                             </div>
                                         </div>
-                                    )})}
+                                    )});
+                                    })()}
                                 </div>
                             </div>
 

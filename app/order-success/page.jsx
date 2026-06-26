@@ -19,6 +19,7 @@ import Loading from '@/components/Loading';
 import { useAuth } from '@/lib/useAuth';
 import { trackPurchase } from '@/lib/tracking';
 import { getDisplayOrderNumber } from '@/lib/orderDisplay';
+import { clearPendingCheckoutOrder } from '@/lib/pendingCheckoutOrder';
 
 export default function OrderSuccess() {
   return (
@@ -43,6 +44,8 @@ function OrderSuccessContent() {
       router.replace('/');
       return;
     }
+
+    clearPendingCheckoutOrder();
 
     let cancelled = false;
 

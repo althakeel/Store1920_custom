@@ -1,6 +1,7 @@
 'use client'
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
+import { clearPendingCheckoutOrder } from '@/lib/pendingCheckoutOrder';
 
 function OrderFailedContent() {
   const router = useRouter();
@@ -10,7 +11,12 @@ function OrderFailedContent() {
 
   const [recoverySent, setRecoverySent] = useState(false);
 
-  useEffect(() => {    if (!orderId || recoverySent) return;
+  useEffect(() => {
+    if (!orderId) {
+      clearPendingCheckoutOrder();
+      return;
+    }
+    if (recoverySent) return;
 
     const notifyCancellation = async () => {
       try {
@@ -25,6 +31,7 @@ function OrderFailedContent() {
       } catch (error) {
         console.error('Payment cancellation recovery failed:', error);
       } finally {
+        clearPendingCheckoutOrder();
         setRecoverySent(true);
       }
     };
