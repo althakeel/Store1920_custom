@@ -2,7 +2,7 @@
 
 import { Search, ShoppingCart, Menu, X, HeartIcon, StarIcon, ArrowLeft, LogOut, User, MapPin, Package } from "lucide-react";
 import Link from "next/link";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { auth } from '../lib/firebase';
@@ -88,7 +88,7 @@ const getContrastColor = (hexColor) => {
 
 const getCategoryId = (category) => getCategoryRecordId(category);
 
-const getCategoryDisplayName = (category) => getNavCategoryDisplayName(category);
+const getCategoryDisplayName = (category, language = 'en') => getNavCategoryDisplayName(category, language);
 
 const Navbar = () => {
   const dispatch = useDispatch();
@@ -266,6 +266,7 @@ const Navbar = () => {
 
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const isHomePage = pathname === '/';
 
   const mobileNavbarUsesBrandColor = isHomePage;
@@ -294,10 +295,15 @@ const Navbar = () => {
     return addressList.find((address) => address?._id === selectedAddressId) || addressList[0] || null;
   }, [addressList, selectedAddressId]);
 
+  const getLocalizedCategoryDisplayName = useCallback(
+    (category) => getCategoryDisplayName(category, storefrontLanguage),
+    [storefrontLanguage],
+  );
+
   const mainCategories = useMemo(() => (
     filterParentCategories(Array.isArray(categories) ? categories : [])
-      .sort((left, right) => getCategoryDisplayName(left).localeCompare(getCategoryDisplayName(right)))
-  ), [categories]);
+      .sort((left, right) => getLocalizedCategoryDisplayName(left).localeCompare(getLocalizedCategoryDisplayName(right)))
+  ), [categories, getLocalizedCategoryDisplayName]);
 
   const activeCategory = useMemo(() => {
     const defaultCategory = mainCategories[0] || null;
@@ -981,6 +987,27 @@ const Navbar = () => {
     router.push(`/shop?search=${encodeURIComponent(query)}`);
   };
 
+  const clearSearchState = useCallback(() => {
+    setSearch('');
+    setSearchFocused(false);
+    setSearchSuggestionResults([]);
+    setSearchSuggestionTotal(0);
+    setSearchSuggestionsLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (pathname.startsWith('/shop')) {
+      const queryFromUrl = String(searchParams.get('search') || '').trim();
+      setSearch(queryFromUrl);
+      setSearchFocused(false);
+      setSearchSuggestionResults([]);
+      setSearchSuggestionTotal(0);
+      return;
+    }
+
+    clearSearchState();
+  }, [pathname, searchParams, clearSearchState]);
+
   useEffect(() => {
     const query = search.trim();
     if (searchDebounceRef.current) {
@@ -1051,7 +1078,7 @@ const Navbar = () => {
             className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-slate-50"
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => {
-              setSearchFocused(false);
+              clearSearchState();
               onSelect?.();
             }}
           >
@@ -1307,7 +1334,7 @@ const Navbar = () => {
                     isActive ? 'bg-slate-50 font-semibold text-slate-900' : 'text-slate-700 hover:bg-slate-50'
                   }`}
                 >
-                  <span className="min-w-0 flex-1 truncate">{getCategoryDisplayName(category)}</span>
+                  <span className="min-w-0 flex-1 truncate">{getLocalizedCategoryDisplayName(category)}</span>
                   <span className="shrink-0 text-slate-400">›</span>
                 </button>
               );
@@ -1317,12 +1344,12 @@ const Navbar = () => {
           <div className="flex max-h-[420px] min-h-0 min-w-0 flex-col bg-white">
             <div className="shrink-0 border-b border-slate-100 px-6 pb-4 pt-6">
               <div className="flex items-center justify-between gap-4">
-                <p className="text-[22px] font-semibold leading-tight text-slate-900">{getCategoryDisplayName(activeCategory) || 'Categories'}</p>
+                <p className="text-[22px] font-semibold leading-tight text-slate-900">{getLocalizedCategoryDisplayName(activeCategory) || t('navbar.categories')}</p>
                 <Link
                   href={getCategoryHref(activeCategory)}
                   className="text-xs font-semibold uppercase tracking-wide text-rose-600 hover:text-rose-700"
                 >
-                  View all
+                  {t('navbar.viewAll')}
                 </Link>
               </div>
             </div>
@@ -1338,7 +1365,7 @@ const Navbar = () => {
                           href={getCategoryHref(subcategory)}
                           className="block text-sm font-semibold text-slate-900 transition hover:text-rose-600"
                         >
-                          {getCategoryDisplayName(subcategory)}
+                          {getLocalizedCategoryDisplayName(subcategory)}
                         </Link>
                         {childCategories.length > 0 ? (
                           <ul className="mt-2 space-y-1">
@@ -1348,7 +1375,7 @@ const Navbar = () => {
                                   href={getCategoryHref(child)}
                                   className="block text-sm text-slate-600 transition hover:text-rose-600"
                                 >
-                                  {getCategoryDisplayName(child)}
+                                  {getLocalizedCategoryDisplayName(child)}
                                 </Link>
                               </li>
                             ))}
@@ -1578,7 +1605,7 @@ const Navbar = () => {
                     type="button"
                     className="group inline-flex items-center gap-1 rounded-xl px-1.5 py-1 text-[13px] font-medium leading-none text-slate-700 transition hover:bg-slate-50 xl:gap-1.5 xl:px-2"
                   >
-                    <span className="hidden xl:inline">Categories</span>
+                    <span className="hidden xl:inline">{t('navbar.categories')}</span>
                     <span className="xl:hidden">Cat</span>
                     <span className="text-[11px] text-slate-400 transition group-hover:translate-y-[1px]">▾</span>
                   </button>

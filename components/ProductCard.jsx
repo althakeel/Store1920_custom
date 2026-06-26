@@ -305,7 +305,7 @@ const ProductCard = ({
   const compactLg = useCompactLayout && compactDesktopOnly
   const compactAll = useCompactLayout && !compactDesktopOnly
   const imageAspectClass = compactAll
-    ? 'min-h-0 flex-1'
+    ? 'aspect-square w-full shrink-0'
     : hasCarouselWidth
       ? getAspectRatioClass(product.imageAspectRatio || product.aspectRatio)
       : 'aspect-square'

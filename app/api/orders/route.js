@@ -283,7 +283,7 @@ export async function POST(request) {
             let product;
             try {
                 product = await Product.findById(item.id)
-                                    .select('_id name slug price mrp AED images category sku inStock stockQuantity storeId')
+                                    .select('_id name slug price mrp AED images category sku inStock stockQuantity storeId variants')
                   .lean();
             } catch (err) {
                 console.error('Product.findById error:', err, 'productId:', item.id);
@@ -297,7 +297,7 @@ export async function POST(request) {
                 console.error('Trying to find any product with this ID...');
                 // Try alternative lookups
                 const altProduct = await Product.findOne({$or: [{_id: item.id}, {id: item.id}, {slug: item.id}]})
-                                    .select('_id name slug price mrp AED images category sku inStock stockQuantity storeId')
+                                    .select('_id name slug price mrp AED images category sku inStock stockQuantity storeId variants')
                   .lean();
                 if (!altProduct) {
                     return NextResponse.json({ 

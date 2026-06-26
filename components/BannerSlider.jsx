@@ -93,6 +93,17 @@ const BannerSlider = ({ className = '', variant = 'primary', fullWidth = false, 
     setIndex(0);
   }, [banners.length]);
 
+  const bannersSignature = useMemo(
+    () => banners.map((banner) => `${banner.id || ''}:${banner.image || ''}:${banner.mobileImage || ''}`).join('|'),
+    [banners],
+  );
+
+  useEffect(() => {
+    setIndex(0);
+  }, [bannersSignature]);
+
+  const safeIndex = banners.length ? Math.min(index, banners.length - 1) : 0;
+
   useEffect(() => {
     if (banners.length <= 1) {
       return undefined;
@@ -140,7 +151,7 @@ const BannerSlider = ({ className = '', variant = 'primary', fullWidth = false, 
   const viewportClassName = 'banner-slider__viewport relative w-full overflow-hidden isolate';
   const slideWidthPercent = banners.length > 0 ? 100 / banners.length : 100;
   const trackTransform = banners.length > 0
-    ? `translate3d(-${index * slideWidthPercent}%, 0, 0)`
+    ? `translate3d(-${safeIndex * slideWidthPercent}%, 0, 0)`
     : 'translate3d(0, 0, 0)';
 
   const heightStyle = {
@@ -178,13 +189,15 @@ const BannerSlider = ({ className = '', variant = 'primary', fullWidth = false, 
   }
 
   return (
-    <div className={wrapperClassName} style={heightStyle}>
-      <div className={viewportClassName}>
+    <div className={wrapperClassName} style={heightStyle} dir="ltr">
+      <div className={viewportClassName} dir="ltr">
         <div
-          className="flex transition-transform duration-700 ease-out will-change-transform"
+          className="flex will-change-transform"
+          dir="ltr"
           style={{
             width: `${banners.length * 100}%`,
             transform: trackTransform,
+            transition: 'transform 1000ms cubic-bezier(0.45, 0.05, 0.15, 1)',
           }}
         >
           {banners.map((banner, i) => (
@@ -224,7 +237,7 @@ const BannerSlider = ({ className = '', variant = 'primary', fullWidth = false, 
               onClick={() => goToSlide(i)}
               aria-label={`Go to banner ${i + 1}`}
               className={`pointer-events-auto h-2.5 w-2.5 cursor-pointer rounded-full transition-colors ${
-                i === index ? 'bg-white' : 'bg-white/50'
+                i === safeIndex ? 'bg-white' : 'bg-white/50'
               }`}
             />
           ))}

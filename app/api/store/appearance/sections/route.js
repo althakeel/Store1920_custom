@@ -3,6 +3,7 @@ import connectDB from '@/lib/mongodb'
 import StorePreference from '@/models/StorePreference'
 import authSeller from '@/middlewares/authSeller'
 import { deleteCacheKey } from '@/lib/cache'
+import { DEFAULT_FAST_DELIVERY_PAGE, normalizeFastDeliveryPage } from '@/lib/fastDeliveryPageSettings'
 
 const DEFAULT_APPEARANCE = {
   categorySliders: { enabled: true, title: 'Featured Collections', description: 'Browse our curated collections' },
@@ -12,15 +13,7 @@ const DEFAULT_APPEARANCE = {
   homeMenuCategories: { enabled: true, style: 'grid', itemsPerRow: 6, rows: 2 },
   navbarMenu: { enabled: true, position: 'top', style: 'horizontal' },
   exploreYourInterests: { enabled: true, productIds: [] },
-  fastDeliveryPage: {
-    headerTitle: 'Fast Delivery Products',
-    headerSubtitle: 'Get these products delivered quickly! Lightning-fast shipping on all items below.',
-    headerBgColor: '#1e40af',
-    headerBgImage: '',
-    emptyStateTitle: 'No Fast Delivery Products Available',
-    emptyStateMessage: 'Check back soon for products with fast delivery options!',
-    emptyStateBgColor: '#f8fafc'
-  },
+  fastDeliveryPage: DEFAULT_FAST_DELIVERY_PAGE,
   productPageInfo: {
     returnsText: 'FREE Returns',
     vatText: 'All prices include VAT.',
@@ -216,15 +209,7 @@ function normalizeAppearance(data = {}) {
           )
         : DEFAULT_APPEARANCE.exploreYourInterests.productIds
     },
-    fastDeliveryPage: {
-      headerTitle: (fastDeliveryPage.headerTitle || DEFAULT_APPEARANCE.fastDeliveryPage.headerTitle).toString().trim(),
-      headerSubtitle: (fastDeliveryPage.headerSubtitle || DEFAULT_APPEARANCE.fastDeliveryPage.headerSubtitle).toString().trim(),
-      headerBgColor: normalizeColor(fastDeliveryPage.headerBgColor, DEFAULT_APPEARANCE.fastDeliveryPage.headerBgColor),
-      headerBgImage: (fastDeliveryPage.headerBgImage || DEFAULT_APPEARANCE.fastDeliveryPage.headerBgImage).toString().trim(),
-      emptyStateTitle: (fastDeliveryPage.emptyStateTitle || DEFAULT_APPEARANCE.fastDeliveryPage.emptyStateTitle).toString().trim(),
-      emptyStateMessage: (fastDeliveryPage.emptyStateMessage || DEFAULT_APPEARANCE.fastDeliveryPage.emptyStateMessage).toString().trim(),
-      emptyStateBgColor: normalizeColor(fastDeliveryPage.emptyStateBgColor, DEFAULT_APPEARANCE.fastDeliveryPage.emptyStateBgColor)
-    },
+    fastDeliveryPage: normalizeFastDeliveryPage(fastDeliveryPage),
     productPageInfo: {
       returnsText: (productPageInfo.returnsText || DEFAULT_APPEARANCE.productPageInfo.returnsText).toString().trim(),
       vatText: (productPageInfo.vatText || DEFAULT_APPEARANCE.productPageInfo.vatText).toString().trim(),

@@ -71,6 +71,19 @@ export default function ShowcaseProductBanners({ banners = [] }) {
     setActiveIndex(0)
   }, [visibleBanners.length])
 
+  const bannersSignature = useMemo(
+    () => visibleBanners.map((banner) => `${banner?.image || ''}:${banner?.link || ''}`).join('|'),
+    [visibleBanners],
+  )
+
+  useEffect(() => {
+    setActiveIndex(0)
+  }, [bannersSignature])
+
+  const safeIndex = visibleBanners.length
+    ? Math.min(activeIndex, visibleBanners.length - 1)
+    : 0
+
   useEffect(() => {
     if (!isMobile || visibleBanners.length <= 1) return undefined
 
@@ -85,10 +98,11 @@ export default function ShowcaseProductBanners({ banners = [] }) {
 
   if (isMobile) {
     return (
-      <div className="shop-showcase-product-mobile-carousel" aria-roledescription="carousel">
+      <div className="shop-showcase-product-mobile-carousel" aria-roledescription="carousel" dir="ltr">
         <div
           className="shop-showcase-product-mobile-track"
-          style={{ transform: `translate3d(-${activeIndex * 100}%, 0, 0)` }}
+          dir="ltr"
+          style={{ transform: `translate3d(-${safeIndex * 100}%, 0, 0)` }}
         >
           {visibleBanners.map((banner, index) => (
             <div key={`mobile-showcase-banner-${index}`} className="shop-showcase-product-mobile-slide">
@@ -105,7 +119,7 @@ export default function ShowcaseProductBanners({ banners = [] }) {
                 type="button"
                 aria-label={`Go to banner ${index + 1}`}
                 className={`shop-showcase-product-mobile-dot ${
-                  index === activeIndex ? 'shop-showcase-product-mobile-dot-active' : ''
+                  index === safeIndex ? 'shop-showcase-product-mobile-dot-active' : ''
                 }`}
                 onClick={() => setActiveIndex(index)}
               />

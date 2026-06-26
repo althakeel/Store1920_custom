@@ -1,37 +1,51 @@
-"use client";
-import { useState, useEffect } from "react";
-import { ChevronDown, ChevronUp, Search, X } from "lucide-react";
+'use client';
 
-export default function ProductFilterSidebar({ 
-  products = [], 
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { ChevronDown, ChevronUp, Search, X } from 'lucide-react';
+import { decodeHtmlEntities } from '@/lib/displayText';
+import { getLocalizedCategoryName } from '@/lib/categoryLocalization';
+import { useStorefrontI18n } from '@/lib/useStorefrontI18n';
+
+export default function ProductFilterSidebar({
+  products = [],
   onFilterChange = () => {},
-  initialFilters = {}
+  initialFilters = {},
+  subcategoryLinks = [],
+  showCategoryFilter = true,
+  className = '',
 }) {
+  const { t, language } = useStorefrontI18n();
+  const isArabic = language === 'ar';
+
   const [mounted, setMounted] = useState(false);
   const [filters, setFilters] = useState({
     categories: [],
     priceRange: { min: 0, max: 100000 },
     rating: 0,
     inStock: false,
-    ...initialFilters
+    ...initialFilters,
   });
 
   const [expandedSections, setExpandedSections] = useState({
     category: true,
     price: true,
     rating: true,
-    availability: true
+    availability: true,
   });
 
-  const [sortBy, setSortBy] = useState("popularity");
-  const [categorySearch, setCategorySearch] = useState("");
+  const [sortBy, setSortBy] = useState(initialFilters.sortBy || 'popularity');
+  const [categorySearch, setCategorySearch] = useState('');
 
-  // Extract unique categories and max price from products
   const [availableFilters, setAvailableFilters] = useState({
     categories: [],
-    maxPrice: 10000
+    maxPrice: 10000,
   });
-  const [categoryVisibleCount, setCategoryVisibleCount] = useState(6); // show first 6 categories, then add 10 on demand
+  const [categoryVisibleCount, setCategoryVisibleCount] = useState(6);
+
+  const localizeCategoryLabel = (name) => decodeHtmlEntities(
+    getLocalizedCategoryName({ name }, language),
+  );
 
   useEffect(() => {
     setMounted(true);
@@ -42,20 +56,17 @@ export default function ProductFilterSidebar({
       const categories = new Set();
       let maxPrice = 0;
 
-      products.forEach(product => {
-        // Only add valid category names (not ObjectIds)
-        const isValidCategory = (cat) => {
-          return cat && 
-                 cat.length < 50 && 
-                 !/^[a-f0-9]{24}$/i.test(cat) && // Exclude MongoDB ObjectIds
-                 !/^[0-9a-f]{12,}$/i.test(cat);  // Exclude any hex strings
-        };
+      products.forEach((product) => {
+        const isValidCategory = (cat) => cat
+          && cat.length < 50
+          && !/^[a-f0-9]{24}$/i.test(cat)
+          && !/^[0-9a-f]{12,}$/i.test(cat);
 
         if (product.category && isValidCategory(product.category)) {
           categories.add(product.category);
         }
         if (product.categories && Array.isArray(product.categories)) {
-          product.categories.forEach(cat => {
+          product.categories.forEach((cat) => {
             if (isValidCategory(cat)) {
               categories.add(cat);
             }
@@ -66,12 +77,12 @@ export default function ProductFilterSidebar({
 
       setAvailableFilters({
         categories: Array.from(categories).sort(),
-        maxPrice: Math.ceil(maxPrice)
+        maxPrice: Math.ceil(maxPrice),
       });
 
-      setFilters(prev => ({
+      setFilters((prev) => ({
         ...prev,
-        priceRange: { ...prev.priceRange, max: Math.ceil(maxPrice) }
+        priceRange: { ...prev.priceRange, max: Math.ceil(maxPrice) },
       }));
     }
   }, [products]);
@@ -84,35 +95,35 @@ export default function ProductFilterSidebar({
   }, [filters, sortBy, onFilterChange]);
 
   const toggleSection = (section) => {
-    setExpandedSections(prev => ({
+    setExpandedSections((prev) => ({
       ...prev,
-      [section]: !prev[section]
+      [section]: !prev[section],
     }));
   };
 
   const handleCheckbox = (filterType, value) => {
-    setFilters(prev => ({
+    setFilters((prev) => ({
       ...prev,
       [filterType]: prev[filterType].includes(value)
-        ? prev[filterType].filter(v => v !== value)
-        : [...prev[filterType], value]
+        ? prev[filterType].filter((v) => v !== value)
+        : [...prev[filterType], value],
     }));
   };
 
   const handlePriceChange = (type, value) => {
-    setFilters(prev => ({
+    setFilters((prev) => ({
       ...prev,
       priceRange: {
         ...prev.priceRange,
-        [type]: parseInt(value) || 0
-      }
+        [type]: parseInt(value, 10) || 0,
+      },
     }));
   };
 
   const handleRatingChange = (rating) => {
-    setFilters(prev => ({
+    setFilters((prev) => ({
       ...prev,
-      rating: prev.rating === rating ? 0 : rating
+      rating: prev.rating === rating ? 0 : rating,
     }));
   };
 
@@ -121,170 +132,205 @@ export default function ProductFilterSidebar({
       categories: [],
       priceRange: { min: 0, max: availableFilters.maxPrice },
       rating: 0,
-      inStock: false
+      inStock: false,
     });
-    setSortBy("popularity");
+    setSortBy('popularity');
   };
 
-  const hasActiveFilters = () => {
-    return filters.categories.length > 0 ||
-           filters.rating > 0 ||
-           filters.inStock ||
-           sortBy !== "popularity";
-  };
+  const hasActiveFilters = () => filters.categories.length > 0
+    || filters.rating > 0
+    || filters.inStock
+    || sortBy !== 'popularity';
 
-  const filteredCategories = availableFilters.categories.filter(cat =>
+  const filteredCategories = availableFilters.categories.filter((cat) =>
     cat.toLowerCase().includes(categorySearch.toLowerCase())
+    || localizeCategoryLabel(cat).toLowerCase().includes(categorySearch.toLowerCase()),
   );
 
   const visibleCategories = filteredCategories.slice(0, categoryVisibleCount);
   const canShowMore = filteredCategories.length > categoryVisibleCount;
 
-  // Reset visible count when the filtered list shrinks (e.g., search applied)
   useEffect(() => {
     setCategoryVisibleCount(6);
   }, [categorySearch]);
 
+  const sortOptions = [
+    { value: 'popularity', label: t('category.sort.popularity') },
+    { value: 'price-low-high', label: t('category.sort.priceLowHigh') },
+    { value: 'price-high-low', label: t('category.sort.priceHighLow') },
+    { value: 'newest', label: t('category.sort.newest') },
+    { value: 'rating', label: t('category.sort.rating') },
+    { value: 'discount', label: t('category.sort.discount') },
+  ];
+
   return (
-    <div className="w-full lg:w-72 bg-white border border-gray-200 rounded-lg p-4 h-fit sticky top-20 overflow-y-auto max-h-[calc(100vh-100px)]">
-      {/* Sort By */}
+    <div
+      dir={isArabic ? 'rtl' : 'ltr'}
+      className={`w-full lg:w-72 bg-white border border-gray-200 rounded-lg p-4 h-fit sticky top-20 overflow-y-auto max-h-[calc(100vh-100px)] ${className}`.trim()}
+    >
+      {subcategoryLinks.length > 0 ? (
+        <div className="mb-6 border-b border-gray-200 pb-4">
+          <h3 className={`mb-3 text-lg font-bold text-gray-900 ${isArabic ? 'text-right' : ''}`}>
+            {t('category.filterByType')}
+          </h3>
+          <nav className="space-y-1">
+            {subcategoryLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className={`block rounded-lg px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-orange-50 hover:text-orange-700 ${isArabic ? 'text-right' : ''}`}
+              >
+                {decodeHtmlEntities(link.name)}
+              </Link>
+            ))}
+          </nav>
+        </div>
+      ) : null}
+
       <div className="mb-6">
-        <label className="text-sm font-semibold text-gray-800 mb-3 block">
-          Sort by
+        <label className={`text-sm font-semibold text-gray-800 mb-3 block ${isArabic ? 'text-right' : ''}`}>
+          {t('category.sortBy')}
         </label>
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value)}
-          className="w-full p-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 text-sm"
+          className={`w-full p-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 text-sm ${isArabic ? 'text-right' : ''}`}
         >
-          <option value="popularity">Popularity</option>
-          <option value="price-low-high">Price: Low to High</option>
-          <option value="price-high-low">Price: High to Low</option>
-          <option value="newest">Newest First</option>
-          <option value="rating">Customer Rating</option>
-          <option value="discount">Discount</option>
+          {sortOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
         </select>
       </div>
 
-      {/* Filters Header */}
-      <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-200">
-        <h3 className="text-lg font-bold text-gray-900">FILTERS</h3>
-        {hasActiveFilters() && (
+      <div className={`flex items-center justify-between mb-4 pb-3 border-b border-gray-200 ${isArabic ? 'flex-row-reverse' : ''}`}>
+        <h3 className="text-lg font-bold text-gray-900">{t('category.filters')}</h3>
+        {hasActiveFilters() ? (
           <button
+            type="button"
             onClick={clearAllFilters}
             className="text-xs text-orange-600 hover:text-orange-700 font-semibold"
           >
-            Clear All
+            {t('category.clearAll')}
           </button>
-        )}
+        ) : null}
       </div>
 
-      <div className="text-sm text-gray-600 mb-4" suppressHydrationWarning>
-        {mounted ? `${products?.length || 0} Products` : 'Products'}
+      <div className={`text-sm text-gray-600 mb-4 ${isArabic ? 'text-right' : ''}`} suppressHydrationWarning>
+        {mounted
+          ? t('category.productsCount', { count: products?.length || 0 })
+          : t('category.filters')}
       </div>
 
       <div className="space-y-4">
-        {/* Category Filter */}
-        {availableFilters.categories.length > 0 && (
+        {showCategoryFilter && availableFilters.categories.length > 0 ? (
           <div className="border-b border-gray-200 pb-4">
             <button
+              type="button"
               onClick={() => toggleSection('category')}
-              className="flex items-center justify-between w-full text-left font-semibold text-gray-900 mb-3"
+              className={`flex items-center justify-between w-full font-semibold text-gray-900 mb-3 ${isArabic ? 'flex-row-reverse text-right' : 'text-left'}`}
             >
-              Category
+              {t('category.category')}
               {expandedSections.category ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
             </button>
-            
-            {expandedSections.category && (
+
+            {expandedSections.category ? (
               <div>
-                {/* Search */}
                 <div className="relative mb-3">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+                  <Search className={`absolute top-1/2 -translate-y-1/2 text-gray-400 ${isArabic ? 'right-3' : 'left-3'}`} size={16} />
                   <input
                     type="text"
-                    placeholder="Search categories"
+                    placeholder={t('category.searchCategories')}
                     value={categorySearch}
                     onChange={(e) => setCategorySearch(e.target.value)}
-                    className="w-full pl-9 pr-8 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    className={`w-full py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 ${isArabic ? 'pr-9 pl-8 text-right' : 'pl-9 pr-8'}`}
                   />
-                  {categorySearch && (
+                  {categorySearch ? (
                     <button
-                      onClick={() => setCategorySearch("")}
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      type="button"
+                      onClick={() => setCategorySearch('')}
+                      className={`absolute top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 ${isArabic ? 'left-3' : 'right-3'}`}
                     >
                       <X size={16} />
                     </button>
-                  )}
+                  ) : null}
                 </div>
 
-                {/* Category List */}
                 <div className="space-y-2 max-h-64 overflow-y-auto">
                   {visibleCategories.map((category) => (
-                    <label key={category} className="flex items-center space-x-2 cursor-pointer hover:bg-orange-50 p-1.5 rounded">
+                    <label
+                      key={category}
+                      className={`flex items-center cursor-pointer hover:bg-orange-50 p-1.5 rounded ${isArabic ? 'flex-row-reverse gap-2' : 'space-x-2'}`}
+                    >
                       <input
                         type="checkbox"
                         checked={filters.categories.includes(category)}
                         onChange={() => handleCheckbox('categories', category)}
                         className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
                       />
-                      <span className="text-sm text-gray-700">{category}</span>
+                      <span className={`text-sm text-gray-700 ${isArabic ? 'text-right' : ''}`}>
+                        {localizeCategoryLabel(category)}
+                      </span>
                     </label>
                   ))}
                 </div>
 
-                {filteredCategories.length > 0 && (
-                  <div className="mt-2">
+                {filteredCategories.length > 0 ? (
+                  <div className={`mt-2 ${isArabic ? 'text-right' : ''}`}>
                     {canShowMore ? (
                       <button
-                        onClick={() => setCategoryVisibleCount(prev => prev + 10)}
+                        type="button"
+                        onClick={() => setCategoryVisibleCount((prev) => prev + 10)}
                         className="text-sm font-semibold text-orange-600 hover:text-orange-700"
                       >
-                        Show more ({filteredCategories.length - visibleCategories.length} more)
+                        {t('category.showMore', { count: filteredCategories.length - visibleCategories.length })}
                       </button>
                     ) : (
                       filteredCategories.length > 6 && (
                         <button
+                          type="button"
                           onClick={() => setCategoryVisibleCount(6)}
                           className="text-sm font-semibold text-orange-600 hover:text-orange-700"
                         >
-                          Show less
+                          {t('category.showLess')}
                         </button>
                       )
                     )}
                   </div>
-                )}
+                ) : null}
               </div>
-            )}
+            ) : null}
           </div>
-        )}
+        ) : null}
 
-        {/* Price Filter */}
         <div className="border-b border-gray-200 pb-4">
           <button
+            type="button"
             onClick={() => toggleSection('price')}
-            className="flex items-center justify-between w-full text-left font-semibold text-gray-900 mb-3"
+            className={`flex items-center justify-between w-full font-semibold text-gray-900 mb-3 ${isArabic ? 'flex-row-reverse text-right' : 'text-left'}`}
           >
-            Price Range
+            {t('category.priceRange')}
             {expandedSections.price ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
           </button>
-          
-          {expandedSections.price && (
+
+          {expandedSections.price ? (
             <div className="space-y-3">
-              <div className="flex items-center gap-3">
+              <div className={`flex items-center gap-3 ${isArabic ? 'flex-row-reverse' : ''}`}>
                 <input
                   type="number"
-                  placeholder="Min"
+                  placeholder={t('category.min')}
                   value={filters.priceRange.min}
                   onChange={(e) => handlePriceChange('min', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  className={`w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 ${isArabic ? 'text-right' : ''}`}
                 />
-                <span className="text-gray-500 text-sm">to</span>
+                <span className="text-gray-500 text-sm">{t('category.to')}</span>
                 <input
                   type="number"
-                  placeholder="Max"
+                  placeholder={t('category.max')}
                   value={filters.priceRange.max}
                   onChange={(e) => handlePriceChange('max', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  className={`w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 ${isArabic ? 'text-right' : ''}`}
                 />
               </div>
               <div className="px-1">
@@ -296,29 +342,32 @@ export default function ProductFilterSidebar({
                   onChange={(e) => handlePriceChange('max', e.target.value)}
                   className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-orange-600"
                 />
-                <div className="flex justify-between text-xs text-gray-500 mt-1">
-                  <span>AED0</span>
-                  <span>AED{availableFilters.maxPrice}</span>
+                <div className={`flex justify-between text-xs text-gray-500 mt-1 ${isArabic ? 'flex-row-reverse' : ''}`}>
+                  <span>AED 0</span>
+                  <span>AED {availableFilters.maxPrice}</span>
                 </div>
               </div>
             </div>
-          )}
+          ) : null}
         </div>
 
-        {/* Rating Filter */}
         <div className="border-b border-gray-200 pb-4">
           <button
+            type="button"
             onClick={() => toggleSection('rating')}
-            className="flex items-center justify-between w-full text-left font-semibold text-gray-900 mb-3"
+            className={`flex items-center justify-between w-full font-semibold text-gray-900 mb-3 ${isArabic ? 'flex-row-reverse text-right' : 'text-left'}`}
           >
-            Customer Rating
+            {t('category.customerRating')}
             {expandedSections.rating ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
           </button>
-          
-          {expandedSections.rating && (
+
+          {expandedSections.rating ? (
             <div className="space-y-2">
               {[4, 3, 2, 1].map((rating) => (
-                <label key={rating} className="flex items-center space-x-2 cursor-pointer hover:bg-orange-50 p-1.5 rounded">
+                <label
+                  key={rating}
+                  className={`flex items-center cursor-pointer hover:bg-orange-50 p-1.5 rounded ${isArabic ? 'flex-row-reverse gap-2' : 'space-x-2'}`}
+                >
                   <input
                     type="radio"
                     name="rating"
@@ -326,36 +375,38 @@ export default function ProductFilterSidebar({
                     onChange={() => handleRatingChange(rating)}
                     className="w-4 h-4 text-orange-600 border-gray-300 focus:ring-orange-500"
                   />
-                  <span className="text-sm text-gray-700 flex items-center">
-                    {rating}★ & above
+                  <span className={`text-sm text-gray-700 flex items-center ${isArabic ? 'flex-row-reverse' : ''}`}>
+                    {t('category.ratingAndAbove', { rating })}
                   </span>
                 </label>
               ))}
             </div>
-          )}
+          ) : null}
         </div>
 
-        {/* Availability Filter */}
         <div className="pb-2">
           <button
+            type="button"
             onClick={() => toggleSection('availability')}
-            className="flex items-center justify-between w-full text-left font-semibold text-gray-900 mb-3"
+            className={`flex items-center justify-between w-full font-semibold text-gray-900 mb-3 ${isArabic ? 'flex-row-reverse text-right' : 'text-left'}`}
           >
-            Availability
+            {t('category.availability')}
             {expandedSections.availability ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
           </button>
-          
-          {expandedSections.availability && (
-            <label className="flex items-center space-x-2 cursor-pointer hover:bg-orange-50 p-1.5 rounded">
+
+          {expandedSections.availability ? (
+            <label className={`flex items-center cursor-pointer hover:bg-orange-50 p-1.5 rounded ${isArabic ? 'flex-row-reverse gap-2' : 'space-x-2'}`}>
               <input
                 type="checkbox"
                 checked={filters.inStock}
-                onChange={(e) => setFilters(prev => ({ ...prev, inStock: e.target.checked }))}
+                onChange={(e) => setFilters((prev) => ({ ...prev, inStock: e.target.checked }))}
                 className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
               />
-              <span className="text-sm text-gray-700">In Stock Only</span>
+              <span className={`text-sm text-gray-700 ${isArabic ? 'text-right' : ''}`}>
+                {t('category.inStockOnly')}
+              </span>
             </label>
-          )}
+          ) : null}
         </div>
       </div>
     </div>

@@ -106,6 +106,12 @@ const StorePreferenceSchema = new mongoose.Schema(
       topBannerCtaBgColor: { type: String, trim: true, default: '#ef2d2d' },
       topBannerCtaTextColor: { type: String, trim: true, default: '#ffffff' },
       topBannerLink: { type: String, trim: true, default: '/shop' },
+      topBannerSliderEnabled: { type: Boolean, default: true },
+      topBannerSliderInterval: { type: Number, default: 4000 },
+      topBannerSliderItems: {
+        type: [BannerSliderItemSchema],
+        default: [],
+      },
       bottomBannerImage: { type: String, trim: true, default: '' },
       bottomBannerTitle: { type: String, trim: true, default: 'Shop Now. Pay Later. Ready for Summer.' },
       bottomBannerTitleEnabled: { type: Boolean, default: true },
@@ -116,6 +122,12 @@ const StorePreferenceSchema = new mongoose.Schema(
       bottomBannerCtaBgColor: { type: String, trim: true, default: '#ef2d2d' },
       bottomBannerCtaTextColor: { type: String, trim: true, default: '#ffffff' },
       bottomBannerLink: { type: String, trim: true, default: '/shop' },
+      bottomBannerSliderEnabled: { type: Boolean, default: true },
+      bottomBannerSliderInterval: { type: Number, default: 4000 },
+      bottomBannerSliderItems: {
+        type: [BannerSliderItemSchema],
+        default: [],
+      },
       productBanners: {
         type: [ProductBannerSchema],
         default: defaultProductBanners
@@ -314,6 +326,36 @@ if (!StorePreferenceModel.schema.path('shopShowcase.bottomBannerCtaBgColor')) {
 
 if (!StorePreferenceModel.schema.path('shopShowcase.bottomBannerCtaTextColor')) {
   missingShopShowcasePaths.bottomBannerCtaTextColor = { type: String, trim: true, default: '#ffffff' }
+}
+
+if (!StorePreferenceModel.schema.path('shopShowcase.topBannerSliderEnabled')) {
+  missingShopShowcasePaths.topBannerSliderEnabled = { type: Boolean, default: true }
+}
+
+if (!StorePreferenceModel.schema.path('shopShowcase.topBannerSliderInterval')) {
+  missingShopShowcasePaths.topBannerSliderInterval = { type: Number, default: 4000 }
+}
+
+if (!StorePreferenceModel.schema.path('shopShowcase.topBannerSliderItems')) {
+  missingShopShowcasePaths.topBannerSliderItems = {
+    type: [BannerSliderItemSchema],
+    default: [],
+  }
+}
+
+if (!StorePreferenceModel.schema.path('shopShowcase.bottomBannerSliderEnabled')) {
+  missingShopShowcasePaths.bottomBannerSliderEnabled = { type: Boolean, default: true }
+}
+
+if (!StorePreferenceModel.schema.path('shopShowcase.bottomBannerSliderInterval')) {
+  missingShopShowcasePaths.bottomBannerSliderInterval = { type: Number, default: 4000 }
+}
+
+if (!StorePreferenceModel.schema.path('shopShowcase.bottomBannerSliderItems')) {
+  missingShopShowcasePaths.bottomBannerSliderItems = {
+    type: [BannerSliderItemSchema],
+    default: [],
+  }
 }
 
 if (Object.keys(missingShopShowcasePaths).length) {

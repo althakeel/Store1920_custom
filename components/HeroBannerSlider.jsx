@@ -229,6 +229,7 @@ export default function HeroBannerSlider({ showcaseConfig: showcaseConfigProp = 
             >
               {slide.image ? (
                 <Image
+                  key={slide.image}
                   src={slide.image}
                   alt={`Banner ${i + 1}`}
                   width={1400}
@@ -237,12 +238,14 @@ export default function HeroBannerSlider({ showcaseConfig: showcaseConfigProp = 
                   loading="eager"
                   quality={75}
                   placeholder="empty"
+                  unoptimized={slide.image.startsWith('http')}
                   style={{
                     width: '100%',
                     height: '100%',
-                    objectFit: 'cover',
+                    objectFit: 'contain',
                     objectPosition: 'center',
                     display: 'block',
+                    background: slide.bg || '#0d1724',
                   }}
                   onLoad={() => handleImageLoad(i)}
                   onError={() => handleImageLoad(i)}

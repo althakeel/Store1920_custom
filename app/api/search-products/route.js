@@ -11,6 +11,11 @@ import {
   PRODUCT_SEARCH_SELECT_FIELDS,
 } from '@/lib/productSearch';
 import { STOREFRONT_PUBLISHED_FILTER } from '@/lib/productVisibility';
+import {
+  countProductsDedupedBySku,
+  dedupeProductsBySku,
+  fetchProductsDedupedBySku,
+} from '@/lib/productSkuDedupe';
 
 async function resolveCategorySearchValues(keyword = '') {
   const normalized = normalizeSearchKeyword(keyword);
@@ -72,17 +77,12 @@ export async function GET(request) {
         categoryQuery._id = { $ne: excludeId };
       }
 
-      const total = await Product.countDocuments(categoryQuery);
-      let query = Product.find(categoryQuery)
-        .select(PRODUCT_SEARCH_SELECT_FIELDS)
-        .sort({ inStock: -1, createdAt: -1 })
-        .skip(offset);
-
-      if (limit != null) {
-        query = query.limit(limit);
-      }
-
-      const products = await query.lean();
+      const total = await countProductsDedupedBySku(Product, categoryQuery);
+      const products = await fetchProductsDedupedBySku(Product, categoryQuery, {
+        sort: { createdAt: -1 },
+        skip: offset,
+        limit,
+      });
 
       return NextResponse.json({
         keyword: '',
@@ -108,18 +108,13 @@ export async function GET(request) {
       buildProductSearchFilter(keyword, { includeOutOfStock }),
       await resolveCategorySearchValues(keyword),
     );
-    const total = await Product.countDocuments(searchFilter);
+    const total = await countProductsDedupedBySku(Product, searchFilter);
 
-    let productsQuery = Product.find(searchFilter)
-      .select(PRODUCT_SEARCH_SELECT_FIELDS)
-      .sort({ inStock: -1, createdAt: -1 })
-      .skip(offset);
-
-    if (limit != null) {
-      productsQuery = productsQuery.limit(limit);
-    }
-
-    let products = await productsQuery.lean();
+    let products = await fetchProductsDedupedBySku(Product, searchFilter, {
+      sort: { createdAt: -1 },
+      skip: offset,
+      limit,
+    });
 
     // Supplement with MongoDB text search for multi-word queries when regex returns few hits.
     const resultCap = limit ?? total;
@@ -137,17 +132,22 @@ export async function GET(request) {
           .sort({ score: { $meta: 'textScore' }, inStock: -1 });
 
         if (limit != null) {
-          textQuery.limit(limit);
+          textQuery.limit(Math.max(limit * 2, limit));
         }
 
         const textMatches = await textQuery.lean();
+        const merged = [...products];
 
         for (const product of textMatches) {
           const id = String(product._id);
           if (existingIds.has(id)) continue;
-          products.push(product);
+          merged.push(product);
           existingIds.add(id);
-          if (limit != null && products.length >= limit) break;
+        }
+
+        products = dedupeProductsBySku(merged);
+        if (limit != null) {
+          products = products.slice(0, limit);
         }
       } catch {
         // Text index may be unavailable in some environments; regex results are enough.

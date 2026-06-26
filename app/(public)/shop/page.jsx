@@ -9,6 +9,10 @@ import { getProductPath } from '@/lib/productUrl'
 import { getProductThumbnailUrl } from '@/lib/productMedia'
 import { PLACEHOLDER_IMAGE } from '@/lib/mediaUrls'
 import { decodeHtmlEntities } from '@/lib/displayText'
+import { useStorefrontI18n } from '@/lib/useStorefrontI18n'
+import { getLocalizedCategoryName } from '@/lib/categoryLocalization'
+
+const SHOP_PAGE_SIZE = 24;
 
 function buildCatalogUrl({
   search,
@@ -20,19 +24,24 @@ function buildCatalogUrl({
   stockFilter,
   bestSellerOnly,
   fastDeliveryOnly,
+  page = 1,
+  limit = SHOP_PAGE_SIZE,
 }) {
   if (search?.trim()) {
     const params = new URLSearchParams({
       keyword: search.trim(),
-      all: 'true',
       includeOutOfStock: 'true',
+      limit: String(limit),
+      page: String(page),
     });
     return `/api/search-products?${params}`;
   }
 
   const params = new URLSearchParams({
-    all: 'true',
+    paginated: 'true',
     slim: 'true',
+    limit: String(limit),
+    page: String(page),
     includeOutOfStock: 'true',
     sort: sortBy,
   });
@@ -51,6 +60,8 @@ function buildCatalogUrl({
 }
 
 function ShopContent() {
+    const { t, language, isArabic } = useStorefrontI18n();
+    const locale = isArabic ? 'ar-AE' : 'en';
     const searchParams = useSearchParams();
     const search = searchParams.get('search');
     const selectedCategories = useMemo(() => {
@@ -62,9 +73,10 @@ function ShopContent() {
         return single ? [single] : [];
     }, [searchParams]);
     const router = useRouter();
-    const [mounted, setMounted] = useState(false);
     const [products, setProducts] = useState([]);
     const [totalProducts, setTotalProducts] = useState(0);
+    const [totalPages, setTotalPages] = useState(1);
+    const [page, setPage] = useState(1);
     const [productsLoading, setProductsLoading] = useState(true);
     const [categories, setCategories] = useState([]);
     const [showCategories, setShowCategories] = useState(true);
@@ -76,18 +88,13 @@ function ShopContent() {
     const [bestSellerOnly, setBestSellerOnly] = useState(false);
     const [fastDeliveryOnly, setFastDeliveryOnly] = useState(false);
     const [showMobileFilters, setShowMobileFilters] = useState(false);
-    const [fastSellingProducts, setFastSellingProducts] = useState([]);
     const [fastSellingIndex, setFastSellingIndex] = useState(0);
     const { user, getToken } = useAuth();
     const fetchAbortRef = useRef(null);
 
     useEffect(() => {
-        setMounted(true);
-    }, []);
-
-    useEffect(() => {
         let isActive = true;
-        fetch('/api/categories')
+        fetch('/api/categories', { credentials: 'same-origin', cache: 'no-store' })
             .then((res) => res.json())
             .then((data) => {
                 if (!isActive) return;
@@ -100,25 +107,7 @@ function ShopContent() {
         return () => {
             isActive = false;
         };
-    }, []);
-
-    useEffect(() => {
-        let isActive = true;
-        fetch('/api/products?paginated=true&slim=true&limit=8&page=1&includeOutOfStock=true')
-            .then((res) => res.json())
-            .then((data) => {
-                if (!isActive) return;
-                const list = Array.isArray(data?.products) ? data.products : [];
-                setFastSellingProducts(list.filter((product) => product?.slug || product?._id));
-            })
-            .catch(() => {
-                if (!isActive) return;
-                setFastSellingProducts([]);
-            });
-        return () => {
-            isActive = false;
-        };
-    }, []);
+    }, [language]);
 
     useEffect(() => {
         if (!search || !search.trim()) return;
@@ -151,7 +140,7 @@ function ShopContent() {
         saveSearch();
     }, [search, user, getToken]);
 
-    const catalogQueryKey = useMemo(() => JSON.stringify({
+    const filterQueryKey = useMemo(() => JSON.stringify({
         search: search?.trim() || '',
         selectedCategories,
         sortBy,
@@ -174,6 +163,10 @@ function ShopContent() {
     ]);
 
     useEffect(() => {
+        setPage(1);
+    }, [filterQueryKey]);
+
+    useEffect(() => {
         if (fetchAbortRef.current) {
             fetchAbortRef.current.abort();
         }
@@ -192,6 +185,7 @@ function ShopContent() {
             stockFilter,
             bestSellerOnly,
             fastDeliveryOnly,
+            page,
         });
 
         fetch(url, { signal: controller.signal })
@@ -199,13 +193,17 @@ function ShopContent() {
             .then((data) => {
                 if (controller.signal.aborted) return;
                 const list = Array.isArray(data?.products) ? data.products : [];
+                const total = Number(data?.total ?? data?.resultCount) || list.length;
+                const pages = Number(data?.totalPages) || Math.max(1, Math.ceil(total / SHOP_PAGE_SIZE));
                 setProducts(list);
-                setTotalProducts(Number(data?.total) || list.length);
+                setTotalProducts(total);
+                setTotalPages(pages);
             })
             .catch((error) => {
                 if (controller.signal.aborted || error?.name === 'AbortError') return;
                 setProducts([]);
                 setTotalProducts(0);
+                setTotalPages(1);
             })
             .finally(() => {
                 if (controller.signal.aborted) return;
@@ -213,7 +211,12 @@ function ShopContent() {
             });
 
         return () => controller.abort();
-    }, [catalogQueryKey, search, selectedCategories, sortBy, priceFilter, minPrice, maxPrice, stockFilter, bestSellerOnly, fastDeliveryOnly]);
+    }, [filterQueryKey, page, language, search, selectedCategories, sortBy, priceFilter, minPrice, maxPrice, stockFilter, bestSellerOnly, fastDeliveryOnly]);
+
+    const fastSellingProducts = useMemo(() => {
+        if (page !== 1 || productsLoading || !products.length) return [];
+        return products.slice(0, 8).filter((product) => product?.slug || product?._id);
+    }, [page, products, productsLoading]);
 
     const getProductPrice = useCallback((product) => {
         if (!product) return 0;
@@ -248,18 +251,23 @@ function ShopContent() {
         }
     }, [fastSellingProducts.length, fastSellingIndex]);
 
+    const localizeCategoryName = useCallback((category) => {
+        if (!category) return '';
+        return decodeHtmlEntities(getLocalizedCategoryName(category, language));
+    }, [language]);
+
     const rootCategories = useMemo(() => {
         return categories
             .filter((category) => !category?.parentId)
-            .sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
-    }, [categories]);
+            .sort((a, b) => localizeCategoryName(a).localeCompare(localizeCategoryName(b), locale));
+    }, [categories, localizeCategoryName, locale]);
 
     const categoryTitleMap = useMemo(() => {
         const map = new Map();
         const visit = (items = []) => {
             for (const category of items) {
                 if (category?.slug) {
-                    map.set(category.slug, decodeHtmlEntities(category.name || category.slug));
+                    map.set(category.slug, localizeCategoryName(category));
                 }
                 if (Array.isArray(category?.children) && category.children.length) {
                     visit(category.children);
@@ -268,19 +276,25 @@ function ShopContent() {
         };
         visit(categories);
         return map;
-    }, [categories]);
+    }, [categories, localizeCategoryName]);
 
     const pageTitle = useMemo(() => {
-        if (search) return `Search: ${search}`;
+        if (search) return t('shop.searchTitle', { query: search });
         if (selectedCategories.length === 1) {
             return categoryTitleMap.get(selectedCategories[0])
                 || selectedCategories[0].split('-').map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
         }
         if (selectedCategories.length > 1) {
-            return `${selectedCategories.length} Categories`;
+            return t('shop.categoriesCount', { count: selectedCategories.length });
         }
-        return 'All Products';
-    }, [search, selectedCategories, categoryTitleMap]);
+        return t('shop.allProducts');
+    }, [search, selectedCategories, categoryTitleMap, t]);
+
+    const pageSubtitle = useMemo(() => {
+        if (search) return t('shop.subtitleSearch', { search });
+        if (selectedCategories.length) return t('shop.subtitleBrowse', { title: pageTitle });
+        return t('shop.subtitleAll');
+    }, [search, selectedCategories.length, pageTitle, t]);
 
     const resetFilters = useCallback(() => {
         setSortBy('newest');
@@ -332,36 +346,37 @@ function ShopContent() {
         ? getProductThumbnailUrl(fastSellingProduct, { fallback: PLACEHOLDER_IMAGE })
         : PLACEHOLDER_IMAGE;
 
+    const showingFrom = totalProducts > 0 ? ((page - 1) * SHOP_PAGE_SIZE) + 1 : 0;
+    const showingTo = totalProducts > 0 ? Math.min(page * SHOP_PAGE_SIZE, totalProducts) : 0;
+
+    const goToPage = useCallback((nextPage) => {
+        const safePage = Math.max(1, Math.min(nextPage, totalPages));
+        setPage(safePage);
+        if (typeof window !== 'undefined') {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    }, [totalPages]);
+
     return (
-        <div className="min-h-screen bg-white">
+        <div className="min-h-screen bg-white" dir={isArabic ? 'rtl' : 'ltr'}>
             <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-8">
-                <div className="mb-6 mt-6">
+                <div className={`mb-6 mt-6 ${isArabic ? 'text-right' : ''}`}>
                     <h1 className="text-3xl font-bold text-gray-900 mb-2">
                         {pageTitle}
                     </h1>
                     <p className="text-gray-600">
-                        {search
-                            ? `Results for "${search}"`
-                            : selectedCategories.length
-                                ? `Browse ${pageTitle}`
-                                : 'Discover our complete product collection'}
+                        {pageSubtitle}
                     </p>
                 </div>
 
-                {!mounted || productsLoading ? (
-                    <div className="text-center py-16 bg-white rounded-lg border border-gray-200">
-                        <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-orange-500 mb-4"></div>
-                        <p className="text-gray-500 text-lg">Loading products...</p>
-                    </div>
-                ) : (
-                    <>
+                <>
                         <div className="lg:hidden mb-3">
                             <button
                                 type="button"
                                 onClick={() => setShowMobileFilters(true)}
                                 className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm font-semibold shadow-sm"
                             >
-                                <SlidersHorizontal size={16} /> Filters & Sort
+                                <SlidersHorizontal size={16} /> {t('category.filtersAndSort')}
                             </button>
                         </div>
 
@@ -374,17 +389,17 @@ function ShopContent() {
                                         onClick={() => setShowCategories((current) => !current)}
                                         className="flex w-full items-center justify-between text-sm font-semibold text-gray-800"
                                     >
-                                        <span>Categories</span>
+                                        <span>{t('shop.categories')}</span>
                                         <ChevronDown size={16} className={`transition ${showCategories ? '' : '-rotate-90'}`} />
                                     </button>
                                     {showCategories ? (
                                         <div className="mt-3 border-t border-slate-100 pt-3">
-                                            <div className="max-h-[min(26rem,52vh)] overflow-y-auto overscroll-contain pr-1 space-y-1">
+                                            <div className={`max-h-[min(26rem,52vh)] overflow-y-auto overscroll-contain space-y-1 ${isArabic ? 'pl-1' : 'pr-1'}`}>
                                             <div className="mb-2 flex items-center justify-between gap-2 px-1">
                                                 <span className="text-[11px] font-medium text-gray-500">
                                                     {selectedCategories.length
-                                                        ? `${selectedCategories.length} selected`
-                                                        : 'Select one or more'}
+                                                        ? t('shop.selectedCount', { count: selectedCategories.length })
+                                                        : t('shop.selectOneOrMore')}
                                                 </span>
                                                 {selectedCategories.length > 0 ? (
                                                     <button
@@ -392,7 +407,7 @@ function ShopContent() {
                                                         onClick={clearCategories}
                                                         className="text-[11px] font-semibold text-orange-600 hover:text-orange-700"
                                                     >
-                                                        Clear
+                                                        {t('shop.clear')}
                                                     </button>
                                                 ) : null}
                                             </div>
@@ -400,6 +415,7 @@ function ShopContent() {
                                                 const slug = String(category?.slug || '').trim();
                                                 const categoryId = String(category?._id || slug);
                                                 const isSelected = Boolean(slug && selectedCategories.includes(slug));
+                                                const categoryLabel = localizeCategoryName(category) || slug || t('category.category');
 
                                                 return (
                                                     <label
@@ -418,7 +434,7 @@ function ShopContent() {
                                                             className="rounded border-gray-300 text-orange-600 focus:ring-orange-300"
                                                         />
                                                         <span className={isSelected ? 'font-semibold' : ''}>
-                                                            {decodeHtmlEntities(category?.name || slug || 'Category')}
+                                                            {categoryLabel}
                                                         </span>
                                                     </label>
                                                 );
@@ -433,7 +449,7 @@ function ShopContent() {
                                 <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
                                     <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">
                                         <SlidersHorizontal size={14} className="text-gray-500" />
-                                        Shop Filters
+                                        {t('shop.shopFilters')}
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <button
@@ -441,13 +457,13 @@ function ShopContent() {
                                             onClick={resetFilters}
                                             className="text-xs text-orange-600 hover:text-orange-700 font-semibold"
                                         >
-                                            Reset
+                                            {t('shop.reset')}
                                         </button>
                                         <button
                                             type="button"
                                             onClick={() => setShowMobileFilters(false)}
                                             className="lg:hidden text-gray-500"
-                                            aria-label="Close filters"
+                                            aria-label={t('category.closeFilters')}
                                         >
                                             <X size={16} />
                                         </button>
@@ -456,44 +472,44 @@ function ShopContent() {
 
                                 <div className="space-y-3">
                                     <div>
-                                        <label className="text-[11px] font-medium text-gray-500 mb-1.5 block">Sort</label>
+                                        <label className="text-[11px] font-medium text-gray-500 mb-1.5 block">{t('shop.sort')}</label>
                                         <select
                                             value={sortBy}
                                             onChange={(e) => setSortBy(e.target.value)}
                                             className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-orange-300"
                                         >
-                                            <option value="newest">Newest</option>
-                                            <option value="priceLowToHigh">Price: Low to High</option>
-                                            <option value="priceHighToLow">Price: High to Low</option>
-                                            <option value="nameAZ">Name: A to Z</option>
-                                            <option value="nameZA">Name: Z to A</option>
+                                            <option value="newest">{t('category.sort.newest')}</option>
+                                            <option value="priceLowToHigh">{t('category.sort.priceLowHigh')}</option>
+                                            <option value="priceHighToLow">{t('category.sort.priceHighLow')}</option>
+                                            <option value="nameAZ">{t('shop.sort.nameAZ')}</option>
+                                            <option value="nameZA">{t('shop.sort.nameZA')}</option>
                                         </select>
                                     </div>
 
                                     <div>
-                                        <label className="text-[11px] font-medium text-gray-500 mb-1.5 block">Price Range</label>
+                                        <label className="text-[11px] font-medium text-gray-500 mb-1.5 block">{t('category.priceRange')}</label>
                                         <select
                                             value={priceFilter}
                                             onChange={(e) => setPriceFilter(e.target.value)}
                                             className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-orange-300"
                                         >
-                                            <option value="all">All</option>
-                                            <option value="under499">Under AED499</option>
-                                            <option value="500to999">AED500 - AED999</option>
-                                            <option value="1000to1999">AED1000 - AED1999</option>
-                                            <option value="2000plus">AED2000+</option>
+                                            <option value="all">{t('shop.all')}</option>
+                                            <option value="under499">{t('shop.price.under499')}</option>
+                                            <option value="500to999">{t('shop.price.500to999')}</option>
+                                            <option value="1000to1999">{t('shop.price.1000to1999')}</option>
+                                            <option value="2000plus">{t('shop.price.2000plus')}</option>
                                         </select>
                                     </div>
 
                                     <div>
-                                        <label className="text-[11px] font-medium text-gray-500 mb-1.5 block">Custom Price</label>
+                                        <label className="text-[11px] font-medium text-gray-500 mb-1.5 block">{t('shop.customPrice')}</label>
                                         <div className="grid grid-cols-2 gap-2">
                                             <input
                                                 type="number"
                                                 min="0"
                                                 value={minPrice}
                                                 onChange={(e) => setMinPrice(e.target.value)}
-                                                placeholder="Min"
+                                                placeholder={t('category.min')}
                                                 className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-orange-300"
                                             />
                                             <input
@@ -501,21 +517,21 @@ function ShopContent() {
                                                 min="0"
                                                 value={maxPrice}
                                                 onChange={(e) => setMaxPrice(e.target.value)}
-                                                placeholder="Max"
+                                                placeholder={t('category.max')}
                                                 className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-orange-300"
                                             />
                                         </div>
                                     </div>
 
                                     <div>
-                                        <label className="text-[11px] font-medium text-gray-500 mb-1.5 block">Stock</label>
+                                        <label className="text-[11px] font-medium text-gray-500 mb-1.5 block">{t('shop.stock')}</label>
                                         <select
                                             value={stockFilter}
                                             onChange={(e) => setStockFilter(e.target.value)}
                                             className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-orange-300"
                                         >
-                                            <option value="all">All</option>
-                                            <option value="inStock">In Stock</option>
+                                            <option value="all">{t('shop.all')}</option>
+                                            <option value="inStock">{t('category.inStockOnly')}</option>
                                         </select>
                                     </div>
 
@@ -526,7 +542,7 @@ function ShopContent() {
                                             onChange={(e) => setBestSellerOnly(e.target.checked)}
                                             className="rounded border-gray-300"
                                         />
-                                        Best Seller only
+                                        {t('shop.bestSellerOnly')}
                                     </label>
 
                                     <label className="flex items-center gap-2 text-sm text-gray-700 px-1 py-1 cursor-pointer">
@@ -536,7 +552,7 @@ function ShopContent() {
                                             onChange={(e) => setFastDeliveryOnly(e.target.checked)}
                                             className="rounded border-gray-300"
                                         />
-                                        Fast Delivery only
+                                        {t('shop.fastDeliveryOnly')}
                                     </label>
                                 </div>
                             </div>
@@ -544,7 +560,7 @@ function ShopContent() {
                             {fastSellingProduct && (
                                 <div className="bg-white border border-slate-300 rounded-md p-3 shadow-sm">
                                     <div className="mb-2">
-                                        <h3 className="text-sm font-semibold text-slate-900 tracking-wide">Trending Pick</h3>
+                                        <h3 className="text-sm font-semibold text-slate-900 tracking-wide">{t('shop.trendingPick')}</h3>
                                     </div>
                                     <button
                                         type="button"
@@ -552,19 +568,19 @@ function ShopContent() {
                                             if (!fastSellingProduct) return;
                                             router.push(getProductPath(fastSellingProduct));
                                         }}
-                                        className="group w-full text-left border border-slate-300 rounded-md overflow-hidden hover:border-slate-500 transition"
+                                        className={`group w-full border border-slate-300 rounded-md overflow-hidden hover:border-slate-500 transition ${isArabic ? 'text-right' : 'text-left'}`}
                                     >
                                         <div className="relative h-64 bg-slate-100 overflow-hidden">
                                             {fastSellingImage && fastSellingImage !== PLACEHOLDER_IMAGE ? (
                                                 <img
                                                     src={fastSellingImage}
-                                                    alt={fastSellingProduct.name || 'Product'}
+                                                    alt={fastSellingProduct.name || t('common.product')}
                                                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                                                 />
                                             ) : null}
-                                            <div className="absolute inset-x-0 bottom-0 p-2.5 bg-gradient-to-t from-black/70 to-transparent">
+                                            <div className={`absolute inset-x-0 bottom-0 p-2.5 bg-gradient-to-t from-black/70 to-transparent ${isArabic ? 'text-right' : ''}`}>
                                                 <div className="inline-flex items-center px-2 py-1 rounded-sm bg-white text-gray-900 text-sm font-bold shadow-sm">
-                                                    AED{getProductPrice(fastSellingProduct).toLocaleString()}
+                                                    AED{getProductPrice(fastSellingProduct).toLocaleString(locale)}
                                                 </div>
                                             </div>
                                         </div>
@@ -575,28 +591,40 @@ function ShopContent() {
 
                             <div>
                                 <div className="mb-4 flex flex-wrap items-center gap-2 text-sm text-gray-600">
-                                    {totalProducts > 0 ? (
+                                    {productsLoading ? (
+                                        <>{t('shop.loadingProducts')}</>
+                                    ) : totalProducts > 0 ? (
                                         <>
-                                            Showing {totalProducts.toLocaleString()} {totalProducts === 1 ? 'product' : 'products'}
+                                            {t('shop.showingRange', {
+                                                from: showingFrom.toLocaleString(locale),
+                                                to: showingTo.toLocaleString(locale),
+                                                total: totalProducts.toLocaleString(locale),
+                                                label: totalProducts === 1 ? t('shop.productSingular') : t('shop.productPlural'),
+                                            })}
                                         </>
                                     ) : (
-                                        <>Showing 0 products</>
+                                        <>{t('shop.showingZero')}</>
                                     )}
                                     {(bestSellerOnly || fastDeliveryOnly || minPrice || maxPrice || priceFilter !== 'all' || selectedCategories.length > 0) && (
                                         <span className="text-xs bg-orange-50 text-orange-700 border border-orange-200 rounded-full px-2 py-1">
-                                            Filters active
+                                            {t('shop.filtersActive')}
                                         </span>
                                     )}
                                 </div>
-                                {products.length === 0 ? (
+                                {productsLoading ? (
                                     <div className="text-center py-16 bg-white rounded-lg border border-gray-200">
-                                        <p className="text-gray-500 text-lg mb-2">No products found.</p>
-                                        <p className="text-gray-400 text-sm mb-6">Try changing filters or reset all filters.</p>
+                                        <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-orange-500 mb-4"></div>
+                                        <p className="text-gray-500 text-lg">{t('shop.loadingProducts')}</p>
+                                    </div>
+                                ) : products.length === 0 ? (
+                                    <div className="text-center py-16 bg-white rounded-lg border border-gray-200">
+                                        <p className="text-gray-500 text-lg mb-2">{t('shop.noProductsFound')}</p>
+                                        <p className="text-gray-400 text-sm mb-6">{t('shop.tryChangingFilters')}</p>
                                         <button
                                             onClick={resetFilters}
                                             className="px-6 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition"
                                         >
-                                            Reset Filters
+                                            {t('category.clearFilters')}
                                         </button>
                                     </div>
                                 ) : (
@@ -606,20 +634,43 @@ function ShopContent() {
                                                 <ProductCard key={product._id || product.id} product={product} />
                                             ))}
                                         </div>
+                                        {totalPages > 1 ? (
+                                            <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => goToPage(page - 1)}
+                                                    disabled={page <= 1}
+                                                    className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                                >
+                                                    {t('shop.previous')}
+                                                </button>
+                                                <span className="px-3 text-sm text-gray-600">
+                                                    {t('shop.pageOf', { page, total: totalPages })}
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => goToPage(page + 1)}
+                                                    disabled={page >= totalPages}
+                                                    className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                                >
+                                                    {t('shop.next')}
+                                                </button>
+                                            </div>
+                                        ) : null}
                                     </>
                                 )}
                             </div>
                         </div>
-                    </>
-                )}
+                </>
             </div>
         </div>
     );
 }
 
 export default function Shop() {
+  const { t } = useStorefrontI18n();
   return (
-    <Suspense fallback={<div>Loading shop...</div>}>
+    <Suspense fallback={<div>{t('shop.loadingShop')}</div>}>
       <ShopContent />
     </Suspense>
   );

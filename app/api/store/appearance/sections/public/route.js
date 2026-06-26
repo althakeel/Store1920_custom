@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import connectDB from '@/lib/mongodb'
 import StorePreference from '@/models/StorePreference'
 import { getCachedData, setCachedData } from '@/lib/cache'
+import { DEFAULT_FAST_DELIVERY_PAGE, normalizeFastDeliveryPage } from '@/lib/fastDeliveryPageSettings'
 
 const APPEARANCE_CACHE_KEY = 'public:appearance-sections:v1'
 
@@ -13,6 +14,7 @@ const DEFAULT_APPEARANCE = {
   homeMenuCategories: { enabled: true, style: 'grid', itemsPerRow: 6, rows: 2 },
   navbarMenu: { enabled: true, position: 'top', style: 'horizontal' },
   exploreYourInterests: { enabled: true, productIds: [] },
+  fastDeliveryPage: DEFAULT_FAST_DELIVERY_PAGE,
   productPageInfo: {
     returnsText: 'FREE Returns',
     vatText: 'All prices include VAT.',
@@ -127,6 +129,7 @@ function normalizeBadgeDefinitions(values) {
 function normalizePublic(data = {}) {
   const homeMenuCategories = data.homeMenuCategories || {}
   const exploreYourInterests = data.exploreYourInterests || {}
+  const fastDeliveryPage = data.fastDeliveryPage || {}
   const productPageInfo = data.productPageInfo || {}
   const pageSeo = normalizePageSeo(data.pageSeo)
   return {
@@ -153,6 +156,7 @@ function normalizePublic(data = {}) {
           )
         : DEFAULT_APPEARANCE.exploreYourInterests.productIds
     },
+    fastDeliveryPage: normalizeFastDeliveryPage(fastDeliveryPage),
     productPageInfo: {
       returnsText: (productPageInfo.returnsText || DEFAULT_APPEARANCE.productPageInfo.returnsText).toString().trim(),
       vatText: (productPageInfo.vatText || DEFAULT_APPEARANCE.productPageInfo.vatText).toString().trim(),

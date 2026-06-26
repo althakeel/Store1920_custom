@@ -1,10 +1,13 @@
 import {
   CAROUSEL_PRODUCT_CARD_CLASS,
+  MOBILE_CAROUSEL_BLEED_CLASS,
   CATEGORY_SLIDER_LAYOUT_CLASS,
-  CATEGORY_SLIDER_SIDE_IMAGE_SIZE_CLASS,
+  CATEGORY_SLIDER_SIDE_IMAGE_CLASS,
+  CATEGORY_SLIDER_PANEL_CLASS,
   HOME_PRODUCT_GRID_CLASS,
   HOME_SECTION_CLASS,
   HOME_SECTION_GRID_INNER_CLASS,
+  getCarouselProductCardClass,
 } from '@/lib/storefrontCarousel';
 
 export function HomeSectionTitleSkeleton() {
@@ -49,7 +52,7 @@ export function HomeProductCarouselSkeleton({ count = 6, showTitle = true }) {
     <section className={HOME_SECTION_CLASS} aria-hidden="true">
       <div className={HOME_SECTION_GRID_INNER_CLASS}>
         {showTitle ? <HomeSectionTitleSkeleton /> : null}
-        <div className="flex gap-3 overflow-hidden pb-2">
+        <div className={`${MOBILE_CAROUSEL_BLEED_CLASS} flex gap-3 overflow-hidden pb-2`}>
           {Array.from({ length: count }).map((_, index) => (
             <HomeProductCardSkeleton
               key={`home-carousel-skeleton-${index}`}
@@ -118,30 +121,22 @@ export function HomeSideImageSliderSkeleton({
   showTitle = true,
 }) {
   const cardCount = cardsPerRow === 5 ? 5 : 6;
-  const cardWidthClass = cardsPerRow === 5
-    ? 'lg:flex-[0_0_calc((100%_-_3rem)_/_5)] lg:w-[calc((100%_-_3rem)_/_5)] lg:max-w-[calc((100%_-_3rem)_/_5)]'
-    : CAROUSEL_PRODUCT_CARD_CLASS;
+  const cardWidthClass = getCarouselProductCardClass(cardsPerRow);
 
   return (
-    <div className="w-full min-w-0" aria-hidden="true">
-      <div
-        className={`${withSideImage ? CATEGORY_SLIDER_LAYOUT_CLASS : ''}`}
-      >
+    <div className="w-full min-w-0 max-w-full overflow-hidden" aria-hidden="true">
+      <div className={withSideImage ? CATEGORY_SLIDER_LAYOUT_CLASS : ''}>
         {withSideImage ? (
-          <div
-            className={`mb-4 hidden aspect-square ${CATEGORY_SLIDER_SIDE_IMAGE_SIZE_CLASS} shrink-0 overflow-hidden rounded-2xl bg-slate-200 animate-pulse lg:mb-0 lg:block lg:self-center`}
-          />
+          <div className={`${CATEGORY_SLIDER_SIDE_IMAGE_CLASS} animate-pulse bg-slate-200`} />
         ) : null}
 
-        <div
-          className={`min-w-0 ${withSideImage ? 'max-lg:bg-white lg:min-w-0 lg:flex-1 lg:rounded-2xl lg:bg-[#f3f0ff] lg:px-4 lg:py-3' : ''}`}
-        >
+        <div className={`min-w-0 ${CATEGORY_SLIDER_PANEL_CLASS} max-lg:[background-color:transparent] lg:bg-[#f3f0ff]`}>
           {showTitle ? <HomeSectionTitleSkeleton /> : null}
-          <div className={`flex gap-3 overflow-hidden ${withSideImage ? 'lg:w-full' : ''}`}>
+          <div className={`${MOBILE_CAROUSEL_BLEED_CLASS} flex gap-3 overflow-hidden pb-2`}>
             {Array.from({ length: cardCount }).map((_, index) => (
               <HomeProductCardSkeleton
                 key={`home-side-slider-card-${index}`}
-                className={withSideImage ? `${cardWidthClass} shrink-0 grow-0` : CAROUSEL_PRODUCT_CARD_CLASS}
+                className={cardWidthClass}
               />
             ))}
           </div>
@@ -154,7 +149,7 @@ export function HomeSideImageSliderSkeleton({
 export function HomeCategorySlidersSkeleton({ sections = 2 }) {
   return (
     <section className={HOME_SECTION_CLASS} aria-hidden="true">
-      <div className={`${HOME_SECTION_GRID_INNER_CLASS} space-y-6 sm:space-y-8`}>
+      <div className={`${HOME_SECTION_GRID_INNER_CLASS} space-y-4 lg:space-y-8`}>
         {Array.from({ length: sections }).map((_, index) => (
           <HomeSideImageSliderSkeleton key={`home-slider-skeleton-${index}`} withSideImage={index === 0} />
         ))}

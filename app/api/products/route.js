@@ -11,6 +11,11 @@ import {
   buildProductListSort,
   buildShopMatchStage,
 } from '@/lib/shopProductQuery';
+import {
+  countProductsDedupedBySku,
+  dedupeProductsBySku,
+  fetchProductsDedupedBySku,
+} from '@/lib/productSkuDedupe';
 
 function isMongoConnectionError(error) {
     const message = error?.message || '';
@@ -152,6 +157,7 @@ export async function GET(request){
         slim: slim ? 'true' : 'false',
         language,
         paginated: paginated ? 'true' : 'false',
+        skuDedupe: 'true',
     });
 
     try {
@@ -198,35 +204,56 @@ export async function GET(request){
         }
 
         const sortStage = buildProductListSort(sortBy);
-        const total = (paginated || fetchAll) ? await Product.countDocuments(matchStage) : null;
+        const useSkuDedupe = paginated || fetchAll;
+        const total = useSkuDedupe
+            ? await countProductsDedupedBySku(Product, matchStage)
+            : null;
 
         let products = [];
         const listProjection = slim
-            ? 'name nameAr slug price mrp AED images category categories inStock stockQuantity fastDelivery freeShippingEligible useProductsPath imageAspectRatio cardVideoPreviewEnabled cardVideoPreviewDelaySec createdAt'
+            ? 'name nameAr slug sku price mrp AED images category categories inStock stockQuantity fastDelivery freeShippingEligible useProductsPath imageAspectRatio cardVideoPreviewEnabled cardVideoPreviewDelaySec createdAt'
             : 'name nameAr slug description descriptionAr shortDescription shortDescriptionAr brand brandAr price mrp AED images category categories sku hasVariants variants attributes fastDelivery freeShippingEligible stockQuantity imageAspectRatio cardVideoPreviewEnabled cardVideoPreviewDelaySec createdAt';
         try {
-            let query = Product.find(matchStage)
-                .select(listProjection)
-                .sort(sortStage)
-                .skip(fetchAll ? 0 : offset);
+            if (useSkuDedupe) {
+                products = await fetchProductsDedupedBySku(Product, matchStage, {
+                    sort: sortStage,
+                    skip: fetchAll ? 0 : offset,
+                    limit: fetchAll ? null : limit,
+                });
+            } else {
+                let query = Product.find(matchStage)
+                    .select(listProjection)
+                    .sort(sortStage)
+                    .skip(offset);
 
-            if (!fetchAll && limit != null) {
-                query = query.limit(limit);
+                if (limit != null) {
+                    query = query.limit(limit);
+                }
+
+                products = await query.lean().exec();
+                products = dedupeProductsBySku(products);
             }
-
-            products = await query.lean().exec();
         } catch (populateError) {
             console.error('Products query error:', populateError);
-            let query = Product.find(matchStage)
-                .select(listProjection)
-                .sort(sortStage)
-                .skip(fetchAll ? 0 : offset);
+            if (useSkuDedupe) {
+                products = await fetchProductsDedupedBySku(Product, matchStage, {
+                    sort: sortStage,
+                    skip: fetchAll ? 0 : offset,
+                    limit: fetchAll ? null : limit,
+                });
+            } else {
+                let query = Product.find(matchStage)
+                    .select(listProjection)
+                    .sort(sortStage)
+                    .skip(offset);
 
-            if (!fetchAll && limit != null) {
-                query = query.limit(limit);
+                if (limit != null) {
+                    query = query.limit(limit);
+                }
+
+                products = await query.lean().exec();
+                products = dedupeProductsBySku(products);
             }
-
-            products = await query.lean().exec();
         }
 
         // Normalize category/categories and calculate discount

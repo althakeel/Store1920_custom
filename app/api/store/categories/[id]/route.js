@@ -89,6 +89,9 @@ export async function PUT(req, { params }) {
       existingCategory._id,
       {
         name: cleanedName,
+        nameAr: body?.nameAr !== undefined
+          ? cleanDisplayText(body.nameAr || '')
+          : (existingCategory.nameAr || ''),
         slug,
         description: body?.description !== undefined
           ? (cleanDisplayText(body.description || '') || null)

@@ -1,17 +1,17 @@
 import { NextResponse } from "next/server";
 import connectDB from '@/lib/mongodb';
 import Category from '@/models/Category';
-import { localizeRecord, resolveStorefrontLanguage } from '@/lib/storefrontLanguage';
+import { resolveStorefrontLanguage } from '@/lib/storefrontLanguage';
 import { getCachedData, setCachedData } from '@/lib/cache';
 import { sanitizeCategoryFields, sanitizeCategoryTree } from '@/lib/displayText';
 
-const CACHE_KEY = 'public:categories:tree:v5';
+const CACHE_KEY = 'public:categories:tree:v7';
 
 // GET - Fetch all categories (public endpoint)
 export async function GET(req) {
     try {
         const language = resolveStorefrontLanguage(req);
-        const cached = getCachedData(CACHE_KEY);
+        const cached = getCachedData(`${CACHE_KEY}:${language}`);
         if (cached) {
             return NextResponse.json(cached, {
                 status: 200,
@@ -66,21 +66,23 @@ export async function GET(req) {
             childrenByParent.get(parentId).push(category);
         }
 
+        const localizeCategoryNode = (category) => sanitizeCategoryFields(category);
+
         const categoriesWithChildren = allCategories.map((category) => {
             const children = (childrenByParent.get(String(category._id)) || [])
                 .sort((first, second) => (first.sortOrder || 0) - (second.sortOrder || 0)
                     || String(first.name || '').localeCompare(String(second.name || '')))
-                .map((child) => localizeRecord(sanitizeCategoryFields(child), language, ['name', 'description']));
+                .map((child) => localizeCategoryNode(child));
 
-            return localizeRecord(sanitizeCategoryFields({
+            return localizeCategoryNode({
                 ...category,
                 parentId: resolveCategoryParentId(category.parentId) || null,
                 children,
-            }), language, ['name', 'description']);
+            });
         });
 
         const payload = { categories: sanitizeCategoryTree(categoriesWithChildren) };
-        setCachedData(CACHE_KEY, payload, 300);
+        setCachedData(`${CACHE_KEY}:${language}`, payload, 300);
 
         return NextResponse.json(payload, {
             status: 200,

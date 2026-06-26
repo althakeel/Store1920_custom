@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import { useAuth } from "@/lib/useAuth";
 
@@ -57,6 +57,37 @@ export default function CarouselSliderPage() {
     const [uploading, setUploading] = useState(false);
     const [message, setMessage] = useState("");
     const [form, setForm] = useState(initialForm);
+    const formRef = useRef(form);
+    formRef.current = form;
+
+    const applyShowcaseToForm = (showcase) => {
+        if (!showcase || typeof showcase !== "object") return;
+
+        setForm((prev) => ({
+            ...prev,
+            ...showcase,
+            bannerSliderItems: Array.isArray(showcase.bannerSliderItems) && showcase.bannerSliderItems.length
+                ? showcase.bannerSliderItems.map((item) => createBannerSliderItem("banner-slider", item))
+                : prev.bannerSliderItems,
+            secondaryBannerSliderItems: Array.isArray(showcase.secondaryBannerSliderItems) && showcase.secondaryBannerSliderItems.length
+                ? showcase.secondaryBannerSliderItems.map((item) => createBannerSliderItem("secondary-banner-slider", item))
+                : prev.secondaryBannerSliderItems,
+        }));
+    };
+
+    const persistShowcase = async (patch = {}, successMessage = "Banner settings saved successfully.") => {
+        const token = await getToken();
+        const headers = { Authorization: `Bearer ${token}` };
+
+        const currentResponse = await axios.get("/api/store/preferences/shop-showcase", { headers });
+        const base = currentResponse.data?.shopShowcase || {};
+        const payload = { ...base, ...formRef.current, ...patch };
+
+        const response = await axios.put("/api/store/preferences/shop-showcase", payload, { headers });
+        applyShowcaseToForm(response.data?.shopShowcase || payload);
+        setMessage(successMessage);
+        return response.data?.shopShowcase || payload;
+    };
 
     useEffect(() => {
         const loadSettings = async () => {
@@ -166,8 +197,16 @@ export default function CarouselSliderPage() {
                 headers: { Authorization: `Bearer ${token}` },
             });
 
-            updateField("mainBannerImage", response.data?.url || "");
-            setMessage("Banner uploaded successfully.");
+            const imageUrl = response.data?.url || "";
+            const patch = {
+                mainBannerImage: imageUrl,
+                mainBannerTitleEnabled: false,
+                mainBannerSubtitleEnabled: false,
+                mainBannerCtaEnabled: false,
+            };
+
+            setForm((prev) => ({ ...prev, ...patch }));
+            await persistShowcase(patch, "Hero banner uploaded and saved. Refresh the homepage to see it.");
         } catch (error) {
             setMessage(error?.response?.data?.error || "Banner upload failed");
         } finally {
@@ -191,8 +230,13 @@ export default function CarouselSliderPage() {
                 headers: { Authorization: `Bearer ${token}` },
             });
 
-            updateBannerSliderItem(index, "image", response.data?.url || "");
-            setMessage("Slider banner uploaded successfully.");
+            const imageUrl = response.data?.url || "";
+            const bannerSliderItems = formRef.current.bannerSliderItems.map((item, itemIndex) => (
+                itemIndex === index ? { ...item, image: imageUrl } : item
+            ));
+
+            setForm((prev) => ({ ...prev, bannerSliderItems }));
+            await persistShowcase({ bannerSliderItems }, "Slider banner uploaded and saved.");
         } catch (error) {
             setMessage(error?.response?.data?.error || "Slider banner upload failed");
         } finally {
@@ -216,8 +260,13 @@ export default function CarouselSliderPage() {
                 headers: { Authorization: `Bearer ${token}` },
             });
 
-            updateSecondaryBannerSliderItem(index, "image", response.data?.url || "");
-            setMessage("Lower banner uploaded successfully.");
+            const imageUrl = response.data?.url || "";
+            const secondaryBannerSliderItems = formRef.current.secondaryBannerSliderItems.map((item, itemIndex) => (
+                itemIndex === index ? { ...item, image: imageUrl } : item
+            ));
+
+            setForm((prev) => ({ ...prev, secondaryBannerSliderItems }));
+            await persistShowcase({ secondaryBannerSliderItems }, "Lower banner uploaded and saved.");
         } catch (error) {
             setMessage(error?.response?.data?.error || "Lower banner upload failed");
         } finally {
@@ -231,11 +280,7 @@ export default function CarouselSliderPage() {
         setMessage("");
 
         try {
-            const token = await getToken();
-            await axios.put("/api/store/preferences/shop-showcase", form, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            setMessage("Hero banner settings saved successfully.");
+            await persistShowcase({}, "Hero banner settings saved successfully.");
         } catch (error) {
             setMessage(error?.response?.data?.error || "Failed to save settings");
         } finally {
@@ -287,7 +332,7 @@ export default function CarouselSliderPage() {
                                         onChange={(e) => uploadBanner(e.target.files?.[0])}
                                         className="block w-full text-sm text-slate-600 file:mr-4 file:rounded-lg file:border-0 file:bg-slate-100 file:px-4 file:py-2 file:font-medium file:text-slate-700 hover:file:bg-slate-200"
                                     />
-                                    <p className="text-xs text-slate-500">Upload a wide banner image. If no image is uploaded, the banner falls back to the gradient background and text.</p>
+                                    <p className="text-xs text-slate-500">Upload a wide banner image (text can be part of the image). Headline and button are turned off automatically so they do not cover your artwork. Hero banner saves immediately after upload.</p>
                                     {form.mainBannerImage ? (
                                         <img
                                             src={form.mainBannerImage}

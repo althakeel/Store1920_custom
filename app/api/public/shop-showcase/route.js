@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server'
 import connectDB from '@/lib/mongodb'
-import StorePreference from '@/models/StorePreference'
 import Product from '@/models/Product'
 import Category from '@/models/Category'
+import Store from '@/models/Store'
 import mongoose from 'mongoose'
 import { getCachedData, setCachedData } from '@/lib/cache'
+import { applyLargeBannerSliderDefaults } from '@/lib/shopShowcaseLargeBanners'
+import { resolvePublicStorePreference } from '@/lib/storePreferencePublic'
 
 const SHOWCASE_CACHE_KEY = 'public:shop-showcase:v2'
 
@@ -54,6 +56,12 @@ const DEFAULT_SHOWCASE = {
   bottomBannerCtaBgColor: '#ef2d2d',
   bottomBannerCtaTextColor: '#ffffff',
   bottomBannerLink: '/shop',
+  topBannerSliderEnabled: true,
+  topBannerSliderInterval: 4000,
+  topBannerSliderItems: [],
+  bottomBannerSliderEnabled: true,
+  bottomBannerSliderInterval: 4000,
+  bottomBannerSliderItems: [],
   productBanners: [
     { image: '', title: 'Product Title', subtitle: 'Order now', buttonText: 'Order now', link: '/shop' },
     { image: '', title: 'Product Title', subtitle: 'Order now', buttonText: 'Order now', link: '/shop' },
@@ -175,6 +183,7 @@ function normalize(data = {}) {
     bottomBannerCtaTextColor: (data.bottomBannerCtaTextColor || DEFAULT_SHOWCASE.bottomBannerCtaTextColor).toString().trim(),
     bottomBannerImage: (data.bottomBannerImage || '').toString().trim(),
     bottomBannerLink: (data.bottomBannerLink || '').toString().trim(),
+    ...applyLargeBannerSliderDefaults(data),
     productBanners: normalizeProductBanners(data.productBanners),
     mainBannerDesktopHeight: normalizeMainBannerHeight(data.mainBannerDesktopHeight, DEFAULT_SHOWCASE.mainBannerDesktopHeight),
     mainBannerMobileHeight: normalizeMainBannerHeight(data.mainBannerMobileHeight, DEFAULT_SHOWCASE.mainBannerMobileHeight),
@@ -217,10 +226,7 @@ export async function GET() {
 
     await connectDB()
 
-    const preference = await StorePreference.findOne()
-      .sort({ updatedAt: -1 })
-      .select('shopShowcase updatedAt')
-      .lean()
+    const preference = await resolvePublicStorePreference(Store, Product)
 
     const config = normalize(preference?.shopShowcase || DEFAULT_SHOWCASE)
 

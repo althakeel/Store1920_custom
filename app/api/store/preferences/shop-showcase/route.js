@@ -1,8 +1,30 @@
 import { NextResponse } from 'next/server'
+import { revalidatePath } from 'next/cache'
+import mongoose from 'mongoose'
 import connectDB from '@/lib/mongodb'
 import StorePreference from '@/models/StorePreference'
 import authSeller from '@/middlewares/authSeller'
 import { deleteCacheKey } from '@/lib/cache'
+import { HOMEPAGE_CACHE_KEY } from '@/lib/categorySliderCache'
+import { applyLargeBannerSliderDefaults, serializeLargeBannerSliderItems } from '@/lib/shopShowcaseLargeBanners'
+
+function resolveStoreObjectId(storeId) {
+  const value = String(storeId || '').trim()
+  if (!value || !mongoose.Types.ObjectId.isValid(value)) return value
+  return new mongoose.Types.ObjectId(value)
+}
+
+function invalidateShopShowcaseCaches() {
+  deleteCacheKey('public:shop-showcase:v2')
+  deleteCacheKey(HOMEPAGE_CACHE_KEY)
+  deleteCacheKey('server:homepage:v3')
+
+  try {
+    revalidatePath('/')
+  } catch {
+    // Safe when called outside a Next.js request context.
+  }
+}
 
 const DEFAULT_SHOWCASE = {
   enabled: true,
@@ -53,6 +75,12 @@ const DEFAULT_SHOWCASE = {
   bottomBannerCtaBgColor: '#ef2d2d',
   bottomBannerCtaTextColor: '#ffffff',
   bottomBannerLink: '/shop',
+  topBannerSliderEnabled: true,
+  topBannerSliderInterval: 4000,
+  topBannerSliderItems: [],
+  bottomBannerSliderEnabled: true,
+  bottomBannerSliderInterval: 4000,
+  bottomBannerSliderItems: [],
   productBanners: [
     { image: '', title: 'Product Title', subtitle: 'Order now', buttonText: 'Order now', link: '/shop' },
     { image: '', title: 'Product Title', subtitle: 'Order now', buttonText: 'Order now', link: '/shop' },
@@ -226,6 +254,7 @@ function normalizeShopShowcase(data = {}) {
     bottomBannerCtaEnabled: typeof data.bottomBannerCtaEnabled === 'boolean' ? data.bottomBannerCtaEnabled : DEFAULT_SHOWCASE.bottomBannerCtaEnabled,
     bottomBannerCtaBgColor: normalizeString(data.bottomBannerCtaBgColor, DEFAULT_SHOWCASE.bottomBannerCtaBgColor),
     bottomBannerCtaTextColor: normalizeString(data.bottomBannerCtaTextColor, DEFAULT_SHOWCASE.bottomBannerCtaTextColor),
+    ...applyLargeBannerSliderDefaults(data),
     productBanners: normalizeProductBanners(data.productBanners),
     bannerSliderEnabled: typeof data.bannerSliderEnabled === 'boolean' ? data.bannerSliderEnabled : DEFAULT_SHOWCASE.bannerSliderEnabled,
     bannerSliderDesktopInterval: Math.max(1500, Number(data.bannerSliderDesktopInterval) || DEFAULT_SHOWCASE.bannerSliderDesktopInterval),
@@ -254,9 +283,11 @@ export async function GET(request) {
 
     await connectDB()
 
-    let preference = await StorePreference.findOne({ storeId }).lean()
+    const storeObjectId = resolveStoreObjectId(storeId)
+
+    let preference = await StorePreference.findOne({ storeId: storeObjectId }).lean()
     if (!preference) {
-      const created = await StorePreference.create({ storeId, shopShowcase: DEFAULT_SHOWCASE })
+      const created = await StorePreference.create({ storeId: storeObjectId, shopShowcase: DEFAULT_SHOWCASE })
       preference = created.toObject()
     }
 
@@ -278,17 +309,51 @@ export async function PUT(request) {
     if (!storeId) return NextResponse.json({ error: 'Not authorized' }, { status: 401 })
 
     const body = await request.json()
-    const shopShowcase = normalizeShopShowcase(body)
 
     await connectDB()
 
-    const updated = await StorePreference.findOneAndUpdate(
-      { storeId },
-      { $set: { shopShowcase } },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    ).lean()
+    const storeObjectId = resolveStoreObjectId(storeId)
+    const existing = await StorePreference.findOne({ storeId: storeObjectId }).lean()
+    const merged = {
+      ...(existing?.shopShowcase || DEFAULT_SHOWCASE),
+      ...(body && typeof body === 'object' ? body : {}),
+    }
+    const shopShowcase = normalizeShopShowcase(merged)
 
-    deleteCacheKey('public:shop-showcase:v2')
+    if (Array.isArray(body?.topBannerSliderItems)) {
+      shopShowcase.topBannerSliderItems = serializeLargeBannerSliderItems(
+        body.topBannerSliderItems,
+        body.topBannerLink || merged.topBannerLink || '/shop',
+        'top-large-banner',
+      )
+      shopShowcase.topBannerImage = shopShowcase.topBannerSliderItems[0]?.image
+        || shopShowcase.topBannerImage
+        || ''
+    }
+
+    if (Array.isArray(body?.bottomBannerSliderItems)) {
+      shopShowcase.bottomBannerSliderItems = serializeLargeBannerSliderItems(
+        body.bottomBannerSliderItems,
+        body.bottomBannerLink || merged.bottomBannerLink || '/shop',
+        'bottom-large-banner',
+      )
+      shopShowcase.bottomBannerImage = shopShowcase.bottomBannerSliderItems[0]?.image
+        || shopShowcase.bottomBannerImage
+        || ''
+    }
+
+    let preference = await StorePreference.findOne({ storeId: storeObjectId })
+    if (!preference) {
+      preference = new StorePreference({ storeId: storeObjectId })
+    }
+
+    preference.set('shopShowcase', shopShowcase)
+    preference.markModified('shopShowcase')
+    await preference.save()
+
+    const updated = preference.toObject()
+
+    invalidateShopShowcaseCaches()
 
     return NextResponse.json({
       message: 'Preference saved',

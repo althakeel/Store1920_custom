@@ -9,6 +9,7 @@ import {
   CATEGORY_SLIDER_LAYOUT_CLASS,
   HOME_SECTION_CLASS,
   HOME_SECTION_GRID_INNER_CLASS,
+  CATEGORY_SLIDER_PANEL_CLASS,
   SIDE_IMAGE_SLIDER_PANEL_CLASS,
   getSideImageLayoutCardsPerRow,
 } from '@/lib/storefrontCarousel'
@@ -23,7 +24,7 @@ const Section4 = ({ sections, loading = false }) => {
   if (loading) {
     return (
       <div className={HOME_SECTION_CLASS}>
-        <div className={`${HOME_SECTION_GRID_INNER_CLASS} space-y-6 sm:space-y-8`}>
+        <div className={`${HOME_SECTION_GRID_INNER_CLASS} space-y-4 lg:space-y-8`}>
           {Array.from({ length: 2 }).map((_, index) => (
             <HomeSideImageSliderSkeleton key={`section4-skeleton-${index}`} withSideImage={index === 0} />
           ))}
@@ -36,7 +37,7 @@ const Section4 = ({ sections, loading = false }) => {
 
   return (
     <div className={HOME_SECTION_CLASS}>
-      <div className={`${HOME_SECTION_GRID_INNER_CLASS} space-y-6 sm:space-y-8`}>
+      <div className={`${HOME_SECTION_GRID_INNER_CLASS} space-y-4 lg:space-y-8`}>
         {sections.map((section, sectionIdx) => (
           <React.Fragment key={section._id || sectionIdx}>
             <HorizontalSlider section={section} />
@@ -160,7 +161,7 @@ const HorizontalSlider = ({ section }) => {
         alt={section.title || 'Featured collection'}
         fill
         className="object-cover"
-        sizes="(min-width: 1536px) 320px, (min-width: 1280px) 280px, 240px"
+        sizes="(max-width: 1023px) 100vw, (min-width: 1536px) 320px, (min-width: 1280px) 280px, 240px"
         priority={false}
       />
     </div>
@@ -168,17 +169,15 @@ const HorizontalSlider = ({ section }) => {
 
   const sliderPanel = (
     <div
-      className={`min-w-0 ${hasSideImage
-        ? `${SIDE_IMAGE_SLIDER_PANEL_CLASS} lg:overflow-hidden lg:rounded-2xl lg:px-4 lg:py-3`
-        : 'w-full'}`}
-      style={hasSideImage ? { backgroundColor: panelBackground } : undefined}
+      className={`min-w-0 ${hasSideImage ? SIDE_IMAGE_SLIDER_PANEL_CLASS : CATEGORY_SLIDER_PANEL_CLASS} max-lg:[background-color:transparent] lg:[background-color:var(--panel-bg)]`}
+      style={{ '--panel-bg': panelBackground }}
     >
-      <div className={`${hasSideImage ? 'mb-4 sm:mb-5 lg:mb-2 lg:shrink-0' : 'mb-4 sm:mb-5'}`}>
-        <h2 className={`font-bold text-gray-900 ${hasSideImage ? 'text-xl sm:text-2xl lg:line-clamp-1 lg:text-base xl:text-lg' : 'text-xl sm:text-2xl'}`}>
+      <div className={`${hasSideImage ? 'mb-3 lg:mb-2 lg:shrink-0' : 'mb-3 lg:mb-5'}`}>
+        <h2 className={`font-bold text-gray-900 ${hasSideImage ? 'text-lg lg:line-clamp-1 lg:text-base xl:text-lg' : 'text-xl lg:text-2xl'}`}>
           {section.title || section.category}
         </h2>
         {section.subtitle ? (
-          <p className={`text-gray-500 ${hasSideImage ? 'mt-0.5 text-xs sm:text-sm lg:line-clamp-1 lg:text-[10px] xl:text-xs' : 'mt-0.5 text-xs sm:text-sm'}`}>{section.subtitle}</p>
+          <p className={`text-gray-500 ${hasSideImage ? 'mt-0.5 line-clamp-2 text-xs lg:line-clamp-1 lg:text-[10px] xl:text-xs' : 'mt-0.5 text-xs lg:text-sm'}`}>{section.subtitle}</p>
         ) : null}
       </div>
 
@@ -187,7 +186,7 @@ const HorizontalSlider = ({ section }) => {
           <SkeletonLoader hasSideImage={hasSideImage} cardsPerRow={cardsPerRow} />
         </div>
       ) : (
-        <div className={hasSideImage ? 'lg:min-h-0 lg:flex-1 lg:w-full' : ''}>
+        <div className={hasSideImage ? 'min-w-0 max-lg:overflow-visible lg:min-h-0 lg:flex-1 lg:w-full lg:overflow-hidden' : 'min-w-0 max-lg:overflow-visible'}>
           <ProductCarousel
             products={sectionProducts}
             priorityCount={hasSideImage ? 5 : 4}
@@ -195,7 +194,9 @@ const HorizontalSlider = ({ section }) => {
             compact={hasSideImage}
             compactDesktopOnly={hasSideImage}
             compactBottom={hasSideImage}
-            className="w-full lg:overflow-hidden"
+            showMobileArrows
+            edgeBleed
+            className="w-full min-w-0 lg:overflow-hidden"
           />
         </div>
       )}
@@ -203,7 +204,7 @@ const HorizontalSlider = ({ section }) => {
   )
 
   return (
-    <div className="w-full min-w-0 max-w-full">
+    <div className="w-full min-w-0 max-w-full lg:overflow-hidden">
       <div
         className={`${hasSideImage ? CATEGORY_SLIDER_LAYOUT_CLASS : ''}`}
         dir={hasSideImage ? (isArabic ? 'rtl' : 'ltr') : undefined}

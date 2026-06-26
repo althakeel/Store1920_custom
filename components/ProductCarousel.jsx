@@ -3,19 +3,26 @@
 import { useEffect, useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import ProductCard from '@/components/ProductCard'
-import { getCarouselProductCardClass } from '@/lib/storefrontCarousel'
+import { getCarouselProductCardClass, MOBILE_CAROUSEL_BLEED_CLASS } from '@/lib/storefrontCarousel'
 import { useHorizontalCarouselDrag } from '@/lib/useHorizontalCarouselDrag'
+
+function getArrowVisibilityClass({ showArrows, showMobileArrows }) {
+  const classes = []
+  if (showMobileArrows) classes.push('flex lg:hidden')
+  if (showArrows) classes.push('hidden lg:flex')
+  return classes.join(' ') || 'hidden'
+}
 
 export default function ProductCarousel({
   products = [],
   priorityCount = 4,
   className = '',
   showArrows = true,
-  showMobileArrows = false,
+  showMobileArrows = true,
   compactBottom = false,
   compact = false,
   compactDesktopOnly = false,
-  edgeBleed = false,
+  edgeBleed = true,
   cardsPerRow = 6,
 }) {
   const [canScrollLeft, setCanScrollLeft] = useState(false)
@@ -29,6 +36,11 @@ export default function ProductCarousel({
     trackClassName,
     trackStyle,
   } = useHorizontalCarouselDrag()
+
+  const handleTrackPointerDown = (event) => {
+    if (event.pointerType === 'touch') return
+    handlePointerDown(event)
+  }
 
   useEffect(() => {
     const container = scrollRef.current
@@ -58,29 +70,17 @@ export default function ProductCarousel({
   ].filter(Boolean).join(' ')
 
   const arrowsVisible = showArrows || showMobileArrows
-  const arrowVisibilityClass = showMobileArrows && !showArrows
-    ? 'flex lg:hidden'
-    : showArrows
-      ? 'flex'
-      : 'hidden'
-
-  const bleedClass = edgeBleed
-    ? 'max-lg:-mx-4 max-lg:px-4 sm:max-lg:-mx-6 sm:max-lg:px-6'
-    : ''
-
-  const resolvedTrackStyle = edgeBleed
-    ? { ...trackStyle, scrollPaddingInline: '16px' }
-    : trackStyle
-
-  const cardClassName = getCarouselProductCardClass(cardsPerRow);
+  const arrowVisibilityClass = getArrowVisibilityClass({ showArrows, showMobileArrows })
+  const bleedClass = edgeBleed ? MOBILE_CAROUSEL_BLEED_CLASS : ''
+  const cardClassName = getCarouselProductCardClass(cardsPerRow)
 
   return (
-    <div className={`relative w-full min-w-0 overflow-visible ${bleedClass} ${className}`.trim()}>
+    <div className={`relative w-full min-w-0 max-lg:overflow-visible lg:overflow-x-clip ${bleedClass} ${className}`.trim()}>
       {arrowsVisible && canScrollLeft ? (
         <button
           type="button"
           onClick={scrollLeft}
-          className={`absolute left-0 top-[38%] z-10 -translate-y-1/2 rounded-full border border-gray-100 bg-white p-2 shadow-lg transition-all hover:bg-gray-50 active:scale-95 ${arrowVisibilityClass}`}
+          className={`absolute left-1 top-[38%] z-10 -translate-y-1/2 rounded-full border border-gray-100 bg-white p-2 shadow-lg transition-all hover:bg-gray-50 active:scale-95 lg:left-0 ${arrowVisibilityClass}`}
           aria-label="Scroll left"
         >
           <ChevronLeft size={18} className="text-gray-800" />
@@ -91,9 +91,9 @@ export default function ProductCarousel({
         ref={scrollRef}
         role="region"
         aria-label="Product carousel"
-        onPointerDown={handlePointerDown}
+        onPointerDown={handleTrackPointerDown}
         className={resolvedTrackClassName}
-        style={resolvedTrackStyle}
+        style={trackStyle}
       >
         {products.map((product, index) => (
           <ProductCard
@@ -112,7 +112,7 @@ export default function ProductCarousel({
         <button
           type="button"
           onClick={scrollRight}
-          className={`absolute right-0 top-[38%] z-10 -translate-y-1/2 rounded-full border border-gray-100 bg-white p-2 shadow-lg transition-all hover:bg-gray-50 active:scale-95 ${arrowVisibilityClass}`}
+          className={`absolute right-1 top-[38%] z-10 -translate-y-1/2 rounded-full border border-gray-100 bg-white p-2 shadow-lg transition-all hover:bg-gray-50 active:scale-95 lg:right-0 ${arrowVisibilityClass}`}
           aria-label="Scroll right"
         >
           <ChevronRight size={18} className="text-gray-800" />

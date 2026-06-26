@@ -5,13 +5,16 @@ import Link from 'next/link'
 import axios from 'axios'
 import { resolveStoreNavMenuItems, buildCategoryShopLink } from '@/lib/categoryNavigation'
 import ShowcaseProductBanners from './ShowcaseProductBanners'
+import ShowcaseLargeBannerSlider from './ShowcaseLargeBannerSlider'
 import { HOME_SECTION_CLASS } from '@/lib/storefrontCarousel'
+import { getLargeBannerSlides } from '@/lib/shopShowcaseLargeBanners'
 import { cleanDisplayText } from '@/lib/displayText'
 import { getProductPath } from '@/lib/productUrl'
 import {
   Baby,
   Bike,
   Car,
+  ChevronLeft,
   ChevronRight,
   Headphones,
   Info,
@@ -25,6 +28,11 @@ import {
 } from 'lucide-react'
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket'
 import { getProductThumbnailUrl } from '@/lib/productMedia'
+import {
+  readPersistedStorefrontLanguage,
+  STOREFRONT_LANGUAGE_EVENT,
+} from '@/lib/storefrontLanguage'
+import { getLocalizedCategoryName } from '@/lib/categoryLocalization'
 
 const NAVBAR_APPEARANCE_CACHE_KEY = 'navbarAppearanceCache'
 const DEFAULT_NAVBAR_BG = '#8f3404'
@@ -192,6 +200,9 @@ export default function ShopShowcaseSection({
     }
     return Array.isArray(initialStoreSettings?.navMenuItems) ? initialStoreSettings.navMenuItems : [];
   });
+  const [settingsNavMenuItems, setSettingsNavMenuItems] = useState(
+    () => (Array.isArray(initialStoreSettings?.navMenuItems) ? initialStoreSettings.navMenuItems : []),
+  );
   const [navMenuUseParentCategories, setNavMenuUseParentCategories] = useState(useParentCategoriesInitially);
   const [catalogCategories, setCatalogCategories] = useState([]);
   const [menuStyle, setMenuStyle] = useState({
@@ -209,6 +220,9 @@ export default function ShopShowcaseSection({
   const menuItemRefs = useRef([])
   const { market, convertPrice } = useStorefrontMarket()
   const navbarBg = useNavbarBackgroundColor()
+  const [language, setLanguage] = useState('en')
+  const isArabic = language === 'ar'
+  const MenuChevron = isArabic ? ChevronLeft : ChevronRight
 
   const clearFlyoutCloseTimer = () => {
     if (closeFlyoutTimerRef.current) {
@@ -256,6 +270,17 @@ export default function ShopShowcaseSection({
   }
 
   useEffect(() => {
+    setLanguage(readPersistedStorefrontLanguage())
+
+    const handleLanguageChange = () => {
+      setLanguage(readPersistedStorefrontLanguage())
+    }
+
+    window.addEventListener(STOREFRONT_LANGUAGE_EVENT, handleLanguageChange)
+    return () => window.removeEventListener(STOREFRONT_LANGUAGE_EVENT, handleLanguageChange)
+  }, [])
+
+  useEffect(() => {
     const applyMenuStyle = (settings = {}) => {
       const resolvedMenuStyle = settings?.navMenuStyle && typeof settings.navMenuStyle === 'object'
         ? settings.navMenuStyle
@@ -274,26 +299,16 @@ export default function ShopShowcaseSection({
       const useParentCategories = Boolean(settings?.navMenuUseParentCategories);
       setNavMenuUseParentCategories(useParentCategories);
       setCatalogCategories(catalog);
+      setSettingsNavMenuItems(Array.isArray(settings?.navMenuItems) ? settings.navMenuItems : []);
 
-      const resolvedItems = resolveStoreNavMenuItems(
-        {
-          navMenuUseParentCategories: useParentCategories,
-          navMenuItems: settings?.navMenuItems,
-        },
-        catalog,
-      );
+      if (!useParentCategories) {
+        if (legacyItems.length) {
+          setStoreMenuItems(legacyItems);
+          return;
+        }
 
-      if (useParentCategories) {
-        setStoreMenuItems(resolvedItems);
-        return;
+        setStoreMenuItems(Array.isArray(settings?.navMenuItems) ? settings.navMenuItems : []);
       }
-
-      if (resolvedItems.length) {
-        setStoreMenuItems(resolvedItems);
-        return;
-      }
-
-      setStoreMenuItems(legacyItems);
     };
 
     const loadNavigation = async () => {
@@ -369,18 +384,27 @@ export default function ShopShowcaseSection({
     const categories = Array.isArray(data?.categories) ? data.categories : []
 
     return categories
-      .filter((category) => String(category?.name || '').trim())
+      .filter((category) => String(category?.name || category?.nameAr || '').trim())
       .slice(0, 12)
       .map((category) => ({
-        title: cleanDisplayText(String(category.name || '').trim()),
+        title: getLocalizedCategoryName(category, language),
         href: getCategoryHref(category, categories),
         iconImage: String(category?.icon || category?.image || category?.iconUrl || '').trim(),
         icon: getCategoryIconByName(category?.name),
       }))
-  }, [data?.categories])
+  }, [data?.categories, language])
 
   const storeNavigationItems = useMemo(() => {
-    const navItems = (Array.isArray(storeMenuItems) ? storeMenuItems : [])
+    const resolvedItems = resolveStoreNavMenuItems(
+      {
+        navMenuUseParentCategories,
+        navMenuItems: settingsNavMenuItems,
+      },
+      catalogCategories,
+      language,
+    );
+
+    const navItems = (resolvedItems.length ? resolvedItems : storeMenuItems)
       .map((item) => ({
         title: cleanDisplayText(String(item?.name || item?.label || '').trim()),
         href: String(item?.link || item?.url || '#').trim() || '#',
@@ -396,12 +420,15 @@ export default function ShopShowcaseSection({
     if (navMenuUseParentCategories) return navItems
 
     return navItems.length ? navItems : categoryMenuItems
-  }, [categoryMenuItems, navMenuUseParentCategories, storeMenuItems])
+  }, [catalogCategories, categoryMenuItems, language, navMenuUseParentCategories, settingsNavMenuItems, storeMenuItems])
 
   const bannerBlocks = useMemo(() => ([
     {
+      type: 'top',
       href: config?.topBannerLink || '/shop',
-      image: config?.topBannerImage || '',
+      slides: getLargeBannerSlides(config, 'top'),
+      sliderEnabled: config?.topBannerSliderEnabled !== false,
+      sliderInterval: Number(config?.topBannerSliderInterval) || 4000,
       title: config?.topBannerTitle || '',
       showTitle: typeof config?.topBannerTitleEnabled === 'boolean' ? config.topBannerTitleEnabled : true,
       subtitle: config?.topBannerSubtitle || '',
@@ -411,13 +438,15 @@ export default function ShopShowcaseSection({
       ctaBgColor: config?.topBannerCtaBgColor || '#ef2d2d',
       ctaTextColor: config?.topBannerCtaTextColor || '#ffffff',
       accent: 'from-sky-200 via-sky-100 to-white',
-      textColor: 'text-white',
-      ctaClass: 'bg-rose-600 hover:bg-rose-700',
-      imageClass: 'object-cover object-center'
+      gridRow: '1 / 2',
+      showTruckIcon: true,
     },
     {
+      type: 'bottom',
       href: config?.bottomBannerLink || '/shop',
-      image: config?.bottomBannerImage || '',
+      slides: getLargeBannerSlides(config, 'bottom'),
+      sliderEnabled: config?.bottomBannerSliderEnabled !== false,
+      sliderInterval: Number(config?.bottomBannerSliderInterval) || 4000,
       title: config?.bottomBannerTitle || '',
       showTitle: typeof config?.bottomBannerTitleEnabled === 'boolean' ? config.bottomBannerTitleEnabled : true,
       subtitle: config?.bottomBannerSubtitle || '',
@@ -427,9 +456,8 @@ export default function ShopShowcaseSection({
       ctaBgColor: config?.bottomBannerCtaBgColor || '#ef2d2d',
       ctaTextColor: config?.bottomBannerCtaTextColor || '#ffffff',
       accent: 'from-[#180000] via-[#520000] to-[#d61f1f]',
-      textColor: 'text-white',
-      ctaClass: 'bg-rose-600 hover:bg-rose-700',
-      imageClass: 'object-cover object-center'
+      gridRow: '2 / 3',
+      showTruckIcon: false,
     }
   ]), [config])
 
@@ -501,20 +529,23 @@ export default function ShopShowcaseSection({
           onMouseEnter={clearFlyoutCloseTimer}
           onMouseLeave={scheduleFlyoutClose}
         >
-          <aside className="absolute inset-y-0 left-0 flex w-[280px] min-h-0 flex-col overflow-hidden rounded-none border border-slate-200 bg-white shadow-sm">
+          <aside
+            dir={isArabic ? 'rtl' : 'ltr'}
+            className={`absolute inset-y-0 flex w-[280px] min-h-0 flex-col overflow-hidden rounded-none border border-slate-200 bg-white shadow-sm ${isArabic ? 'right-0' : 'left-0'}`}
+          >
             <div
-              className="flex items-center justify-between px-4 py-3 text-white"
+              className={`flex items-center justify-between px-4 py-3 text-white ${isArabic ? 'flex-row-reverse' : ''}`}
               style={{ backgroundColor: navbarBg }}
               onMouseEnter={() => {
                 clearFlyoutCloseTimer()
                 setHoveredMenuIndex(null)
               }}
             >
-              <div className="flex items-center gap-2 text-[14px] font-semibold">
+              <div className={`flex items-center gap-2 text-[14px] font-semibold ${isArabic ? 'flex-row-reverse' : ''}`}>
                 <span className="text-lg leading-none">☰</span>
-                <span>All Categories</span>
+                <span>{isArabic ? 'جميع الفئات' : 'All Categories'}</span>
               </div>
-              <ChevronRight size={18} className="text-white/70" />
+              <MenuChevron size={18} className="text-white/70" />
             </div>
 
             <div
@@ -544,7 +575,7 @@ export default function ShopShowcaseSection({
                       href={menuItem.href}
                       className={`flex items-center gap-3 px-4 py-3 text-[13px] text-slate-800 transition-colors duration-200 ${
                         isActive ? 'bg-slate-100' : 'hover:bg-slate-50'
-                      }`}
+                      } ${isArabic ? 'flex-row-reverse text-right' : ''}`}
                     >
                       {isIconImageUrl(menuItem.iconImage) ? (
                         <span className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-sm">
@@ -560,10 +591,10 @@ export default function ShopShowcaseSection({
                           <menuItem.icon size={16} />
                         </span>
                       )}
-                      <span className="min-w-0 flex-1 pr-2">
+                      <span className={`min-w-0 flex-1 ${isArabic ? 'pl-2 pr-0' : 'pr-2'}`}>
                         <span className="block text-[13px] leading-5 font-medium">{menuItem.title}</span>
                       </span>
-                      <ChevronRight
+                      <MenuChevron
                         size={16}
                         className={`${hasFlyout ? 'text-slate-700' : 'text-slate-400'}`}
                       />
@@ -579,7 +610,7 @@ export default function ShopShowcaseSection({
               <div
                 className="absolute z-10"
                 style={{
-                  left: 276,
+                  ...(isArabic ? { right: 276 } : { left: 276 }),
                   top: flyoutPosition.top,
                   width: 8,
                   height: flyoutPosition.maxHeight,
@@ -588,7 +619,8 @@ export default function ShopShowcaseSection({
                 aria-hidden
               />
               <div
-                className="absolute left-[279px] z-20 flex w-[280px] flex-col overflow-hidden rounded-none border border-slate-200 shadow-sm"
+                dir={isArabic ? 'rtl' : 'ltr'}
+                className={`absolute z-20 flex w-[280px] flex-col overflow-hidden rounded-none border border-slate-200 shadow-sm ${isArabic ? 'right-[279px]' : 'left-[279px]'}`}
                 style={{
                   top: flyoutPosition.top,
                   maxHeight: flyoutPosition.maxHeight,
@@ -603,7 +635,7 @@ export default function ShopShowcaseSection({
                       <Link
                         key={`${dropdownItem.title}-${dropdownItem.href}-${dropdownIndex}`}
                         href={dropdownItem.href}
-                        className="group flex items-center justify-between border-b px-4 py-3 text-[13px] font-medium leading-5 transition-colors"
+                        className={`group flex items-center justify-between border-b px-4 py-3 text-[13px] font-medium leading-5 transition-colors ${isArabic ? 'flex-row-reverse text-right' : ''}`}
                         style={{
                           color: menuStyle.showcaseFlyoutLinkColor,
                           borderColor: menuStyle.showcaseFlyoutBorderColor,
@@ -615,15 +647,15 @@ export default function ShopShowcaseSection({
                           event.currentTarget.style.backgroundColor = 'transparent'
                         }}
                       >
-                        <span className="truncate pr-3">{dropdownItem.title}</span>
-                        <ChevronRight size={16} className="shrink-0 text-slate-400 transition-transform duration-200 group-hover:translate-x-0.5" />
+                        <span className={`truncate ${isArabic ? 'pl-3 pr-0' : 'pr-3'}`}>{dropdownItem.title}</span>
+                        <MenuChevron size={16} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isArabic ? 'group-hover:-translate-x-0.5' : 'group-hover:translate-x-0.5'}`} />
                       </Link>
                     ))}
                   </div>
 
                   {hoveredDropdownImages.length ? (
                     <div
-                      className="space-y-2 border-l p-2"
+                      className={`space-y-2 p-2 ${isArabic ? 'border-r' : 'border-l'}`}
                       style={{
                         borderColor: menuStyle.showcaseFlyoutBorderColor,
                         backgroundColor: menuStyle.showcaseFlyoutHoverColor,
@@ -658,62 +690,27 @@ export default function ShopShowcaseSection({
         </div>
 
         <div className="shop-showcase-banner-grid">
-          {bannerBlocks.map((banner, index) => (
-            (() => {
-              const bannerImage = getOriginalImageUrl(banner.image)
-              const hasImage = Boolean(bannerImage)
-
-              return (
-            <Link
-              key={`${banner.title}-${index}`}
-              href={banner.href}
-              className="group relative overflow-hidden rounded-xl border border-slate-200 bg-slate-900 shadow-sm shop-showcase-banner-row"
-              style={index === 0 ? { gridRow: '1 / 2' } : { gridRow: '2 / 3' }}
-            >
-              {hasImage ? (
-                <img
-                  src={bannerImage}
-                  alt={banner.title}
-                  loading={index === 0 ? 'eager' : 'lazy'}
-                  decoding="async"
-                  className={`absolute inset-0 h-full w-full ${banner.imageClass}`}
-                />
-              ) : (
-                <div className={`absolute inset-0 bg-gradient-to-r ${banner.accent}`} />
-              )}
-
-              {!hasImage ? (
-                <>
-                  <div className="absolute inset-0 bg-gradient-to-r from-black/26 via-black/6 to-transparent" />
-
-                  <div className="absolute inset-0 flex items-center px-5 py-4 sm:px-8">
-                    <div className="max-w-[360px] rounded-xl bg-black/10 px-3 py-2 backdrop-blur-[1.5px]">
-                      {banner.showTitle && String(banner.title || '').trim() ? (
-                        <p className="text-[26px] font-black leading-[1.05] tracking-tight text-white sm:text-[34px]">
-                          {banner.title}
-                        </p>
-                      ) : null}
-                      {banner.showSubtitle && String(banner.subtitle || '').trim() ? (
-                        <p className="mt-2 text-[14px] font-medium text-white/90 sm:text-[16px]">
-                          {banner.subtitle}
-                        </p>
-                      ) : null}
-                      {banner.showCta && String(banner.ctaText || '').trim() ? (
-                        <div
-                          className="mt-4 inline-flex items-center gap-2 rounded-md px-4 py-2 text-[13px] font-semibold shadow-sm transition duration-200"
-                          style={{ backgroundColor: banner.ctaBgColor, color: banner.ctaTextColor }}
-                        >
-                          {index === 0 ? <Truck size={16} /> : <Search size={16} />}
-                          <span>{banner.ctaText}</span>
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                </>
-              ) : null}
-            </Link>
-              )
-            })()
+          {bannerBlocks.map((banner) => (
+            <ShowcaseLargeBannerSlider
+              key={banner.type}
+              slides={banner.slides}
+              enabled={banner.sliderEnabled}
+              interval={banner.sliderInterval}
+              gridRow={banner.gridRow}
+              showTruckIcon={banner.showTruckIcon}
+              fallback={{
+                href: banner.href,
+                title: banner.title,
+                showTitle: banner.showTitle,
+                subtitle: banner.subtitle,
+                showSubtitle: banner.showSubtitle,
+                ctaText: banner.ctaText,
+                showCta: banner.showCta,
+                ctaBgColor: banner.ctaBgColor,
+                ctaTextColor: banner.ctaTextColor,
+                accent: banner.accent,
+              }}
+            />
           ))}
         </div>
 

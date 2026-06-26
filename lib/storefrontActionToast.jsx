@@ -3,6 +3,12 @@
 import toast from 'react-hot-toast';
 import StorefrontActionToast from '@/components/StorefrontActionToast';
 
+const STOREFRONT_TOAST_IDS = {
+  cart: 'storefront-action-cart',
+  wishlist: 'storefront-action-wishlist',
+  'wishlist-removed': 'storefront-action-wishlist-removed',
+};
+
 export function showStorefrontActionToast({
   variant = 'cart',
   title,
@@ -11,6 +17,8 @@ export function showStorefrontActionToast({
   actionHref,
   duration = 4500,
 }) {
+  const toastId = STOREFRONT_TOAST_IDS[variant] || `storefront-action-${variant}`;
+
   toast.custom(
     (t) => (
       <StorefrontActionToast
@@ -25,6 +33,7 @@ export function showStorefrontActionToast({
       />
     ),
     {
+      id: toastId,
       duration,
       position: 'top-center',
     },

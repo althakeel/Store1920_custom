@@ -690,7 +690,10 @@ export default function CheckoutPage() {
   
   const total = totalAfterCoupon + effectiveShipping;
   const totalAfterWallet = total;
-  const cartItemCount = cartArray.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+  const cartItemCount = cartArray.reduce(
+    (sum, item) => sum + Number(item._displayQuantity ?? item.quantity ?? 0),
+    0,
+  );
   const hasFreeShippingProduct = cartArray.some((item) => Boolean(item?.freeShippingEligible));
   const availableShippingOptions = getAvailableShippingOptions(shippingSetting, form.state);
   const selectedShippingOption =

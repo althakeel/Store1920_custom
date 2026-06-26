@@ -8,6 +8,7 @@ import { FiTrash2, FiPlus, FiEdit2, FiX, FiSearch, FiCheckCircle, FiUpload } fro
 import { MdCategory, MdOutlineCheckCircleOutline, MdAutoAwesome } from 'react-icons/md';
 import Loading from '@/components/Loading';
 import { cleanDisplayText } from '@/lib/displayText';
+import { suggestUaeArabicCategory } from '@/lib/categoryLocalization';
 
 const DEFAULT_CATEGORY_IMAGE = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%23eff6ff'/%3E%3Cstop offset='100%25' stop-color='%23e2e8f0'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='160' height='160' rx='28' fill='url(%23g)'/%3E%3Ccircle cx='80' cy='64' r='24' fill='%23bfdbfe'/%3E%3Cpath d='M38 124c10-22 29-34 42-34s32 12 42 34' fill='%2394a3b8'/%3E%3C/svg%3E";
 
@@ -145,6 +146,7 @@ function flattenCategoryOptions(categories = [], depth = 0) {
     {
       id: String(category._id),
       name: category.name,
+      nameAr: category.nameAr || '',
       depth,
     },
     ...flattenCategoryOptions(category.children || [], depth + 1),
@@ -216,6 +218,7 @@ export default function StoreCategoryMenu() {
 
   const [formData, setFormData] = useState({
     name: '',
+    nameAr: '',
     image: '',
     url: '',
     parentId: '',
@@ -224,6 +227,7 @@ export default function StoreCategoryMenu() {
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState('');
   const [generatingImageKey, setGeneratingImageKey] = useState(null);
+  const [backfillingArabic, setBackfillingArabic] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
@@ -455,6 +459,10 @@ export default function StoreCategoryMenu() {
       let syncedCategory = null;
       const categoryPayload = {
         name: formData.name.trim(),
+        nameAr: formData.nameAr?.trim() || suggestUaeArabicCategory({
+          name: formData.name.trim(),
+          slug: slugify(formData.name.trim()),
+        }) || '',
         image: imageUrl || null,
         parentId: selectedParentId || null,
       };
@@ -492,6 +500,22 @@ export default function StoreCategoryMenu() {
     }
   };
 
+  const handleBackfillArabic = async () => {
+    try {
+      setBackfillingArabic(true);
+      const token = await getToken();
+      const { data } = await axios.post('/api/store/categories/backfill-arabic', {}, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      await fetchCategories();
+      toast.success(`Updated ${data?.updated || 0} categories with UAE Arabic names`);
+    } catch (error) {
+      toast.error(error?.response?.data?.error || 'Failed to apply Arabic names');
+    } finally {
+      setBackfillingArabic(false);
+    }
+  };
+
   const handleDelete = async (categoryId) => {
     if (!confirm('Are you sure you want to delete this category?')) return;
 
@@ -510,6 +534,7 @@ export default function StoreCategoryMenu() {
   const handleEdit = (category) => {
     setFormData({
       name: category.name,
+      nameAr: category.nameAr || suggestUaeArabicCategory(category) || '',
       image: category.image || '',
       url: buildSystemCategoryMenuUrl(category),
       parentId: category.parentId || '',
@@ -522,7 +547,7 @@ export default function StoreCategoryMenu() {
   const handleCancel = () => {
     setShowForm(false);
     setEditingCategoryId(null);
-    setFormData({ name: '', image: '', url: '', parentId: '' });
+    setFormData({ name: '', nameAr: '', image: '', url: '', parentId: '' });
     setImageFile(null);
     setImagePreview('');
   };
@@ -590,6 +615,7 @@ export default function StoreCategoryMenu() {
   const flatCategories = useMemo(() => flattenSystemCategories(categories), [categories]);
   const filteredCategories = flatCategories.filter((cat) =>
     cat.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    String(cat.nameAr || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
     cat.slug?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
@@ -751,6 +777,11 @@ export default function StoreCategoryMenu() {
               <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
                 <div className="min-w-0 flex-1">
                   <h3 className={`font-semibold text-slate-900 ${depth === 0 ? 'text-base sm:text-lg' : depth === 1 ? 'text-sm sm:text-base' : 'text-sm'}`}>{getCategoryDisplayName(category.name)}</h3>
+                  {(category.nameAr || suggestUaeArabicCategory(category)) ? (
+                    <p className="mt-1 text-sm text-slate-600" dir="rtl">
+                      {category.nameAr || suggestUaeArabicCategory(category)}
+                    </p>
+                  ) : null}
                   {category.slug && (
                     <p className="mt-1 inline-block rounded-md bg-white px-2 py-0.5 text-[11px] font-mono text-slate-700 sm:text-xs">
                       Slug: {category.slug}
@@ -922,6 +953,16 @@ export default function StoreCategoryMenu() {
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
             {!showForm && (
               <button
+                type="button"
+                onClick={handleBackfillArabic}
+                disabled={backfillingArabic}
+                className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 sm:py-2.5 sm:text-sm"
+              >
+                {backfillingArabic ? 'Applying Arabic...' : 'Apply UAE Arabic Names'}
+              </button>
+            )}
+            {!showForm && (
+              <button
                 onClick={() => setShowForm(true)}
                 className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-blue-600 to-blue-700 px-4 py-2 text-xs font-semibold text-white shadow-md transition-all hover:shadow-lg sm:w-auto sm:px-5 sm:py-2.5 sm:text-sm"
               >
@@ -998,6 +1039,23 @@ export default function StoreCategoryMenu() {
                       />
                     </div>
 
+                    <div>
+                      <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-700 sm:text-sm">
+                        Arabic Name (UAE)
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.nameAr}
+                        onChange={(e) => setFormData(prev => ({ ...prev, nameAr: e.target.value }))}
+                        placeholder="مثال: إلكترونيات"
+                        dir="rtl"
+                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200 sm:px-4 sm:py-2.5 text-right"
+                      />
+                      <p className="mt-1.5 text-xs text-slate-500">
+                        Shown on the Arabic storefront. Leave blank to auto-suggest UAE Arabic from the English name.
+                      </p>
+                    </div>
+
                     {/* URL Field */}
                     <div>
                       <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-700 sm:text-sm">
@@ -1020,7 +1078,7 @@ export default function StoreCategoryMenu() {
                         <option value="">None (top-level category)</option>
                         {selectableParentOptions.map((category) => (
                           <option key={category.id} value={category.id}>
-                            {`${'-- '.repeat(category.depth)}${getCategoryDisplayName(category.name)}`}
+                            {`${'-- '.repeat(category.depth)}${getCategoryDisplayName(category.name)}${category.nameAr ? ` · ${category.nameAr}` : ''}`}
                           </option>
                         ))}
                       </select>

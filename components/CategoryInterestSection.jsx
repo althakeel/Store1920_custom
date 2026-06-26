@@ -8,6 +8,7 @@ import {
   HOME_SECTION_CLASS,
   HOME_SECTION_BLOCK_HEADING_CLASS,
   HOME_SECTION_GRID_INNER_CLASS,
+  MOBILE_SECTION_FULL_BLEED_CLASS,
 } from '@/lib/storefrontCarousel';
 import { cleanDisplayText } from '@/lib/displayText';
 import { getProductThumbnailUrl } from '@/lib/productMedia';
@@ -454,15 +455,18 @@ export default function CategoryInterestSection() {
           <h2 className={HOME_SECTION_BLOCK_HEADING_CLASS}>Explore your interests</h2>
         </div>
 
-        <CategoryChipScroller
-          items={categoriesToRender}
-          activeKey={selectedCategoryOption?.key}
-          onSelect={setSelectedCategoryKey}
-          ariaLabel="Explore your interests categories"
-        />
+        <div className={MOBILE_SECTION_FULL_BLEED_CLASS}>
+          <CategoryChipScroller
+            items={categoriesToRender}
+            activeKey={selectedCategoryOption?.key}
+            onSelect={setSelectedCategoryKey}
+            ariaLabel="Explore your interests categories"
+          />
+        </div>
 
         {catalogLoading && displayedProducts.length === 0 ? (
-          <div className={HOME_PRODUCT_GRID_CLASS}>
+          <div className={`${MOBILE_SECTION_FULL_BLEED_CLASS} mt-5`}>
+            <div className={HOME_PRODUCT_GRID_CLASS}>
             {Array.from({ length: productSkeletonCount }).map((_, index) => (
               <div
                 key={`interest-skeleton-${index}`}
@@ -475,9 +479,11 @@ export default function CategoryInterestSection() {
                 </div>
               </div>
             ))}
+            </div>
           </div>
         ) : displayedProducts.length > 0 ? (
-          <div className={HOME_PRODUCT_GRID_CLASS}>
+          <div className={`${MOBILE_SECTION_FULL_BLEED_CLASS} mt-5`}>
+            <div className={HOME_PRODUCT_GRID_CLASS}>
             {displayedProducts.map((product, index) => (
               <ProductCard
                 key={product._id || product.id || product.slug}
@@ -485,6 +491,7 @@ export default function CategoryInterestSection() {
                 priorityImages={index < 6}
               />
             ))}
+            </div>
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-6 py-10 text-center">

@@ -12,7 +12,13 @@ import axios from "axios";
 import { useDispatch, useSelector } from "react-redux";
 
 import { addToCart, removeFromCart, deleteItemFromCart, setCartItemQuantity, setCartEntry, uploadCart } from "@/lib/features/cart/cartSlice";
-import { buildBundleCartEntry, resolveCartLinePricing, adjustBundleCartTier, bundleCartSelectionMatches } from "@/lib/bulkBundleCart";
+import {
+  buildBundleCartEntry,
+  findBulkBundleVariant,
+  resolveCartLinePricing,
+  adjustBundleCartTier,
+  bundleCartSelectionMatches,
+} from "@/lib/bulkBundleCart";
 import { decrementCartItem, incrementCartItem } from "@/lib/bundleCartActions";
 import MobileProductActions from "./MobileProductActions";
 import ProductShareButton from "./ProductShareButton";
@@ -170,12 +176,17 @@ function ProductQuantitySelector({
   isArabic = false,
   formatCount,
   formatOptionLabel,
+  options,
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
   const quantityOptions = useMemo(
-    () => Array.from({ length: Math.max(1, maxOrderQty) }, (_, i) => i + 1),
-    [maxOrderQty]
+    () => (
+      Array.isArray(options) && options.length > 0
+        ? options
+        : Array.from({ length: Math.max(1, maxOrderQty) }, (_, i) => i + 1)
+    ),
+    [maxOrderQty, options]
   );
   const isBuyBox = variant === 'buybox';
 
@@ -850,7 +861,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   );
   const isBulkBundleProduct = bulkBundleTiers.length > 0;
   const isBundleTierQty = (qty) => isBulkBundleProduct && bulkBundleTiers.includes(Number(qty));
-  const isBundleModeActive = isBundleTierQty(quantity);
+  const isBundleModeActive = isBulkBundleProduct;
   const showBundleOptions = isBundleModeActive;
   const variantOptionGroups = useMemo(
     () => buildVariantOptionGroups(variants, { isBulkBundleVariant }),
@@ -867,6 +878,11 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const [selectedBundleQty, setSelectedBundleQty] = useState(
     isBulkBundleProduct ? bulkBundleTiers[0] : (bulkVariants.length ? Number(bulkVariants[0].options.bundleQty) : null)
   );
+  const activeBundleTier = useMemo(() => {
+    if (!isBulkBundleProduct) return null;
+    if (isBundleTierQty(quantity)) return Number(quantity);
+    return Number(selectedBundleQty) || bulkBundleTiers[0] || 1;
+  }, [isBulkBundleProduct, quantity, selectedBundleQty, bulkBundleTiers]);
   const handleSelectVariantOption = useCallback((key, value) => {
     setSelectedOptions((prev) => ({ ...prev, [key]: value }));
   }, []);
@@ -903,10 +919,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const canDecreaseCartBundle = isCartBundleLine && cartBundleTier > minBundleTier;
 
   const selectedVariant = (isBulkBundleProduct
-    ? bulkVariants.find((v) => {
-        const tier = isBundleModeActive ? quantity : 1;
-        return Number(v.options?.bundleQty) === Number(tier);
-      })
+    ? bulkVariants.find((v) => Number(v.options?.bundleQty) === Number(activeBundleTier))
     : findVariantBySelectedOptions(variants, selectedOptions, { isBulkBundleVariant })
   ) || null;
 
@@ -985,19 +998,40 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
   const upsertProductCartLines = useCallback((requestedQty) => {
     const normalizedQty = Math.max(1, Number(requestedQty) || 1);
-    const useBundleLine = isBundleTierQty(normalizedQty);
+
+    if (isBulkBundleProduct) {
+      const tier = bulkBundleTiers.includes(normalizedQty)
+        ? normalizedQty
+        : (bulkBundleTiers.includes(Number(selectedBundleQty)) ? Number(selectedBundleQty) : bulkBundleTiers[0]);
+      const variant = findBulkBundleVariant(product, tier);
+      const safeMax = Math.max(0, Number(variant?.stock) || 0);
+      if (!variant || safeMax <= 0) return 0;
+
+      const offerFields = product.specialOffer?.offerToken
+        ? {
+            offerToken: product.specialOffer.offerToken,
+            discountPercent: product.specialOffer.discountPercent,
+          }
+        : {};
+
+      const entry = buildBundleCartEntry({
+        price: Number(variant.price),
+        productName: product.name || product.title || 'Product',
+        variantOptions: {
+          ...cartVariantOptions,
+          bundleQty: tier,
+        },
+        ...offerFields,
+      }, product, tier);
+
+      dispatch(setCartEntry({ productId: cartProductId, entry }));
+      return tier;
+    }
+
     const safeMax = Math.max(0, maxOrderQty);
     if (safeMax <= 0) return 0;
 
-    const addAmount = Math.min(normalizedQty, safeMax);
-    const bundleTier = useBundleLine
-      ? addAmount
-      : (isBulkBundleProduct ? 1 : (selectedBundleQty || null));
-
-    const baseVariantOptions = {
-      ...cartVariantOptions,
-      bundleQty: bundleTier,
-    };
+    const targetQty = Math.min(safeMax, normalizedQty);
 
     const offerFields = product.specialOffer?.offerToken
       ? {
@@ -1006,24 +1040,13 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
         }
       : {};
 
-    if (useBundleLine) {
-      const entry = buildBundleCartEntry({
-        price: effPrice,
-        variantOptions: baseVariantOptions,
-        ...offerFields,
-      }, product, bundleTier);
-      dispatch(setCartEntry({ productId: cartProductId, entry }));
-      return addAmount;
-    }
-
-    const targetQty = Math.min(safeMax, normalizedQty);
     dispatch(setCartEntry({
       productId: cartProductId,
       entry: {
         quantity: targetQty,
         price: effPrice,
         productName: product.name || product.title || 'Product',
-        variantOptions: baseVariantOptions,
+        variantOptions: cartVariantOptions,
         ...offerFields,
       },
     }));
@@ -1037,20 +1060,18 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     effPrice,
     product,
     cartProductId,
-    cartQty,
     dispatch,
   ]);
 
   const handleProductQuantityChange = useCallback((value) => {
-    const next = Math.max(1, Math.min(maxOrderQty || 1, Number(value) || 1));
-    setQuantity(next);
+    const next = Math.max(1, Number(value) || 1);
     if (isBulkBundleProduct) {
-      if (bulkBundleTiers.includes(next)) {
-        setSelectedBundleQty(next);
-      } else {
-        setSelectedBundleQty(bulkBundleTiers[0] ?? 1);
-      }
+      if (!bulkBundleTiers.includes(next)) return;
+      setQuantity(next);
+      setSelectedBundleQty(next);
+      return;
     }
+    setQuantity(Math.max(1, Math.min(maxOrderQty || 1, next)));
   }, [maxOrderQty, isBulkBundleProduct, bulkBundleTiers]);
 
   const getBundleQuantityOptionLabel = useCallback((qty) => {
@@ -1077,7 +1098,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const convertedEffPrice = convertPrice(effPrice);
   const convertedEffAED = convertPrice(effAED);
   const savingsAmount = Math.max(0, Number(convertedEffAED || 0) - Number(convertedEffPrice || 0));
-  const pricingQuantity = isBundleTierQty(quantity) ? 1 : Math.max(1, Number(quantity) || 1);
+  const pricingQuantity = isBulkBundleProduct ? 1 : Math.max(1, Number(quantity) || 1);
   const convertedLineTotal = Number(convertedEffPrice || 0) * pricingQuantity;
   const convertedLineRegularTotal = Number(convertedEffAED || 0) * pricingQuantity;
   const buyBoxSalePrice = pricingQuantity > 1 ? convertedLineTotal : convertedEffPrice;
@@ -1123,7 +1144,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
           .sort((a, b) => Number(a.options.bundleQty) - Number(b.options.bundleQty))
           .map((v, idx) => {
             const qty = Number(v.options.bundleQty) || 1;
-            const isSelected = isBundleModeActive && Number(quantity) === qty;
+            const isSelected = Number(activeBundleTier) === qty;
             const price = Number(v.price);
             const convertedBundlePrice = convertPrice(price);
             const tag = v.tag || v.options?.tag || '';
@@ -1981,7 +2002,8 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     if (isOrderingNow || !isSelectionInStock || maxOrderQty <= 0) return;
     setIsOrderingNow(true);
     try {
-      upsertProductCartLines(quantity);
+      const qtyToAdd = isBulkBundleProduct ? (activeBundleTier ?? quantity) : quantity;
+      upsertProductCartLines(qtyToAdd);
       router.push('/checkout');
     } catch (error) {
       console.error('Order now failed:', error);
@@ -1993,17 +2015,20 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const handleAddToCart = async () => {
     if (!isSelectionInStock || maxOrderQty <= 0) return;
 
-    upsertProductCartLines(quantity);
-    const useBundleLine = isBundleTierQty(quantity);
-    const gtmQty = useBundleLine ? 1 : Math.min(Math.max(1, Number(quantity) || 1), maxOrderQty);
+    const qtyToAdd = isBulkBundleProduct ? (activeBundleTier ?? quantity) : quantity;
+    upsertProductCartLines(qtyToAdd);
+    const gtmQty = isBulkBundleProduct ? 1 : Math.min(Math.max(1, Number(quantity) || 1), maxOrderQty);
+    const gtmLinePrice = isBulkBundleProduct
+      ? Number(findBulkBundleVariant(product, activeBundleTier)?.price ?? effPrice ?? product.price ?? 0)
+      : Number(effPrice || product.price || 0);
 
     pushGtmEcommerceEvent(GTM_EVENTS.ADD_TO_CART, {
       currency: 'AED',
-      value: Number((effPrice || product.price || 0) * gtmQty),
+      value: Number(gtmLinePrice * gtmQty),
       items: [{
         item_id: String(product._id || product.id || ''),
         item_name: product.name || product.title || 'Product',
-        price: Number(effPrice || product.price || 0),
+        price: gtmLinePrice,
         quantity: gtmQty,
       }],
     });
@@ -3047,6 +3072,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 isArabic={isArabic}
                 formatCount={formatCount}
                 formatOptionLabel={isBulkBundleProduct ? getBundleQuantityOptionLabel : undefined}
+                options={isBulkBundleProduct ? bulkBundleTiers : undefined}
               />
             ) : null}
 

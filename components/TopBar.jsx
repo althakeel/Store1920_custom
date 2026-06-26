@@ -17,6 +17,7 @@ import {
   persistStorefrontLanguage,
   readPersistedStorefrontLanguage,
 } from '@/lib/storefrontLanguage';
+import { translateStaticText } from '@/lib/useStorefrontI18n';
 
 const GCC_MARKETS = [
   { code: 'AE', countryName: 'United Arab Emirates', countryNameAr: 'الإمارات العربية المتحدة', currency: 'AED', flag: '🇦🇪' },
@@ -135,6 +136,7 @@ export default function TopBar({ initialLanguage = 'en' }) {
 
   const activeBnplPartner = BNPL_PARTNERS[activeBnplIndex];
   const isArabic = storefrontLanguage === 'ar';
+  const t = (key) => translateStaticText(key, storefrontLanguage);
   const activeBnplPartnerName = isArabic ? activeBnplPartner.nameAr : activeBnplPartner.name;
   const bnplBannerDesktop = isArabic
     ? `قسّم مشترياتك إلى 4 دفعات مع ${activeBnplPartnerName}`
@@ -168,8 +170,8 @@ export default function TopBar({ initialLanguage = 'en' }) {
           href={STORE1920_CUSTOMER_SUPPORT_TEL}
           className="shrink-0 whitespace-nowrap text-[11px] leading-none text-[#222] no-underline sm:text-xs"
         >
-          <span className="font-normal text-[#666] sm:hidden">Toll-free: </span>
-          <span className="hidden font-normal sm:inline">Support: </span>
+          <span className="font-normal text-[#666] sm:hidden">{t('topbar.tollFree')} </span>
+          <span className="hidden font-normal sm:inline">{t('topbar.support')} </span>
           <span className="font-bold">{STORE1920_CUSTOMER_SUPPORT_PHONE}</span>
         </a>
 
@@ -296,8 +298,8 @@ export default function TopBar({ initialLanguage = 'en' }) {
             className="flex shrink-0 items-center rounded-md border border-[#e2e2e2] bg-white px-1.5 py-1 text-[11px] font-medium whitespace-nowrap sm:gap-1.5 sm:px-2.5 sm:py-1.5 sm:text-xs"
           >
             <span className="hidden sm:inline" role="img" aria-label="track order">🛒</span>
-            <span className="sm:hidden">Track</span>
-            <span className="hidden sm:inline">Track Order</span>
+            <span className="sm:hidden">{t('topbar.track')}</span>
+            <span className="hidden sm:inline">{t('topbar.trackOrder')}</span>
           </button>
         </div>
       </div>

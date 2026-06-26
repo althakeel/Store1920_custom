@@ -1,26 +1,26 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
-import { Loader2, Save } from 'lucide-react'
+import { Loader2, Plus, Save, Trash2, Upload } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuth } from '@/lib/useAuth'
+import FastDeliveryPageHeader from '@/components/FastDeliveryPageHeader'
+import { DEFAULT_FAST_DELIVERY_PAGE, normalizeFastDeliveryPage } from '@/lib/fastDeliveryPageSettings'
 
-const DEFAULT_FORM = {
-  headerTitle: 'Fast Delivery Products',
-  headerSubtitle: 'Get these products delivered quickly! Lightning-fast shipping on all items below.',
-  headerBgColor: '#1e40af',
-  headerBgImage: '',
-  emptyStateTitle: 'No Fast Delivery Products Available',
-  emptyStateMessage: 'Check back soon for products with fast delivery options!',
-  emptyStateBgColor: '#f8fafc'
-}
+const createBannerSlide = (overrides = {}) => ({
+  image: '',
+  alt: '',
+  link: '',
+  ...overrides,
+})
 
 export default function FastDeliveryCustomizePage() {
   const { getToken } = useAuth()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState(DEFAULT_FORM)
+  const [uploadingIndex, setUploadingIndex] = useState(null)
+  const [form, setForm] = useState(DEFAULT_FAST_DELIVERY_PAGE)
 
   const loadData = async () => {
     try {
@@ -30,9 +30,16 @@ export default function FastDeliveryCustomizePage() {
         headers: { Authorization: `Bearer ${token}` }
       })
 
+      const normalized = normalizeFastDeliveryPage({
+        ...DEFAULT_FAST_DELIVERY_PAGE,
+        ...(res.data?.fastDeliveryPage || {}),
+      })
+
       setForm({
-        ...DEFAULT_FORM,
-        ...(res.data?.fastDeliveryPage || {})
+        ...normalized,
+        headerBannerSlides: normalized.headerBannerSlides.length
+          ? normalized.headerBannerSlides
+          : [createBannerSlide({ alt: 'Banner 1' })],
       })
     } catch (error) {
       toast.error('Failed to load fast delivery settings')
@@ -46,27 +53,71 @@ export default function FastDeliveryCustomizePage() {
     loadData()
   }, [])
 
+  const updateSlide = (index, key, value) => {
+    setForm((prev) => ({
+      ...prev,
+      headerBannerSlides: prev.headerBannerSlides.map((slide, slideIndex) => (
+        slideIndex === index ? { ...slide, [key]: value } : slide
+      )),
+    }))
+  }
+
+  const addSlide = () => {
+    setForm((prev) => {
+      if (prev.headerBannerSlides.length >= 8) return prev
+      return {
+        ...prev,
+        headerBannerSlides: [
+          ...prev.headerBannerSlides,
+          createBannerSlide({ alt: `Banner ${prev.headerBannerSlides.length + 1}` }),
+        ],
+      }
+    })
+  }
+
+  const removeSlide = (index) => {
+    setForm((prev) => ({
+      ...prev,
+      headerBannerSlides: prev.headerBannerSlides.filter((_, slideIndex) => slideIndex !== index),
+    }))
+  }
+
+  const uploadSlideImage = async (index, file) => {
+    if (!file) return
+
+    try {
+      setUploadingIndex(index)
+      const token = await getToken()
+      const formData = new FormData()
+      formData.append('image', file)
+      formData.append('type', 'banner')
+
+      const response = await axios.post('/api/store/upload-image', formData, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+
+      updateSlide(index, 'image', response.data?.url || '')
+      toast.success(`Banner ${index + 1} uploaded`)
+    } catch (error) {
+      toast.error(error?.response?.data?.error || 'Banner upload failed')
+    } finally {
+      setUploadingIndex(null)
+    }
+  }
+
   const save = async () => {
     try {
       setSaving(true)
       const token = await getToken()
+      const normalized = normalizeFastDeliveryPage(form)
 
-      const payload = {
-        fastDeliveryPage: {
-          headerTitle: String(form.headerTitle || '').trim(),
-          headerSubtitle: String(form.headerSubtitle || '').trim(),
-          headerBgColor: String(form.headerBgColor || '').trim(),
-          headerBgImage: String(form.headerBgImage || '').trim(),
-          emptyStateTitle: String(form.emptyStateTitle || '').trim(),
-          emptyStateMessage: String(form.emptyStateMessage || '').trim(),
-          emptyStateBgColor: String(form.emptyStateBgColor || '').trim()
-        }
-      }
-
-      await axios.post('/api/store/appearance/sections', payload, {
+      await axios.post('/api/store/appearance/sections', {
+        fastDeliveryPage: normalized,
+      }, {
         headers: { Authorization: `Bearer ${token}` }
       })
 
+      setForm(normalized)
       toast.success('Fast delivery page settings saved')
     } catch (error) {
       toast.error('Failed to save fast delivery settings')
@@ -75,6 +126,8 @@ export default function FastDeliveryCustomizePage() {
       setSaving(false)
     }
   }
+
+  const previewSettings = useMemo(() => normalizeFastDeliveryPage(form), [form])
 
   if (loading) {
     return (
@@ -88,136 +141,225 @@ export default function FastDeliveryCustomizePage() {
     <div className="max-w-4xl mx-auto p-6 space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-slate-900">Fast Delivery Page Design</h1>
-        <p className="text-sm text-slate-600 mt-1">Customize the header and empty state appearance for the fast delivery products page.</p>
+        <p className="text-sm text-slate-600 mt-1">Customize the header banner slider, colors, and empty state for the fast delivery products page.</p>
       </div>
 
-      {/* Header Section */}
       <div className="bg-white border rounded-xl p-5 space-y-4">
         <h2 className="text-lg font-semibold text-slate-900">Header Section</h2>
-        
-        <label className="space-y-1">
+
+        <label className="space-y-1 block">
           <span className="text-sm font-medium text-slate-700">Header Title</span>
-          <input 
+          <input
             type="text"
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-900" 
-            value={form.headerTitle} 
+            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-900"
+            value={form.headerTitle}
             onChange={(e) => setForm((prev) => ({ ...prev, headerTitle: e.target.value }))}
-            placeholder="Fast Delivery Products"
           />
-          <span className="text-xs text-slate-500">The main heading for the fast delivery page</span>
         </label>
 
-        <label className="space-y-1">
+        <label className="space-y-1 block">
           <span className="text-sm font-medium text-slate-700">Header Subtitle</span>
-          <textarea 
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-900 resize-none" 
+          <textarea
+            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-900 resize-none"
             rows="2"
-            value={form.headerSubtitle} 
+            value={form.headerSubtitle}
             onChange={(e) => setForm((prev) => ({ ...prev, headerSubtitle: e.target.value }))}
-            placeholder="Get these products delivered quickly!"
           />
-          <span className="text-xs text-slate-500">Supporting text below the header title</span>
         </label>
 
-        <label className="space-y-1">
+        <label className="space-y-1 block">
           <span className="text-sm font-medium text-slate-700">Header Background Color</span>
           <div className="flex gap-2 items-center">
-            <input 
+            <input
               type="color"
-              className="w-12 h-10 border border-slate-300 rounded-lg cursor-pointer" 
-              value={form.headerBgColor} 
+              className="w-12 h-10 border border-slate-300 rounded-lg cursor-pointer"
+              value={form.headerBgColor}
               onChange={(e) => setForm((prev) => ({ ...prev, headerBgColor: e.target.value }))}
             />
-            <input 
+            <input
               type="text"
-              className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-slate-900 font-mono text-sm" 
-              value={form.headerBgColor} 
+              className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-slate-900 font-mono text-sm"
+              value={form.headerBgColor}
               onChange={(e) => setForm((prev) => ({ ...prev, headerBgColor: e.target.value }))}
-              placeholder="#1e40af"
             />
           </div>
-        </label>
-
-        <label className="space-y-1">
-          <span className="text-sm font-medium text-slate-700">Header Background Image URL (Optional)</span>
-          <input 
-            type="url"
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-900" 
-            value={form.headerBgImage} 
-            onChange={(e) => setForm((prev) => ({ ...prev, headerBgImage: e.target.value }))}
-            placeholder="https://example.com/image.jpg"
-          />
-          <span className="text-xs text-slate-500">Leave empty to use only the background color</span>
+          <span className="text-xs text-slate-500">Used behind the banner slider and when no banner image is uploaded.</span>
         </label>
       </div>
 
-      {/* Empty State Section */}
+      <div className="bg-white border rounded-xl p-5 space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Banner Slider</h2>
+            <p className="text-sm text-slate-500">Upload multiple banner images. They rotate automatically on the fast delivery page.</p>
+          </div>
+          <label className="relative inline-flex cursor-pointer items-center gap-3">
+            <span className="text-sm font-medium text-slate-700">Enable slider</span>
+            <input
+              type="checkbox"
+              checked={form.headerBannerSliderEnabled}
+              onChange={(e) => setForm((prev) => ({ ...prev, headerBannerSliderEnabled: e.target.checked }))}
+              className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+            />
+          </label>
+        </div>
+
+        <label className="space-y-1 block max-w-xs">
+          <span className="text-sm font-medium text-slate-700">Slide interval (ms)</span>
+          <input
+            type="number"
+            min="2000"
+            max="15000"
+            step="500"
+            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-900"
+            value={form.headerBannerSliderInterval}
+            onChange={(e) => setForm((prev) => ({
+              ...prev,
+              headerBannerSliderInterval: Number(e.target.value) || DEFAULT_FAST_DELIVERY_PAGE.headerBannerSliderInterval,
+            }))}
+          />
+        </label>
+
+        <div className="space-y-4">
+          {form.headerBannerSlides.map((slide, index) => (
+            <div key={`slide-${index}`} className="rounded-xl border border-slate-200 p-4 space-y-4">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="font-medium text-slate-900">Slide {index + 1}</h3>
+                <button
+                  type="button"
+                  onClick={() => removeSlide(index)}
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  <Trash2 size={14} />
+                  Remove
+                </button>
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
+                <div className="space-y-3">
+                  <label className="block text-sm font-medium text-slate-700">Upload banner image</label>
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
+                    {uploadingIndex === index ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                    {uploadingIndex === index ? 'Uploading...' : 'Choose image'}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => uploadSlideImage(index, e.target.files?.[0])}
+                    />
+                  </label>
+
+                  {slide.image ? (
+                    <img
+                      src={slide.image}
+                      alt={slide.alt || `Banner ${index + 1}`}
+                      className="h-36 w-full rounded-lg border border-slate-200 object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-36 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-sm text-slate-500">
+                      Upload a wide banner image
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-3">
+                  <label className="space-y-1 block">
+                    <span className="text-sm font-medium text-slate-700">Image URL (optional)</span>
+                    <input
+                      type="url"
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-900 text-sm"
+                      value={slide.image}
+                      onChange={(e) => updateSlide(index, 'image', e.target.value)}
+                      placeholder="https://..."
+                    />
+                  </label>
+
+                  <label className="space-y-1 block">
+                    <span className="text-sm font-medium text-slate-700">Alt text</span>
+                    <input
+                      type="text"
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-900 text-sm"
+                      value={slide.alt}
+                      onChange={(e) => updateSlide(index, 'alt', e.target.value)}
+                    />
+                  </label>
+
+                  <label className="space-y-1 block">
+                    <span className="text-sm font-medium text-slate-700">Link (optional)</span>
+                    <input
+                      type="text"
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-900 text-sm"
+                      value={slide.link}
+                      onChange={(e) => updateSlide(index, 'link', e.target.value)}
+                      placeholder="/products or https://..."
+                    />
+                  </label>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <button
+          type="button"
+          onClick={addSlide}
+          disabled={form.headerBannerSlides.length >= 8}
+          className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Plus size={16} />
+          Add banner slide
+        </button>
+      </div>
+
       <div className="bg-white border rounded-xl p-5 space-y-4">
         <h2 className="text-lg font-semibold text-slate-900">Empty State (No Products)</h2>
 
-        <label className="space-y-1">
+        <label className="space-y-1 block">
           <span className="text-sm font-medium text-slate-700">Empty State Title</span>
-          <input 
+          <input
             type="text"
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-900" 
-            value={form.emptyStateTitle} 
+            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-900"
+            value={form.emptyStateTitle}
             onChange={(e) => setForm((prev) => ({ ...prev, emptyStateTitle: e.target.value }))}
-            placeholder="No Fast Delivery Products Available"
           />
-          <span className="text-xs text-slate-500">Shown when there are no fast delivery products</span>
         </label>
 
-        <label className="space-y-1">
+        <label className="space-y-1 block">
           <span className="text-sm font-medium text-slate-700">Empty State Message</span>
-          <textarea 
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-900 resize-none" 
+          <textarea
+            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-900 resize-none"
             rows="2"
-            value={form.emptyStateMessage} 
+            value={form.emptyStateMessage}
             onChange={(e) => setForm((prev) => ({ ...prev, emptyStateMessage: e.target.value }))}
-            placeholder="Check back soon for products with fast delivery options!"
           />
-          <span className="text-xs text-slate-500">Supporting text for empty state</span>
         </label>
 
-        <label className="space-y-1">
+        <label className="space-y-1 block">
           <span className="text-sm font-medium text-slate-700">Empty State Background Color</span>
           <div className="flex gap-2 items-center">
-            <input 
+            <input
               type="color"
-              className="w-12 h-10 border border-slate-300 rounded-lg cursor-pointer" 
-              value={form.emptyStateBgColor} 
+              className="w-12 h-10 border border-slate-300 rounded-lg cursor-pointer"
+              value={form.emptyStateBgColor}
               onChange={(e) => setForm((prev) => ({ ...prev, emptyStateBgColor: e.target.value }))}
             />
-            <input 
+            <input
               type="text"
-              className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-slate-900 font-mono text-sm" 
-              value={form.emptyStateBgColor} 
+              className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-slate-900 font-mono text-sm"
+              value={form.emptyStateBgColor}
               onChange={(e) => setForm((prev) => ({ ...prev, emptyStateBgColor: e.target.value }))}
-              placeholder="#f8fafc"
             />
           </div>
         </label>
       </div>
 
-      {/* Preview Section */}
       <div className="bg-white border rounded-xl p-5 space-y-4">
         <h2 className="text-lg font-semibold text-slate-900">Preview</h2>
-        
-        <div 
-          className="rounded-lg p-8 text-white text-center"
-          style={{ 
-            backgroundColor: form.headerBgColor,
-            backgroundImage: form.headerBgImage ? `url('${form.headerBgImage}')` : 'none',
-            backgroundSize: 'cover',
-            backgroundPosition: 'center'
-          }}
-        >
-          <h3 className="text-3xl font-bold mb-2">{form.headerTitle}</h3>
-          <p className="text-lg text-white/90">{form.headerSubtitle}</p>
+        <div className="overflow-hidden rounded-lg border border-slate-200">
+          <FastDeliveryPageHeader settings={previewSettings} />
         </div>
       </div>
 
-      {/* Save Button */}
       <div className="flex gap-3 justify-end">
         <button
           onClick={loadData}

@@ -10,6 +10,11 @@ import {
   buildCategoryShopLink,
   resolveStoreNavMenuItems,
 } from '@/lib/categoryNavigation';
+import {
+  readPersistedStorefrontLanguage,
+  STOREFRONT_LANGUAGE_EVENT,
+} from '@/lib/storefrontLanguage';
+import { translateStaticText } from '@/lib/useStorefrontI18n';
 
 const MENU_CACHE_KEY = 'nav:menu:v1';
 const CATEGORIES_CACHE_KEY = 'nav:categories:v2';
@@ -239,6 +244,7 @@ export default function NavbarMenuBar() {
   const [categoriesDropdownOpen, setCategoriesDropdownOpen] = useState(false);
   const [loadedOnce, setLoadedOnce] = useState(false);
   const [menuStyle, setMenuStyle] = useState(defaultMenuStyle);
+  const [storefrontLanguage, setStorefrontLanguage] = useState('en');
 
   const megaTimer = useRef(null);
   const categoryTimer = useRef(null);
@@ -252,13 +258,26 @@ export default function NavbarMenuBar() {
     return resolveStoreNavMenuItems(
       { navMenuUseParentCategories, navMenuItems },
       categories,
+      storefrontLanguage,
     );
-  }, [navMenuUseParentCategories, categories, navMenuItems]);
+  }, [navMenuUseParentCategories, categories, navMenuItems, storefrontLanguage]);
+
+  const getLocalizedCategoryDisplayName = (category) => getCategoryDisplayName(category, storefrontLanguage);
 
   const hoveredChildren = useMemo(
     () => getDirectChildCategories(categories, hoveredCategory),
     [categories, hoveredCategory]
   );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const syncLanguage = () => setStorefrontLanguage(readPersistedStorefrontLanguage());
+    syncLanguage();
+    window.addEventListener(STOREFRONT_LANGUAGE_EVENT, syncLanguage);
+
+    return () => window.removeEventListener(STOREFRONT_LANGUAGE_EVENT, syncLanguage);
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -455,14 +474,14 @@ export default function NavbarMenuBar() {
                             ? { backgroundColor: 'var(--menu-dropdown-bg)', color: 'var(--menu-dropdown-text)' }
                             : { color: 'var(--menu-dropdown-text)' }}
                         >
-                          {getCategoryDisplayName(category)}
+                          {getLocalizedCategoryDisplayName(category)}
                         </button>
                       ))}
                     </div>
 
                     <div className="p-4">
                       <p className="mb-2 text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--menu-dropdown-muted)' }}>
-                        {getCategoryDisplayName(hoveredCategory) || 'Collections'}
+                        {getLocalizedCategoryDisplayName(hoveredCategory) || translateStaticText('navbar.collections', storefrontLanguage)}
                       </p>
                       <div className="grid gap-2 sm:grid-cols-2">
                         {hoveredChildren.length > 0 ? (
@@ -473,7 +492,7 @@ export default function NavbarMenuBar() {
                               className="rounded-lg border px-3 py-2 text-sm transition"
                               style={{ borderColor: 'var(--menu-dropdown-border)', color: 'var(--menu-dropdown-text)' }}
                             >
-                              {getCategoryDisplayName(child)}
+                              {getLocalizedCategoryDisplayName(child)}
                             </Link>
                           ))
                         ) : (

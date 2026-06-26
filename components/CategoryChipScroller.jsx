@@ -136,7 +136,7 @@ export default function CategoryChipScroller({
   if (!items.length) return null;
 
   return (
-    <div className="relative mb-5 flex items-center gap-2">
+    <div className="relative flex items-center gap-2">
       {canScrollLeft ? (
         <button
           type="button"
@@ -155,7 +155,7 @@ export default function CategoryChipScroller({
         className={`min-w-0 flex-1 flex items-center gap-2.5 overflow-x-auto overscroll-x-contain py-1 scrollbar-hide ${
           isDragging ? 'cursor-grabbing select-none' : 'cursor-grab'
         }`}
-        style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x' }}
+        style={{ WebkitOverflowScrolling: 'touch', touchAction: 'manipulation' }}
       >
         {items.map((item) => {
           const isActive = item.key === activeKey;
