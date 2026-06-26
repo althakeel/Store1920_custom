@@ -8,8 +8,9 @@ import PageSkeleton from "@/components/PageSkeleton";
 import { readPageCache, writePageCache, clearPageCache } from "@/lib/storePageCache";
 import axios from "axios";
 import toast from "react-hot-toast";
-import { Package, Truck, X, Download, Printer, RefreshCw, MapPin, Trash2, CalendarClock, AlertTriangle, Search, Plus, ArrowUp, ArrowDown, ArrowUpDown, History } from "lucide-react";
+import { Package, Truck, X, Download, Printer, RefreshCw, MapPin, Trash2, CalendarClock, AlertTriangle, Search, Plus, ArrowUp, ArrowDown, ArrowUpDown, History, Pencil } from "lucide-react";
 import StoreCreateOrderModal from '@/components/store/StoreCreateOrderModal';
+import StoreEditOrderPanel from '@/components/store/StoreEditOrderPanel';
 import OrderStatusPicker, { STORE_ORDER_STATUS_FILTER_OPTIONS, STORE_ORDER_STATUS_OPTIONS } from '@/components/store/OrderStatusPicker';
 import { downloadInvoice, printInvoice } from "@/lib/generateInvoice";
 import { schedulePickup } from '@/lib/delhivery';
@@ -210,6 +211,7 @@ export default function StoreOrders() {
     const [orders, setOrders] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedOrder, setSelectedOrder] = useState(null);
+    const [showOrderEditPanel, setShowOrderEditPanel] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [trackingData, setTrackingData] = useState({
         trackingId: '',
@@ -405,14 +407,15 @@ export default function StoreOrders() {
     const getOrderStats = () => {
         const confirmedOrders = orders.filter(isVisibleStoreOrder);
         const stats = {
-            TOTAL: confirmedOrders.length,
-            RETURN_REQUESTED: confirmedOrders.filter((o) => o.returns && o.returns.some((r) => r.status === 'REQUESTED')).length,
+            TOTAL: orders.length,
+            ACTIVE: confirmedOrders.length,
+            RETURN_REQUESTED: orders.filter((o) => o.returns && o.returns.some((r) => r.status === 'REQUESTED')).length,
             PENDING_PAYMENT: orders.filter(isAwaitingPaymentOrder).length,
             PENDING_SHIPMENT: confirmedOrders.filter((o) => !o.trackingId && ['ORDER_PLACED', 'PROCESSING'].includes(o.status)).length,
         };
 
         STORE_ORDER_STATUS_OPTIONS.forEach(({ value }) => {
-            stats[value] = confirmedOrders.filter((o) => o.status === value).length;
+            stats[value] = orders.filter((o) => o.status === value).length;
         });
 
         return stats;
@@ -439,7 +442,7 @@ export default function StoreOrders() {
         let dateFiltered = orders.filter(isOrderInRange);
 
         if (filterStatus === 'ALL') {
-            dateFiltered = dateFiltered.filter(isVisibleStoreOrder);
+            // Show every loaded order (including cancelled, failed, and unpaid attempts).
         } else if (filterStatus === 'PENDING_PAYMENT') {
             dateFiltered = dateFiltered.filter(isAwaitingPaymentOrder);
         } else if (filterStatus === 'PENDING_SHIPMENT') {
@@ -489,7 +492,6 @@ export default function StoreOrders() {
     const paymentStats = useMemo(() => {
         const counts = { ALL: 0, COD: 0, CARD: 0, TABBY: 0, TAMARA: 0, WALLET: 0 };
         orders.forEach((order) => {
-            if (!isVisibleStoreOrder(order)) return;
             const method = normalizeOrderPaymentMethod(order);
             counts.ALL += 1;
             if (counts[method] !== undefined) {
@@ -745,6 +747,7 @@ export default function StoreOrders() {
         console.log('[MODAL DEBUG] Order addressId:', order.addressId);
         console.log('[MODAL DEBUG] Order isGuest:', order.isGuest);
         setSelectedOrder(order);
+        setShowOrderEditPanel(false);
         // Pre-fill tracking data if it exists
         setTrackingData({
             trackingId: order.trackingId || '',
@@ -826,6 +829,7 @@ export default function StoreOrders() {
     const closeModal = () => {
         setIsModalOpen(false);
         setSelectedOrder(null);
+        setShowOrderEditPanel(false);
         // Reset tracking data
         setTrackingData({
             trackingId: '',
@@ -1508,6 +1512,9 @@ export default function StoreOrders() {
                 >
                     <p className="text-xs opacity-75">Total Orders</p>
                     <p className="text-2xl font-bold">{stats.TOTAL}</p>
+                    {stats.ACTIVE < stats.TOTAL ? (
+                        <p className="mt-1 text-[10px] opacity-80">{stats.ACTIVE.toLocaleString()} active · {(stats.TOTAL - stats.ACTIVE).toLocaleString()} cancelled/failed/unpaid</p>
+                    ) : null}
                 </div>
                 <div 
                     onClick={() => router.push('/store/abandoned-checkout')}
@@ -2075,6 +2082,15 @@ export default function StoreOrders() {
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <button
+                                        type="button"
+                                        onClick={() => setShowOrderEditPanel((value) => !value)}
+                                        className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors backdrop-blur-sm"
+                                        title="Edit order"
+                                    >
+                                        <Pencil size={18} />
+                                        <span className="text-sm">{showOrderEditPanel ? 'Hide edit' : 'Edit'}</span>
+                                    </button>
+                                    <button
                                         onClick={() => downloadInvoice(selectedOrder)}
                                         className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors backdrop-blur-sm"
                                         title="Download Invoice"
@@ -2098,6 +2114,28 @@ export default function StoreOrders() {
                         </div>
 
                         <div className="p-6 space-y-6">
+                            {showOrderEditPanel ? (
+                                <StoreEditOrderPanel
+                                    order={selectedOrder}
+                                    currency={currency}
+                                    getToken={getToken}
+                                    onSaved={(updatedOrder) => {
+                                        if (!updatedOrder) return;
+                                        setSelectedOrder((current) => (
+                                            current && String(current._id) === String(updatedOrder._id)
+                                                ? { ...current, ...updatedOrder }
+                                                : current
+                                        ));
+                                        setOrders((current) => current.map((row) => (
+                                            String(row._id) === String(updatedOrder._id)
+                                                ? { ...row, ...updatedOrder }
+                                                : row
+                                        )));
+                                        setShowOrderEditPanel(false);
+                                    }}
+                                />
+                            ) : null}
+
                             {/* Tracking Details Section */}
                             <div className="bg-gradient-to-br from-orange-50 to-orange-100 border border-orange-200 rounded-xl p-5">
                                 <div className="flex items-center gap-2 mb-4">

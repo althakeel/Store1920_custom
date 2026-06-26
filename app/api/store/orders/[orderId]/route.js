@@ -33,7 +33,27 @@ export async function PUT(request, { params }) {
         const { orderId } = await params;
 
         // Read update payload
-        const { status, trackingId, trackingUrl, courier } = await request.json();
+        const body = await request.json();
+        const {
+            status,
+            trackingId,
+            trackingUrl,
+            courier,
+            shippingAddress,
+            guestName,
+            guestEmail,
+            guestPhone,
+            paymentMethod,
+            paymentStatus,
+            isPaid,
+            shippingFee,
+            total,
+            orderItems,
+            notes,
+            paymentReferenceId,
+            tabbyPaymentId,
+            tamaraOrderId,
+        } = body;
 
         // Verify the order belongs to this store
         const existingOrder = await Order.findOne({
@@ -61,6 +81,53 @@ export async function PUT(request, { params }) {
         if (trackingUrl !== undefined) updateData.trackingUrl = trackingUrl;
         if (courier !== undefined) updateData.courier = courier;
 
+        if (shippingAddress !== undefined && typeof shippingAddress === 'object') {
+            updateData.shippingAddress = {
+                ...(existingOrder.shippingAddress || {}),
+                ...shippingAddress,
+            };
+        }
+        if (guestName !== undefined) updateData.guestName = String(guestName || '').trim();
+        if (guestEmail !== undefined) updateData.guestEmail = String(guestEmail || '').trim().toLowerCase();
+        if (guestPhone !== undefined) updateData.guestPhone = String(guestPhone || '').trim();
+        if (paymentMethod !== undefined) updateData.paymentMethod = String(paymentMethod || '').toUpperCase();
+        if (paymentStatus !== undefined) updateData.paymentStatus = String(paymentStatus || '').toUpperCase();
+        if (isPaid !== undefined) updateData.isPaid = Boolean(isPaid);
+        if (shippingFee !== undefined) updateData.shippingFee = Number(shippingFee) || 0;
+        if (total !== undefined) updateData.total = Number(total) || 0;
+        if (notes !== undefined) updateData.notes = String(notes || '').slice(0, 5000);
+        if (Array.isArray(orderItems)) {
+            updateData.orderItems = orderItems.map((item) => ({
+                productId: item?.productId || undefined,
+                name: String(item?.name || '').trim(),
+                price: Number(item?.price) || 0,
+                quantity: Math.max(1, Number(item?.quantity) || 1),
+            })).filter((item) => item.name && item.quantity > 0);
+        }
+
+        const referenceId = String(paymentReferenceId || tabbyPaymentId || tamaraOrderId || '').trim();
+        if (referenceId) {
+            updateData.paymentReferenceId = referenceId;
+            const method = String(paymentMethod || existingOrder.paymentMethod || '').toUpperCase();
+            if (method === 'TABBY' || tabbyPaymentId) updateData.tabbyPaymentId = referenceId;
+            if (method === 'TAMARA' || tamaraOrderId) updateData.tamaraOrderId = referenceId;
+        }
+
+        const detailsChanged = [
+            shippingAddress !== undefined,
+            guestName !== undefined,
+            guestEmail !== undefined,
+            guestPhone !== undefined,
+            paymentMethod !== undefined,
+            paymentStatus !== undefined,
+            isPaid !== undefined,
+            shippingFee !== undefined,
+            total !== undefined,
+            notes !== undefined,
+            Array.isArray(orderItems),
+            Boolean(referenceId),
+        ].some(Boolean);
+
         const previousStatus = String(existingOrder.status || '').toUpperCase();
         const nextStatus = status !== undefined
             ? String(status || '').toUpperCase()
@@ -82,7 +149,26 @@ export async function PUT(request, { params }) {
             orderId,
             updateData,
             { new: true }
-        ).lean();
+        )
+        .populate({
+            path: 'orderItems.productId',
+            model: 'Product',
+            select: 'name slug images sku',
+        })
+        .lean();
+
+        if (detailsChanged) {
+            await appendOrderCommunicationLog(orderId, {
+                channel: 'system',
+                template: 'order_details_edited',
+                label: 'Order details updated',
+                status: 'sent',
+                recipient: existingOrder.guestEmail || existingOrder.shippingAddress?.email || '',
+                sentByUid: userId,
+                sentByName: sellerName,
+                details: 'Address, items, payment, or totals edited from store dashboard',
+            });
+        }
 
         // Decide what status value to send to the email service:
         // - If the request explicitly changed status, use the updated status.
