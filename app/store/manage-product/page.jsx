@@ -926,7 +926,7 @@ export default function StoreManageProducts() {
                 </button>
             </div>
 
-            <div className="mb-4 w-full rounded-xl border border-blue-200 bg-blue-50/70 px-4 py-4">
+            <div className="hidden mb-4 w-full rounded-xl border border-blue-200 bg-blue-50/70 px-4 py-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                         <h2 className="text-sm font-semibold text-slate-900">AI Auto Fill — Bulk Queue</h2>

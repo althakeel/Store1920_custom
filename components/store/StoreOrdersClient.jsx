@@ -1070,7 +1070,12 @@ export default function StoreOrders() {
     };
 
     const getExportFilteredOrders = () => {
-        const baseOrders = filteredOrders;
+        let baseOrders = filteredOrders;
+
+        if (selectedOrderIds.length > 0) {
+            const selectedSet = new Set(selectedOrderIds.map(String));
+            baseOrders = orders.filter((order) => selectedSet.has(String(order._id)));
+        }
 
         if (exportTypeFilter === 'ALL') return baseOrders;
         if (exportTypeFilter === 'CANCELLED') {
@@ -1098,11 +1103,21 @@ export default function StoreOrders() {
         return baseOrders;
     };
 
+    const getExportFileBaseName = () => {
+        const dateLabel = new Date().toISOString().slice(0, 10);
+        if (selectedOrderIds.length > 0) {
+            return `store-orders-selected-${selectedOrderIds.length}-${dateLabel}`;
+        }
+        return `store-orders-${dateLabel}`;
+    };
+
     const exportOrdersToExcel = async () => {
         const exportOrders = getExportFilteredOrders();
 
         if (!exportOrders.length) {
-            toast.error('No orders available to export');
+            toast.error(selectedOrderIds.length > 0
+                ? 'No selected orders match the export filters'
+                : 'No orders available to export');
             return;
         }
 
@@ -1123,10 +1138,10 @@ export default function StoreOrders() {
             const workbook = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(workbook, worksheet, 'Orders');
 
-            const dateLabel = new Date().toISOString().slice(0, 10);
-            XLSX.writeFile(workbook, `store-orders-${dateLabel}.xlsx`);
+            XLSX.writeFile(workbook, `${getExportFileBaseName()}.xlsx`);
 
-            toast.success(`Exported ${rows.length} row(s) from ${exportOrders.length} order(s)`);
+            const scopeLabel = selectedOrderIds.length > 0 ? 'selected ' : '';
+            toast.success(`Exported ${rows.length} row(s) from ${exportOrders.length} ${scopeLabel}order(s)`);
         } catch (error) {
             console.error('Excel export failed:', error);
             toast.error('Failed to export Excel file');
@@ -1137,7 +1152,9 @@ export default function StoreOrders() {
         const exportOrders = getExportFilteredOrders();
 
         if (!exportOrders.length) {
-            toast.error('No orders available to export');
+            toast.error(selectedOrderIds.length > 0
+                ? 'No selected orders match the export filters'
+                : 'No orders available to export');
             return;
         }
 
@@ -1149,13 +1166,14 @@ export default function StoreOrders() {
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
-            link.download = `store-orders-${new Date().toISOString().slice(0, 10)}.csv`;
+            link.download = `${getExportFileBaseName()}.csv`;
             document.body.appendChild(link);
             link.click();
             link.remove();
             URL.revokeObjectURL(url);
 
-            toast.success(`Exported ${rowCount} row(s) from ${exportOrders.length} order(s) to CSV`);
+            const scopeLabel = selectedOrderIds.length > 0 ? 'selected ' : '';
+            toast.success(`Exported ${rowCount} row(s) from ${exportOrders.length} ${scopeLabel}order(s) to CSV`);
         } catch (error) {
             console.error('CSV export failed:', error);
             toast.error('Failed to export CSV file');
@@ -1804,16 +1822,21 @@ export default function StoreOrders() {
                                     className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition"
                                 >
                                     <Download size={14} />
-                                    Export CSV
+                                    {hasSelectedOrders ? 'Export Selected CSV' : 'Export CSV'}
                                 </button>
                                 <button
                                     onClick={exportOrdersToExcel}
                                     className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-semibold transition"
                                 >
                                     <Download size={14} />
-                                    Export Excel
+                                    {hasSelectedOrders ? 'Export Selected Excel' : 'Export Excel'}
                                 </button>
                             </div>
+                            {hasSelectedOrders ? (
+                                <p className="text-xs text-blue-700">
+                                    {selectedOrderIds.length} order(s) selected — export will include only those orders.
+                                </p>
+                            ) : null}
                             {importingOrdersCsv && importProgress.total > 0 ? (
                                 <div className="w-full max-w-md rounded-lg border border-slate-200 bg-slate-50 p-3">
                                     <div className="mb-1 flex items-center justify-between text-xs text-slate-600">
@@ -1860,11 +1883,30 @@ export default function StoreOrders() {
             </div>
 
             {hasSelectedOrders && (
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
-                    <div className="text-sm font-medium text-red-800">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
+                    <div className="text-sm font-medium text-blue-900">
                         {selectedOrderIds.length} order(s) selected
+                        <span className="mt-0.5 block text-xs font-normal text-blue-700">
+                            Export includes only the selected orders.
+                        </span>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={exportOrdersToCsv}
+                            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-700"
+                        >
+                            <Download size={14} />
+                            Export Selected CSV
+                        </button>
+                        <button
+                            type="button"
+                            onClick={exportOrdersToExcel}
+                            className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-green-700"
+                        >
+                            <Download size={14} />
+                            Export Selected Excel
+                        </button>
                         <button
                             type="button"
                             onClick={() => setSelectedOrderIds([])}
