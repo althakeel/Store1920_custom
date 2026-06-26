@@ -15,7 +15,7 @@ import {
   getShippingOptionById,
 } from '@/lib/shippingOptions';
 import { trackMetaEvent } from "@/lib/metaPixelClient";
-import { trackInitiateCheckout } from "@/lib/metaPixelTracking";
+import { trackBeginCheckoutDual } from "@/lib/ecommerceTracking";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/useAuth";
 import dynamic from "next/dynamic";
@@ -773,30 +773,15 @@ export default function CheckoutPage() {
     const itemsValue = gtmItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     const value = Number(totalAfterWallet > 0 ? totalAfterWallet : (subtotal + effectiveShipping) || itemsValue || 0);
     const currencyCode = market.currency || STORE_CURRENCY || 'AED';
-    const pageKey = '/checkout';
-    const gtmKey = gtmDedupeKey(GTM_EVENTS.BEGIN_CHECKOUT, pageKey);
 
-    runTrackedOnce(gtmKey, () => {
-      pushGtmEcommerceEvent(GTM_EVENTS.BEGIN_CHECKOUT, {
-        currency: currencyCode,
-        value,
-        items: gtmItems,
-      }, gtmKey);
+    trackBeginCheckoutDual({
+      value,
+      currency: currencyCode,
+      gtmItems,
+      pageKey: '/checkout',
+    });
 
-      trackInitiateCheckout({
-        value,
-        currency: currencyCode,
-        items: gtmItems.map((item) => ({
-          productId: item.item_id,
-          name: item.item_name,
-          price: item.price,
-          quantity: item.quantity,
-        })),
-        numItems: gtmItems.reduce((sum, item) => sum + item.quantity, 0),
-        dedupeKey: pageKey,
-      });
-
-      trackCustomerEvent({
+    trackCustomerEvent({
         eventType: 'checkout_start',
         firebaseUid: user?.uid || null,
         userId: user?.uid || null,
@@ -809,9 +794,6 @@ export default function CheckoutPage() {
           cartValue: value,
         },
       });
-
-      return true;
-    });
   }, [checkoutProductsLoaded, cartArray, totalAfterWallet, subtotal, effectiveShipping, user?.uid, market.currency]);
 
   useEffect(() => {

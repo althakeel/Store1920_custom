@@ -12,7 +12,7 @@ import { deleteItemFromCart, fetchCart, uploadCart } from "@/lib/features/cart/c
 import { decrementCartItem } from "@/lib/bundleCartActions";
 import { PackageIcon } from "lucide-react";
 import { useAuth } from "@/lib/useAuth";
-import { trackViewCart } from "@/lib/metaPixelTracking";
+import { trackViewCartDual } from "@/lib/ecommerceTracking";
 import { pushGtmEcommerceEvent, toGtmItem } from "@/lib/pushGtmEcommerceEvent";
 import { runTrackedOnce } from "@/lib/trackingDedupe";
 import { GTM_EVENTS, gtmDedupeKey } from "@/lib/gtmEvents";
@@ -390,28 +390,17 @@ export default function Cart() {
 
         const cartValue = Number(totalPrice || 0);
         const gtmItems = inStockCartArray.map((item) => toGtmItem(item));
-        const pageKey = '/cart';
-        const gtmKey = gtmDedupeKey(GTM_EVENTS.VIEW_CART, pageKey);
 
-        runTrackedOnce(gtmKey, () => {
-            pushGtmEcommerceEvent(GTM_EVENTS.VIEW_CART, {
-                currency: STORE_CURRENCY,
-                value: cartValue,
-                items: gtmItems,
-            }, gtmKey);
-
-            trackViewCart({
-                value: cartValue,
-                currency: STORE_CURRENCY,
-                items: inStockCartArray.map((item) => ({
-                    productId: String(item?._id || item?._cartKey || ''),
-                    quantity: Number(item?.quantity || 0),
-                })),
-                numItems: inStockCartArray.reduce((sum, item) => sum + Number(item?.quantity || 0), 0),
-                dedupeKey: pageKey,
-            });
-
-            return true;
+        trackViewCartDual({
+            value: cartValue,
+            currency: STORE_CURRENCY,
+            gtmItems,
+            metaItems: inStockCartArray.map((item) => ({
+                productId: String(item?._id || item?._cartKey || ''),
+                quantity: Number(item?.quantity || 0),
+            })),
+            numItems: inStockCartArray.reduce((sum, item) => sum + Number(item?.quantity || 0), 0),
+            pageKey: '/cart',
         });
     }, [productsLoaded, inStockCartArray, totalPrice]);
 
