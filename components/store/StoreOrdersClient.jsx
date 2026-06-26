@@ -5,11 +5,12 @@ import { useEffect, useState, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Loading from "@/components/Loading";
 import PageSkeleton from "@/components/PageSkeleton";
-import { readPageCache, writePageCache } from "@/lib/storePageCache";
+import { readPageCache, writePageCache, clearPageCache } from "@/lib/storePageCache";
 import axios from "axios";
 import toast from "react-hot-toast";
-import { Package, Truck, X, Download, Printer, RefreshCw, MapPin, Trash2, CalendarClock, AlertTriangle, Search, MessageCircle, Plus } from "lucide-react";
+import { Package, Truck, X, Download, Printer, RefreshCw, MapPin, Trash2, CalendarClock, AlertTriangle, Search, Plus, ArrowUp, ArrowDown, ArrowUpDown, History } from "lucide-react";
 import StoreCreateOrderModal from '@/components/store/StoreCreateOrderModal';
+import OrderStatusPicker, { STORE_ORDER_STATUS_FILTER_OPTIONS, STORE_ORDER_STATUS_OPTIONS } from '@/components/store/OrderStatusPicker';
 import { downloadInvoice, printInvoice } from "@/lib/generateInvoice";
 import { schedulePickup } from '@/lib/delhivery';
 import { STORE_ORDER_NOTIFICATION_EVENT, STORE_ORDER_TOAST_ID, dispatchStoreOrdersImportEnd, dispatchStoreOrdersImportStart } from '@/lib/storeOrderNotifications';
@@ -20,8 +21,16 @@ import {
     getOrderDiscountLines,
     getOrderExpectedDeliveryDate,
     summarizeDeliveryBuckets,
+    isDashboardConvertedOrder,
 } from '@/lib/storeOrderInsights';
-import { getDisplayOrderNumber, getOrderCustomerDisplayName } from '@/lib/orderDisplay';
+import { getDisplayOrderNumber, getOrderCustomerDisplayName, formatStoreOrderDateTime, formatStoreOrderDateParts } from '@/lib/orderDisplay';
+import {
+    getManualStoreOrderCreator,
+    getOrderPaymentReferenceId,
+    isManualStoreDashboardOrder,
+    orderPaymentReferenceLabel,
+} from '@/lib/storeCreateOrder';
+import { normalizeImportedOrderItems } from '@/lib/importedOrderItems';
 import { isAwaitingPaymentOrder, isVisibleStoreOrder } from '@/lib/deferredOrderStatus';
 
 function normalizeOrderSearchQuery(value = '') {
@@ -86,6 +95,62 @@ function orderMatchesSearch(order, query) {
     }
 
     return false;
+}
+
+const STORE_ORDER_SORT_COLUMNS = {
+    date: 'Date & time',
+    orderNumber: 'Order No.',
+    total: 'Total',
+    customer: 'Customer',
+};
+
+function compareStoreOrders(a, b, sortBy, sortDirection) {
+    const dir = sortDirection === 'asc' ? 1 : -1;
+    let cmp = 0;
+
+    if (sortBy === 'orderNumber') {
+        cmp = (Number(a?.shortOrderNumber) || 0) - (Number(b?.shortOrderNumber) || 0);
+    } else if (sortBy === 'total') {
+        cmp = (Number(a?.total) || 0) - (Number(b?.total) || 0);
+    } else if (sortBy === 'customer') {
+        cmp = getOrderCustomerDisplayName(a).localeCompare(
+            getOrderCustomerDisplayName(b),
+            undefined,
+            { sensitivity: 'base' },
+        );
+    } else {
+        const aDate = new Date(a?.createdAt || 0).getTime();
+        const bDate = new Date(b?.createdAt || 0).getTime();
+        cmp = aDate - bDate;
+        if (cmp === 0) {
+            cmp = (Number(a?.shortOrderNumber) || 0) - (Number(b?.shortOrderNumber) || 0);
+        }
+    }
+
+    return cmp * dir;
+}
+
+function SortableOrderTableHeader({ label, column, sortBy, sortDirection, onSort }) {
+    const isActive = sortBy === column;
+    const SortIcon = isActive
+        ? (sortDirection === 'desc' ? ArrowDown : ArrowUp)
+        : ArrowUpDown;
+
+    return (
+        <th className="px-4 py-3">
+            <button
+                type="button"
+                onClick={() => onSort(column)}
+                className={`inline-flex items-center gap-1 font-semibold uppercase tracking-wider transition ${
+                    isActive ? 'text-slate-900' : 'text-gray-700 hover:text-slate-900'
+                }`}
+                aria-sort={isActive ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'}
+            >
+                <span>{label}</span>
+                <SortIcon size={12} className={isActive ? 'text-slate-700' : 'text-slate-400'} />
+            </button>
+        </th>
+    );
 }
 
 const updateOrderStatus = async (orderId, newStatus, getToken, fetchOrders) => {
@@ -162,10 +227,14 @@ export default function StoreOrders() {
     const [deletingBulkOrders, setDeletingBulkOrders] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
     const [ordersPerPage, setOrdersPerPage] = useState(20);
+    const [sortBy, setSortBy] = useState('date');
+    const [sortDirection, setSortDirection] = useState('desc');
     const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false);
     const [schedulingPickup, setSchedulingPickup] = useState(false);
     const [sendingToC3xpress, setSendingToC3xpress] = useState(false);
-    const [sendingWhatsAppTemplate, setSendingWhatsAppTemplate] = useState('');
+    const [showCommunicationHistory, setShowCommunicationHistory] = useState(false);
+    const [communicationHistory, setCommunicationHistory] = useState([]);
+    const [loadingCommunicationHistory, setLoadingCommunicationHistory] = useState(false);
     const [c3xConfig, setC3xConfig] = useState({
         product: 'DOM',
         serviceType: 'NOR'
@@ -225,24 +294,6 @@ export default function StoreOrders() {
         }
     };
 
-    // Status options available (aligned with customer dashboard and courier states)
-    const STATUS_OPTIONS = [
-        { value: 'ORDER_PLACED', label: 'Order Placed', color: 'bg-blue-100 text-blue-700' },
-        { value: 'PROCESSING', label: 'Processing', color: 'bg-yellow-100 text-yellow-700' },
-        { value: 'WAITING_FOR_PICKUP', label: 'Waiting For Pickup', color: 'bg-yellow-50 text-yellow-700' },
-        { value: 'PICKUP_REQUESTED', label: 'Pickup Requested', color: 'bg-yellow-100 text-yellow-700' },
-        { value: 'PICKED_UP', label: 'Picked Up', color: 'bg-purple-100 text-purple-700' },
-        { value: 'WAREHOUSE_RECEIVED', label: 'Warehouse Received', color: 'bg-indigo-100 text-indigo-700' },
-        { value: 'SHIPPED', label: 'Shipped / In Transit', color: 'bg-purple-100 text-purple-700' },
-        { value: 'OUT_FOR_DELIVERY', label: 'Out For Delivery', color: 'bg-teal-100 text-teal-700' },
-        { value: 'DELIVERED', label: 'Delivered', color: 'bg-green-100 text-green-700' },
-        { value: 'CANCELLED', label: 'Cancelled', color: 'bg-red-100 text-red-700' },
-        { value: 'PAYMENT_FAILED', label: 'Payment Failed', color: 'bg-orange-100 text-orange-700' },
-        { value: 'RETURNED', label: 'Returned', color: 'bg-indigo-100 text-indigo-700' },
-        { value: 'RETURN_INITIATED', label: 'Return Initiated', color: 'bg-pink-100 text-pink-700' },
-        { value: 'RETURN_APPROVED', label: 'Return Approved', color: 'bg-pink-100 text-pink-700' },
-    ];
-
     // Map Delhivery live status (current_status + latest event) to internal order status
     const mapDelhiveryStatusToOrderStatus = (delhivery, currentStatus) => {
         if (!delhivery) return null;
@@ -292,12 +343,6 @@ export default function StoreOrders() {
         }
 
         return null;
-    };
-
-    // Get status color
-    const getStatusColor = (status) => {
-        const statusOption = STATUS_OPTIONS.find(s => s.value === status);
-        return statusOption?.color || 'bg-gray-100 text-gray-700';
     };
 
     // Unified payment-status resolver for dashboard
@@ -355,17 +400,15 @@ export default function StoreOrders() {
         const confirmedOrders = orders.filter(isVisibleStoreOrder);
         const stats = {
             TOTAL: confirmedOrders.length,
-            ORDER_PLACED: confirmedOrders.filter(o => o.status === 'ORDER_PLACED').length,
-            PROCESSING: confirmedOrders.filter(o => o.status === 'PROCESSING').length,
-            SHIPPED: confirmedOrders.filter(o => o.status === 'SHIPPED').length,
-            DELIVERED: confirmedOrders.filter(o => o.status === 'DELIVERED').length,
-            CANCELLED: confirmedOrders.filter(o => o.status === 'CANCELLED').length,
-            PAYMENT_FAILED: orders.filter(o => o.status === 'PAYMENT_FAILED').length,
-            RETURNED: confirmedOrders.filter(o => o.status === 'RETURNED').length,
-            RETURN_REQUESTED: confirmedOrders.filter(o => o.returns && o.returns.some(r => r.status === 'REQUESTED')).length,
+            RETURN_REQUESTED: confirmedOrders.filter((o) => o.returns && o.returns.some((r) => r.status === 'REQUESTED')).length,
             PENDING_PAYMENT: orders.filter(isAwaitingPaymentOrder).length,
-            PENDING_SHIPMENT: confirmedOrders.filter(o => !o.trackingId && ['ORDER_PLACED', 'PROCESSING'].includes(o.status)).length,
+            PENDING_SHIPMENT: confirmedOrders.filter((o) => !o.trackingId && ['ORDER_PLACED', 'PROCESSING'].includes(o.status)).length,
         };
+
+        STORE_ORDER_STATUS_OPTIONS.forEach(({ value }) => {
+            stats[value] = confirmedOrders.filter((o) => o.status === value).length;
+        });
+
         return stats;
     };
     const getDateRange = () => {
@@ -398,7 +441,7 @@ export default function StoreOrders() {
         } else if (filterStatus === 'RETURN_REQUESTED') {
             dateFiltered = dateFiltered.filter((o) => o.returns && o.returns.some((r) => r.status === 'REQUESTED'));
         } else if (filterStatus === 'CONVERTED') {
-            dateFiltered = dateFiltered.filter((o) => Boolean(o.conversion));
+            dateFiltered = dateFiltered.filter((o) => isDashboardConvertedOrder(o));
         } else if (filterStatus === 'DELIVERY_TODAY') {
             dateFiltered = dateFiltered.filter((o) => getDeliveryBucket(o) === 'today');
         } else if (filterStatus === 'DELIVERY_TOMORROW') {
@@ -417,14 +460,24 @@ export default function StoreOrders() {
             dateFiltered = dateFiltered.filter((order) => orderMatchesSearch(order, orderSearchQuery));
         }
 
-        return dateFiltered.sort((a, b) => {
-            const aDate = new Date(a?.createdAt || 0).getTime();
-            const bDate = new Date(b?.createdAt || 0).getTime();
-            if (bDate !== aDate) return bDate - aDate;
-            const aNum = Number(a?.shortOrderNumber) || 0;
-            const bNum = Number(b?.shortOrderNumber) || 0;
-            return bNum - aNum;
-        });
+        return dateFiltered.sort((a, b) => compareStoreOrders(a, b, sortBy, sortDirection));
+    };
+
+    const handleOrderSortChange = (value) => {
+        const [nextSortBy, nextSortDirection] = String(value).split('-');
+        setSortBy(nextSortBy);
+        setSortDirection(nextSortDirection);
+        setCurrentPage(1);
+    };
+
+    const handleOrderColumnSort = (column) => {
+        if (sortBy === column) {
+            setSortDirection((prev) => (prev === 'desc' ? 'asc' : 'desc'));
+        } else {
+            setSortBy(column);
+            setSortDirection(column === 'customer' ? 'asc' : 'desc');
+        }
+        setCurrentPage(1);
     };
 
     const paymentStats = useMemo(() => {
@@ -444,7 +497,7 @@ export default function StoreOrders() {
 
     const deliverySummary = useMemo(() => summarizeDeliveryBuckets(orders), [orders]);
     const convertedOrderCount = useMemo(
-        () => orders.filter((order) => Boolean(order.conversion)).length,
+        () => orders.filter((order) => isDashboardConvertedOrder(order)).length,
         [orders]
     );
 
@@ -849,7 +902,10 @@ export default function StoreOrders() {
                 try {
                     await Promise.all(
                         updatesToPersist.map(update =>
-                            axios.post('/api/store/orders/update-status', update, {
+                            axios.post('/api/store/orders/update-status', {
+                                ...update,
+                                silent: true,
+                            }, {
                                 headers: { Authorization: `Bearer ${token}` }
                             })
                         )
@@ -1287,6 +1343,12 @@ export default function StoreOrders() {
             return;
         }
 
+        const fileName = String(orderCsvFile.name || '').toLowerCase();
+        if (!fileName.endsWith('.csv')) {
+            toast.error('Use the WordPress .csv export only. Excel (.xlsx) auto-changes dates and breaks import.');
+            return;
+        }
+
         try {
             setImportingOrdersCsv(true);
             setImportProgress({ current: 0, total: 0, phase: 'parsing' });
@@ -1314,10 +1376,26 @@ export default function StoreOrders() {
 
             const totalRows = Number(parseData?.total || 0);
             const stats = parseData?.stats || {};
+            const exportMeta = stats.exportMeta || null;
+            const skippedRows = Number(stats.emptyRowsSkipped || 0)
+                + Number(stats.nonOrderRowsSkipped || 0)
+                + Number(stats.metaRowsSkipped || 0);
 
             if (!totalRows) {
                 toast.error('No order rows found in file');
                 return;
+            }
+
+            if (exportMeta?.exportedRows && totalRows < exportMeta.exportedRows) {
+                toast(
+                    `File reports ${exportMeta.exportedRows.toLocaleString()} exported orders, but only ${totalRows.toLocaleString()} rows were detected. Re-export from WordPress as CSV (do not save as .xlsx in Excel).`,
+                    { icon: '⚠️', duration: 8000 },
+                );
+            } else if (stats.sheetRows && totalRows < stats.sheetRows - 2) {
+                toast(
+                    `Detected ${totalRows.toLocaleString()} order rows from ${stats.sheetRows.toLocaleString()} Excel sheet rows (${skippedRows.toLocaleString()} blank/meta/non-order rows skipped).`,
+                    { icon: 'ℹ️', duration: 6000 },
+                );
             }
 
             setImportProgress({
@@ -1325,7 +1403,8 @@ export default function StoreOrders() {
                 total: totalRows,
                 phase: 'importing',
                 sheetRows: stats.sheetRows,
-                emptyRowsSkipped: stats.emptyRowsSkipped,
+                emptyRowsSkipped: skippedRows,
+                exportMeta,
             });
 
             const importFormData = new FormData();
@@ -1351,12 +1430,14 @@ export default function StoreOrders() {
             const importedTotal = Number(data?.totalParsed || data?.summary?.totalRows || totalRows);
 
             setOrderCsvFile(null);
+            clearPageCache('store-orders');
             setImportProgress({
                 current: importedTotal,
                 total: importedTotal,
                 phase: 'done',
                 sheetRows: stats.sheetRows,
-                emptyRowsSkipped: stats.emptyRowsSkipped,
+                emptyRowsSkipped: skippedRows,
+                exportMeta,
             });
             await fetchOrders();
 
@@ -1517,42 +1598,25 @@ export default function StoreOrders() {
         }
     };
 
-    const sendWhatsAppForOrder = async (template) => {
+    const openCommunicationHistory = async () => {
         if (!selectedOrder?._id) return;
 
-        const phone = selectedOrder.shippingAddress?.phone || selectedOrder.guestPhone;
-        if (!phone) {
-            toast.error('No customer phone on this order');
-            return;
-        }
+        setShowCommunicationHistory(true);
+        setLoadingCommunicationHistory(true);
+        setCommunicationHistory([]);
 
-        setSendingWhatsAppTemplate(template);
         try {
             const token = await getToken();
-            const { data } = await axios.post('/api/store/whatsapp/send', {
-                template,
-                orderId: selectedOrder._id,
-            }, {
-                headers: { Authorization: `Bearer ${token}` },
+            const { data } = await axios.get(`/api/store/orders/${selectedOrder._id}/communications`, {
+                headers: token ? { Authorization: `Bearer ${token}` } : {},
             });
-
-            if (data?.whatsapp?.success) {
-                toast.success('WhatsApp message queued');
-                return;
-            }
-
-            toast.error(data?.whatsapp?.reason || data?.whatsapp?.error || data?.error || 'WhatsApp could not be sent');
+            setCommunicationHistory(Array.isArray(data?.history) ? data.history : []);
         } catch (error) {
-            toast.error(error?.response?.data?.error || 'Failed to send WhatsApp message');
+            toast.error(error?.response?.data?.error || 'Failed to load communication history');
         } finally {
-            setSendingWhatsAppTemplate('');
+            setLoadingCommunicationHistory(false);
         }
     };
-
-    const selectedOrderHasPhone = Boolean(
-        selectedOrder?.shippingAddress?.phone || selectedOrder?.guestPhone
-    );
-
 
     if (authLoading || (loading && !orders.length)) return <PageSkeleton rows={8} />;
 
@@ -1616,7 +1680,7 @@ export default function StoreOrders() {
             ) : null}
             
             {/* Order Statistics Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
                 <div 
                     onClick={() => setFilterStatus('ALL')}
                     className={`p-4 rounded-lg cursor-pointer transition-all ${filterStatus === 'ALL' ? 'bg-blue-600 text-white shadow-lg' : 'bg-white border border-gray-200 text-slate-700'}`}
@@ -1631,6 +1695,13 @@ export default function StoreOrders() {
                     <p className="text-xs opacity-75">Awaiting Payment</p>
                     <p className="text-2xl font-bold">{stats.PENDING_PAYMENT}</p>
                     <p className="mt-1 text-[10px] font-medium text-orange-700">View in Abandoned Checkout</p>
+                </div>
+                <div 
+                    onClick={() => setFilterStatus('ORDER_PLACED')}
+                    className={`p-4 rounded-lg cursor-pointer transition-all ${filterStatus === 'ORDER_PLACED' ? 'bg-blue-600 text-white shadow-lg' : 'bg-white border border-gray-200 text-slate-700'}`}
+                >
+                    <p className="text-xs opacity-75">Order Placed</p>
+                    <p className="text-2xl font-bold">{stats.ORDER_PLACED || 0}</p>
                 </div>
                 <div 
                     onClick={() => setFilterStatus('PROCESSING')}
@@ -1699,26 +1770,38 @@ export default function StoreOrders() {
 
             {/* Status Filter Tabs */}
             <div className="mb-6 flex flex-wrap gap-2">
-                {['ALL', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'PAYMENT_FAILED', 'RETURNED', 'RETURN_REQUESTED'].map(status => (
-                    <button
-                        key={status}
-                        onClick={() => setFilterStatus(status)}
-                        className={`px-4 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2 ${
-                            filterStatus === status
-                                ? 'bg-blue-600 text-white shadow-md'
-                                : 'bg-gray-100 text-slate-700 hover:bg-gray-200'
-                        }`}
-                    >
-                        <span>{status === 'ALL' ? 'All Orders' : status === 'PAYMENT_FAILED' ? 'Payment Failed' : status === 'RETURN_REQUESTED' ? 'Return Requested' : status.replace(/_/g, ' ')}</span>
-                        {status === 'RETURN_REQUESTED' && stats.RETURN_REQUESTED > 0 && (
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
-                                filterStatus === status ? 'bg-blue-800' : 'bg-red-500 text-white'
-                            }`}>
-                                {stats.RETURN_REQUESTED}
-                            </span>
-                        )}
-                    </button>
-                ))}
+                {STORE_ORDER_STATUS_FILTER_OPTIONS.map((tab) => {
+                    const isActive = filterStatus === tab.value;
+                    const count = tab.value === 'ALL'
+                        ? stats.TOTAL
+                        : (stats[tab.value] || 0);
+
+                    return (
+                        <button
+                            key={tab.value}
+                            type="button"
+                            onClick={() => setFilterStatus(tab.value)}
+                            className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+                                isActive
+                                    ? 'bg-blue-600 text-white shadow-md'
+                                    : 'bg-gray-100 text-slate-700 hover:bg-gray-200'
+                            }`}
+                        >
+                            <span>{tab.label}</span>
+                            {tab.value !== 'ALL' && count > 0 ? (
+                                <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${
+                                    isActive
+                                        ? 'bg-blue-800 text-white'
+                                        : tab.isSpecial
+                                            ? 'bg-red-500 text-white'
+                                            : 'bg-white text-slate-600'
+                                }`}>
+                                    {count}
+                                </span>
+                            ) : null}
+                        </button>
+                    );
+                })}
             </div>
 
             {/* Payment method filters */}
@@ -1793,15 +1876,35 @@ export default function StoreOrders() {
                     </button>
                 </div>
                 {(hasDateFilter || orders.length > 0) && (
-                    <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
-                        <span>
-                            Showing <strong>{filteredOrders.length}</strong> of <strong>{orders.length}</strong> loaded orders
-                        </span>
-                        {hasDateFilter ? (
+                    <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
+                        <div className="flex flex-wrap items-center gap-3">
                             <span>
-                                · <strong>{ordersMatchingDateRange.length}</strong> match the selected date range
+                                Showing <strong>{filteredOrders.length}</strong> of <strong>{orders.length}</strong> loaded orders
                             </span>
-                        ) : null}
+                            {hasDateFilter ? (
+                                <span>
+                                    · <strong>{ordersMatchingDateRange.length}</strong> match the selected date range
+                                </span>
+                            ) : null}
+                        </div>
+                        <label className="flex items-center gap-2 text-slate-600">
+                            <span className="font-medium text-slate-500">Sort by</span>
+                            <select
+                                value={`${sortBy}-${sortDirection}`}
+                                onChange={(e) => handleOrderSortChange(e.target.value)}
+                                className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                                aria-label="Sort orders"
+                            >
+                                <option value="date-desc">Date & time (newest first)</option>
+                                <option value="date-asc">Date & time (oldest first)</option>
+                                <option value="orderNumber-desc">Order # (high to low)</option>
+                                <option value="orderNumber-asc">Order # (low to high)</option>
+                                <option value="total-desc">Total (high to low)</option>
+                                <option value="total-asc">Total (low to high)</option>
+                                <option value="customer-asc">Customer (A to Z)</option>
+                                <option value="customer-desc">Customer (Z to A)</option>
+                            </select>
+                        </label>
                     </div>
                 )}
                 {(showImportExportPanel || importingOrdersCsv) ? (
@@ -1851,14 +1954,14 @@ export default function StoreOrders() {
                         <label className="text-xs text-slate-500">Import Orders CSV</label>
                         <input
                             type="file"
-                            accept=".csv,.xlsx,.xls"
+                            accept=".csv,text/csv"
                             onChange={(e) => setOrderCsvFile(e.target.files?.[0] || null)}
                             className="w-full mt-1 text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:font-medium file:text-slate-700 hover:file:bg-slate-200"
                         />
                     </div>
                     <div className="flex items-end">
                         <div className="w-full flex flex-col gap-2 lg:items-end">
-                            <div className="text-xs text-slate-500">Use Export CSV for re-import, or a courier sheet with receiver/destination columns. Excel courier export is also supported.</div>
+                            <div className="text-xs text-slate-500">Import the WordPress CSV export (.csv) only — do not open in Excel first (Excel changes dates/times). Each order keeps its original date and time from the export.</div>
                             <div className="flex flex-wrap items-center gap-2">
                                 <button
                                     onClick={importOrdersFromCsv}
@@ -1906,12 +2009,20 @@ export default function StoreOrders() {
                                     <p className="mt-1 text-xs text-slate-500">
                                         {importProgress.current.toLocaleString()} / {importProgress.total.toLocaleString()} order rows
                                         {importProgress.sheetRows
-                                            ? ` · ${importProgress.sheetRows.toLocaleString()} sheet rows`
+                                            ? ` · ${importProgress.sheetRows.toLocaleString()} Excel rows`
                                             : ''}
                                         {importProgress.emptyRowsSkipped
-                                            ? ` · ${importProgress.emptyRowsSkipped.toLocaleString()} empty skipped`
+                                            ? ` · ${importProgress.emptyRowsSkipped.toLocaleString()} skipped`
                                             : ''}
                                     </p>
+                                    {importProgress.phase === 'done' && importProgress.exportMeta?.exportedRows ? (
+                                        <p className="mt-1 text-xs text-slate-500">
+                                            WordPress export meta: {importProgress.exportMeta.exportedRows.toLocaleString()} exported
+                                            {importProgress.exportMeta.expectedRows
+                                                ? ` / ${importProgress.exportMeta.expectedRows.toLocaleString()} expected`
+                                                : ''}
+                                        </p>
+                                    ) : null}
                                 </div>
                             ) : null}
                         </div>
@@ -1974,14 +2085,38 @@ export default function StoreOrders() {
                                     />
                                 </th>
                                 <th className="px-4 py-3">Sr. No.</th>
-                                <th className="px-4 py-3">Order No.</th>
-                                <th className="px-4 py-3">Customer</th>
-                                <th className="px-4 py-3">Total</th>
+                                <SortableOrderTableHeader
+                                    label={STORE_ORDER_SORT_COLUMNS.orderNumber}
+                                    column="orderNumber"
+                                    sortBy={sortBy}
+                                    sortDirection={sortDirection}
+                                    onSort={handleOrderColumnSort}
+                                />
+                                <SortableOrderTableHeader
+                                    label={STORE_ORDER_SORT_COLUMNS.customer}
+                                    column="customer"
+                                    sortBy={sortBy}
+                                    sortDirection={sortDirection}
+                                    onSort={handleOrderColumnSort}
+                                />
+                                <SortableOrderTableHeader
+                                    label={STORE_ORDER_SORT_COLUMNS.total}
+                                    column="total"
+                                    sortBy={sortBy}
+                                    sortDirection={sortDirection}
+                                    onSort={handleOrderColumnSort}
+                                />
                                 <th className="px-4 py-3">Payment</th>
                                 <th className="px-4 py-3">Tags</th>
                                 <th className="px-4 py-3">Status</th>
                                 <th className="px-4 py-3">Tracking</th>
-                                <th className="px-4 py-3">Date</th>
+                                <SortableOrderTableHeader
+                                    label={STORE_ORDER_SORT_COLUMNS.date}
+                                    column="date"
+                                    sortBy={sortBy}
+                                    sortDirection={sortDirection}
+                                    onSort={handleOrderColumnSort}
+                                />
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
@@ -2022,15 +2157,15 @@ export default function StoreOrders() {
                                     </td>
                                     <td className="px-4 py-3">
                                         <div className="flex max-w-[220px] flex-wrap gap-1">
-                                            {order.conversion ? (
+                                            {isDashboardConvertedOrder(order) ? (
                                                 <span
                                                     className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800"
-                                                    title={order.conversion.note || 'Recovered from abandoned checkout'}
+                                                    title={order.conversion.note || `Converted by ${order.conversion.convertedByName}`}
                                                 >
-                                                    Converted{order.conversion.convertedByName ? ` · ${order.conversion.convertedByName}` : ''}
+                                                    Converted · {order.conversion.convertedByName}
                                                 </span>
                                             ) : null}
-                                            {formatConversionDiscount(order.conversion, currency) ? (
+                                            {isDashboardConvertedOrder(order) && formatConversionDiscount(order.conversion, currency) ? (
                                                 <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-medium text-violet-800">
                                                     {formatConversionDiscount(order.conversion, currency)}
                                                 </span>
@@ -2052,16 +2187,13 @@ export default function StoreOrders() {
                                         </div>
                                     </td>
                                     <td className="px-4 py-3" onClick={e => { e.stopPropagation(); }}>
-                                        <div className="flex items-center gap-2">
-                                            <select
+                                        <div className="flex min-w-[180px] items-center gap-2">
+                                            <OrderStatusPicker
                                                 value={order.status}
-                                                onChange={e => updateOrderStatus(order._id, e.target.value, getToken, fetchOrders)}
-                                                className={`border-gray-300 rounded-md text-sm font-medium px-2 py-1 focus:ring focus:ring-blue-200 ${getStatusColor(order.status)}`}
-                                            >
-                                                {STATUS_OPTIONS.map(status => (
-                                                    <option key={status.value} value={status.value}>{status.label}</option>
-                                                ))}
-                                            </select>
+                                                size="sm"
+                                                className="min-w-[160px] flex-1"
+                                                onChange={(newStatus) => updateOrderStatus(order._id, newStatus, getToken, fetchOrders)}
+                                            />
                                             {order.trackingId && (
                                                 <button
                                                     type="button"
@@ -2083,7 +2215,19 @@ export default function StoreOrders() {
                                             <span className="text-slate-400 text-xs">Not shipped</span>
                                         )}
                                     </td>
-                                    <td className="px-4 py-3 text-gray-500 text-xs">{new Date(order.createdAt).toLocaleDateString()}</td>
+                                    <td className="px-4 py-3 text-xs whitespace-nowrap">
+                                        {(() => {
+                                            const { date, time } = formatStoreOrderDateParts(order.createdAt);
+                                            return (
+                                                <div className="flex flex-col leading-tight">
+                                                    <span className="font-medium text-slate-700">{date}</span>
+                                                    {time ? (
+                                                        <span className="text-[11px] text-slate-400 tabular-nums">{time}</span>
+                                                    ) : null}
+                                                </div>
+                                            );
+                                        })()}
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
@@ -2091,7 +2235,12 @@ export default function StoreOrders() {
                     {renderPaginationControls()}
                 </div>
             )}
-            {isModalOpen && selectedOrder && (
+            {isModalOpen && selectedOrder && (() => {
+                const manualOrderCreator = getManualStoreOrderCreator(selectedOrder);
+                const manualOrderReference = getOrderPaymentReferenceId(selectedOrder);
+                const isManualOrder = isManualStoreDashboardOrder(selectedOrder);
+
+                return (
                 <div onClick={closeModal} className="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm text-slate-700 text-sm z-50 p-4" >
                     <div onClick={e => e.stopPropagation()} className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
                         {/* Header */}
@@ -2100,6 +2249,18 @@ export default function StoreOrders() {
                                 <div>
                                     <h2 className="text-2xl font-bold mb-1">Order Details</h2>
                                     <p className="text-blue-100 text-xs">Order No: <span className='font-mono text-white'>{getDisplayOrderNumber(selectedOrder) || 'Pending'}</span></p>
+                                    {isManualOrder ? (
+                                        <div className="mt-2 flex flex-wrap gap-2">
+                                            <span className="rounded-full bg-white/20 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                                                Store dashboard
+                                            </span>
+                                            {manualOrderCreator?.name ? (
+                                                <span className="rounded-full bg-white/15 px-2.5 py-0.5 text-[11px] text-blue-50">
+                                                    Created by {manualOrderCreator.name}
+                                                </span>
+                                            ) : null}
+                                        </div>
+                                    ) : null}
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <button
@@ -2118,21 +2279,6 @@ export default function StoreOrders() {
                                         <Printer size={18} />
                                         <span className="text-sm">Print</span>
                                     </button>
-                                    {!selectedOrder.trackingId && (
-                                        <button
-                                            onClick={sendOrderToC3xpress}
-                                            disabled={sendingToC3xpress}
-                                            className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-lg transition-colors shadow backdrop-blur-sm disabled:opacity-60"
-                                            title="Send Order to C3Xpress"
-                                        >
-                                            {sendingToC3xpress ? (
-                                                <span className="animate-spin">⚙️</span>
-                                            ) : (
-                                                <Truck size={18} />
-                                            )}
-                                            <span className="text-sm">Send to C3Xpress</span>
-                                        </button>
-                                    )}
                                     <button onClick={closeModal} className="p-2 hover:bg-white/20 rounded-full transition-colors">
                                         <X size={24} />
                                     </button>
@@ -2463,6 +2609,11 @@ export default function StoreOrders() {
                                             GUEST ORDER
                                         </span>
                                     )}
+                                    {isManualOrder ? (
+                                        <span className="ml-2 px-2 py-1 bg-indigo-100 text-indigo-700 text-xs font-semibold rounded-full">
+                                            ADMIN CREATED
+                                        </span>
+                                    ) : null}
                                 </h3>
                                 
                                 {!selectedOrder.shippingAddress && !selectedOrder.isGuest && (
@@ -2541,49 +2692,16 @@ export default function StoreOrders() {
                                     </div>
                                 </div>
 
-                                {selectedOrderHasPhone ? (
-                                    <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
-                                        <p className="mb-3 text-sm font-semibold text-emerald-900">WhatsApp notifications</p>
-                                        <div className="flex flex-wrap gap-2">
-                                            <button
-                                                type="button"
-                                                onClick={() => sendWhatsAppForOrder('order_reminder')}
-                                                disabled={Boolean(sendingWhatsAppTemplate)}
-                                                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
-                                            >
-                                                <MessageCircle size={14} />
-                                                {sendingWhatsAppTemplate === 'order_reminder' ? 'Sending...' : 'Order reminder'}
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => sendWhatsAppForOrder('order_confirmation')}
-                                                disabled={Boolean(sendingWhatsAppTemplate)}
-                                                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
-                                            >
-                                                <MessageCircle size={14} />
-                                                {sendingWhatsAppTemplate === 'order_confirmation' ? 'Sending...' : 'Order confirmation'}
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => sendWhatsAppForOrder('order_paid')}
-                                                disabled={Boolean(sendingWhatsAppTemplate)}
-                                                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
-                                            >
-                                                <MessageCircle size={14} />
-                                                {sendingWhatsAppTemplate === 'order_paid' ? 'Sending...' : 'Paid confirmation'}
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => sendWhatsAppForOrder('order_shipped')}
-                                                disabled={Boolean(sendingWhatsAppTemplate)}
-                                                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
-                                            >
-                                                <MessageCircle size={14} />
-                                                {sendingWhatsAppTemplate === 'order_shipped' ? 'Sending...' : 'Shipped update'}
-                                            </button>
-                                        </div>
-                                    </div>
-                                ) : null}
+                                <div className="mt-4 flex justify-end">
+                                    <button
+                                        type="button"
+                                        onClick={openCommunicationHistory}
+                                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                    >
+                                        <History size={14} />
+                                        History
+                                    </button>
+                                </div>
                             </div>
 
                             {/* Products */}
@@ -2597,7 +2715,7 @@ export default function StoreOrders() {
                                         <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
                                             No products were found on this order.
                                         </div>
-                                    ) : selectedOrder.orderItems.map((item, i) => {
+                                    ) : normalizeImportedOrderItems(selectedOrder.orderItems || []).map((item, i) => {
                                         const itemName = item.productId?.name || item.product?.name || item.name || 'Imported product'
                                         const itemImage = item.productId?.images?.[0] || item.product?.images?.[0] || null
                                         const unitPrice = Number(item.price || 0)
@@ -2620,7 +2738,7 @@ export default function StoreOrders() {
                                             </div>
                                             <div className="flex-1">
                                                 <p className="font-medium text-slate-900">{itemName}</p>
-                                                {!item.productId && item.name ? (
+                                                {!item.productId && !item.product?.name && item.name ? (
                                                     <p className="text-xs text-orange-600">Imported item (not linked to catalog)</p>
                                                 ) : null}
                                                 <p className="text-sm text-slate-600">Quantity: {quantity}</p>
@@ -2649,6 +2767,14 @@ export default function StoreOrders() {
                                         <p className="text-slate-500">Payment Method</p>
                                         <p className="font-medium text-slate-900">{selectedOrder.paymentMethod}</p>
                                     </div>
+                                    {manualOrderReference ? (
+                                        <div className="md:col-span-2">
+                                            <p className="text-slate-500">{orderPaymentReferenceLabel(selectedOrder.paymentMethod)}</p>
+                                            <p className="font-mono text-xs font-medium text-slate-900 break-all">
+                                                {manualOrderReference}
+                                            </p>
+                                        </div>
+                                    ) : null}
                                     <div>
                                         <p className="text-slate-500">Payment Status</p>
                                         <p className="font-medium text-slate-900">{getPaymentStatus(selectedOrder) ? "✓ Paid" : "Pending"}</p>
@@ -2708,13 +2834,11 @@ export default function StoreOrders() {
                                         </div>
                                     )}
 
-                                    {selectedOrder.conversion ? (
+                                    {isDashboardConvertedOrder(selectedOrder) ? (
                                         <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
                                             <p className="text-sm font-semibold text-emerald-800">Converted order</p>
                                             <p className="mt-1 text-sm text-emerald-900">
-                                                {selectedOrder.conversion.convertedByName
-                                                    ? `Converted by ${selectedOrder.conversion.convertedByName}`
-                                                    : 'Converted from abandoned checkout'}
+                                                Converted by {selectedOrder.conversion.convertedByName}
                                             </p>
                                             {selectedOrder.conversion.convertedAt ? (
                                                 <p className="mt-1 text-xs text-emerald-700">
@@ -2767,48 +2891,38 @@ export default function StoreOrders() {
                                     ) : null}
                                     <div>
                                         <p className="text-slate-500">Order Date</p>
-                                        <p className="font-medium text-slate-900">{new Date(selectedOrder.createdAt).toLocaleDateString()}</p>
+                                        <p className="font-medium text-slate-900">{formatStoreOrderDateTime(selectedOrder.createdAt)}</p>
                                     </div>
                                 </div>
 
                                 {/* Order Status Selector */}
                                 <div className="border-t border-slate-200 pt-4">
-                                    <label className="text-slate-600 font-semibold block mb-2 text-sm">Update Order Status</label>
-                                    <div className="flex gap-2">
-                                        <select
-                                            value={selectedOrder.status}
-                                            onChange={async (e) => {
-                                                const newStatus = e.target.value;
-                                                try {
-                                                    const token = await getToken(true);
-                                                    if (!token) {
-                                                        toast.error('Authentication failed. Please sign in again.');
-                                                        return;
-                                                    }
-                                                    await axios.post('/api/store/orders/update-status', {
-                                                        orderId: selectedOrder._id,
-                                                        status: newStatus
-                                                    }, {
-                                                        headers: { Authorization: `Bearer ${token}` }
-                                                    });
-                                                    toast.success('Order status updated!');
-                                                    setSelectedOrder({...selectedOrder, status: newStatus});
-                                                    fetchOrders();
-                                                } catch (error) {
-                                                    console.error('Update status error:', error);
-                                                    toast.error(error?.response?.data?.error || 'Failed to update status');
+                                    <label className="mb-2 block text-sm font-semibold text-slate-600">Update order status</label>
+                                    <OrderStatusPicker
+                                        value={selectedOrder.status}
+                                        className="max-w-md"
+                                        onChange={async (newStatus) => {
+                                            try {
+                                                const token = await getToken(true);
+                                                if (!token) {
+                                                    toast.error('Authentication failed. Please sign in again.');
+                                                    return;
                                                 }
-                                            }}
-                                            className={`flex-1 border-slate-300 rounded-lg text-sm font-medium px-3 py-2 focus:ring-2 focus:ring-purple-500 focus:outline-none transition ${getStatusColor(selectedOrder.status)}`}
-                                        >
-                                            {STATUS_OPTIONS.map(status => (
-                                                <option key={status.value} value={status.value}>{status.label}</option>
-                                            ))}
-                                        </select>
-                                        <span className={`px-3 py-2 rounded-lg text-sm font-semibold whitespace-nowrap flex items-center ${getStatusColor(selectedOrder.status)}`}>
-                                            {selectedOrder.status}
-                                        </span>
-                                    </div>
+                                                await axios.post('/api/store/orders/update-status', {
+                                                    orderId: selectedOrder._id,
+                                                    status: newStatus,
+                                                }, {
+                                                    headers: { Authorization: `Bearer ${token}` },
+                                                });
+                                                toast.success('Order status updated!');
+                                                setSelectedOrder({ ...selectedOrder, status: newStatus });
+                                                fetchOrders();
+                                            } catch (error) {
+                                                console.error('Update status error:', error);
+                                                toast.error(error?.response?.data?.error || 'Failed to update status');
+                                            }
+                                        }}
+                                    />
                                 </div>
                             </div>
 
@@ -2839,9 +2953,88 @@ export default function StoreOrders() {
                         </div>
                     </div>
                 </div>
-            )}
+            );})()}
 
-            {/* Rejection Reason Modal */}
+            {showCommunicationHistory ? (
+                <div
+                    className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4"
+                    onClick={() => setShowCommunicationHistory(false)}
+                >
+                    <div
+                        className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+                            <div>
+                                <h3 className="text-lg font-semibold text-slate-900">Communication history</h3>
+                                <p className="text-xs text-slate-500">
+                                    Emails and WhatsApp messages sent to this customer
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowCommunicationHistory(false)}
+                                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+                                aria-label="Close history"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto px-5 py-4">
+                            {loadingCommunicationHistory ? (
+                                <p className="text-sm text-slate-500">Loading history...</p>
+                            ) : communicationHistory.length === 0 ? (
+                                <p className="text-sm text-slate-500">No messages recorded for this order yet.</p>
+                            ) : (
+                                <ul className="space-y-3">
+                                    {communicationHistory.map((entry, index) => {
+                                        const channel = String(entry.channel || 'system').toLowerCase();
+                                        const channelClass = channel === 'whatsapp'
+                                            ? 'bg-emerald-100 text-emerald-800'
+                                            : channel === 'email'
+                                                ? 'bg-blue-100 text-blue-800'
+                                                : 'bg-slate-100 text-slate-700';
+                                        const status = String(entry.status || 'sent').toLowerCase();
+                                        const statusClass = status === 'failed'
+                                            ? 'bg-red-100 text-red-700'
+                                            : 'bg-green-100 text-green-700';
+
+                                        return (
+                                            <li
+                                                key={`${entry.template || 'item'}-${entry.sentAt || index}-${index}`}
+                                                className="rounded-lg border border-slate-200 p-3"
+                                            >
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${channelClass}`}>
+                                                        {channel}
+                                                    </span>
+                                                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${statusClass}`}>
+                                                        {status}
+                                                    </span>
+                                                </div>
+                                                <p className="mt-2 text-sm font-semibold text-slate-900">{entry.label}</p>
+                                                {entry.recipient ? (
+                                                    <p className="mt-1 text-xs text-slate-600">
+                                                        To: <span className="font-medium">{entry.recipient}</span>
+                                                    </p>
+                                                ) : null}
+                                                <p className="mt-1 text-xs text-slate-500">
+                                                    By: {entry.sentByName || 'System'}
+                                                    {entry.sentAt ? ` · ${formatStoreOrderDateTime(entry.sentAt)}` : ''}
+                                                </p>
+                                                {entry.details ? (
+                                                    <p className="mt-2 text-xs text-red-600">{entry.details}</p>
+                                                ) : null}
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            ) : null}
+
             {showRejectModal && (
                 <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[70] p-4" onClick={() => {
                     setShowRejectModal(false);
@@ -2930,6 +3123,12 @@ export default function StoreOrders() {
                 getToken={getToken}
                 currency={currency}
                 onCreated={() => {
+                    setCurrentPage(1);
+                    setFilterStatus('ALL');
+                    setDatePreset('ALL');
+                    setFromDate('');
+                    setToDate('');
+                    setOrderSearchQuery('');
                     fetchOrders();
                 }}
             />

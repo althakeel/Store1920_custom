@@ -108,6 +108,23 @@ const OrderSchema = new mongoose.Schema({
     utmReferrer: { type: String, default: null },
   },
 
+  manualStoreOrder: { type: Boolean, default: false },
+  storeCreatedByUid: { type: String, default: null },
+  storeCreatedByName: { type: String, default: null },
+  paymentReferenceId: { type: String, default: null },
+
+  communicationLog: [{
+    channel: { type: String, default: 'system' },
+    template: { type: String, default: '' },
+    label: { type: String, default: '' },
+    status: { type: String, default: 'sent' },
+    recipient: { type: String, default: '' },
+    sentByUid: { type: String, default: null },
+    sentByName: { type: String, default: 'System' },
+    details: { type: String, default: '' },
+    sentAt: { type: Date, default: Date.now },
+  }],
+
   // Add more fields as needed
 }, { timestamps: true });
 

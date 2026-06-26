@@ -131,6 +131,8 @@ export default function StoreManageProducts() {
     const [bulkEligibleCount, setBulkEligibleCount] = useState(null)
     const [bulkAutofillLoading, setBulkAutofillLoading] = useState(false)
     const [bulkNow, setBulkNow] = useState(Date.now())
+    const [showImportPanel, setShowImportPanel] = useState(false)
+    const [showDetailColumns, setShowDetailColumns] = useState(false)
     const BULK_AUTOFILL_INTERVAL_MS = 60000
 
     const fetchStoreProducts = useCallback(async ({ page = currentPage, search = debouncedSearch, category = selectedCategory, silent = false } = {}) => {
@@ -432,6 +434,28 @@ export default function StoreManageProducts() {
             setSelectedFbtProductIds([])
         } finally {
             setFbtConfigLoading(false)
+        }
+    }
+
+    const toggleEnableFBT = async (product) => {
+        const productId = product?._id
+        if (!productId) return
+
+        const token = await getToken()
+        try {
+            const { data } = await axios.post('/api/store/fbt-toggle', { productId }, {
+                headers: { Authorization: `Bearer ${token}` },
+            })
+            setProducts((prevProducts) => prevProducts.map((item) => (
+                item._id === productId ? { ...item, enableFBT: Boolean(data?.enableFBT) } : item
+            )))
+            return data.message
+        } catch (error) {
+            if (error?.response?.data?.code === 'FBT_PRODUCTS_REQUIRED') {
+                handleOpenFbtModal(product)
+                throw new Error('Configure related products first')
+            }
+            throw error
         }
     }
 
@@ -815,8 +839,31 @@ export default function StoreManageProducts() {
 
     return (
         <div className="w-full max-w-[1920px]">
-            <h1 className="text-2xl text-slate-500 mb-5">Manage <span className="text-slate-800 font-medium">Products</span></h1>
-            
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                <h1 className="text-2xl text-slate-500">
+                    {showImportPanel ? (
+                        <>Import <span className="text-slate-800 font-medium">Products</span></>
+                    ) : (
+                        <>Manage <span className="text-slate-800 font-medium">Products</span></>
+                    )}
+                </h1>
+                <button
+                    type="button"
+                    onClick={() => setShowImportPanel((current) => !current)}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                        showImportPanel
+                            ? 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                            : 'bg-slate-800 text-white hover:bg-slate-900'
+                    }`}
+                >
+                    {showImportPanel ? 'Back to products' : 'Import products'}
+                </button>
+            </div>
+
+            {showImportPanel ? (
+                <ProductBulkImportPanel onImportComplete={handleImportComplete} embedded />
+            ) : (
+            <>
             {/* Search Bar and Category Filter */}
             <div className="mb-6 flex w-full gap-4 flex-wrap">
                 <div className="flex-1 min-w-xs">
@@ -857,6 +904,13 @@ export default function StoreManageProducts() {
                 </select>
                 <button
                     type="button"
+                    onClick={() => setShowDetailColumns((current) => !current)}
+                    className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 transition"
+                >
+                    {showDetailColumns ? 'Hide extra columns' : 'Show categories & description'}
+                </button>
+                <button
+                    type="button"
                     onClick={exportProductsToCsv}
                     className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition"
                 >
@@ -871,8 +925,6 @@ export default function StoreManageProducts() {
                     {aiAutofillRunning ? 'AI Auto Fill...' : 'AI Auto Fill Queue'}
                 </button>
             </div>
-
-            <ProductBulkImportPanel onImportComplete={handleImportComplete} embedded />
 
             <div className="mb-4 w-full rounded-xl border border-blue-200 bg-blue-50/70 px-4 py-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1130,7 +1182,7 @@ export default function StoreManageProducts() {
                     <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700" />
                 </div>
             ) : null}
-            <table className={`w-full min-w-[1200px] text-left ring ring-slate-200 rounded overflow-hidden text-sm transition-opacity ${listLoading ? 'opacity-60' : ''}`}>
+            <table className={`w-full ${showDetailColumns ? 'min-w-[1100px]' : 'min-w-[900px]'} text-left ring ring-slate-200 rounded overflow-hidden text-sm transition-opacity ${listLoading ? 'opacity-60' : ''}`}>
                 <thead className="bg-slate-50 text-gray-700 uppercase tracking-wider">
                     <tr>
                         <th className="px-4 py-3">
@@ -1144,11 +1196,10 @@ export default function StoreManageProducts() {
                         </th>
                         <th className="px-4 py-3">Name</th>
                         <th className="px-4 py-3 hidden lg:table-cell">SKU</th>
-                        <th className="px-4 py-3 hidden md:table-cell">Categories</th>
-                        <th className="px-4 py-3 hidden xl:table-cell">Tags</th>
-                        <th className="px-4 py-3 hidden md:table-cell">Description</th>
-                        <th className="px-4 py-3 hidden md:table-cell">AED</th>
-                        <th className="px-4 py-3">Price</th>
+                        <th className={`px-4 py-3 ${showDetailColumns ? '' : 'hidden'}`}>Categories</th>
+                        <th className="px-4 py-3">Tags</th>
+                        <th className={`px-4 py-3 ${showDetailColumns ? '' : 'hidden'}`}>Description</th>
+                        <th className="px-4 py-3">Sale price</th>
                         <th className="px-4 py-3 hidden sm:table-cell">Fast Delivery</th>
                             <th className="px-4 py-3 hidden sm:table-cell">Frequently</th>
                         <th className="px-4 py-3 hidden sm:table-cell">Online</th>
@@ -1201,7 +1252,7 @@ export default function StoreManageProducts() {
                                 </div>
                             </td>
                             <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{product.sku || '-'}</td>
-                            <td className="px-4 py-3 hidden md:table-cell align-top">
+                            <td className={`px-4 py-3 align-top ${showDetailColumns ? '' : 'hidden'}`}>
                                 {getDisplayCategoryLabels(product).length > 0 ? (
                                     <CompactPills
                                         items={getDisplayCategoryLabels(product)}
@@ -1213,7 +1264,7 @@ export default function StoreManageProducts() {
                                     <span className="text-slate-400">-</span>
                                 )}
                             </td>
-                            <td className="px-4 py-3 hidden xl:table-cell align-top">
+                            <td className="px-4 py-3 align-top">
                                 {product.tags && product.tags.length > 0 ? (
                                     <CompactPills
                                         items={product.tags}
@@ -1225,11 +1276,10 @@ export default function StoreManageProducts() {
                                     <span className="text-slate-400">-</span>
                                 )}
                             </td>
-                            <td className="px-4 py-3 max-w-xs text-slate-600 hidden md:table-cell break-words" title={product.description?.replace(/<[^>]*>/g, ' ').trim() || '-'}>
+                            <td className={`px-4 py-3 max-w-xs text-slate-600 break-words ${showDetailColumns ? '' : 'hidden'}`} title={product.description?.replace(/<[^>]*>/g, ' ').trim() || '-'}>
                                 {truncateText(product.description, 100)}
                             </td>
-                            <td className="px-4 py-3 hidden md:table-cell">{currency} {formatAmount(product.mrp ?? product.AED ?? product.price)}</td>
-                            <td className="px-4 py-3">{currency} {formatAmount(product.price)}</td>
+                            <td className="px-4 py-3 whitespace-nowrap">{currency} {formatAmount(product.price)}</td>
                             <td className="px-4 py-3 hidden sm:table-cell">
                                 <label className="relative inline-flex items-center cursor-pointer">
                                     <input 
@@ -1246,8 +1296,26 @@ export default function StoreManageProducts() {
                                     <span className="dot absolute left-1 top-1 w-3 h-3 bg-white rounded-full transition-transform duration-200 ease-in-out peer-checked:translate-x-4"></span>
                                 </label>
                             </td>
-                            <td className="px-4 py-3 hidden sm:table-cell text-sm text-slate-700">
-                                {product.enableFBT ? 'Enabled' : 'Disabled'}
+                            <td className="px-4 py-3 hidden sm:table-cell">
+                                <div className="flex flex-col gap-1">
+                                    <label className="relative inline-flex items-center cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            className="sr-only peer"
+                                            onChange={() => toast.promise(toggleEnableFBT(product), {
+                                                loading: 'Updating...',
+                                                success: (message) => message || 'Frequently bought together updated',
+                                                error: (error) => error?.response?.data?.error || error?.message || 'Failed to update frequently bought together',
+                                            })}
+                                            checked={Boolean(product.enableFBT)}
+                                        />
+                                        <div className="w-9 h-5 bg-slate-300 rounded-full peer peer-checked:bg-violet-600 transition-colors duration-200"></div>
+                                        <span className="dot absolute left-1 top-1 w-3 h-3 bg-white rounded-full transition-transform duration-200 ease-in-out peer-checked:translate-x-4"></span>
+                                    </label>
+                                    <span className={`text-[11px] font-medium ${product.enableFBT ? 'text-violet-700' : 'text-slate-500'}`}>
+                                        {product.enableFBT ? 'Enabled' : 'Disabled'}
+                                    </span>
+                                </div>
                             </td>
                             <td className="px-4 py-3 hidden sm:table-cell">
                                 <div className="flex flex-col gap-1">
@@ -1307,7 +1375,7 @@ export default function StoreManageProducts() {
                     ))}
                     {paginatedProducts.length === 0 && (
                         <tr className="border-t border-gray-200">
-                            <td colSpan={12} className="px-4 py-10 text-center text-slate-500">
+                            <td colSpan={11} className="px-4 py-10 text-center text-slate-500">
                                 No products found for the current filters.
                             </td>
                         </tr>
@@ -1546,6 +1614,8 @@ export default function StoreManageProducts() {
                         </div>
                     </div>
                 </div>
+            )}
+            </>
             )}
         </div>
     )

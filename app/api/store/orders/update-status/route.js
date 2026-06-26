@@ -4,6 +4,7 @@ import Order from '@/models/Order';
 import Wallet from '@/models/Wallet';
 import authSeller from '@/middlewares/authSeller';
 import { getAuth } from '@/lib/firebase-admin';
+import { appendOrderCommunicationLog } from '@/lib/orderCommunicationLog';
 
 export async function POST(request) {
     try {
@@ -22,6 +23,7 @@ export async function POST(request) {
         }
 
         const userId = decodedToken.uid;
+        const sellerName = decodedToken.name || decodedToken.email || 'Store staff';
 
         // Check if user is a seller
         const storeId = await authSeller(userId);
@@ -30,11 +32,13 @@ export async function POST(request) {
         }
 
         // Get request body
-        const { orderId, status } = await request.json();
+        const { orderId, status, silent = false } = await request.json();
 
         if (!orderId || !status) {
             return NextResponse.json({ error: 'Missing orderId or status' }, { status: 400 });
         }
+
+        const normalizedIncoming = String(status || '').toUpperCase();
 
         // Validate status
         const validStatuses = [
@@ -76,11 +80,24 @@ export async function POST(request) {
             return NextResponse.json({ error: 'Unauthorized - order does not belong to your store' }, { status: 403 });
         }
 
+        const previousStatus = String(order.status || '').toUpperCase();
+        if (previousStatus === normalizedIncoming) {
+            return NextResponse.json({
+                success: true,
+                message: 'Order status unchanged',
+                skippedNotifications: true,
+                order: {
+                    _id: order._id,
+                    status: order.status,
+                },
+            });
+        }
+
         // Update order status
         order.status = status;
 
         // Auto-mark COD orders as PAID when delivered
-        const normalizedStatus = String(status || '').toUpperCase();
+        const normalizedStatus = normalizedIncoming;
         const paymentMethod = (order.paymentMethod || '').toLowerCase();
         
         if (normalizedStatus === 'DELIVERED' && paymentMethod === 'cod') {
@@ -113,13 +130,33 @@ export async function POST(request) {
 
         await order.save();
 
+        if (!silent) {
         // Send status update email
         try {
             const { sendOrderStatusEmail } = await import('@/lib/email');
             const emailResult = await sendOrderStatusEmail(order, status);
             console.log('[store/update-status] Email send result:', emailResult);
+            await appendOrderCommunicationLog(order._id, {
+                channel: 'email',
+                template: `status_${normalizedStatus}`,
+                label: `Status update email (${normalizedStatus})`,
+                status: 'sent',
+                recipient: order.guestEmail || order.shippingAddress?.email || order.userId?.email || '',
+                sentByUid: userId,
+                sentByName: sellerName,
+            });
         } catch (emailError) {
             console.error('[store/update-status] Email sending failed:', emailError);
+            await appendOrderCommunicationLog(order._id, {
+                channel: 'email',
+                template: `status_${normalizedStatus}`,
+                label: `Status update email (${normalizedStatus})`,
+                status: 'failed',
+                recipient: order.guestEmail || order.shippingAddress?.email || order.userId?.email || '',
+                sentByUid: userId,
+                sentByName: sellerName,
+                details: emailError?.message || 'Email failed',
+            });
         }
 
         if (normalizedStatus === 'SHIPPED') {
@@ -128,6 +165,16 @@ export async function POST(request) {
                 const orderPayload = order.toObject ? order.toObject() : order;
                 const whatsappResult = await sendOrderShippedWhatsApp(orderPayload);
                 console.log('[store/update-status] WhatsApp shipped result:', whatsappResult);
+                await appendOrderCommunicationLog(order._id, {
+                    channel: 'whatsapp',
+                    template: 'order_shipped',
+                    label: 'Shipped update (WhatsApp)',
+                    status: whatsappResult?.success ? 'sent' : 'failed',
+                    recipient: order.guestPhone || order.shippingAddress?.phone || '',
+                    sentByUid: userId,
+                    sentByName: sellerName,
+                    details: whatsappResult?.success ? '' : (whatsappResult?.reason || whatsappResult?.error || ''),
+                });
             } catch (whatsappError) {
                 console.error('[store/update-status] WhatsApp sending failed:', whatsappError);
             }
@@ -141,9 +188,20 @@ export async function POST(request) {
                     .lean();
                 const whatsappResult = await sendOrderDeliveredWhatsApp(populated || order.toObject?.() || order);
                 console.log('[store/update-status] WhatsApp delivered result:', whatsappResult);
+                await appendOrderCommunicationLog(order._id, {
+                    channel: 'whatsapp',
+                    template: 'order_delivered',
+                    label: 'Delivered update (WhatsApp)',
+                    status: whatsappResult?.success ? 'sent' : 'failed',
+                    recipient: order.guestPhone || order.shippingAddress?.phone || '',
+                    sentByUid: userId,
+                    sentByName: sellerName,
+                    details: whatsappResult?.success ? '' : (whatsappResult?.reason || whatsappResult?.error || ''),
+                });
             } catch (whatsappError) {
                 console.error('[store/update-status] WhatsApp delivered failed:', whatsappError);
             }
+        }
         }
 
         return NextResponse.json({ 

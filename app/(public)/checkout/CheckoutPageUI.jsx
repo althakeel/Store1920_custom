@@ -15,7 +15,6 @@ import {
   getShippingOptionById,
 } from '@/lib/shippingOptions';
 import { trackMetaEvent } from "@/lib/metaPixelClient";
-import { trackInitiateCheckout } from "@/lib/metaPixelTracking";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/useAuth";
 import dynamic from "next/dynamic";
@@ -775,26 +774,12 @@ export default function CheckoutPage() {
     const currencyCode = market.currency || STORE_CURRENCY || 'AED';
     const orderKey = gtmItems.map((item) => `${item.item_id}:${item.quantity}`).join('|');
 
-    runTrackedOnce(gtmDedupeKey(GTM_EVENTS.BEGIN_CHECKOUT, orderKey), () =>
+    runTrackedOnce(gtmDedupeKey(GTM_EVENTS.BEGIN_CHECKOUT, orderKey), () => {
       pushGtmEcommerceEvent(GTM_EVENTS.BEGIN_CHECKOUT, {
         currency: currencyCode,
         value,
         items: gtmItems,
-      }) !== false,
-    );
-
-    runTrackedOnce(gtmDedupeKey('meta_begin_checkout', orderKey), () => {
-      const metaOk = trackInitiateCheckout({
-        value,
-        currency: currencyCode,
-        items: gtmItems.map((item) => ({
-          productId: item.item_id,
-          name: item.item_name,
-          price: item.price,
-          quantity: item.quantity,
-        })),
-        numItems: gtmItems.reduce((sum, item) => sum + item.quantity, 0),
-      }) !== false;
+      }, gtmDedupeKey(GTM_EVENTS.BEGIN_CHECKOUT, orderKey)) !== false;
 
       trackCustomerEvent({
         eventType: 'checkout_start',
@@ -810,7 +795,7 @@ export default function CheckoutPage() {
         },
       });
 
-      return metaOk;
+      return true;
     });
   }, [checkoutProductsLoaded, cartArray, totalAfterWallet, subtotal, effectiveShipping, user?.uid, market.currency]);
 
@@ -850,6 +835,8 @@ export default function CheckoutPage() {
       content_ids: contentIds,
       num_items: cartArray.reduce((sum, item) => sum + Number(item?.quantity || 0), 0),
       payment_method: String(form.payment).toUpperCase(),
+    }, {
+      dedupeKey: `meta:AddPaymentInfo:${eventKey}`,
     });
 
     sessionStorage.setItem(eventKey, '1');

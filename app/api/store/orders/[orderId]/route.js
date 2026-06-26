@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import User from '@/models/User';
+import { appendOrderCommunicationLog } from '@/lib/orderCommunicationLog';
 
 // Update order status and tracking details
 export async function PUT(request, { params }) {
@@ -27,6 +28,7 @@ export async function PUT(request, { params }) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
         const userId = decodedToken.uid;
+        const sellerName = decodedToken.name || decodedToken.email || 'Store staff';
         const storeId = await authSeller(userId);
         const { orderId } = await params;
 
@@ -59,6 +61,22 @@ export async function PUT(request, { params }) {
         if (trackingUrl !== undefined) updateData.trackingUrl = trackingUrl;
         if (courier !== undefined) updateData.courier = courier;
 
+        const previousStatus = String(existingOrder.status || '').toUpperCase();
+        const nextStatus = status !== undefined
+            ? String(status || '').toUpperCase()
+            : previousStatus;
+        const previousTracking = String(existingOrder.trackingId || '').trim();
+        const nextTracking = trackingId !== undefined
+            ? String(trackingId || '').trim()
+            : previousTracking;
+        const statusChanged = status !== undefined && nextStatus !== previousStatus;
+        const trackingChanged = trackingId !== undefined && nextTracking !== previousTracking;
+        const courierChanged = courier !== undefined
+            && String(courier || '').trim() !== String(existingOrder.courier || '').trim();
+        const trackingUrlChanged = trackingUrl !== undefined
+            && String(trackingUrl || '').trim() !== String(existingOrder.trackingUrl || '').trim();
+        const shouldNotify = statusChanged || trackingChanged || courierChanged || trackingUrlChanged;
+
         // Update the order
         const updatedOrder = await Order.findByIdAndUpdate(
             orderId,
@@ -71,10 +89,10 @@ export async function PUT(request, { params }) {
         // - If only tracking was added (no status field in body), send
         //   "no status" so the notification route can treat this as a
         //   pure tracking/AWB update email.
-        const statusForEmail = (typeof status === 'undefined') ? null : updatedOrder.status;
+        const statusForEmail = statusChanged ? updatedOrder.status : null;
 
-        // Send email notification if status was included or tracking was added
-        if (typeof status !== 'undefined' || typeof trackingId !== 'undefined') {
+        // Send email notification only when something actually changed
+        if (shouldNotify) {
             try {
                 // Call email notification API
                 await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/notifications/order-status`, {
@@ -97,6 +115,23 @@ export async function PUT(request, { params }) {
                         courier: updatedOrder.courier,
                         orderItems: existingOrder.orderItems
                     })
+                });
+
+                const customerEmail = existingOrder.userId?.email
+                  || existingOrder.guestEmail
+                  || existingOrder.shippingAddress?.email
+                  || '';
+
+                await appendOrderCommunicationLog(orderId, {
+                    channel: 'email',
+                    template: statusForEmail ? `status_${statusForEmail}` : 'tracking_update',
+                    label: statusForEmail
+                        ? `Status update email (${statusForEmail})`
+                        : 'Tracking update email',
+                    status: 'sent',
+                    recipient: customerEmail,
+                    sentByUid: userId,
+                    sentByName: sellerName,
                 });
 
                 // Send SMS notification if phone number exists

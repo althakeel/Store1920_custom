@@ -103,7 +103,11 @@ export async function GET(request){
                 })
                 .sort({ createdAt: -1, shortOrderNumber: -1 })
                 .lean(),
-            AbandonedCart.find({ storeId, status: 'converted' })
+            AbandonedCart.find({
+                storeId,
+                status: 'converted',
+                convertedByName: { $nin: [null, ''] },
+            })
                 .select('_id userId email phone status convertedAt convertedBy convertedByName convertedCartTotal cartTotal conversionNote conversionDiscountType conversionDiscountValue conversionPaymentMethod linkedOrderId')
                 .lean(),
         ]);

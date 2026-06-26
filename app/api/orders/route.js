@@ -90,6 +90,7 @@ export async function POST(request) {
             trackingContext,
             attribution,
             recoveryToken: recoveryTokenInput,
+            manualStoreOrder,
         } = body;
         let userId = null;
         let isPlusMember = false;
@@ -566,8 +567,19 @@ export async function POST(request) {
 
             Object.assign(
                 orderData,
-                applyDeferredPaymentOrderDefaults(orderData, paymentMethod),
+                manualStoreOrder ? {} : applyDeferredPaymentOrderDefaults(orderData, paymentMethod),
             );
+
+            if (manualStoreOrder) {
+                orderData.status = 'ORDER_PLACED';
+                if (normalizedPaymentMethod === 'COD') {
+                    orderData.isPaid = false;
+                    orderData.paymentStatus = paymentStatus || 'PENDING';
+                } else {
+                    orderData.isPaid = true;
+                    orderData.paymentStatus = paymentStatus || 'PAID';
+                }
+            }
 
             if (razorpayPaymentId) orderData.razorpayPaymentId = razorpayPaymentId;
             if (razorpayOrderId) orderData.razorpayOrderId = razorpayOrderId;
@@ -842,7 +854,7 @@ export async function POST(request) {
                 // Don't fail the order if notifications fail
             }
 
-            if (isDeferredPaymentMethod(paymentMethod)) {
+            if (isDeferredPaymentMethod(paymentMethod) && !manualStoreOrder) {
                 try {
                     await upsertAbandonedCartForPendingOrder(populatedOrder || order, {
                         source: 'checkout_payment',

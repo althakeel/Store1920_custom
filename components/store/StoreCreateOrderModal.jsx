@@ -9,6 +9,9 @@ import { collectCheckoutValidationIssues } from '@/lib/checkoutValidation';
 import {
   DEFAULT_STORE_ORDER_FORM,
   resolveGuestPhone,
+  STORE_ORDER_PAYMENT_OPTIONS,
+  mapStoreOrderPaymentMethod,
+  storeOrderPaymentNeedsReference,
 } from '@/lib/storeCreateOrder';
 import { calculateShipping, fetchShippingSettings } from '@/lib/shipping';
 
@@ -88,11 +91,11 @@ export default function StoreCreateOrderModal({ open, onClose, getToken, onCreat
       cartItems: cartLikeItems,
       shippingSetting,
       shippingState: form.state,
-      paymentMethod: form.payment === 'cod' ? 'COD' : 'CARD',
+      paymentMethod: mapStoreOrderPaymentMethod(form.payment),
     });
 
     setShippingFee(Number(fee || 0));
-  }, [shippingSetting, validLineItems, form.state, form.country, subtotal]);
+  }, [shippingSetting, validLineItems, form.state, form.country, form.payment, subtotal]);
 
   const orderTotal = subtotal + Number(shippingFee || 0);
 
@@ -218,6 +221,9 @@ export default function StoreCreateOrderModal({ open, onClose, getToken, onCreat
             quantity: item.quantity,
           })),
           paymentMethod: form.payment,
+          paymentReferenceId: storeOrderPaymentNeedsReference(form.payment)
+            ? form.paymentReferenceId?.trim() || undefined
+            : undefined,
           shippingFee,
           couponCode: couponCode.trim() || undefined,
           notes: notes.trim() || undefined,
@@ -225,7 +231,11 @@ export default function StoreCreateOrderModal({ open, onClose, getToken, onCreat
         { headers: { Authorization: `Bearer ${token}` } },
       );
 
-      toast.success(data?.message || 'Order created');
+      toast.success(
+        data?.order?.shortOrderNumber
+          ? `Order #${data.order.shortOrderNumber} created`
+          : (data?.message || 'Order created'),
+      );
       onCreated?.(data?.order || { _id: data?.orderId });
       onClose();
     } catch (error) {
@@ -359,27 +369,61 @@ export default function StoreCreateOrderModal({ open, onClose, getToken, onCreat
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-600">Payment method</label>
                 <div id="checkout-payment" className="space-y-2">
-                  <label className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-3 ${form.payment === 'cod' ? 'border-green-500 bg-green-50' : 'border-slate-200 bg-white'}`}>
-                    <input
-                      type="radio"
-                      name="store-order-payment"
-                      value="cod"
-                      checked={form.payment === 'cod'}
-                      onChange={() => setForm((current) => ({ ...current, payment: 'cod' }))}
-                    />
-                    <span className="text-sm font-medium text-slate-900">Cash on delivery (COD)</span>
-                  </label>
-                  <label className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-3 ${form.payment === 'card' ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white'}`}>
-                    <input
-                      type="radio"
-                      name="store-order-payment"
-                      value="card"
-                      checked={form.payment === 'card'}
-                      onChange={() => setForm((current) => ({ ...current, payment: 'card' }))}
-                    />
-                    <span className="text-sm font-medium text-slate-900">Paid online / card (mark as paid)</span>
-                  </label>
+                  {STORE_ORDER_PAYMENT_OPTIONS.map((option) => {
+                    const selected = form.payment === option.value;
+                    const accentClass = {
+                      cod: 'border-green-500 bg-green-50',
+                      card: 'border-blue-500 bg-blue-50',
+                      stripe: 'border-violet-500 bg-violet-50',
+                      tabby: 'border-cyan-500 bg-cyan-50',
+                      tamara: 'border-orange-500 bg-orange-50',
+                    }[option.value] || 'border-slate-200 bg-white';
+
+                    return (
+                      <label
+                        key={option.value}
+                        className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-3 ${selected ? accentClass : 'border-slate-200 bg-white'}`}
+                      >
+                        <input
+                          type="radio"
+                          name="store-order-payment"
+                          value={option.value}
+                          checked={selected}
+                          onChange={() => setForm((current) => ({
+                            ...current,
+                            payment: option.value,
+                            paymentReferenceId: storeOrderPaymentNeedsReference(option.value)
+                              ? current.paymentReferenceId
+                              : '',
+                          }))}
+                        />
+                        <span className="text-sm font-medium text-slate-900">{option.label}</span>
+                      </label>
+                    );
+                  })}
                 </div>
+                {storeOrderPaymentNeedsReference(form.payment) ? (
+                  <div className="mt-3">
+                    <label className="mb-1 block text-xs font-medium text-slate-600">
+                      Payment reference ID (optional)
+                    </label>
+                    <input
+                      value={form.paymentReferenceId || ''}
+                      onChange={(e) => setForm((current) => ({
+                        ...current,
+                        paymentReferenceId: e.target.value,
+                      }))}
+                      placeholder={
+                        form.payment === 'stripe'
+                          ? 'Stripe payment / session ID'
+                          : form.payment === 'tabby'
+                            ? 'Tabby payment ID'
+                            : 'Tamara order ID'
+                      }
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    />
+                  </div>
+                ) : null}
               </div>
 
               <div className="space-y-4">

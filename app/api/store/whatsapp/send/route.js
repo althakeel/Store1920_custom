@@ -17,6 +17,10 @@ import {
 import { WABA_TEMPLATE_NAMES } from '@/lib/whatsapp/templates';
 import { isConfirmedPaidOrder } from '@/lib/orderConfirmationPolicy';
 import { isAwaitingPaymentOrder } from '@/lib/deferredOrderStatus';
+import {
+  appendOrderCommunicationLog,
+  WHATSAPP_TEMPLATE_LABELS,
+} from '@/lib/orderCommunicationLog';
 
 const ALLOWED_TEMPLATES = new Set([
   'cart_reminder',
@@ -164,6 +168,23 @@ export async function POST(request) {
       default:
         return NextResponse.json({ error: 'Unsupported WhatsApp template' }, { status: 400 });
     }
+
+    const sellerName = decodedToken.name || decodedToken.email || 'Store staff';
+    const customer = getOrderPhone(order);
+    const recipient = customer.phone
+      ? `${customer.phoneCode || ''} ${customer.phone}`.trim()
+      : '';
+
+    await appendOrderCommunicationLog(orderId, {
+      channel: 'whatsapp',
+      template,
+      label: WHATSAPP_TEMPLATE_LABELS[template] || `WhatsApp: ${template}`,
+      status: whatsapp?.success ? 'sent' : 'failed',
+      recipient,
+      sentByUid: decodedToken.uid,
+      sentByName: sellerName,
+      details: whatsapp?.success ? '' : (whatsapp?.reason || whatsapp?.error || 'Send failed'),
+    });
 
     return NextResponse.json({ success: true, template, whatsapp });
   } catch (error) {

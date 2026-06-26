@@ -33,7 +33,23 @@ function normalizePaymentMethod(value) {
   const raw = String(value || 'cod').trim().toLowerCase();
   if (raw === 'cod') return 'COD';
   if (raw === 'card' || raw === 'prepaid' || raw === 'online') return 'CARD';
+  if (raw === 'stripe') return 'STRIPE';
+  if (raw === 'tabby') return 'TABBY';
+  if (raw === 'tamara') return 'TAMARA';
   return raw.toUpperCase();
+}
+
+function buildPaymentReferenceUpdate(paymentMethod, paymentReferenceId) {
+  const referenceId = String(paymentReferenceId || '').trim();
+  if (!referenceId) return {};
+
+  if (paymentMethod === 'TABBY') {
+    return { tabbyPaymentId: referenceId };
+  }
+  if (paymentMethod === 'TAMARA') {
+    return { tamaraOrderId: referenceId };
+  }
+  return {};
 }
 
 export async function POST(request) {
@@ -50,6 +66,7 @@ export async function POST(request) {
       shippingFee,
       couponCode,
       notes,
+      paymentReferenceId,
     } = body || {};
 
     if (!Array.isArray(items) || items.length === 0) {
@@ -106,6 +123,7 @@ export async function POST(request) {
       paymentMethod,
       shippingFee: normalizedShippingFee,
       paymentStatus: paymentMethod === 'COD' ? 'PENDING' : 'PAID',
+      manualStoreOrder: true,
       attribution: {
         utmSource: 'store_admin',
         utmMedium: 'manual_order',
@@ -133,23 +151,44 @@ export async function POST(request) {
     }
 
     const orderId = orderData.orderId || orderData.id || orderData.orders?.[0]?._id;
+    let savedOrder = orderData.order || orderData.orders?.[0] || null;
+
     if (orderId) {
+      const referenceId = String(paymentReferenceId || '').trim();
       const noteLines = [
         notes ? String(notes).trim() : '',
+        referenceId ? `${paymentMethod} reference: ${referenceId}` : '',
         `Created manually by ${sellerName} from store dashboard`,
       ].filter(Boolean);
 
-      await Order.findOneAndUpdate(
+      const isCod = paymentMethod === 'COD';
+
+      savedOrder = await Order.findOneAndUpdate(
         { _id: orderId, storeId },
-        { $set: { notes: noteLines.join('\n') } },
-      );
+        {
+          $set: {
+            notes: noteLines.join('\n'),
+            status: 'ORDER_PLACED',
+            isPaid: !isCod,
+            paymentStatus: isCod ? 'PENDING' : 'PAID',
+            manualStoreOrder: true,
+            storeCreatedByUid: sellerUid,
+            storeCreatedByName: sellerName,
+            ...(referenceId ? { paymentReferenceId: referenceId } : {}),
+            ...buildPaymentReferenceUpdate(paymentMethod, referenceId),
+          },
+        },
+        { new: true },
+      ).lean();
     }
 
     return NextResponse.json({
       success: true,
       orderId,
-      order: orderData.order || orderData.orders?.[0] || null,
-      message: orderData.message || 'Order created',
+      order: savedOrder,
+      message: savedOrder?.shortOrderNumber
+        ? `Order #${savedOrder.shortOrderNumber} created`
+        : (orderData.message || 'Order created'),
     });
   } catch (error) {
     console.error('[store/orders/create]', error);

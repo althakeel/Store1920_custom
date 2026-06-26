@@ -38,7 +38,15 @@ function OrderSuccessContent() {
   const purchaseTrackedRef = useRef(false);
 
   useEffect(() => {
-    const fetchOrder = async (orderId) => {
+    const orderId = params.get('orderId');
+    if (!orderId) {
+      router.replace('/');
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchOrder = async () => {
       try {
         let fetchOptions = {};
         if (user && getToken) {
@@ -47,13 +55,13 @@ function OrderSuccessContent() {
             fetchOptions.headers = {
               Authorization: `Bearer ${token}`,
             };
-          } catch (e) {
-           
+          } catch {
+            // guest fetch fallback
           }
         }
         const res = await fetch(`/api/orders?orderId=${orderId}`, fetchOptions);
         if (!res.ok) {
-          setOrders(null);
+          if (!cancelled) setOrders(null);
           return;
         }
         const data = await res.json();
@@ -63,6 +71,8 @@ function OrderSuccessContent() {
         } else if (data.order) {
           loadedOrders = [data.order];
         }
+        if (cancelled) return;
+
         setOrders(loadedOrders);
 
         const loadedOrder = loadedOrders?.[0];
@@ -72,25 +82,23 @@ function OrderSuccessContent() {
             router.replace(`/order-failed?orderId=${orderId}&reason=${encodeURIComponent('Payment was not completed')}`);
             return;
           }
-        }
 
-        if (loadedOrder?._id && !purchaseTrackedRef.current) {
-          purchaseTrackedRef.current = true;
-          trackPurchase(loadedOrder, { user });
+          if (!purchaseTrackedRef.current) {
+            purchaseTrackedRef.current = true;
+            trackPurchase(loadedOrder, { user });
+          }
         }
-      } catch (err) {
-        setOrders(null);
+      } catch {
+        if (!cancelled) setOrders(null);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
-    const orderId = params.get('orderId');
-    if (!orderId) {
-      router.replace('/');
-      return;
-    }
-    fetchOrder(orderId);
+    fetchOrder();
+    return () => {
+      cancelled = true;
+    };
   }, [params, router, user, getToken]);
 
   const order = orders && orders.length > 0 ? orders[0] : null;

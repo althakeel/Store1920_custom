@@ -1,12 +1,45 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Product from '@/models/Product';
+import Category from '@/models/Category';
 import {
   buildProductSearchFilter,
+  escapeRegex,
   mapSearchProduct,
+  mergeCategorySearchIntoFilter,
   normalizeSearchKeyword,
   PRODUCT_SEARCH_SELECT_FIELDS,
 } from '@/lib/productSearch';
+import { STOREFRONT_PUBLISHED_FILTER } from '@/lib/productVisibility';
+
+async function resolveCategorySearchValues(keyword = '') {
+  const normalized = normalizeSearchKeyword(keyword);
+  if (!normalized || normalized.length < 2) return [];
+
+  const termRegex = new RegExp(escapeRegex(normalized), 'i');
+  const categories = await Category.find({
+    $or: [
+      { name: termRegex },
+      { nameAr: termRegex },
+      { slug: termRegex },
+    ],
+  })
+    .select('_id slug name')
+    .limit(20)
+    .lean();
+
+  const values = new Set();
+  for (const category of categories) {
+    if (category?._id) {
+      values.add(category._id);
+      values.add(String(category._id));
+    }
+    if (category?.slug) values.add(category.slug);
+    if (category?.name) values.add(category.name);
+  }
+
+  return [...values];
+}
 
 export async function GET(request) {
   try {
@@ -71,7 +104,10 @@ export async function GET(request) {
       }, { status: 400 });
     }
 
-    const searchFilter = buildProductSearchFilter(keyword, { includeOutOfStock });
+    const searchFilter = mergeCategorySearchIntoFilter(
+      buildProductSearchFilter(keyword, { includeOutOfStock }),
+      await resolveCategorySearchValues(keyword),
+    );
     const total = await Product.countDocuments(searchFilter);
 
     let productsQuery = Product.find(searchFilter)
@@ -89,9 +125,11 @@ export async function GET(request) {
     const resultCap = limit ?? total;
     if (products.length < resultCap && page === 1) {
       const existingIds = new Set(products.map((product) => String(product._id)));
-      const textFilter = includeOutOfStock
-        ? { $text: { $search: keyword } }
-        : { $text: { $search: keyword }, inStock: true };
+      const textFilter = {
+        $text: { $search: keyword },
+        ...STOREFRONT_PUBLISHED_FILTER,
+        ...(includeOutOfStock ? {} : { inStock: true }),
+      };
 
       try {
         const textQuery = Product.find(textFilter, { score: { $meta: 'textScore' } })
