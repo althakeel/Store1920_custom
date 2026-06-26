@@ -15,6 +15,7 @@ import {
   getShippingOptionById,
 } from '@/lib/shippingOptions';
 import { trackMetaEvent } from "@/lib/metaPixelClient";
+import { trackInitiateCheckout } from "@/lib/metaPixelTracking";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/useAuth";
 import dynamic from "next/dynamic";
@@ -772,14 +773,28 @@ export default function CheckoutPage() {
     const itemsValue = gtmItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     const value = Number(totalAfterWallet > 0 ? totalAfterWallet : (subtotal + effectiveShipping) || itemsValue || 0);
     const currencyCode = market.currency || STORE_CURRENCY || 'AED';
-    const orderKey = gtmItems.map((item) => `${item.item_id}:${item.quantity}`).join('|');
+    const pageKey = '/checkout';
+    const gtmKey = gtmDedupeKey(GTM_EVENTS.BEGIN_CHECKOUT, pageKey);
 
-    runTrackedOnce(gtmDedupeKey(GTM_EVENTS.BEGIN_CHECKOUT, orderKey), () => {
+    runTrackedOnce(gtmKey, () => {
       pushGtmEcommerceEvent(GTM_EVENTS.BEGIN_CHECKOUT, {
         currency: currencyCode,
         value,
         items: gtmItems,
-      }, gtmDedupeKey(GTM_EVENTS.BEGIN_CHECKOUT, orderKey)) !== false;
+      }, gtmKey);
+
+      trackInitiateCheckout({
+        value,
+        currency: currencyCode,
+        items: gtmItems.map((item) => ({
+          productId: item.item_id,
+          name: item.item_name,
+          price: item.price,
+          quantity: item.quantity,
+        })),
+        numItems: gtmItems.reduce((sum, item) => sum + item.quantity, 0),
+        dedupeKey: pageKey,
+      });
 
       trackCustomerEvent({
         eventType: 'checkout_start',

@@ -29,7 +29,7 @@ import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
 import { useStorefrontI18n } from '@/lib/useStorefrontI18n';
 import { trackCustomerEvent } from '@/lib/trackingClient';
 import { pushGtmEcommerceEvent } from '@/lib/pushGtmEcommerceEvent';
-import { GTM_EVENTS } from '@/lib/gtmEvents';
+import { GTM_EVENTS, gtmDedupeKey } from '@/lib/gtmEvents';
 import {
   buildProductMediaGallery,
   getProductImageAspectRatioClass,
@@ -716,11 +716,14 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     const eventKey = `meta_viewcontent_sent_${String(product._id)}`;
     if (sessionStorage.getItem(eventKey)) return;
 
+    const gtmKey = gtmDedupeKey(GTM_EVENTS.VIEW_ITEM, String(product._id));
+
     trackViewContent({
       productId: product._id,
       name: product.name || product.title || 'Product',
       price: Number(product.price || 0),
       currency: 'AED',
+      dedupeKey: String(product._id),
     });
 
     pushGtmEcommerceEvent(GTM_EVENTS.VIEW_ITEM, {
@@ -732,7 +735,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
         price: eventPrice,
         quantity: 1,
       }],
-    });
+    }, gtmKey);
 
     sessionStorage.setItem(eventKey, '1');
   }, [product?._id, product?.id, product?.name, product?.title, product?.price]);

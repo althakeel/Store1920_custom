@@ -2,7 +2,7 @@
 "use client";
 
 import { useDispatch, useSelector, useStore } from "react-redux";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import CartLineItem from "@/components/CartLineItem";
 import CartSummaryBox, { CartSummaryActions } from "@/components/CartSummaryBox";
@@ -42,6 +42,7 @@ export default function Cart() {
     const [deletingKeys, setDeletingKeys] = useState({});
     const [pendingRemove, setPendingRemove] = useState(null);
     const [cartHeartbeat, setCartHeartbeat] = useState(0);
+    const viewCartTrackedRef = useRef(false);
 
 
     // Load only cart product IDs via batch API (never download full catalog)
@@ -381,25 +382,24 @@ export default function Cart() {
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
+        if (!productsLoaded) return;
         if (!inStockCartArray.length) return;
+        if (viewCartTrackedRef.current) return;
 
-        const contentIds = inStockCartArray
-            .map((item) => String(item?._id || item?._cartKey || ''))
-            .filter(Boolean);
+        viewCartTrackedRef.current = true;
 
-        const cartSignature = `${contentIds.join(',')}_${Number(totalPrice || 0)}`;
         const cartValue = Number(totalPrice || 0);
         const gtmItems = inStockCartArray.map((item) => toGtmItem(item));
+        const pageKey = '/cart';
+        const gtmKey = gtmDedupeKey(GTM_EVENTS.VIEW_CART, pageKey);
 
-        runTrackedOnce(gtmDedupeKey(GTM_EVENTS.VIEW_CART, cartSignature), () =>
+        runTrackedOnce(gtmKey, () => {
             pushGtmEcommerceEvent(GTM_EVENTS.VIEW_CART, {
                 currency: STORE_CURRENCY,
                 value: cartValue,
                 items: gtmItems,
-            }) !== false,
-        );
+            }, gtmKey);
 
-        runTrackedOnce(gtmDedupeKey('meta_view_cart', cartSignature), () =>
             trackViewCart({
                 value: cartValue,
                 currency: STORE_CURRENCY,
@@ -408,9 +408,12 @@ export default function Cart() {
                     quantity: Number(item?.quantity || 0),
                 })),
                 numItems: inStockCartArray.reduce((sum, item) => sum + Number(item?.quantity || 0), 0),
-            }) !== false,
-        );
-    }, [inStockCartArray, totalPrice]);
+                dedupeKey: pageKey,
+            });
+
+            return true;
+        });
+    }, [productsLoaded, inStockCartArray, totalPrice]);
 
     return (
         <div className="min-h-[40dvh] bg-slate-50/60 pb-28 lg:pb-0">
