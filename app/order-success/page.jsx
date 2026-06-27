@@ -86,6 +86,20 @@ function OrderSuccessContent() {
             return;
           }
 
+          const paidRedirect = params.get('stripe') === '1'
+            || params.get('tabby') === '1'
+            || params.get('tamara') === '1';
+          const orderIsPaid = loadedOrder.isPaid === true
+            || String(loadedOrder.paymentStatus || '').toLowerCase() === 'paid'
+            || status === 'ORDER_PLACED';
+          if (paidRedirect && orderIsPaid) {
+            fetch('/api/orders/confirm-paid', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ orderId: loadedOrder._id }),
+            }).catch(() => {});
+          }
+
           if (!purchaseTrackedRef.current) {
             purchaseTrackedRef.current = true;
             trackPurchase(loadedOrder, { user });
