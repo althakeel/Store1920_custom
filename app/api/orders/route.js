@@ -121,16 +121,6 @@ export async function POST(request) {
             }
             const idToken = authHeader.split('Bearer ')[1];
             try {
-                const { getAuth } = await import('firebase-admin/auth');
-                const { initializeApp, cert, getApps } = await import('firebase-admin/app');
-                if (getApps().length === 0) {
-                    const serviceAccountKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-                    if (!serviceAccountKey) {
-                        throw new Error('Firebase service account key not configured');
-                    }
-                    const serviceAccount = JSON.parse(serviceAccountKey);
-                    initializeApp({ credential: cert(serviceAccount) });
-                }
                 const decodedToken = await getAuth().verifyIdToken(idToken);
                 userId = decodedToken.uid;
                 isPlusMember = decodedToken.plan === 'plus';
@@ -251,12 +241,6 @@ export async function POST(request) {
             ]))
             : null;
 
-        // Used to ensure referral reward is only applied for a customer's first purchase.
-        let existingOrderCountBeforeCheckout = 0;
-        if (!isGuest && userId) {
-            existingOrderCountBeforeCheckout = await Order.countDocuments({ userId });
-        }
-
         // Coupon logic
         let coupon = null;
         const normalizedCouponCode = String(couponCode || couponPayload?.code || '').trim().toUpperCase();
@@ -280,6 +264,62 @@ export async function POST(request) {
         const ordersByStore = new Map();
         const checkoutStoreIds = new Set();
         let grandSubtotal = 0;
+
+        const productSelect = '_id name slug price mrp AED images category sku inStock stockQuantity storeId variants';
+        const validProductIds = [...new Set(
+            items
+                .map((item) => item.id)
+                .filter((id) => typeof id === 'string' && /^[a-fA-F0-9]{24}$/.test(id)),
+        )];
+        const loadedProducts = validProductIds.length
+            ? await Product.find({ _id: { $in: validProductIds } }).select(productSelect).lean()
+            : [];
+        const productById = new Map(loadedProducts.map((product) => [String(product._id), product]));
+
+        const missingProductIds = validProductIds.filter((id) => !productById.has(String(id)));
+        if (missingProductIds.length > 0) {
+            const altProducts = await Product.find({
+                $or: [
+                    { _id: { $in: missingProductIds } },
+                    { id: { $in: missingProductIds } },
+                    { slug: { $in: missingProductIds } },
+                ],
+            }).select(productSelect).lean();
+            for (const product of altProducts) {
+                productById.set(String(product._id), product);
+            }
+        }
+
+        const offerTokenPairs = items
+            .filter((item) => item.offerToken)
+            .map((item) => ({ token: item.offerToken, productId: String(item.id) }));
+        const offerByKey = new Map();
+        if (offerTokenPairs.length > 0) {
+            const offers = await PersonalizedOffer.find({
+                offerToken: { $in: [...new Set(offerTokenPairs.map((entry) => entry.token))] },
+                productId: { $in: [...new Set(offerTokenPairs.map((entry) => entry.productId))] },
+            }).lean();
+            for (const offer of offers) {
+                offerByKey.set(`${offer.offerToken}:${String(offer.productId)}`, offer);
+            }
+        }
+
+        const campaignIds = [...new Set(
+            items
+                .map((item) => item.freeGift?.campaignId)
+                .filter(Boolean)
+                .map(String),
+        )];
+        const campaignById = new Map();
+        if (campaignIds.length > 0) {
+            const campaigns = await FreeGiftCampaign.find({ _id: { $in: campaignIds } })
+                .select('_id storeId giftProductId isActive')
+                .lean();
+            for (const campaign of campaigns) {
+                campaignById.set(String(campaign._id), campaign);
+            }
+        }
+
         for (const item of items) {
             if (!item.id || typeof item.id !== 'string' || !item.id.match(/^[a-fA-F0-9]{24}$/)) {
                 console.error('Invalid or missing productId in order item:', item.id);
@@ -288,33 +328,15 @@ export async function POST(request) {
                     id: item.id 
                 }, { status: 400 });
             }
-            let product;
-            try {
-                product = await Product.findById(item.id)
-                                    .select('_id name slug price mrp AED images category sku inStock stockQuantity storeId variants')
-                  .lean();
-            } catch (err) {
-                console.error('Product.findById error:', err, 'productId:', item.id);
-                return NextResponse.json({ 
-                    error: `Invalid product ID or database error: "${item.id}". Please clear your cart and try again.`, 
-                    id: item.id 
-                }, { status: 400 });
-            }
+
+            const product = productById.get(String(item.id));
             if (!product) {
                 console.error('Product not found in database. ProductId:', item.id);
-                console.error('Trying to find any product with this ID...');
-                // Try alternative lookups
-                const altProduct = await Product.findOne({$or: [{_id: item.id}, {id: item.id}, {slug: item.id}]})
-                                    .select('_id name slug price mrp AED images category sku inStock stockQuantity storeId variants')
-                  .lean();
-                if (!altProduct) {
-                    return NextResponse.json({ 
-                        error: `Product not found (ID: ${item.id}). This product may have been deleted. Please clear your cart and add items again.`, 
-                        id: item.id,
-                        productId: item.id 
-                    }, { status: 400 });
-                }
-                product = altProduct;
+                return NextResponse.json({ 
+                    error: `Product not found (ID: ${item.id}). This product may have been deleted. Please clear your cart and add items again.`, 
+                    id: item.id,
+                    productId: item.id 
+                }, { status: 400 });
             }
 
             // Stock validation - enforce available stock and max per order (20)
@@ -351,10 +373,7 @@ export async function POST(request) {
             
             if (item.offerToken) {
                 try {
-                    const offer = await PersonalizedOffer.findOne({ 
-                        offerToken: item.offerToken,
-                        productId: item.id 
-                    }).lean();
+                    const offer = offerByKey.get(`${item.offerToken}:${String(item.id)}`);
                     
                     if (offer) {
                         // Validate offer
@@ -390,9 +409,7 @@ export async function POST(request) {
 
             if (item.freeGift?.campaignId) {
                 try {
-                    const campaign = await FreeGiftCampaign.findById(item.freeGift.campaignId)
-                        .select('_id storeId giftProductId isActive')
-                        .lean();
+                    const campaign = campaignById.get(String(item.freeGift.campaignId));
                     if (
                         campaign?.isActive &&
                         String(campaign.giftProductId) === String(item.id) &&
@@ -490,15 +507,12 @@ export async function POST(request) {
                 );
             }
             
-            // Existence checks
-            if (userId) {
-                const userExists = await User.findById(userId);
-                if (!userExists) {
-                    return NextResponse.json({ error: 'User not found' }, { status: 400 });
-                }
-            }
+            // Existence checks (parallel)
+            const [addressExists, storeExists] = await Promise.all([
+                addressId ? Address.findById(addressId).lean() : Promise.resolve(null),
+                storeId ? Store.findById(storeId).select('_id').lean() : Promise.resolve(null),
+            ]);
             if (addressId) {
-                const addressExists = await Address.findById(addressId);
                 if (!addressExists) {
                     return NextResponse.json({ error: 'Address not found' }, { status: 400 });
                 }
@@ -510,7 +524,6 @@ export async function POST(request) {
                 }
             }
             if (storeId) {
-                const storeExists = await Store.findById(storeId);
                 if (!storeExists) {
                     return NextResponse.json({ error: 'Store not found' }, { status: 400 });
                 }
@@ -787,8 +800,19 @@ export async function POST(request) {
             }
             
             // Assign sequential store order number starting at 612345
-            order.shortOrderNumber = await allocateShortOrderNumber(storeId);
-            await order.save();
+            if (isDeferredPaymentMethod(paymentMethod)) {
+                deferPostOrderTask('short-order-number', async () => {
+                    try {
+                        order.shortOrderNumber = await allocateShortOrderNumber(storeId);
+                        await order.save();
+                    } catch (numberError) {
+                        console.error('[orders] Deferred short order number failed:', numberError);
+                    }
+                });
+            } else {
+                order.shortOrderNumber = await allocateShortOrderNumber(storeId);
+                await order.save();
+            }
 
             orderIds.push(order._id.toString());
             createdOrderTotals.set(order._id.toString(), order.total);
@@ -825,29 +849,31 @@ export async function POST(request) {
                 );
             }
 
-            deferPostOrderTask('confirmation-notifications', async () => {
-                try {
-                    let customerEmail = '';
-                    let customerName = '';
+            if (!isDeferredPaymentMethod(paymentMethod)) {
+                deferPostOrderTask('confirmation-notifications', async () => {
+                    try {
+                        let customerEmail = '';
+                        let customerName = '';
 
-                    if (isGuest) {
-                        customerEmail = guestInfo.email;
-                        customerName = guestInfo.name;
-                    } else if (userId) {
-                        const userDoc = await User.findById(userId).lean();
-                        customerEmail = userDoc?.email || '';
-                        customerName = userDoc?.name || '';
+                        if (isGuest) {
+                            customerEmail = guestInfo.email;
+                            customerName = guestInfo.name;
+                        } else if (userId) {
+                            const userDoc = await User.findById(userId).lean();
+                            customerEmail = userDoc?.email || '';
+                            customerName = userDoc?.name || '';
+                        }
+
+                        await sendOrderCreatedConfirmationNotifications(
+                            order._id,
+                            paymentMethod,
+                            { customerEmail, customerName, isGuest },
+                        );
+                    } catch (notificationError) {
+                        console.error('Error sending order confirmation notifications:', notificationError);
                     }
-
-                    await sendOrderCreatedConfirmationNotifications(
-                        order._id,
-                        paymentMethod,
-                        { customerEmail, customerName, isGuest },
-                    );
-                } catch (notificationError) {
-                    console.error('Error sending order confirmation notifications:', notificationError);
-                }
-            });
+                });
+            }
 
             if (isDeferredPaymentMethod(paymentMethod) && !manualStoreOrder) {
                 deferPostOrderTask('awaiting-payment-abandoned-cart', () =>
@@ -1080,8 +1106,11 @@ export async function POST(request) {
         }
 
         // Referral reward: inviter gets wallet credit when invited customer places first purchase.
-        if (!isGuest && userId && existingOrderCountBeforeCheckout === 0 && orderIds.length > 0) {
+        if (!isGuest && userId && orderIds.length > 0) {
             deferPostOrderTask('referral-reward', async () => {
+                const totalOrdersForUser = await Order.countDocuments({ userId });
+                if (totalOrdersForUser !== orderIds.length) return;
+
                 const invitedUser = await User.findById(userId)
                     .select('referredByUserId referralRewardCreditedAt')
                     .lean();
