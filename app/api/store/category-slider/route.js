@@ -3,7 +3,7 @@ import CategorySlider from '@/models/CategorySlider';
 import { NextResponse } from 'next/server';
 import { invalidateCategorySliderCaches } from '@/lib/categorySliderCache';
 import { resolveCategorySliderAccess, buildCategorySliderFilter } from '@/lib/categorySliderAccess';
-import { normalizeCategorySliderBackground, normalizeCategorySliderSideImagePosition } from '@/lib/categorySliderTheme';
+import { normalizeCategorySliderBackground, normalizeCategorySliderSideImagePosition, normalizeCategorySliderAutoSlide, normalizeCategorySliderAutoSlideInterval } from '@/lib/categorySliderTheme';
 import { sortCategorySliders, backfillCategorySliderSortOrdersIfNeeded } from '@/lib/categorySliderOrder';
 
 function parseAuthHeader(req) {
@@ -45,6 +45,8 @@ export async function GET(req) {
       sideImagePosition: normalizeCategorySliderSideImagePosition(slider.sideImagePosition),
       cardsPerRow: slider.cardsPerRow === 5 ? 5 : 6,
       backgroundColor: normalizeCategorySliderBackground(slider.backgroundColor),
+      autoSlide: normalizeCategorySliderAutoSlide(slider.autoSlide),
+      autoSlideIntervalMs: normalizeCategorySliderAutoSlideInterval(slider.autoSlideIntervalMs),
       sortOrder: Number.isFinite(Number(slider.sortOrder)) ? Number(slider.sortOrder) : 0,
     }));
     
@@ -74,7 +76,7 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
     }
 
-    const { title, subtitle, productIds, sideImage, sideImagePosition, cardsPerRow, backgroundColor } = await req.json();
+    const { title, subtitle, productIds, sideImage, sideImagePosition, cardsPerRow, backgroundColor, autoSlide, autoSlideIntervalMs } = await req.json();
     console.log('=== 💾 POST SLIDER START ===');
     console.log('💾 Raw request body - subtitle:', subtitle);
     console.log('💾 Subtitle is null:', subtitle === null);
@@ -129,6 +131,8 @@ export async function POST(req) {
       sideImagePosition: normalizeCategorySliderSideImagePosition(sideImagePosition),
       cardsPerRow: Number(cardsPerRow) === 5 ? 5 : 6,
       backgroundColor: normalizeCategorySliderBackground(backgroundColor),
+      autoSlide: normalizeCategorySliderAutoSlide(autoSlide),
+      autoSlideIntervalMs: normalizeCategorySliderAutoSlideInterval(autoSlideIntervalMs),
       sortOrder: nextSortOrder,
     };
     console.log('💾 About to save with:', JSON.stringify(sliderData));

@@ -3,7 +3,7 @@ import CategorySlider from '@/models/CategorySlider';
 import { NextResponse } from 'next/server';
 import { invalidateCategorySliderCaches } from '@/lib/categorySliderCache';
 import { resolveCategorySliderAccess, buildCategorySliderFilter } from '@/lib/categorySliderAccess';
-import { normalizeCategorySliderBackground, normalizeCategorySliderSideImagePosition } from '@/lib/categorySliderTheme';
+import { normalizeCategorySliderBackground, normalizeCategorySliderSideImagePosition, normalizeCategorySliderAutoSlide, normalizeCategorySliderAutoSlideInterval } from '@/lib/categorySliderTheme';
 
 function parseAuthHeader(req) {
   const auth = req.headers.get('authorization') || req.headers.get('Authorization');
@@ -35,7 +35,7 @@ export async function PUT(req, { params }) {
       return NextResponse.json({ error: 'Slider ID is required' }, { status: 400 });
     }
 
-    const { title, subtitle, productIds, sideImage, sideImagePosition, cardsPerRow, backgroundColor } = await req.json();
+    const { title, subtitle, productIds, sideImage, sideImagePosition, cardsPerRow, backgroundColor, autoSlide, autoSlideIntervalMs } = await req.json();
     console.log('=== 💾 PUT SLIDER START ===');
     console.log('💾 Received ID:', id);
     console.log('💾 Received title:', title);
@@ -76,6 +76,8 @@ export async function PUT(req, { params }) {
       sideImagePosition: normalizeCategorySliderSideImagePosition(sideImagePosition),
       cardsPerRow: Number(cardsPerRow) === 5 ? 5 : 6,
       backgroundColor: normalizeCategorySliderBackground(backgroundColor),
+      autoSlide: normalizeCategorySliderAutoSlide(autoSlide),
+      autoSlideIntervalMs: normalizeCategorySliderAutoSlideInterval(autoSlideIntervalMs),
     };
 
     console.log('💾 About to update with:', JSON.stringify(updateData));
@@ -108,6 +110,8 @@ export async function PUT(req, { params }) {
         slider: {
           ...sliderData,
           backgroundColor: normalizeCategorySliderBackground(sliderData.backgroundColor),
+          autoSlide: normalizeCategorySliderAutoSlide(sliderData.autoSlide),
+          autoSlideIntervalMs: normalizeCategorySliderAutoSlideInterval(sliderData.autoSlideIntervalMs),
         },
       },
       { status: 200 }

@@ -223,11 +223,13 @@
         min-height: 0;
     }
 
-    .shop-showcase-banner-row:first-child {
+    .shop-showcase-banner-row--main,
+    .shop-showcase-banner-grid > .shop-showcase-banner-row:first-child {
         aspect-ratio: 3054 / 1080;
     }
 
-    .shop-showcase-banner-row:nth-child(2) {
+    .shop-showcase-banner-row--secondary,
+    .shop-showcase-banner-grid > .shop-showcase-banner-row:nth-child(2) {
         aspect-ratio: 3054 / 370;
     }
 
@@ -237,11 +239,13 @@
             height: auto;
         }
 
-        .shop-showcase-banner-row:first-child {
+        .shop-showcase-banner-row--main,
+        .shop-showcase-banner-grid > .shop-showcase-banner-row:first-child {
             aspect-ratio: 2.8 / 1;
         }
 
-        .shop-showcase-banner-row:nth-child(2) {
+        .shop-showcase-banner-row--secondary,
+        .shop-showcase-banner-grid > .shop-showcase-banner-row:nth-child(2) {
             aspect-ratio: 6 / 1;
         }
 
@@ -249,6 +253,8 @@
             display: none;
         }
     }
+
+    /* Mobile bottom nav — center offers slot uses inline styles in component */
 
     .shop-showcase-product-grid {
         display: grid;

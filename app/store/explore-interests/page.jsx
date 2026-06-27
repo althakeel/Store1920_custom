@@ -481,6 +481,11 @@ export default function ExploreInterestsPage() {
             <div className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm">
               <span className="text-slate-500">Recommended:</span>{' '}
               <span className="font-semibold text-slate-800">{selectedProducts.length} products</span>
+              {selectedProducts.length > 60 ? (
+                <span className="ms-2 text-xs font-normal text-slate-500">
+                  · 60 on homepage, then Load More
+                </span>
+              ) : null}
             </div>
             <button
               type="button"
@@ -548,7 +553,15 @@ export default function ExploreInterestsPage() {
 
                 <p className="mt-3 text-[11px] text-slate-400">
                   {enabled ? 'Section visible' : 'Section hidden'} · {selectedProducts.length} in Recommended
+                  {selectedProducts.length > 60 ? ' · 60 shown first, then Load More' : ''}
                 </p>
+                {selectedProducts.length > 60 ? (
+                  <div className="mt-3 flex justify-center">
+                    <span className="rounded-full border border-slate-200 bg-white px-4 py-1.5 text-[11px] font-semibold text-slate-600">
+                      Load More
+                    </span>
+                  </div>
+                ) : null}
               </div>
             </div>
 
@@ -590,6 +603,8 @@ export default function ExploreInterestsPage() {
                   <ul className="mt-2 space-y-1.5 text-[11px] leading-relaxed text-violet-800/90">
                     <li>• <strong>Recommended</strong> tab shows products you pick below.</li>
                     <li>• Other chips are built automatically from your catalog categories.</li>
+                    <li>• Only <strong>published products with images</strong> appear on the homepage (draft or image-less picks are skipped).</li>
+                    <li>• Up to <strong>250</strong> selected products can show in the Recommended grid (60 initially on the home page, then Show More).</li>
                     <li>• Changes apply live after you save.</li>
                   </ul>
                 </div>

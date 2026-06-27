@@ -26,6 +26,7 @@ import {
     isDashboardConvertedOrder,
 } from '@/lib/storeOrderInsights';
 import { getDisplayOrderNumber, getOrderCustomerDisplayName, formatStoreOrderDateTime, formatStoreOrderDateParts } from '@/lib/orderDisplay';
+import { getOrderTrafficSourceDisplay, getOrderTrafficSourceKey, TRAFFIC_SOURCE_FILTER_OPTIONS } from '@/lib/orderAttributionDisplay';
 import {
     getManualStoreOrderCreator,
     getOrderPaymentReferenceId,
@@ -220,6 +221,7 @@ export default function StoreOrders() {
     });
     const [filterStatus, setFilterStatus] = useState('ALL');
     const [filterPayment, setFilterPayment] = useState('ALL');
+    const [filterTrafficSource, setFilterTrafficSource] = useState('ALL');
     const [datePreset, setDatePreset] = useState('ALL');
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState('');
@@ -465,6 +467,10 @@ export default function StoreOrders() {
             dateFiltered = dateFiltered.filter((o) => normalizeOrderPaymentMethod(o) === filterPayment);
         }
 
+        if (filterTrafficSource !== 'ALL') {
+            dateFiltered = dateFiltered.filter((o) => getOrderTrafficSourceKey(o) === filterTrafficSource);
+        }
+
         if (orderSearchQuery.trim()) {
             dateFiltered = dateFiltered.filter((order) => orderMatchesSearch(order, orderSearchQuery));
         }
@@ -498,6 +504,23 @@ export default function StoreOrders() {
                 counts[method] += 1;
             }
         });
+        return counts;
+    }, [orders]);
+
+    const trafficSourceStats = useMemo(() => {
+        const counts = TRAFFIC_SOURCE_FILTER_OPTIONS.reduce((acc, option) => {
+            acc[option.value] = 0;
+            return acc;
+        }, {});
+
+        orders.forEach((order) => {
+            const key = getOrderTrafficSourceKey(order);
+            counts.ALL += 1;
+            if (counts[key] !== undefined) {
+                counts[key] += 1;
+            }
+        });
+
         return counts;
     }, [orders]);
 
@@ -975,7 +998,7 @@ export default function StoreOrders() {
 
     useEffect(() => {
         setCurrentPage(1);
-    }, [filterStatus, filterPayment, fromDate, toDate, datePreset, ordersPerPage, orderSearchQuery]);
+    }, [filterStatus, filterPayment, filterTrafficSource, fromDate, toDate, datePreset, ordersPerPage, orderSearchQuery]);
 
     useEffect(() => {
         if (currentPage > totalPages) {
@@ -1685,6 +1708,41 @@ export default function StoreOrders() {
                 </div>
             </div>
 
+            {/* Traffic source filters */}
+            <div className="mb-6">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Traffic source</p>
+                <div className="flex flex-wrap gap-2">
+                    {TRAFFIC_SOURCE_FILTER_OPTIONS.map((option) => (
+                        <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => setFilterTrafficSource(option.value)}
+                            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all ${
+                                filterTrafficSource === option.value
+                                    ? 'bg-violet-700 text-white shadow-md'
+                                    : 'bg-gray-100 text-slate-700 hover:bg-gray-200'
+                            }`}
+                        >
+                            <span>{option.label}</span>
+                            {option.value !== 'ALL' && trafficSourceStats[option.value] > 0 ? (
+                                <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${
+                                    filterTrafficSource === option.value ? 'bg-violet-900 text-white' : 'bg-white text-slate-600'
+                                }`}>
+                                    {trafficSourceStats[option.value]}
+                                </span>
+                            ) : null}
+                            {option.value === 'ALL' ? (
+                                <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${
+                                    filterTrafficSource === option.value ? 'bg-violet-900 text-white' : 'bg-white text-slate-600'
+                                }`}>
+                                    {trafficSourceStats.ALL}
+                                </span>
+                            ) : null}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
             {/* Date Range Filters */}
             <div className="mb-6 bg-white border border-gray-200 rounded-lg p-4 flex flex-col gap-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1978,6 +2036,7 @@ export default function StoreOrders() {
                                 />
                                 <th className="px-4 py-3">Payment</th>
                                 <th className="px-4 py-3">Tags</th>
+                                <th className="px-4 py-3">Traffic Source</th>
                                 <th className="px-4 py-3">Status</th>
                                 <th className="px-4 py-3">Tracking</th>
                                 <SortableOrderTableHeader
@@ -2042,6 +2101,29 @@ export default function StoreOrders() {
                                                             {tag.label}
                                                         </span>
                                                     ))}
+                                                </div>
+                                            );
+                                        })()}
+                                    </td>
+                                    <td className="px-4 py-3">
+                                        {(() => {
+                                            const trafficSource = getOrderTrafficSourceDisplay(order);
+                                            return (
+                                                <div className="max-w-[180px]">
+                                                    <span
+                                                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${trafficSource.className}`}
+                                                        title={trafficSource.title || undefined}
+                                                    >
+                                                        {trafficSource.label}
+                                                    </span>
+                                                    {trafficSource.detail ? (
+                                                        <p
+                                                            className="mt-1 truncate text-[11px] text-slate-500"
+                                                            title={trafficSource.title || trafficSource.detail}
+                                                        >
+                                                            {trafficSource.detail}
+                                                        </p>
+                                                    ) : null}
                                                 </div>
                                             );
                                         })()}
@@ -2562,6 +2644,25 @@ export default function StoreOrders() {
                                     <div>
                                         <p className="text-slate-500">City</p>
                                         <p className="font-medium text-slate-900">{selectedOrder.shippingAddress?.city || '—'}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-slate-500">Traffic Source</p>
+                                        {(() => {
+                                            const trafficSource = getOrderTrafficSourceDisplay(selectedOrder);
+                                            return (
+                                                <div>
+                                                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${trafficSource.className}`}>
+                                                        {trafficSource.label}
+                                                    </span>
+                                                    {trafficSource.detail ? (
+                                                        <p className="mt-1 text-xs text-slate-600">{trafficSource.detail}</p>
+                                                    ) : null}
+                                                    {trafficSource.title ? (
+                                                        <p className="mt-1 whitespace-pre-line text-[11px] text-slate-400">{trafficSource.title}</p>
+                                                    ) : null}
+                                                </div>
+                                            );
+                                        })()}
                                     </div>
                                     {selectedOrder.shippingAddress?.district && selectedOrder.shippingAddress.district.trim() !== '' && (
                                         <div>

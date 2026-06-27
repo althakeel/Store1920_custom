@@ -9,9 +9,13 @@ import Loading from '@/components/Loading';
 import { compressImageForUpload } from '@/lib/compressImageForUpload';
 import {
   CATEGORY_SLIDER_BACKGROUND_PRESETS,
+  CATEGORY_SLIDER_AUTO_SLIDE_SPEED_PRESETS,
   DEFAULT_CATEGORY_SLIDER_BACKGROUND,
+  DEFAULT_CATEGORY_SLIDER_AUTO_SLIDE_INTERVAL_MS,
   normalizeCategorySliderBackground,
   normalizeCategorySliderSideImagePosition,
+  normalizeCategorySliderAutoSlide,
+  normalizeCategorySliderAutoSlideInterval,
 } from '@/lib/categorySliderTheme';
 import { sortCategorySliders } from '@/lib/categorySliderOrder';
 
@@ -32,6 +36,8 @@ export default function CategorySliderPage() {
     sideImage: '',
     sideImagePosition: 'left',
     cardsPerRow: 6,
+    autoSlide: false,
+    autoSlideIntervalMs: DEFAULT_CATEGORY_SLIDER_AUTO_SLIDE_INTERVAL_MS,
     backgroundColor: DEFAULT_CATEGORY_SLIDER_BACKGROUND,
     productIds: [],
   });
@@ -147,6 +153,8 @@ export default function CategorySliderPage() {
           sideImage: section.sideImage ? String(section.sideImage).trim() : '',
           sideImagePosition: normalizeCategorySliderSideImagePosition(section.sideImagePosition),
           cardsPerRow: section.cardsPerRow === 5 ? 5 : 6,
+          autoSlide: normalizeCategorySliderAutoSlide(section.autoSlide),
+          autoSlideIntervalMs: normalizeCategorySliderAutoSlideInterval(section.autoSlideIntervalMs),
           backgroundColor: normalizeCategorySliderBackground(section.backgroundColor),
         };
       });
@@ -186,7 +194,7 @@ export default function CategorySliderPage() {
   };
 
   const handleAddSlider = () => {
-    setFormData({ title: '', subtitle: '', sideImage: '', sideImagePosition: 'left', cardsPerRow: 6, backgroundColor: DEFAULT_CATEGORY_SLIDER_BACKGROUND, productIds: [] });
+    setFormData({ title: '', subtitle: '', sideImage: '', sideImagePosition: 'left', cardsPerRow: 6, autoSlide: false, autoSlideIntervalMs: DEFAULT_CATEGORY_SLIDER_AUTO_SLIDE_INTERVAL_MS, backgroundColor: DEFAULT_CATEGORY_SLIDER_BACKGROUND, productIds: [] });
     setEditingIdx(null);
     setShowForm(true);
   };
@@ -210,6 +218,8 @@ export default function CategorySliderPage() {
       sideImage: slider.sideImage ? String(slider.sideImage).trim() : '',
       sideImagePosition: normalizeCategorySliderSideImagePosition(slider.sideImagePosition),
       cardsPerRow: slider.cardsPerRow === 5 ? 5 : 6,
+      autoSlide: normalizeCategorySliderAutoSlide(slider.autoSlide),
+      autoSlideIntervalMs: normalizeCategorySliderAutoSlideInterval(slider.autoSlideIntervalMs),
       backgroundColor: normalizeCategorySliderBackground(slider.backgroundColor),
       productIds: slider.productIds || []
     };
@@ -355,6 +365,8 @@ export default function CategorySliderPage() {
           sideImage: formData.sideImage ? String(formData.sideImage).trim() : '',
           sideImagePosition: normalizeCategorySliderSideImagePosition(formData.sideImagePosition),
           cardsPerRow: formData.cardsPerRow === 5 ? 5 : 6,
+          autoSlide: normalizeCategorySliderAutoSlide(formData.autoSlide),
+          autoSlideIntervalMs: normalizeCategorySliderAutoSlideInterval(formData.autoSlideIntervalMs),
           backgroundColor: normalizeCategorySliderBackground(formData.backgroundColor),
           productIds: normalizeProductIds(formData.productIds),
         };
@@ -399,6 +411,8 @@ export default function CategorySliderPage() {
           sideImage: formData.sideImage ? String(formData.sideImage).trim() : '',
           sideImagePosition: normalizeCategorySliderSideImagePosition(formData.sideImagePosition),
           cardsPerRow: formData.cardsPerRow === 5 ? 5 : 6,
+          autoSlide: normalizeCategorySliderAutoSlide(formData.autoSlide),
+          autoSlideIntervalMs: normalizeCategorySliderAutoSlideInterval(formData.autoSlideIntervalMs),
           backgroundColor: normalizeCategorySliderBackground(formData.backgroundColor),
           productIds: normalizeProductIds(formData.productIds),
         };
@@ -604,7 +618,7 @@ export default function CategorySliderPage() {
                             <span className="text-xs text-gray-500">Desktop side image</span>
                           </div>
                         ) : null}
-                        <p className="text-sm text-gray-500 mt-1">📦 {slider.productIds?.length || 0} products · 🖥️ {slider.cardsPerRow === 5 ? 5 : 6} cards/row</p>
+                        <p className="text-sm text-gray-500 mt-1">📦 {slider.productIds?.length || 0} products · 🖥️ {slider.cardsPerRow === 5 ? 5 : 6} cards/row{slider.autoSlide ? ` · Auto slide ${Math.round((normalizeCategorySliderAutoSlideInterval(slider.autoSlideIntervalMs) || 4000) / 1000)}s` : ''}</p>
                         {slider.storeId && showAllSliders && (
                           <p className="text-xs text-gray-400 mt-1">Store ID: {slider.storeId.substring(0, 8)}...</p>
                         )}
@@ -864,6 +878,66 @@ export default function CategorySliderPage() {
                         );
                       })}
                     </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                      Auto slide
+                    </label>
+                    <p className="mb-3 text-xs text-gray-500">
+                      When enabled, the slider on the homepage scrolls automatically on a loop.
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        { value: false, label: 'Off' },
+                        { value: true, label: 'On' },
+                      ].map(({ value, label }) => {
+                        const selected = normalizeCategorySliderAutoSlide(formData.autoSlide) === value;
+                        return (
+                          <button
+                            key={label}
+                            type="button"
+                            onClick={() => setFormData((prev) => ({ ...prev, autoSlide: value }))}
+                            className={`rounded-lg border-2 px-4 py-3 text-sm font-semibold transition ${
+                              selected
+                                ? 'border-blue-600 bg-blue-50 text-blue-700'
+                                : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {normalizeCategorySliderAutoSlide(formData.autoSlide) ? (
+                      <div className="mt-4">
+                        <label className="block text-sm font-bold text-gray-700 mb-2">
+                          Slide speed
+                        </label>
+                        <p className="mb-3 text-xs text-gray-500">
+                          Time between each automatic scroll on the homepage.
+                        </p>
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                          {CATEGORY_SLIDER_AUTO_SLIDE_SPEED_PRESETS.map(({ label, value }) => {
+                            const selected = normalizeCategorySliderAutoSlideInterval(formData.autoSlideIntervalMs) === value;
+                            return (
+                              <button
+                                key={value}
+                                type="button"
+                                onClick={() => setFormData((prev) => ({ ...prev, autoSlideIntervalMs: value }))}
+                                className={`rounded-lg border-2 px-3 py-3 text-sm font-semibold transition ${
+                                  selected
+                                    ? 'border-blue-600 bg-blue-50 text-blue-700'
+                                    : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                                }`}
+                              >
+                                {label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
 
                   {/* Subtitle Preview */}

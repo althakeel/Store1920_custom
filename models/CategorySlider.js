@@ -43,6 +43,14 @@ const CategorySliderSchema = new mongoose.Schema(
       default: '#f3f0ff',
       trim: true,
     },
+    autoSlide: {
+      type: Boolean,
+      default: false,
+    },
+    autoSlideIntervalMs: {
+      type: Number,
+      default: 4000,
+    },
     sortOrder: {
       type: Number,
       default: 0,
@@ -64,6 +72,14 @@ if (mongoose.models.CategorySlider && !mongoose.models.CategorySlider.schema.pat
 }
 
 if (mongoose.models.CategorySlider && !mongoose.models.CategorySlider.schema.paths.backgroundColor) {
+  delete mongoose.models.CategorySlider;
+}
+
+if (mongoose.models.CategorySlider && !mongoose.models.CategorySlider.schema.paths.autoSlide) {
+  delete mongoose.models.CategorySlider;
+}
+
+if (mongoose.models.CategorySlider && !mongoose.models.CategorySlider.schema.paths.autoSlideIntervalMs) {
   delete mongoose.models.CategorySlider;
 }
 

@@ -204,7 +204,7 @@ const Footer = () => {
     };
 
     return (
-        <footer className="bg-black text-slate-200 border-t border-slate-800 pt-0 lg:pt-12" dir={isArabic ? 'rtl' : 'ltr'}>
+        <footer className="bg-black text-slate-200 border-t border-slate-800 pt-0 pb-[5.25rem] lg:pb-12 lg:pt-12" dir={isArabic ? 'rtl' : 'ltr'}>
             <div className={HOME_SECTION_INNER_CLASS}>
                 {/* Main Footer Content */}
                 <div className="py-2 grid grid-cols-2 gap-2 md:grid-cols-2 lg:grid-cols-6 md:gap-4 lg:gap-6">

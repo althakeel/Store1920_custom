@@ -12,13 +12,49 @@ import {
   CATEGORY_SLIDER_PANEL_CLASS,
   SIDE_IMAGE_SLIDER_PANEL_CLASS,
   getSideImageLayoutCardsPerRow,
+  getCategorySliderProductCardClass,
 } from '@/lib/storefrontCarousel'
-import { normalizeCategorySliderBackground, normalizeCategorySliderSideImagePosition } from '@/lib/categorySliderTheme'
-import { useStorefrontI18n } from '@/lib/useStorefrontI18n'
+import { normalizeCategorySliderBackground, normalizeCategorySliderSideImagePosition, normalizeCategorySliderAutoSlide, normalizeCategorySliderAutoSlideInterval } from '@/lib/categorySliderTheme'
 import { HomeSideImageSliderSkeleton } from '@/components/home/HomeSectionSkeletons'
 import BannerSlider from '@/components/BannerSlider'
 
-const Section4 = ({ sections, loading = false }) => {
+const Section4 = ({ sections: initialSections = null, loading: loadingProp = false }) => {
+  const shouldSelfFetch = initialSections == null
+  const [sections, setSections] = useState(Array.isArray(initialSections) ? initialSections : [])
+  const [loading, setLoading] = useState(loadingProp || shouldSelfFetch)
+
+  useEffect(() => {
+    if (Array.isArray(initialSections) && initialSections.length > 0) {
+      setSections(initialSections)
+      setLoading(false)
+      return undefined
+    }
+
+    if (initialSections !== null && initialSections !== undefined) {
+      return undefined
+    }
+
+    let cancelled = false
+
+    fetch('/api/public/featured-sections')
+      .then((response) => (response.ok ? response.json() : { sections: [] }))
+      .then((data) => {
+        if (!cancelled) {
+          setSections(Array.isArray(data?.sections) ? data.sections : [])
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setSections([])
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [initialSections])
+
   const bannerInsertAfterIndex = sections.length > 1 ? Math.floor((sections.length - 1) / 2) : -1
 
   if (loading) {
@@ -61,7 +97,7 @@ const SkeletonLoader = ({ hasSideImage = false, cardsPerRow = 6 }) => {
       {[...Array(cardsPerRow === 5 ? 5 : 6)].map((_, idx) => (
         <div
           key={idx}
-          className={`${CAROUSEL_PRODUCT_CARD_CLASS} overflow-hidden rounded-[2px] border border-gray-100 bg-white animate-pulse`}
+          className={`${getCategorySliderProductCardClass(cardsPerRow)} overflow-hidden rounded-[2px] border border-gray-100 bg-white animate-pulse`}
         >
           <div className="aspect-square w-full bg-gray-100" />
           <div className="space-y-2 p-3">
@@ -82,7 +118,6 @@ function resolveSectionProducts(section) {
 }
 
 const HorizontalSlider = ({ section }) => {
-  const { isArabic } = useStorefrontI18n()
   const embeddedProducts = useMemo(() => resolveSectionProducts(section), [section.products])
   const [sectionProducts, setSectionProducts] = useState(embeddedProducts)
   const [loading, setLoading] = useState(
@@ -153,6 +188,9 @@ const HorizontalSlider = ({ section }) => {
   const imageFirst = sideImagePosition === 'left'
   const cardsPerRow = getSideImageLayoutCardsPerRow(hasSideImage, section.cardsPerRow)
   const panelBackground = normalizeCategorySliderBackground(section.backgroundColor)
+  const shouldAutoSlide =
+    sectionProducts.length > 1 &&
+    (normalizeCategorySliderAutoSlide(section.autoSlide) || hasSideImage)
 
   const sideImageBlock = hasSideImage ? (
     <div className={CATEGORY_SLIDER_SIDE_IMAGE_CLASS}>
@@ -173,11 +211,16 @@ const HorizontalSlider = ({ section }) => {
       style={{ '--panel-bg': panelBackground }}
     >
       <div className={`${hasSideImage ? 'mb-3 lg:mb-2 lg:shrink-0' : 'mb-3 lg:mb-5'}`}>
-        <h2 className={`font-bold text-gray-900 ${hasSideImage ? 'text-lg lg:line-clamp-1 lg:text-base xl:text-lg' : 'text-xl lg:text-2xl'}`}>
+        <h2 className={`text-start font-bold text-gray-900 ${hasSideImage ? 'text-lg lg:line-clamp-1 lg:text-base xl:text-lg' : 'text-xl lg:text-2xl'}`}>
           {section.title || section.category}
         </h2>
         {section.subtitle ? (
-          <p className={`text-gray-500 ${hasSideImage ? 'mt-0.5 line-clamp-2 text-xs lg:line-clamp-1 lg:text-[10px] xl:text-xs' : 'mt-0.5 text-xs lg:text-sm'}`}>{section.subtitle}</p>
+          <p
+            dir="auto"
+            className={`text-start text-gray-500 ${hasSideImage ? 'mt-0.5 line-clamp-2 text-xs lg:line-clamp-1 lg:text-[10px] xl:text-xs' : 'mt-0.5 text-xs lg:text-sm'}`}
+          >
+            {section.subtitle}
+          </p>
         ) : null}
       </div>
 
@@ -191,10 +234,14 @@ const HorizontalSlider = ({ section }) => {
             products={sectionProducts}
             priorityCount={hasSideImage ? 5 : 4}
             cardsPerRow={cardsPerRow}
+            cardWidthVariant="categorySlider"
+            autoSlide={shouldAutoSlide}
+            autoSlideIntervalMs={normalizeCategorySliderAutoSlideInterval(section.autoSlideIntervalMs)}
             compact={hasSideImage}
             compactDesktopOnly={hasSideImage}
             compactBottom={hasSideImage}
-            showMobileArrows
+            showArrows={!shouldAutoSlide}
+            showMobileArrows={!shouldAutoSlide}
             edgeBleed
             className="w-full min-w-0 lg:overflow-hidden"
           />
@@ -205,10 +252,7 @@ const HorizontalSlider = ({ section }) => {
 
   return (
     <div className="w-full min-w-0 max-w-full lg:overflow-hidden">
-      <div
-        className={`${hasSideImage ? CATEGORY_SLIDER_LAYOUT_CLASS : ''}`}
-        dir={hasSideImage ? (isArabic ? 'rtl' : 'ltr') : undefined}
-      >
+      <div className={hasSideImage ? CATEGORY_SLIDER_LAYOUT_CLASS : ''}>
         {imageFirst ? sideImageBlock : null}
         {sliderPanel}
         {!imageFirst ? sideImageBlock : null}

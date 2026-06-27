@@ -73,7 +73,7 @@ export default function SitemapPage() {
     {
       title: '👤 Account & Orders',
       links: [
-        { text: 'My Profile', path: '/profile', description: 'User profile settings' },
+        { text: 'My Profile', path: '/dashboard/profile', description: 'User profile settings' },
         { text: 'My Orders', path: '/orders', description: 'View all orders' },
         { text: 'Track Order', path: '/track-order', description: 'Track shipment' },
         { text: 'My Wishlist', path: '/wishlist', description: 'Saved items' },

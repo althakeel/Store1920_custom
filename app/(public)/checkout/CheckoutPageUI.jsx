@@ -33,6 +33,7 @@ import { GTM_EVENTS, gtmDedupeKey } from '@/lib/gtmEvents';
 import { getCartEntryProductId, getCartEntryQuantity, isFreeGiftEntry } from "@/lib/freeGiftUtils";
 import { resolveCartLinePricing } from "@/lib/bulkBundleCart";
 import { decrementCartItem, incrementCartItem } from "@/lib/bundleCartActions";
+import { adjustBundleCartTier, isBulkBundleProduct } from '@/lib/bulkBundleCart';
 import { STORE1920_LOGO_PATH } from "@/lib/brandLogo";
 import {
   rememberPendingCheckoutOrder,
@@ -53,6 +54,7 @@ import Creditimage3 from '../../../assets/creditcards/20.webp';
 import Creditimage4 from '../../../assets/creditcards/11.webp';
 import { STORE_CURRENCY } from '@/lib/storeCurrency';
 import { getProductSubtitle } from '@/lib/productDisplay';
+import { getProductPath } from '@/lib/productUrl';
 import { collectCheckoutValidationIssues, scrollToCheckoutField } from '@/lib/checkoutValidation';
 import CheckoutValidationAlert from '@/components/CheckoutValidationAlert';
 import toast from 'react-hot-toast';
@@ -80,6 +82,7 @@ function getGuestCountryCode(countryName) {
 }
 
 const CHECKOUT_ORDER_PREVIEW_LIMIT = 4;
+const CHECKOUT_RETURN_PATH_KEY = 'store1920_checkout_return_path';
 
 export default function CheckoutPage() {
   const { user, loading: authLoading, getToken } = useAuth();
@@ -124,6 +127,8 @@ export default function CheckoutPage() {
   const [showSignIn, setShowSignIn] = useState(false);
   const [showAddressModal, setShowAddressModal] = useState(false);
   const [showAllOrderItemsModal, setShowAllOrderItemsModal] = useState(false);
+  const [removeLastItemConfirm, setRemoveLastItemConfirm] = useState(null);
+  const [leavingCheckout, setLeavingCheckout] = useState(false);
   const [editingAddressId, setEditingAddressId] = useState(null);
   const [abandonSaved, setAbandonSaved] = useState(false);
   const [abandonHeartbeat, setAbandonHeartbeat] = useState(0);
@@ -259,6 +264,22 @@ export default function CheckoutPage() {
   };
 
   const router = useRouter();
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      if (sessionStorage.getItem(CHECKOUT_RETURN_PATH_KEY)) return;
+      const ref = document.referrer;
+      if (!ref) return;
+      const refUrl = new URL(ref, window.location.origin);
+      if (refUrl.origin !== window.location.origin) return;
+      const path = `${refUrl.pathname}${refUrl.search}`;
+      if (path === '/checkout' || path === '/cart') return;
+      sessionStorage.setItem(CHECKOUT_RETURN_PATH_KEY, path);
+    } catch {
+      // Ignore referrer parsing failures.
+    }
+  }, []);
 
   // If the customer returns to checkout after abandoning Tabby/Tamara/Stripe, cancel the unpaid order.
   useEffect(() => {
@@ -918,13 +939,19 @@ export default function CheckoutPage() {
 
   // Redirect to shop when cart is empty (must be a top-level hook)
   useEffect(() => {
-    if (!authLoading && (!cartItems || Object.keys(cartItems).length === 0) && !placingOrder && !showPrepaidModal) {
+    if (
+      !authLoading
+      && (!cartItems || Object.keys(cartItems).length === 0)
+      && !placingOrder
+      && !showPrepaidModal
+      && !leavingCheckout
+    ) {
       const timer = setTimeout(() => {
         router.push('/shop');
       }, 3000);
       return () => clearTimeout(timer);
     }
-  }, [authLoading, cartItems, router, placingOrder, showPrepaidModal]);
+  }, [authLoading, cartItems, router, placingOrder, showPrepaidModal, leavingCheckout]);
 
   const checkoutSelectClass =
     'w-full rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-left text-sm text-slate-900 outline-none transition focus:border-[#f59e0b] focus:bg-white focus:ring-4 focus:ring-[#fde7c2]';
@@ -1013,7 +1040,6 @@ export default function CheckoutPage() {
     const issues = rawIssues.map((issue) => ({ ...issue, label: getValidationLabel(issue) }));
     setValidationIssues(issues);
     setInvalidFieldIds(new Set(rawIssues.map((issue) => issue.id)));
-    setValidationAlertOpen(true);
     scrollToCheckoutField(issues[0]?.id);
 
     const firstIssue = rawIssues[0];
@@ -1407,19 +1433,27 @@ export default function CheckoutPage() {
     }
   }, [form.payment, totalAfterWallet, tabbyPublicKey, tabbyMerchantCode, tabbyCardLoaded]);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (e, paymentOverride = null) => {
+    e?.preventDefault?.();
     setFormError("");
     setSidebarPayError("");
 
-    if (isPaymentMissing) {
+    const payment = paymentOverride || form.payment;
+    if (paymentOverride && paymentOverride !== form.payment) {
+      setForm((f) => ({ ...f, payment: paymentOverride }));
+    }
+
+    const paymentMissing = needsPaymentSelection && !payment;
+    const invalidCodSelection = payment === 'cod' && isCODDisabledForOrder;
+
+    if (paymentMissing) {
       setInvalidFieldIds(new Set(['checkout-payment']));
       toast.error(t('checkout.selectPaymentRequired'), { id: 'checkout-validation' });
       scrollToCheckoutField('checkout-payment');
       return;
     }
 
-    if (isInvalidPaymentSelection) {
+    if (invalidCodSelection) {
       const codMessage = hasPersonalizedOfferItem
         ? 'COD is not available for personalized offer products. Please use online payment.'
         : shippingSetting?.enableCOD === false
@@ -1499,10 +1533,11 @@ export default function CheckoutPage() {
       setFormError(mainPhoneError);
       return;
     }
+
+    setPlacingOrder(true);
     
     // For card payment, use Stripe Checkout
-    if (form.payment === 'card') {
-      setPlacingOrder(true);
+    if (payment === 'card') {
       if (getPhoneInputError(resolvedPhone, phoneCodeForValidation)) {
         setFormError(getPhoneInputError(resolvedPhone, phoneCodeForValidation));
         setPlacingOrder(false);
@@ -1567,8 +1602,7 @@ export default function CheckoutPage() {
     }
 
     // Tamara BNPL payment
-    if (form.payment === 'tamara') {
-      setPlacingOrder(true);
+    if (payment === 'tamara') {
       try {
         const itemsForTamara = buildCheckoutItems();
 
@@ -1615,8 +1649,7 @@ export default function CheckoutPage() {
     }
 
     // Tabby BNPL payment
-    if (form.payment === 'tabby') {
-      setPlacingOrder(true);
+    if (payment === 'tabby') {
       try {
         const itemsForTabby = buildCheckoutItems();
 
@@ -1666,24 +1699,24 @@ export default function CheckoutPage() {
     // Validate phone number for COD
     if (getPhoneInputError(resolvedPhone, phoneCodeForValidation)) {
       setFormError(getPhoneInputError(resolvedPhone, phoneCodeForValidation));
+      setPlacingOrder(false);
       return;
     }
     
-    setPlacingOrder(true);
     try {
       let addressId = form.addressId;
       // If logged in and no address selected, skip address creation for now
       // Orders can work without addressId
       
       // Validate payment method for remaining balance
-      if (!form.payment) {
+      if (!payment) {
         setFormError("Please select a payment method.");
         setPlacingOrder(false);
         return;
       }
 
       // Validate COD limit
-      if (form.payment === 'cod') {
+      if (payment === 'cod') {
         if (hasPersonalizedOfferItem) {
           setFormError('COD is not available for personalized offer products. Please use online payment.');
           setPlacingOrder(false);
@@ -1718,7 +1751,7 @@ export default function CheckoutPage() {
       // Build items directly from cartItems to preserve variantOptions
       const itemsFromState = buildCheckoutItems();
       
-      const finalPaymentMethod = form.payment === 'cod' ? 'COD' : form.payment.toUpperCase();
+      const finalPaymentMethod = payment === 'cod' ? 'COD' : payment.toUpperCase();
 
       if (user) {
         console.log('Building logged-in user payload...');
@@ -1821,8 +1854,30 @@ export default function CheckoutPage() {
       }
       
       console.log('Final fetch options:', { ...fetchOptions, body: 'payload' });
-      
-      const res = await fetch("/api/orders", fetchOptions);
+
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timeoutId = controller
+        ? window.setTimeout(() => controller.abort(), 45000)
+        : null;
+
+      let res;
+      try {
+        res = await fetch("/api/orders", {
+          ...fetchOptions,
+          ...(controller ? { signal: controller.signal } : {}),
+        });
+      } catch (fetchErr) {
+        if (fetchErr?.name === 'AbortError') {
+          setFormError('Order is taking too long. Please try again.');
+        } else {
+          setFormError(fetchErr.message || 'Order failed. Please try again.');
+        }
+        setPlacingOrder(false);
+        return;
+      } finally {
+        if (timeoutId) window.clearTimeout(timeoutId);
+      }
+
       if (!res.ok) {
         const errorText = await res.text();
         let msg = errorText;
@@ -1843,17 +1898,11 @@ export default function CheckoutPage() {
       }
       const data = await res.json();
       if (data._id || data.id) {
-        // Order created successfully - clear cart and show prepaid upsell before redirect
         const createdOrderId = data._id || data.id;
-        const orderTotal = data.total || totalAfterWallet;
         dispatch(clearCart());
-        if (totalAfterWallet <= 0) {
-          router.push(`/order-success?orderId=${createdOrderId}`);
-        } else {
-          setUpsellOrderId(createdOrderId);
-          setUpsellOrderTotal(orderTotal);
-          setShowPrepaidModal(true);
-        }
+        setPlacingOrder(false);
+        setNavigatingToSuccess(true);
+        router.push(`/order-success?orderId=${createdOrderId}`);
       } else {
         // No order ID returned - treat as failure
         setFormError("Order creation failed. Please try again.");
@@ -1870,6 +1919,20 @@ export default function CheckoutPage() {
       setPlacingOrder(false);
     }
   };
+
+  const handlePaymentMethodClick = (method, { disabled = false } = {}) => {
+    if (placingOrder || payingNow || disabled) return;
+    setInvalidFieldIds(new Set());
+    setValidationAlertOpen(false);
+    setSidebarPayError('');
+    handleSubmit({ preventDefault() {} }, method);
+  };
+
+  const renderPaymentActionLabel = () => (
+    <span className="shrink-0 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-bold text-white sm:text-sm">
+      {t('checkout.payNow')}
+    </span>
+  );
 
   const handlePayNowForExistingOrder = async () => {
     if (!upsellOrderId) return;
@@ -1982,6 +2045,8 @@ export default function CheckoutPage() {
   };
 
   if (authLoading) return null;
+
+  if (leavingCheckout) return null;
   
   if ((!cartItems || Object.keys(cartItems).length === 0) && !showPrepaidModal && !navigatingToSuccess) {
     return (
@@ -2055,6 +2120,77 @@ export default function CheckoutPage() {
   const checkoutOrderPreviewItems = cartArray.slice(0, CHECKOUT_ORDER_PREVIEW_LIMIT);
   const checkoutOrderHiddenCount = Math.max(0, cartArray.length - CHECKOUT_ORDER_PREVIEW_LIMIT);
 
+  const getRemovableCartItems = () => cartArray.filter((i) => !i._isFreeGift);
+
+  const wouldDecrementRemoveItem = (item) => {
+    const cartKey = item._cartKey || item._id;
+    const entry = cartItems?.[cartKey];
+    if (item && isBulkBundleProduct(item)) {
+      return adjustBundleCartTier(entry, item, 'down') === 'remove';
+    }
+    return getCartEntryQuantity(entry) <= 1;
+  };
+
+  const navigateAwayFromCheckout = (product) => {
+    let returnPath = null;
+    try {
+      returnPath = sessionStorage.getItem(CHECKOUT_RETURN_PATH_KEY);
+      sessionStorage.removeItem(CHECKOUT_RETURN_PATH_KEY);
+    } catch {
+      // Ignore sessionStorage failures.
+    }
+
+    const productPath = product?.slug || product?._id ? getProductPath(product) : '/shop';
+    const safeReturn = returnPath && returnPath !== '/checkout' && returnPath !== '/cart'
+      ? returnPath
+      : null;
+
+    if (safeReturn) {
+      router.replace(safeReturn);
+      return;
+    }
+
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      router.back();
+      return;
+    }
+
+    router.replace(productPath);
+  };
+
+  const handleCheckoutRemoveItem = (item) => {
+    const cartKey = item._cartKey || item._id;
+    if (getRemovableCartItems().length <= 1) {
+      setRemoveLastItemConfirm({ cartKey, product: item });
+      return;
+    }
+    dispatch(deleteItemFromCart({ productId: cartKey }));
+  };
+
+  const handleCheckoutDecrementItem = (item) => {
+    const cartKey = item._cartKey || item._id;
+    const entry = cartItems?.[cartKey];
+    if (getRemovableCartItems().length <= 1 && wouldDecrementRemoveItem(item)) {
+      setRemoveLastItemConfirm({ cartKey, product: item });
+      return;
+    }
+    decrementCartItem(dispatch, {
+      productId: cartKey,
+      entry,
+      product: item,
+    });
+  };
+
+  const confirmRemoveLastItem = () => {
+    if (!removeLastItemConfirm) return;
+    const { cartKey, product } = removeLastItemConfirm;
+    setRemoveLastItemConfirm(null);
+    setShowAllOrderItemsModal(false);
+    setLeavingCheckout(true);
+    dispatch(deleteItemFromCart({ productId: cartKey }));
+    navigateAwayFromCheckout(product);
+  };
+
   const renderCheckoutOrderItem = (item) => (
     <div key={item._cartKey || item._id} className="flex items-center bg-gray-50 border border-gray-200 rounded-lg p-3 gap-3">
       <img src={item.image || item.images?.[0] || '/placeholder.png'} alt={item.name} className="w-14 h-14 object-cover rounded-md border shrink-0" />
@@ -2078,13 +2214,7 @@ export default function CheckoutPage() {
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  const cartKey = item._cartKey || item._id;
-                  const entry = cartItems?.[cartKey];
-                  decrementCartItem(dispatch, {
-                    productId: cartKey,
-                    entry,
-                    product: item,
-                  });
+                  handleCheckoutDecrementItem(item);
                 }}
               >
                 -
@@ -2115,7 +2245,7 @@ export default function CheckoutPage() {
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                dispatch(deleteItemFromCart({ productId: item._cartKey || item._id }));
+                handleCheckoutRemoveItem(item);
               }}
             >
               {t('checkout.remove')}
@@ -2660,166 +2790,169 @@ export default function CheckoutPage() {
                   </div>
                 </div>
               ) : null}
-              <h2 className="text-xl font-bold mb-3 mt-4 text-gray-900">{t('checkout.paymentMethods')}</h2>
+              <h2 className="text-xl font-bold mb-1 mt-4 text-gray-900">{t('checkout.paymentMethods')}</h2>
+              <p className="mb-3 text-sm text-slate-500">{t('checkout.payNowHint')}</p>
               {fieldRequiredHint('checkout-payment')}
 
               <div id="checkout-payment" className={`flex flex-col gap-2 mb-4 ${fieldHasError('checkout-payment') ? 'rounded-2xl ring-2 ring-red-100' : ''}`}>
-                {/* Credit Card Option */}
-                <label className="flex items-center gap-3 p-4 border-2 rounded-lg transition-all cursor-pointer border-gray-200 hover:border-blue-400 hover:bg-blue-50/30 has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50">
-                  <input
-                    type="radio"
-                    name="payment"
-                    value="card"
-                    checked={form.payment === 'card'}
-                    onChange={handleChange}
-                    className="accent-blue-600 w-5 h-5"
-                  />
-                  <div className="flex-1 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <svg className="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
-                        <path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4z"/>
-                        <path fillRule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z" clipRule="evenodd"/>
+                {/* Cash on Delivery — default, one tap */}
+                {!hasPersonalizedOfferItem && (() => {
+                  const maxCODAmount = shippingSetting?.maxCODAmount || 0;
+                  const remainingAmount = total;
+                  const isCODDisabled = shippingSetting?.enableCOD === false ||
+                    (maxCODAmount > 0 && remainingAmount > maxCODAmount);
+                  const isCodSelected = form.payment === 'cod' && !isCODDisabled;
+
+                  return (
+                    <button
+                      type="button"
+                      disabled={isCODDisabled || placingOrder || payingNow}
+                      onClick={() => handlePaymentMethodClick('cod', { disabled: isCODDisabled })}
+                      className={`flex w-full items-center gap-3 rounded-lg border-2 p-4 text-left transition-all ${
+                        isCODDisabled
+                          ? 'cursor-not-allowed border-gray-300 bg-gray-50 opacity-50'
+                          : isCodSelected
+                            ? 'border-green-500 bg-green-50 shadow-sm'
+                            : 'cursor-pointer border-gray-200 hover:border-green-400 hover:bg-green-50/30'
+                      }`}
+                    >
+                      <svg className="h-5 w-5 shrink-0 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 00-2-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd"/>
                       </svg>
-                      <div>
-                        <span className="font-semibold text-gray-900">{t('checkout.creditDebitCard')}</span>
-                        <div className="text-xs text-gray-600">{t('checkout.cardSubtitle')}</div>
+                      <div className="min-w-0 flex-1">
+                        <span className="font-semibold text-gray-900">{t('checkout.cashOnDelivery')}</span>
+                        <div className="text-xs text-gray-600">{t('checkout.codSubtitle')}</div>
+                        {isCODDisabled && maxCODAmount > 0 && remainingAmount > maxCODAmount ? (
+                          <span className="mt-1 block text-xs text-red-600">Max limit AED{maxCODAmount}</span>
+                        ) : null}
                       </div>
-                    </div>
-                    <div className="flex items-center gap-1">
+                      {!isCODDisabled ? renderPaymentActionLabel() : null}
+                    </button>
+                  );
+                })()}
+
+                {/* Credit / Debit Card — one tap */}
+                <button
+                  type="button"
+                  disabled={placingOrder || payingNow}
+                  onClick={() => handlePaymentMethodClick('card')}
+                  className={`flex w-full items-center gap-3 rounded-lg border-2 p-4 text-left transition-all ${
+                    form.payment === 'card'
+                      ? 'border-blue-500 bg-blue-50 shadow-sm'
+                      : 'cursor-pointer border-gray-200 hover:border-blue-400 hover:bg-blue-50/30'
+                  }`}
+                >
+                  <svg className="h-5 w-5 shrink-0 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4z"/>
+                    <path fillRule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z" clipRule="evenodd"/>
+                  </svg>
+                  <div className="min-w-0 flex-1">
+                    <span className="font-semibold text-gray-900">{t('checkout.creditDebitCard')}</span>
+                    <div className="text-xs text-gray-600">{t('checkout.cardSubtitle')}</div>
+                    <div className="mt-2 flex items-center gap-1">
                       <Image src={Creditimage4} alt="Visa" width={24} height={16} className="object-contain mix-blend-multiply"/>
                       <Image src={Creditimage3} alt="Mastercard" width={24} height={16} className="object-contain mix-blend-multiply"/>
                       <Image src={Creditimage2} alt="Card" width={24} height={16} className="object-contain mix-blend-multiply"/>
                       <Image src={Creditimage1} alt="Card" width={24} height={16} className="object-contain mix-blend-multiply"/>
                     </div>
                   </div>
-                </label>
+                  {renderPaymentActionLabel()}
+                </button>
 
-                {/* Cash on Delivery Option */}
-                {!hasPersonalizedOfferItem && (() => {
-                  const maxCODAmount = shippingSetting?.maxCODAmount || 0;
-                  const remainingAmount = total;
-                  const isCODDisabled = shippingSetting?.enableCOD === false || 
-                    (maxCODAmount > 0 && remainingAmount > maxCODAmount);
-                  
-                  return (
-                    <label className={`flex items-center gap-3 p-4 border-2 rounded-lg transition-all ${
-                      isCODDisabled 
-                        ? 'opacity-50 cursor-not-allowed border-gray-300 bg-gray-50' 
-                        : 'cursor-pointer border-gray-200 hover:border-green-400 hover:bg-green-50/30 has-[:checked]:border-green-500 has-[:checked]:bg-green-50'
-                    }`}>
-                      <input
-                        type="radio"
-                        name="payment"
-                        value="cod"
-                        checked={form.payment === 'cod' && !isCODDisabled}
-                        onChange={handleChange}
-                        disabled={isCODDisabled}
-                        className="accent-green-600 w-5 h-5"
-                      />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 00-2-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd"/>
-                          </svg>
-                          <div>
-                            <span className="font-semibold text-gray-900">{t('checkout.cashOnDelivery')}</span>
-                            <div className="text-xs text-gray-600">{t('checkout.codSubtitle')}</div>
-                          </div>
-                        </div>
-                        {isCODDisabled && maxCODAmount > 0 && remainingAmount > maxCODAmount && (
-                          <span className="text-xs text-red-600 ml-8">Max limit AED{maxCODAmount}</span>
-                        )}
-                      </div>
-                    </label>
-                  );
-                })()}
-
-                {/* Tamara BNPL Option */}
+                {/* Tamara BNPL — compact until selected */}
                 {(() => {
                   const tamaraInstalment = totalAfterWallet > 0 ? Number((totalAfterWallet / 4).toFixed(2)) : 0;
+                  const isTamaraSelected = form.payment === 'tamara';
                   return (
-                    <label className="flex flex-col gap-0 p-4 border-2 rounded-lg transition-all cursor-pointer border-gray-200 hover:border-[#f075a3] has-[:checked]:border-[#f075a3] has-[:checked]:bg-[#fff5f9]">
-                      {/* Row 1: radio + logo + title */}
-                      <div className="flex items-center gap-3">
-                        <input
-                          type="radio"
-                          name="payment"
-                          value="tamara"
-                          checked={form.payment === 'tamara'}
-                          onChange={handleChange}
-                          className="w-5 h-5 flex-shrink-0"
-                          style={{accentColor:'#f075a3'}}
-                        />
+                    <button
+                      type="button"
+                      disabled={placingOrder || payingNow}
+                      onClick={() => handlePaymentMethodClick('tamara')}
+                      className={`flex w-full flex-col gap-0 rounded-lg border-2 p-4 text-left transition-all ${
+                        isTamaraSelected
+                          ? 'border-[#f075a3] bg-[#fff5f9] shadow-sm'
+                          : 'cursor-pointer border-gray-200 hover:border-[#f075a3]'
+                      }`}
+                    >
+                      <div className="flex w-full items-center gap-3">
                         <BnplLogo provider="tamara" size="checkout" />
-                        <span className="text-sm font-semibold text-gray-900">Split in up to 4 payments</span>
-                        <span className="ml-0.5 w-4 h-4 rounded-full border border-gray-400 text-gray-400 text-[10px] flex items-center justify-center flex-shrink-0" title="Pay in 4 equal interest-free instalments">?</span>
+                        <span className="min-w-0 flex-1 text-sm font-semibold text-gray-900">{t('checkout.splitPayments')}</span>
+                        {renderPaymentActionLabel()}
                       </div>
-                      {/* Row 2: first payment line */}
-                      <div className="ml-8 mt-1">
-                        <p className="text-sm text-[#F75B94]">
-                          Pay <span className="font-bold text-base">{formatMoneyFixed(tamaraInstalment)}</span> today
-                        </p>
-                        <p className="text-xs text-gray-500">and the rest in 3 interest-free payments</p>
-                      </div>
-                      {/* Row 3: instalment cards — always visible */}
-                      {totalAfterWallet > 0 && (
-                        <div className="ml-8 grid grid-cols-4 gap-2 mt-3">
-                          {['Today', 'In 1 month', 'In 2 months', 'In 3 months'].map((label) => (
-                            <div key={label} className="flex flex-col items-center bg-white border border-gray-200 rounded-md pt-2 pb-1 px-1 text-center">
-                              <span className="text-xs font-bold text-gray-900">{formatMoneyFixed(tamaraInstalment)}</span>
-                              <span className="text-[10px] text-gray-500 mt-0.5 leading-tight">{label}</span>
-                              <div className="mt-1.5 h-[3px] w-full rounded-full bg-gradient-to-r from-[#f075a3] to-[#fbb6ce]" />
+                      {isTamaraSelected ? (
+                        <>
+                          <div className="mt-2">
+                            <p className="text-sm text-[#F75B94]">
+                              {t('checkout.payToday').replace('{amount}', formatMoneyFixed(tamaraInstalment))}
+                            </p>
+                            <p className="text-xs text-gray-500">{t('checkout.restInstallments')}</p>
+                          </div>
+                          {totalAfterWallet > 0 ? (
+                            <div className="mt-3 grid grid-cols-4 gap-2">
+                              {['Today', 'In 1 month', 'In 2 months', 'In 3 months'].map((label) => (
+                                <div key={label} className="flex flex-col items-center rounded-md border border-gray-200 bg-white px-1 pb-1 pt-2 text-center">
+                                  <span className="text-xs font-bold text-gray-900">{formatMoneyFixed(tamaraInstalment)}</span>
+                                  <span className="mt-0.5 text-[10px] leading-tight text-gray-500">{label}</span>
+                                </div>
+                              ))}
                             </div>
-                          ))}
-                        </div>
+                          ) : null}
+                        </>
+                      ) : (
+                        <p className="mt-1 text-xs text-gray-500">
+                          {t('checkout.payToday').replace('{amount}', formatMoneyFixed(tamaraInstalment))}
+                        </p>
                       )}
-                    </label>
+                    </button>
                   );
                 })()}
 
-                {/* Tabby BNPL Option */}
+                {/* Tabby BNPL — compact until selected */}
                 {(() => {
                   const tabbyInstalment = totalAfterWallet > 0 ? Number((totalAfterWallet / 4).toFixed(2)) : 0;
+                  const isTabbySelected = form.payment === 'tabby';
                   return (
-                    <label className="flex flex-col gap-0 p-4 border-2 rounded-lg transition-all cursor-pointer border-gray-200 hover:border-[#3DBEA3] has-[:checked]:border-[#3DBEA3] has-[:checked]:bg-[#f0faf8]">
-                      {/* Row 1: radio + logo + title */}
-                      <div className="flex items-center gap-3">
-                        <input
-                          type="radio"
-                          name="payment"
-                          value="tabby"
-                          checked={form.payment === 'tabby'}
-                          onChange={handleChange}
-                          className="w-5 h-5 flex-shrink-0"
-                          style={{accentColor:'#3DBEA3'}}
-                        />
+                    <button
+                      type="button"
+                      disabled={placingOrder || payingNow}
+                      onClick={() => handlePaymentMethodClick('tabby')}
+                      className={`flex w-full flex-col gap-0 rounded-lg border-2 p-4 text-left transition-all ${
+                        isTabbySelected
+                          ? 'border-[#3DBEA3] bg-[#f0faf8] shadow-sm'
+                          : 'cursor-pointer border-gray-200 hover:border-[#3DBEA3]'
+                      }`}
+                    >
+                      <div className="flex w-full items-center gap-3">
                         <BnplLogo provider="tabby" size="checkout" />
-                        <span className="text-sm font-semibold text-gray-900">Split in up to 4 payments</span>
-                        <span className="ml-0.5 w-4 h-4 rounded-full border border-gray-400 text-gray-400 text-[10px] flex items-center justify-center flex-shrink-0" title="Pay in 4 equal interest-free instalments">?</span>
+                        <span className="min-w-0 flex-1 text-sm font-semibold text-gray-900">{t('checkout.splitPayments')}</span>
+                        {renderPaymentActionLabel()}
                       </div>
-                      {/* Row 2: first payment line */}
-                      <div className="ml-8 mt-1">
-                        <p className="text-sm text-[#2E9E88]">
-                          Pay <span className="font-bold text-base">{formatMoneyFixed(tabbyInstalment)}</span> today
-                        </p>
-                        <p className="text-xs text-gray-500">and the rest in 3 interest-free payments</p>
-                      </div>
-                      {/* Row 3: instalment cards — always visible */}
-                      {totalAfterWallet > 0 && (
-                        <div className="ml-8 grid grid-cols-4 gap-2 mt-3">
-                          {['Today', 'In 1 month', 'In 2 months', 'In 3 months'].map((label) => (
-                            <div key={label} className="flex flex-col items-center bg-white border border-gray-200 rounded-md pt-2 pb-1 px-1 text-center">
-                              <span className="text-xs font-bold text-gray-900">{formatMoneyFixed(tabbyInstalment)}</span>
-                              <span className="text-[10px] text-gray-500 mt-0.5 leading-tight">{label}</span>
-                              <div className="mt-1.5 h-[3px] w-full rounded-full bg-gradient-to-r from-[#3DBEA3] to-[#a7e8de]" />
+                      {isTabbySelected ? (
+                        <>
+                          <div className="mt-2">
+                            <p className="text-sm text-[#2E9E88]">
+                              {t('checkout.payToday').replace('{amount}', formatMoneyFixed(tabbyInstalment))}
+                            </p>
+                            <p className="text-xs text-gray-500">{t('checkout.restInstallments')}</p>
+                          </div>
+                          {totalAfterWallet > 0 ? (
+                            <div className="mt-3 grid grid-cols-4 gap-2">
+                              {['Today', 'In 1 month', 'In 2 months', 'In 3 months'].map((label) => (
+                                <div key={label} className="flex flex-col items-center rounded-md border border-gray-200 bg-white px-1 pb-1 pt-2 text-center">
+                                  <span className="text-xs font-bold text-gray-900">{formatMoneyFixed(tabbyInstalment)}</span>
+                                  <span className="mt-0.5 text-[10px] leading-tight text-gray-500">{label}</span>
+                                </div>
+                              ))}
                             </div>
-                          ))}
-                        </div>
+                          ) : null}
+                          <div className="mt-3 rounded-lg border border-gray-200 bg-white p-2" id="tabbyCard"></div>
+                        </>
+                      ) : (
+                        <p className="mt-1 text-xs text-gray-500">
+                          {t('checkout.payToday').replace('{amount}', formatMoneyFixed(tabbyInstalment))}
+                        </p>
                       )}
-                      {form.payment === 'tabby' && (
-                        <div className="ml-8 mt-3 border border-gray-200 rounded-lg p-2 bg-white" id="tabbyCard"></div>
-                      )}
-                    </label>
+                    </button>
                   );
                 })()}
               </div>
@@ -3147,6 +3280,47 @@ export default function CheckoutPage() {
         onClose={() => setValidationAlertOpen(false)}
         onIssueClick={handleValidationIssueClick}
       />
+
+      {removeLastItemConfirm ? (
+        <div className="fixed inset-0 z-[80] flex items-end justify-center p-4 sm:items-center">
+          <button
+            type="button"
+            className="absolute inset-0 bg-slate-900/40 backdrop-blur-[1px]"
+            aria-label={t('checkout.removeLastItemCancel')}
+            onClick={() => setRemoveLastItemConfirm(null)}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="checkout-remove-last-item-title"
+            className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl"
+            dir={isArabic ? 'rtl' : 'ltr'}
+          >
+            <h3 id="checkout-remove-last-item-title" className="text-lg font-semibold text-slate-900">
+              {t('checkout.removeLastItemTitle')}
+            </h3>
+            <p className="mt-2 text-sm text-slate-600">
+              {t('checkout.removeLastItemMessage')}
+            </p>
+            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setRemoveLastItemConfirm(null)}
+                className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                {t('checkout.removeLastItemCancel')}
+              </button>
+              <button
+                type="button"
+                onClick={confirmRemoveLastItem}
+                className="rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700"
+              >
+                {t('checkout.removeLastItemConfirm')}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {showAllOrderItemsModal ? (
         <div className="fixed inset-0 z-[70] flex items-end justify-center p-4 sm:items-center">

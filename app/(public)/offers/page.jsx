@@ -1,104 +1,182 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useSelector, useDispatch } from 'react-redux';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ChevronLeft } from 'lucide-react';
-import { fetchProducts } from '@/lib/features/product/productSlice';
 import ProductCard from '@/components/ProductCard';
+import { OFFERS_PAGE_SIZE } from '@/lib/offersCatalog';
+import { useStorefrontI18n } from '@/lib/useStorefrontI18n';
+
+function OffersGridSkeleton() {
+  return (
+    <div className="grid grid-cols-2 items-stretch gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+      {Array.from({ length: OFFERS_PAGE_SIZE }).map((_, index) => (
+        <div
+          key={index}
+          className="aspect-[3/4] animate-pulse rounded-lg border border-gray-200 bg-white"
+        />
+      ))}
+    </div>
+  );
+}
 
 export default function OffersPage() {
   const router = useRouter();
-  const dispatch = useDispatch();
-  const products = useSelector(state => state.product.list);
-  const productsLoading = useSelector(state => state.product.loading);
-  const [offerProducts, setOfferProducts] = useState([]);
+  const { t } = useStorefrontI18n();
+  const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: OFFERS_PAGE_SIZE,
+    total: 0,
+    totalPages: 1,
+  });
+  const skipScrollRef = useRef(true);
 
-  // Fetch products if not loaded
-  useEffect(() => {
-    if (!products || products.length === 0) {
-      dispatch(fetchProducts({ limit: 500 }));
+  const loadOffers = useCallback(async (targetPage) => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        page: String(targetPage),
+        limit: String(OFFERS_PAGE_SIZE),
+      });
+      const response = await fetch(`/api/public/offers?${params.toString()}`, {
+        cache: 'no-store',
+      });
+      const data = response.ok ? await response.json() : null;
+      setProducts(Array.isArray(data?.products) ? data.products : []);
+      setPagination(data?.pagination || {
+        page: targetPage,
+        limit: OFFERS_PAGE_SIZE,
+        total: 0,
+        totalPages: 1,
+      });
+    } catch {
+      setProducts([]);
+      setPagination({
+        page: targetPage,
+        limit: OFFERS_PAGE_SIZE,
+        total: 0,
+        totalPages: 1,
+      });
+    } finally {
+      setLoading(false);
     }
-  }, [dispatch, products]);
+  }, []);
 
   useEffect(() => {
-    if (productsLoading || !products || products.length === 0) {
+    loadOffers(page);
+  }, [loadOffers, page]);
+
+  useEffect(() => {
+    if (loading) return;
+    if (skipScrollRef.current) {
+      skipScrollRef.current = false;
       return;
     }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [page, loading]);
 
-    // Filter products with discount > 60%
-    const filtered = products.filter(product => {
-      const AED = Number(product.AED) || 0;
-      const price = Number(product.price) || 0;
-      
-      if (AED > 0 && price > 0 && AED > price) {
-        const discount = Math.round(((AED - price) / AED) * 100);
-        return discount > 60;
-      }
-      return false;
-    });
+  const goToPage = (nextPage) => {
+    const safePage = Math.min(Math.max(1, nextPage), pagination.totalPages);
+    setPage(safePage);
+  };
 
-    // Sort by discount percentage (highest first)
-    filtered.sort((a, b) => {
-      const discountA = Math.round(((Number(a.AED) - Number(a.price)) / Number(a.AED)) * 100);
-      const discountB = Math.round(((Number(b.AED) - Number(b.price)) / Number(b.AED)) * 100);
-      return discountB - discountA;
-    });
-
-    setOfferProducts(filtered);
-    setLoading(false);
-  }, [products, productsLoading]);
+  const rangeFrom = pagination.total
+    ? (pagination.page - 1) * pagination.limit + 1
+    : 0;
+  const rangeTo = pagination.total
+    ? Math.min(pagination.page * pagination.limit, pagination.total)
+    : 0;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-8">
-        {/* Header */}
-        <div className="mb-8">
+    <div className="min-h-screen bg-gray-50 pb-[5.25rem] lg:pb-8">
+      <div className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 sm:py-8">
+        <div className="mb-6 sm:mb-8">
           <button
+            type="button"
             onClick={() => router.back()}
-            className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 mb-4 transition"
+            className="mb-4 flex items-center gap-2 text-sm text-gray-600 transition hover:text-gray-900"
           >
             <ChevronLeft size={18} />
             Back
           </button>
-          
+
           <div>
-            <span className="text-xs font-bold text-red-600 uppercase tracking-wider">Hot Deals</span>
-            <h1 className="text-3xl font-bold text-gray-900 mt-1">Special Offers</h1>
-            <p className="text-gray-600 mt-2">Products with over 60% discount</p>
+            <span className="text-xs font-bold uppercase tracking-wider text-red-600">
+              Hot Deals
+            </span>
+            <h1 className="mt-1 text-2xl font-bold text-gray-900 sm:text-3xl">
+              Special Offers
+            </h1>
+            <p className="mt-2 text-sm text-gray-600 sm:text-base">
+              Products with over 60% discount
+            </p>
           </div>
         </div>
 
-        {/* Products Grid */}
         {loading ? (
-          <div className="text-center py-16">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-red-500 mb-4"></div>
-            <p className="text-gray-500">Loading offers...</p>
-          </div>
-        ) : offerProducts.length > 0 ? (
           <>
-            <div className="mb-4 flex items-center justify-between">
-              <div className="text-sm text-gray-600">
-                Showing {offerProducts.length} {offerProducts.length === 1 ? 'product' : 'products'} with over 60% off
-              </div>
-              <div className="text-sm font-semibold text-red-600">
-                🔥 Massive Savings!
-              </div>
+            <div className="mb-4 h-5 w-48 animate-pulse rounded bg-gray-200" />
+            <OffersGridSkeleton />
+          </>
+        ) : products.length > 0 ? (
+          <>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm text-gray-600">
+                {t('shop.showingRange', {
+                  from: rangeFrom,
+                  to: rangeTo,
+                  total: pagination.total,
+                  label: pagination.total === 1 ? t('common.product') : t('common.products'),
+                })}
+              </p>
+              <span className="text-sm font-semibold text-red-600">Massive Savings</span>
             </div>
+
             <div className="grid grid-cols-2 items-stretch gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-              {offerProducts.map((product) => (
-                <ProductCard key={product._id || product.id} product={product} />
+              {products.map((product, index) => (
+                <ProductCard
+                  key={product._id || product.id || product.slug}
+                  product={product}
+                  priorityImages={pagination.page === 1 && index < 6}
+                />
               ))}
             </div>
+
+            {pagination.totalPages > 1 ? (
+              <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => goToPage(pagination.page - 1)}
+                  disabled={pagination.page <= 1}
+                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {t('shop.previous')}
+                </button>
+                <span className="px-3 text-sm text-gray-600">
+                  {t('shop.pageOf', { page: pagination.page, total: pagination.totalPages })}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => goToPage(pagination.page + 1)}
+                  disabled={pagination.page >= pagination.totalPages}
+                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {t('shop.next')}
+                </button>
+              </div>
+            ) : null}
           </>
         ) : (
-          <div className="text-center py-16 bg-white rounded-lg border border-gray-200">
-            <p className="text-gray-500 text-lg mb-2">No offers available</p>
-            <p className="text-gray-400 text-sm mb-6">Check back later for amazing deals</p>
-            <button 
+          <div className="rounded-lg border border-gray-200 bg-white py-16 text-center">
+            <p className="mb-2 text-lg text-gray-500">No offers available</p>
+            <p className="mb-6 text-sm text-gray-400">Check back later for amazing deals</p>
+            <button
+              type="button"
               onClick={() => router.push('/shop')}
-              className="px-6 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition"
+              className="rounded-lg bg-red-500 px-6 py-2 text-white transition hover:bg-red-600"
             >
               Browse All Products
             </button>

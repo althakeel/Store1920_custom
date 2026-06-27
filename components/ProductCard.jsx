@@ -12,7 +12,7 @@ import { addToCart, uploadCart, removeFromCart } from '@/lib/features/cart/cartS
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket'
 import { useStorefrontI18n } from '@/lib/useStorefrontI18n'
 
-import toast from 'react-hot-toast'
+import { getLocalizedProductName } from '@/lib/displayText'
 import { showStorefrontActionToast } from '@/lib/storefrontActionToast'
 import { PLACEHOLDER_IMAGE as PLACEHOLDER } from '@/lib/mediaUrls'
 import {
@@ -148,7 +148,7 @@ const ProductCard = ({
   const reviewCount = Math.max(0, Number(product.ratingCount) || 0)
 
   const fallbackName = product.name || product.title || t('common.untitledProduct')
-  const productName = fallbackName
+  const productName = getLocalizedProductName(product, language, fallbackName)
 
   const primaryImage = getProductThumbnailUrl(product)
   const secondaryImage = getImageUrlAt(product?.images, 1)
@@ -228,7 +228,7 @@ const ProductCard = ({
   const renderCartControl = () => {
     if (isOutOfStock) {
       return (
-        <div className="absolute bottom-3 right-3 z-20 rounded-full bg-gray-200 px-3 py-1 text-[10px] font-semibold text-gray-600">
+        <div className="absolute bottom-3 end-3 z-20 rounded-full bg-gray-200 px-3 py-1 text-[10px] font-semibold text-gray-600">
           {t('common.outOfStock')}
         </div>
       )
@@ -238,7 +238,7 @@ const ProductCard = ({
       return (
         <>
           <div
-            className="absolute bottom-3 right-3 z-20 hidden md:inline-flex h-8 min-w-[32px] items-center justify-center rounded-md px-2 text-xs font-semibold text-white shadow-md transition-all duration-150 ease-out group-hover:opacity-0 group-hover:scale-95"
+            className="absolute bottom-3 end-3 z-20 hidden md:inline-flex h-8 min-w-[32px] items-center justify-center rounded-md px-2 text-xs font-semibold text-white shadow-md transition-all duration-150 ease-out group-hover:opacity-0 group-hover:scale-95"
             style={{ backgroundColor: '#2563eb' }}
           >
             <span className="inline-flex items-center gap-1">
@@ -247,7 +247,7 @@ const ProductCard = ({
             </span>
           </div>
           <div
-            className="absolute bottom-3 right-3 z-20 inline-flex items-center justify-center gap-2 rounded-md px-2 py-1.5 shadow-md transition-all duration-150 ease-out md:opacity-0 md:scale-95 md:group-hover:opacity-100 md:group-hover:scale-100"
+            className="absolute bottom-3 end-3 z-20 inline-flex items-center justify-center gap-2 rounded-md px-2 py-1.5 shadow-md transition-all duration-150 ease-out md:opacity-0 md:scale-95 md:group-hover:opacity-100 md:group-hover:scale-100"
             style={{ backgroundColor: '#2563eb' }}
           >
             <button
@@ -289,7 +289,7 @@ const ProductCard = ({
       <button
         type="button"
         onClick={handleAddToCart}
-        className="absolute bottom-3 right-3 z-20 inline-flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-[10px] border border-[#d1d5db] bg-white/95 shadow-md transition-all duration-300 active:scale-95"
+        className="absolute bottom-3 end-3 z-20 inline-flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-[10px] border border-[#d1d5db] bg-white/95 shadow-md transition-all duration-300 active:scale-95"
         onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f3f4f6' }}
         onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.95)' }}
         aria-label={t('common.addToCart')}
@@ -396,7 +396,7 @@ const ProductCard = ({
       </div>
 
       <div className={`flex min-h-0 flex-col ${compactAll ? 'shrink-0 p-1.5' : compactLg ? 'flex-1 p-2 sm:p-2.5 lg:shrink-0 lg:p-1.5' : 'flex-1 p-2 sm:p-2.5'}`}>
-        <h3 className={`font-semibold leading-tight text-slate-900 ${compactAll ? 'mb-1 line-clamp-1 text-[10px]' : compactLg ? 'mb-1.5 line-clamp-2 min-h-[2.5em] text-xs sm:min-h-[2.75em] sm:text-sm lg:mb-1 lg:line-clamp-1 lg:min-h-0 lg:text-[10px]' : 'mb-1.5 line-clamp-2 min-h-[2.5em] text-xs sm:min-h-[2.75em] sm:text-sm'}`}>
+        <h3 className={`text-start font-semibold leading-tight text-slate-900 ${compactAll ? 'mb-1 line-clamp-1 text-[10px]' : compactLg ? 'mb-1.5 line-clamp-2 min-h-[2.5em] text-xs sm:min-h-[2.75em] sm:text-sm lg:mb-1 lg:line-clamp-1 lg:min-h-0 lg:text-[10px]' : 'mb-1.5 line-clamp-2 min-h-[2.5em] text-xs sm:min-h-[2.75em] sm:text-sm'}`}>
           {productName}
         </h3>
 
@@ -426,7 +426,7 @@ const ProductCard = ({
           ) : null}
 
           {!compactAll ? (
-            <div className={`flex min-w-0 items-center ${compactLg ? 'lg:hidden' : ''}`}>
+            <div className={`flex min-w-0 items-center gap-1 ${compactLg ? 'lg:hidden' : ''}`}>
               {[...Array(5)].map((_, i) => (
                 <FaStar
                   key={i}
@@ -434,7 +434,7 @@ const ProductCard = ({
                   className={i < ratingValue ? 'text-yellow-400' : 'text-gray-300'}
                 />
               ))}
-              <span className="ml-1 truncate text-[9px] text-gray-500 sm:text-xs">
+              <span className="min-w-0 truncate text-[9px] text-gray-500 sm:text-xs">
                 {reviewCount > 0 ? `(${reviewCount})` : t('common.noReviewsYet')}
               </span>
             </div>

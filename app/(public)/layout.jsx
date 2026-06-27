@@ -39,24 +39,32 @@ function DeferredTrackers() {
 
 function PublicLayoutContent({ children }) {
     const pathname = usePathname();
-    const isHomePage = pathname === '/';
     const isCheckout = pathname === '/checkout';
     const isCartPage = pathname === '/cart';
     const isProductPage = isProductDetailPath(pathname);
+    const isHomePage = pathname === '/';
+    const showMobileBottomNav = !isCheckout && !isProductPage;
+    const mobileMainPadding = isProductPage
+        ? 'pb-0'
+        : isCheckout
+            ? 'pb-8'
+            : isHomePage
+                ? 'pb-0'
+                : 'pb-[5.25rem]';
 
     return (
         <div className={`flex flex-col ${isCartPage || isProductPage ? '' : 'min-h-screen'}`}>
             <GuestOrderLinker />
             <DeferredTrackers />
-            <main className={`${isProductPage ? '' : 'flex-1'} min-w-0 overflow-x-clip ${isHomePage ? 'pb-8' : isProductPage ? 'pb-0' : 'pb-20'} lg:pb-0`}>{children}</main>
-            {!isHomePage && !isCheckout && <MobileBottomNav />}
+            <main className={`${isProductPage ? '' : 'flex-1'} min-w-0 overflow-x-clip ${mobileMainPadding} lg:pb-0`}>{children}</main>
+            {showMobileBottomNav && <MobileBottomNav />}
         </div>
     );
 }
 
 function PublicLayoutAuthed({ children }) {
     return (
-        <Suspense fallback={<div className="flex flex-col"><GuestOrderLinker /><main className="flex-1 pb-20 lg:pb-0">{children}</main></div>}>
+        <Suspense fallback={<div className="flex flex-col"><GuestOrderLinker /><main className="flex-1 pb-[5.25rem] lg:pb-0">{children}</main></div>}>
             <PublicLayoutContent>{children}</PublicLayoutContent>
         </Suspense>
     );

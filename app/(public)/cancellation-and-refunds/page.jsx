@@ -47,6 +47,7 @@ export default function CancellationAndRefunds() {
 
           <h3 className="text-lg font-semibold mt-4 mb-2">Non-Returnable Items</h3>
           <ul className="list-disc pl-6">
+            <li>Mobile phones, smartphones, tablets, laptops, and similar personal electronic devices that have been used, activated, or configured in any way</li>
             <li>Personal care products</li>
             <li>Food and perishable items</li>
             <li>Innerwear and hygiene-sensitive products</li>
@@ -62,6 +63,7 @@ export default function CancellationAndRefunds() {
             <li>Submit required photos or videos for verification.</li>
             <li>Once approved, return pickup will be arranged (where available).</li>
             <li>The product must be unused, unwashed, and returned in original packaging.</li>
+            <li>Mobile phones, tablets, laptops, and similar devices are not eligible for return once activated or used.</li>
           </ol>
         </section>
 

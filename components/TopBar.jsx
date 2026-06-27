@@ -2,11 +2,12 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { ChevronDown, Check, Globe2 } from 'lucide-react';
+import { ChevronDown, Check, Globe2, Phone } from 'lucide-react';
 import { isProductDetailPath } from '@/lib/productUrl';
 import {
   STORE1920_CUSTOMER_SUPPORT_PHONE,
   STORE1920_CUSTOMER_SUPPORT_TEL,
+  formatCustomerSupportPhoneDisplay,
 } from '@/lib/storeContact';
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
 import tabbyLogo from '@/assets/payments/tabby.webp';
@@ -168,11 +169,15 @@ export default function TopBar({ initialLanguage = 'en' }) {
       <div className="mx-auto flex max-w-[1400px] flex-nowrap items-center justify-between gap-1.5 px-2 py-1.5 sm:gap-3 sm:px-5 sm:py-1">
         <a
           href={STORE1920_CUSTOMER_SUPPORT_TEL}
-          className="shrink-0 whitespace-nowrap text-[11px] leading-none text-[#222] no-underline sm:text-xs"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200/90 bg-slate-50/80 px-2 py-1 no-underline transition hover:border-slate-300 hover:bg-white sm:gap-2 sm:px-2.5 sm:py-1"
+          aria-label={`${t('topbar.support')} ${STORE1920_CUSTOMER_SUPPORT_PHONE}`}
         >
-          <span className="font-normal text-[#666] sm:hidden">{t('topbar.tollFree')} </span>
-          <span className="hidden font-normal sm:inline">{t('topbar.support')} </span>
-          <span className="font-bold">{STORE1920_CUSTOMER_SUPPORT_PHONE}</span>
+          <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-amber-500/15 sm:h-[18px] sm:w-[18px]">
+            <Phone className="h-2.5 w-2.5 text-amber-600 sm:h-3 sm:w-3" strokeWidth={2.25} aria-hidden="true" />
+          </span>
+          <span className="whitespace-nowrap text-[11px] font-semibold tabular-nums leading-none tracking-[0.04em] text-slate-800 sm:text-xs">
+            {formatCustomerSupportPhoneDisplay(STORE1920_CUSTOMER_SUPPORT_PHONE)}
+          </span>
         </a>
 
         <div className="flex shrink-0 flex-nowrap items-center gap-1 sm:gap-2.5">

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getAuth } from '@/lib/firebase-admin';
 import { emailLogoImg } from '@/lib/brandLogo';
 import { sendMail } from '@/lib/email';
+import { buildCustomerSitePath } from '@/lib/appUrl';
 
 export async function POST(req) {
   try {
@@ -94,7 +95,7 @@ export async function POST(req) {
               <p>Want to continue shopping? Sign back in to access your account:</p>
               
               <div style="text-align: center;">
-                <a href="${process.env.NEXT_PUBLIC_BASE_URL || 'https://Store1920.com'}" class="button">
+                <a href="${buildCustomerSitePath('/')}" class="button">
                   Sign In Again
                 </a>
               </div>

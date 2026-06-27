@@ -58,6 +58,14 @@ async function getReferralRewardCoins(storeId) {
     return Math.min(10000, Math.max(0, Math.round(configuredValue)));
 }
 
+function deferPostOrderTask(label, task) {
+    void Promise.resolve()
+        .then(task)
+        .catch((error) => {
+            console.error(`[orders] Deferred ${label} failed:`, error);
+        });
+}
+
 
 
 export async function POST(request) {
@@ -470,6 +478,7 @@ export async function POST(request) {
 
         // Order creation
         let orderIds = [];
+        const createdOrderTotals = new Map();
         let fullAmount = 0;
         for (const [storeId, sellerItems] of ordersByStore.entries()) {
             // Ensure user exists in DB (upsert)
@@ -781,87 +790,69 @@ export async function POST(request) {
             order.shortOrderNumber = await allocateShortOrderNumber(storeId);
             await order.save();
 
+            orderIds.push(order._id.toString());
+            createdOrderTotals.set(order._id.toString(), order.total);
+
             if (!isDeferredPaymentMethod(paymentMethod)) {
-                try {
-                    await markAbandonedCartsConvertedForOrder(order, { orderId: order._id });
-                } catch (convertError) {
-                    console.error('[orders] Failed to convert abandoned carts:', convertError);
-                }
+                deferPostOrderTask('abandoned-cart-convert', () =>
+                    markAbandonedCartsConvertedForOrder(order, { orderId: order._id })
+                );
             }
 
             if (shouldRecordPurchaseOnCreate(order, paymentMethod)) {
-                try {
-                    await recordPurchaseFromOrder({
-                        order,
-                        trackingContext: order.trackingContext || trackingContext || {},
-                        attribution: order.attribution || attribution || {},
-                        userId,
-                        isGuest: Boolean(isGuest),
-                        source: 'order_create',
-                    });
-                } catch (trackingError) {
-                    console.error('Purchase tracking failed for order', order._id, trackingError);
-                }
+                const trackingPayload = {
+                    order,
+                    trackingContext: order.trackingContext || trackingContext || {},
+                    attribution: order.attribution || attribution || {},
+                    userId,
+                    isGuest: Boolean(isGuest),
+                    source: 'order_create',
+                };
+                deferPostOrderTask('purchase-tracking', () => recordPurchaseFromOrder(trackingPayload));
 
-                try {
-                    const forwardedFor = request.headers.get('x-forwarded-for');
-                    const clientIp = forwardedFor?.split(',')[0]?.trim()
-                        || request.headers.get('x-real-ip')
-                        || null;
-                    await sendMetaPurchaseFromOrder(order, {
+                const forwardedFor = request.headers.get('x-forwarded-for');
+                const clientIp = forwardedFor?.split(',')[0]?.trim()
+                    || request.headers.get('x-real-ip')
+                    || null;
+                deferPostOrderTask('meta-purchase', () =>
+                    sendMetaPurchaseFromOrder(order, {
                         clientIp,
                         userAgent: request.headers.get('user-agent') || null,
                         isGuest: Boolean(isGuest),
                         userId,
                         paymentMethod,
-                    });
-                } catch (metaError) {
-                    console.error('[meta] Purchase CAPI failed for order', order._id, metaError);
-                }
-            }
-
-            // Populate order with related data
-            const populatedOrder = await Order.findById(order._id)
-                .populate('userId')
-                .populate({
-                    path: 'orderItems.productId',
-                    model: 'Product'
-                });
-            orderIds.push(order._id.toString());
-
-            // Customer notifications — deferred for Stripe/Tabby/Tamara until payment succeeds
-            try {
-                let customerEmail = '';
-                let customerName = '';
-
-                if (isGuest) {
-                    customerEmail = guestInfo.email;
-                    customerName = guestInfo.name;
-                } else {
-                    const user = await User.findById(userId).lean();
-                    customerEmail = user?.email || '';
-                    customerName = user?.name || '';
-                }
-
-                const notificationResult = await sendOrderCreatedConfirmationNotifications(
-                    populatedOrder || order,
-                    paymentMethod,
-                    { customerEmail, customerName, isGuest },
+                    })
                 );
-                console.log('[orders] Confirmation notifications:', notificationResult);
-            } catch (notificationError) {
-                console.error('Error sending order confirmation notifications:', notificationError);
-                // Don't fail the order if notifications fail
             }
+
+            deferPostOrderTask('confirmation-notifications', async () => {
+                try {
+                    let customerEmail = '';
+                    let customerName = '';
+
+                    if (isGuest) {
+                        customerEmail = guestInfo.email;
+                        customerName = guestInfo.name;
+                    } else if (userId) {
+                        const userDoc = await User.findById(userId).lean();
+                        customerEmail = userDoc?.email || '';
+                        customerName = userDoc?.name || '';
+                    }
+
+                    await sendOrderCreatedConfirmationNotifications(
+                        order._id,
+                        paymentMethod,
+                        { customerEmail, customerName, isGuest },
+                    );
+                } catch (notificationError) {
+                    console.error('Error sending order confirmation notifications:', notificationError);
+                }
+            });
 
             if (isDeferredPaymentMethod(paymentMethod) && !manualStoreOrder) {
-                try {
-                    await upsertAbandonedCartForPendingOrder(populatedOrder || order, {
-                        source: 'checkout_payment',
-                    });
-                } catch (abandonedError) {
-                    console.error('[orders] Failed to save awaiting-payment abandoned cart:', abandonedError);
-                }
+                deferPostOrderTask('awaiting-payment-abandoned-cart', () =>
+                    upsertAbandonedCartForPendingOrder(order, { source: 'checkout_payment' })
+                );
             }
             // Decrement stock for each item in this store order (batched)
             const stockUpdates = sellerItems
@@ -1078,78 +1069,78 @@ export async function POST(request) {
         }
 
         if (recoveryContext?.valid && orderIds.length > 0) {
-            await AbandonedCart.findByIdAndUpdate(recoveryContext.cart._id, {
-                $set: {
-                    linkedOrderId: String(orderIds[0]),
-                    recoveryLinkExpiresAt: new Date(),
-                },
-            });
+            deferPostOrderTask('recovery-link', () =>
+                AbandonedCart.findByIdAndUpdate(recoveryContext.cart._id, {
+                    $set: {
+                        linkedOrderId: String(orderIds[0]),
+                        recoveryLinkExpiresAt: new Date(),
+                    },
+                })
+            );
         }
 
         // Referral reward: inviter gets wallet credit when invited customer places first purchase.
         if (!isGuest && userId && existingOrderCountBeforeCheckout === 0 && orderIds.length > 0) {
-            const invitedUser = await User.findById(userId)
-                .select('referredByUserId referralRewardCreditedAt')
-                .lean();
+            deferPostOrderTask('referral-reward', async () => {
+                const invitedUser = await User.findById(userId)
+                    .select('referredByUserId referralRewardCreditedAt')
+                    .lean();
 
-            const inviterUserId = invitedUser?.referredByUserId;
-            if (inviterUserId && inviterUserId !== userId && !invitedUser?.referralRewardCreditedAt) {
-                const primaryStoreId = Array.from(checkoutStoreIds)[0] || null;
-                const referralRewardCoins = await getReferralRewardCoins(primaryStoreId);
+                const inviterUserId = invitedUser?.referredByUserId;
+                if (inviterUserId && inviterUserId !== userId && !invitedUser?.referralRewardCreditedAt) {
+                    const primaryStoreId = Array.from(checkoutStoreIds)[0] || null;
+                    const referralRewardCoins = await getReferralRewardCoins(primaryStoreId);
 
-                if (referralRewardCoins > 0) {
-                    const claimResult = await User.updateOne(
-                        {
-                            _id: userId,
-                            referredByUserId: inviterUserId,
-                            referralRewardCreditedAt: null
-                        },
-                        { $set: { referralRewardCreditedAt: new Date() } }
-                    );
-
-                    if (claimResult.modifiedCount > 0) {
-                        await Wallet.findOneAndUpdate(
-                            { userId: inviterUserId },
+                    if (referralRewardCoins > 0) {
+                        const claimResult = await User.updateOne(
                             {
-                                $inc: { coins: referralRewardCoins },
-                                $push: {
-                                    transactions: {
-                                        type: 'BONUS',
-                                        coins: referralRewardCoins,
-                                        rupees: referralRewardCoins,
-                                        orderId: orderIds[orderIds.length - 1],
-                                        description: `Referral reward for inviting customer ${userId}`
-                                    }
-                                }
+                                _id: userId,
+                                referredByUserId: inviterUserId,
+                                referralRewardCreditedAt: null
                             },
-                            { upsert: true, new: true, setDefaultsOnInsert: true }
+                            { $set: { referralRewardCreditedAt: new Date() } }
                         );
+
+                        if (claimResult.modifiedCount > 0) {
+                            await Wallet.findOneAndUpdate(
+                                { userId: inviterUserId },
+                                {
+                                    $inc: { coins: referralRewardCoins },
+                                    $push: {
+                                        transactions: {
+                                            type: 'BONUS',
+                                            coins: referralRewardCoins,
+                                            rupees: referralRewardCoins,
+                                            orderId: orderIds[orderIds.length - 1],
+                                            description: `Referral reward for inviting customer ${userId}`
+                                        }
+                                    }
+                                },
+                                { upsert: true, new: true, setDefaultsOnInsert: true }
+                            );
+                        }
                     }
                 }
-            }
+            });
         }
 
-        // Return orders
+        const primaryOrderId = orderIds[orderIds.length - 1];
+        const primaryTotal = createdOrderTotals.get(primaryOrderId) ?? fullAmount;
+        const successPayload = {
+            message: 'Orders Placed Successfully',
+            id: primaryOrderId,
+            orderId: primaryOrderId,
+            total: primaryTotal,
+        };
+
         if (isGuest) {
-            const orders = await Order.find({ _id: { $in: orderIds } })
-                .populate('userId')
-                .populate({
-                    path: 'orderItems.productId',
-                    model: 'Product'
-                })
-                .lean();
-            return NextResponse.json({ message: 'Orders Placed Successfully', orders, id: orders[0]?._id.toString(), orderId: orders[0]?._id.toString() });
-        } else {
-            // Return the last order
-            const order = await Order.findById(orderIds[orderIds.length - 1])
-                .populate('userId')
-                .populate({
-                    path: 'orderItems.productId',
-                    model: 'Product'
-                })
-                .lean();
-            return NextResponse.json({ message: 'Orders Placed Successfully', order, id: order._id.toString(), orderId: order._id.toString() });
+            return NextResponse.json(successPayload);
         }
+
+        return NextResponse.json({
+            ...successPayload,
+            order: { _id: primaryOrderId, total: primaryTotal },
+        });
     } catch (error) {
         console.error(error);
         return NextResponse.json({ error: error.code || error.message }, { status: 400 });

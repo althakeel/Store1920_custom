@@ -415,7 +415,7 @@ function OrderSuccessContent() {
                   </p>
                 </div>
                 <Link
-                  href="/profile"
+                  href="/dashboard/profile"
                   className="mt-4 inline-flex shrink-0 items-center justify-center rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 sm:mt-0"
                 >
                   Sign in

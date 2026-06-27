@@ -29,9 +29,15 @@ export default function ShowcaseLargeBannerSlider({
   interval = 4000,
   enabled = true,
   gridRow,
+  bannerVariant,
   fallback = null,
   showTruckIcon = false,
 }) {
+  const bannerRowClassName = [
+    'group relative overflow-hidden rounded-xl border border-slate-200 bg-slate-900 shadow-sm shop-showcase-banner-row',
+    bannerVariant === 'main' ? 'shop-showcase-banner-row--main' : '',
+    bannerVariant === 'secondary' ? 'shop-showcase-banner-row--secondary' : '',
+  ].filter(Boolean).join(' ');
   const activeSlides = useMemo(
     () => slides
       .map((slide) => ({
@@ -146,7 +152,7 @@ export default function ShowcaseLargeBannerSlider({
     return (
       <Link
         href={fallback.href || '/shop'}
-        className="group relative overflow-hidden rounded-xl border border-slate-200 bg-slate-900 shadow-sm shop-showcase-banner-row"
+        className={bannerRowClassName}
         style={{ gridRow }}
       >
         <div className={`absolute inset-0 bg-gradient-to-r ${fallback.accent}`} />
@@ -185,7 +191,7 @@ export default function ShowcaseLargeBannerSlider({
   return (
     <Link
       href={href}
-      className="group relative overflow-hidden rounded-xl border border-slate-200 bg-slate-900 shadow-sm shop-showcase-banner-row"
+      className={bannerRowClassName}
       style={{ gridRow }}
       dir="ltr"
       onMouseEnter={() => setPaused(true)}

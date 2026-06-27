@@ -1,64 +1,230 @@
-
 'use client'
-import React from 'react'
-import { Home, Search, ShoppingCart, User, LayoutGrid } from 'lucide-react'
+
+import React, { useEffect, useState } from 'react'
+import { Home, ShoppingCart, User, Truck, Percent } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useSelector } from 'react-redux'
 import { useAuth } from '@/lib/useAuth'
 import { isProductDetailPath } from '@/lib/productUrl'
+import { useStorefrontI18n } from '@/lib/useStorefrontI18n'
+
+const DEFAULT_BRAND_COLOR = '#8f3404'
+const INACTIVE_NAV_COLOR = '#94a3b8'
+const NAVBAR_APPEARANCE_CACHE_KEY = 'navbarAppearanceCache'
+const OFFERS_HREF = '/offers'
+const FAST_DELIVERY_HREF = '/fast-delivery'
+const DEALS_ACCENT = '#ea580c'
+const DEALS_ACCENT_DARK = '#c2410c'
+
+function readCachedBrandColor() {
+  if (typeof window === 'undefined') return DEFAULT_BRAND_COLOR
+  try {
+    const raw = window.localStorage.getItem(NAVBAR_APPEARANCE_CACHE_KEY)
+    if (!raw) return DEFAULT_BRAND_COLOR
+    const parsed = JSON.parse(raw)
+    const color = String(parsed?.backgroundColor || '').trim()
+    return color || DEFAULT_BRAND_COLOR
+  } catch {
+    return DEFAULT_BRAND_COLOR
+  }
+}
+
+function useBrandColor() {
+  const [brandColor, setBrandColor] = useState(DEFAULT_BRAND_COLOR)
+
+  useEffect(() => {
+    setBrandColor(readCachedBrandColor())
+
+    const controller = new AbortController()
+    fetch(`/api/store/navbar-menu?t=${Date.now()}`, { cache: 'no-store', signal: controller.signal })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        const next = String(data?.backgroundColor || '').trim()
+        if (next) setBrandColor(next)
+      })
+      .catch(() => {})
+
+    const handleUpdate = (event) => {
+      const next = event?.detail?.backgroundColor
+      if (typeof next === 'string' && next.trim()) {
+        setBrandColor(next.trim())
+        return
+      }
+      setBrandColor(readCachedBrandColor())
+    }
+
+    window.addEventListener('navbarAppearanceUpdated', handleUpdate)
+    return () => {
+      controller.abort()
+      window.removeEventListener('navbarAppearanceUpdated', handleUpdate)
+    }
+  }, [])
+
+  return brandColor
+}
+
+function RegularNavItem({ item, pathname, brandColor, hydrated }) {
+  const Icon = item.icon
+  const isActive = item.match(pathname)
+  const activeColor = brandColor || DEFAULT_BRAND_COLOR
+  const iconColor = isActive ? activeColor : INACTIVE_NAV_COLOR
+
+  return (
+    <Link
+      href={item.href}
+      className="group flex min-w-0 flex-1 items-end justify-center px-0.5 pb-0.5"
+      aria-current={isActive ? 'page' : undefined}
+    >
+      <span
+        className={`flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-2xl px-1.5 py-1 transition-all duration-200 active:scale-95 ${
+          isActive ? '' : 'group-hover:opacity-80'
+        }`}
+      >
+        <span className="relative flex h-5 w-5 items-center justify-center">
+          <Icon
+            size={18}
+            strokeWidth={isActive ? 2.5 : 1.9}
+            color={iconColor}
+            className="transition-colors duration-200"
+          />
+          {hydrated && item.badge > 0 && (
+            <span
+              className="absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full px-0.5 text-[9px] font-bold leading-none text-white"
+              style={{ backgroundColor: activeColor }}
+            >
+              {item.badge > 99 ? '99+' : item.badge}
+            </span>
+          )}
+        </span>
+        <span
+          className={`max-w-[52px] truncate text-[9px] leading-none tracking-tight transition-colors duration-200 ${
+            isActive ? 'font-semibold' : 'font-medium'
+          }`}
+          style={{ color: iconColor }}
+        >
+          {item.label}
+        </span>
+      </span>
+    </Link>
+  )
+}
+
+function CenterTodayDealsItem({ pathname, line1, line2 }) {
+  const isActive = pathname === OFFERS_HREF
+
+  return (
+    <Link
+      href={OFFERS_HREF}
+      className="group relative -mt-4 flex min-w-0 flex-1 flex-col items-center justify-end pb-0.5"
+      aria-label={`${line1} ${line2}`}
+      aria-current={isActive ? 'page' : undefined}
+    >
+      <span
+        className="relative flex h-[46px] w-[46px] items-center justify-center rounded-full shadow-[0_4px_14px_rgba(234,88,12,0.35)] ring-[3px] ring-white transition-transform duration-200 active:scale-95"
+        style={{
+          background: `linear-gradient(145deg, ${DEALS_ACCENT} 0%, ${DEALS_ACCENT_DARK} 100%)`,
+        }}
+      >
+        <Percent size={21} color="#ffffff" strokeWidth={2.5} />
+      </span>
+      <span className="mt-1 flex flex-col items-center leading-none">
+        <span
+          className={`text-[8px] leading-tight transition-colors duration-200 ${
+            isActive ? 'font-bold' : 'font-semibold'
+          }`}
+          style={{ color: isActive ? DEALS_ACCENT_DARK : DEALS_ACCENT }}
+        >
+          {line1}
+        </span>
+        <span
+          className={`text-[8px] leading-tight transition-colors duration-200 ${
+            isActive ? 'font-bold' : 'font-semibold'
+          }`}
+          style={{ color: isActive ? DEALS_ACCENT_DARK : DEALS_ACCENT }}
+        >
+          {line2}
+        </span>
+      </span>
+    </Link>
+  )
+}
 
 export default function MobileBottomNav() {
-  const [hydrated, setHydrated] = React.useState(false)
-  React.useEffect(() => { setHydrated(true) }, []);
+  const [hydrated, setHydrated] = useState(false)
+  useEffect(() => { setHydrated(true) }, [])
+
   const pathname = usePathname()
   const cartCount = useSelector((state) => state.cart.total)
-  const { user, loading: authLoading } = useAuth();
-  const isSignedIn = !!user;
+  const { user } = useAuth()
+  const { t, language } = useStorefrontI18n()
+  const brandColor = useBrandColor()
+  const isSignedIn = !!user
+  const isArabic = language === 'ar'
 
-  // Don't show on product pages (will have separate fixed bar)
   if (isProductDetailPath(pathname)) {
     return null
   }
 
-  const navItems = [
-    { href: '/', icon: Home, label: 'Home' },
-    { href: '/categories', icon: LayoutGrid, label: 'Categories' },
-    { href: '/cart', icon: ShoppingCart, label: 'Cart', badge: cartCount },
-    { href: isSignedIn ? '/orders' : '/sign-in', icon: User, label: isSignedIn ? 'My Account' : 'Account' },
+  const accountHref = isSignedIn ? '/dashboard/orders' : '/sign-in'
+
+  const leftItems = [
+    { href: '/', icon: Home, label: t('common.home'), match: (path) => path === '/' },
+    {
+      href: FAST_DELIVERY_HREF,
+      icon: Truck,
+      label: t('navbar.fastDelivery'),
+      match: (path) => path === FAST_DELIVERY_HREF,
+    },
+  ]
+
+  const rightItems = [
+    { href: '/cart', icon: ShoppingCart, label: t('navbar.cart'), badge: cartCount, match: (path) => path === '/cart' },
+    {
+      href: accountHref,
+      icon: User,
+      label: t('navbar.account'),
+      match: (path) => path === accountHref || path.startsWith('/dashboard/') || path === '/sign-in',
+    },
   ]
 
   return (
-    <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-2xl z-50 safe-area-bottom">
-      <div className="flex items-stretch justify-around">
-        {navItems.map((item) => {
-          const Icon = item.icon
-          const isActive = pathname === item.href
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex-1 flex flex-col items-center justify-center py-2.5 transition-colors relative ${
-                isActive 
-                  ? 'text-gray-900' 
-                  : 'text-gray-500'
-              }`}
-            >
-              <div className="relative mb-1">
-                <Icon size={22} strokeWidth={isActive ? 2.5 : 2} />
-                {hydrated && item.badge > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
-                    {item.badge > 99 ? '99+' : item.badge}
-                  </span>
-                )}
-              </div>
-              <span className={`text-[11px] leading-tight ${isActive ? 'font-medium' : 'font-normal'}`}>
-                {item.label}
-              </span>
-            </Link>
-          )
-        })}
+    <nav
+      aria-label="Mobile navigation"
+      dir={isArabic ? 'rtl' : 'ltr'}
+      className="fixed bottom-0 left-0 right-0 z-50 border-t border-slate-200/80 bg-white/95 backdrop-blur-md lg:hidden"
+      style={{
+        paddingBottom: 'max(0.35rem, env(safe-area-inset-bottom))',
+        boxShadow: '0 -8px 24px rgba(15, 23, 42, 0.06)',
+      }}
+    >
+      <div className="mx-auto flex h-[58px] max-w-lg items-stretch justify-around px-0.5">
+        {leftItems.map((item) => (
+          <RegularNavItem
+            key={item.href}
+            item={item}
+            pathname={pathname}
+            brandColor={brandColor}
+            hydrated={hydrated}
+          />
+        ))}
+
+        <CenterTodayDealsItem
+          pathname={pathname}
+          line1={t('navbar.todaysDealsTop')}
+          line2={t('navbar.todaysDealsBottom')}
+        />
+
+        {rightItems.map((item) => (
+          <RegularNavItem
+            key={item.href}
+            item={item}
+            pathname={pathname}
+            brandColor={brandColor}
+            hydrated={hydrated}
+          />
+        ))}
       </div>
-    </div>
+    </nav>
   )
 }

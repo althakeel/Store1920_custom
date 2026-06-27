@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 import { getCartEntryProductId, getCartEntryQuantity, isFreeGiftEntry } from "@/lib/freeGiftUtils";
 import { isPlaceholderName } from "@/lib/abandonedCartUtils";
 import { scheduleAbandonedCartWhatsAppReminder } from "@/lib/abandonedCheckoutWhatsAppReminder";
+import { getProductThumbnailUrl } from '@/lib/productMedia';
 
 
 // Update user cart 
@@ -48,7 +49,7 @@ export async function POST(request){
 
                 const productIds = cartItems.map(it => it.productId);
                 const products = await Product.find({ _id: { $in: productIds } })
-                    .select('_id storeId name price')
+                    .select('_id storeId name price images image slug useProductsPath')
                     .lean();
 
                 const productMap = new Map(products.map(p => [String(p._id), p]));
@@ -64,6 +65,7 @@ export async function POST(request){
                         name: prod.name,
                         quantity: it.quantity,
                         price: prod.price || 0,
+                        imageUrl: getProductThumbnailUrl(prod, { fallback: '' }) || '',
                     });
                 }
 

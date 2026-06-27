@@ -1,5 +1,4 @@
 import {
-  CAROUSEL_PRODUCT_CARD_CLASS,
   MOBILE_CAROUSEL_BLEED_CLASS,
   CATEGORY_SLIDER_LAYOUT_CLASS,
   CATEGORY_SLIDER_SIDE_IMAGE_CLASS,
@@ -7,6 +6,7 @@ import {
   HOME_PRODUCT_GRID_CLASS,
   HOME_SECTION_CLASS,
   HOME_SECTION_GRID_INNER_CLASS,
+  getCategorySliderProductCardClass,
   getCarouselProductCardClass,
 } from '@/lib/storefrontCarousel';
 
@@ -56,7 +56,7 @@ export function HomeProductCarouselSkeleton({ count = 6, showTitle = true }) {
           {Array.from({ length: count }).map((_, index) => (
             <HomeProductCardSkeleton
               key={`home-carousel-skeleton-${index}`}
-              className={CAROUSEL_PRODUCT_CARD_CLASS}
+              className={getCarouselProductCardClass()}
             />
           ))}
         </div>
@@ -121,7 +121,7 @@ export function HomeSideImageSliderSkeleton({
   showTitle = true,
 }) {
   const cardCount = cardsPerRow === 5 ? 5 : 6;
-  const cardWidthClass = getCarouselProductCardClass(cardsPerRow);
+  const cardWidthClass = getCategorySliderProductCardClass(cardsPerRow);
 
   return (
     <div className="w-full min-w-0 max-w-full overflow-hidden" aria-hidden="true">

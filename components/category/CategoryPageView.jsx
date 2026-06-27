@@ -65,10 +65,10 @@ export default function CategoryPageView({
         ))}
       </nav>
 
-      <div className={`mb-6 ${isArabic ? 'text-right' : ''}`}>
+      <div className="mb-6 text-center">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">{categoryName}</h1>
         {category.description ? (
-          <p className="text-gray-600 max-w-3xl">
+          <p className="text-gray-600 max-w-3xl mx-auto">
             {decodeHtmlEntities(
               isArabic && String(category.descriptionAr || '').trim()
                 ? category.descriptionAr

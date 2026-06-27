@@ -7,7 +7,10 @@ import { HOME_SECTION_STACK_CLASS } from '@/lib/storefrontCarousel';
 import HeroBannerSlider from '@/components/HeroBannerSlider';
 import LatestProducts from '@/components/LatestProducts';
 import ShopShowcaseSection from '@/components/ShopShowcaseSection';
-import HomeCategories from '@/components/HomeCategories';
+const HomeCategories = dynamic(() => import('@/components/HomeCategories'), {
+  ssr: false,
+  loading: () => <HomeCategoryRowSkeleton />,
+});
 import DeferredSection from '@/components/DeferredSection';
 import {
   HomeBannerSkeleton,
@@ -15,6 +18,7 @@ import {
   HomeExploreInterestsSkeleton,
   HomeProductCarouselSkeleton,
   HomeProductGridSkeleton,
+  HomeCategoryRowSkeleton,
 } from '@/components/home/HomeSectionSkeletons';
 
 const BannerSlider = dynamic(() => import('@/components/BannerSlider'), {
@@ -50,11 +54,10 @@ export default function HomePageClient({ initialData }) {
   const {
     shopShowcase = { config: null, sectionProducts: [], products: [], categories: [] },
     homeSections = [],
-    featuredSections = [],
+    featuredSectionsCount = 0,
     featuredProducts = { products: [], sectionTitle: '', sectionDescription: '' },
     appearance = {},
     storeSettings = {},
-    topDeals = { title: 'Top Deals', products: [] },
   } = initialData || {};
 
   const shopShowcaseConfig = shopShowcase?.config || null;
@@ -89,40 +92,39 @@ export default function HomePageClient({ initialData }) {
   return (
     <>
       <HeroBannerSlider showcaseConfig={shopShowcaseConfig} showcaseReady />
-      <div className={`${HOME_SECTION_STACK_CLASS} w-full min-w-0 pb-6 sm:pb-8`}>
+      <div className={`${HOME_SECTION_STACK_CLASS} w-full min-w-0 max-lg:pb-0 lg:pb-8`}>
         <ShopShowcaseSection
           initialShowcaseData={shopShowcase}
           initialStoreSettings={storeSettings}
           skipInitialFetch
         />
         {showSecondaryBannerAt('below_small_banners') && <BannerSlider2 config={shopShowcaseConfig} />}
-        {showHeroCategories ? <HomeCategories /> : null}
+        {showHeroCategories ? (
+          <DeferredSection minHeight={96} placeholder={<HomeCategoryRowSkeleton />}>
+            <HomeCategories />
+          </DeferredSection>
+        ) : null}
         <LatestProducts
           initialProducts={featuredProducts.products}
           initialSectionTitle={featuredProducts.sectionTitle}
           initialSectionDescription={featuredProducts.sectionDescription}
           initialLayout={appearance?.homeMenuCategories}
         />
-        {featuredSections.length === 0 && <BannerSlider config={shopShowcaseConfig} />}
+        {featuredSectionsCount === 0 && <BannerSlider config={shopShowcaseConfig} />}
         {showSecondaryBannerAt('above_top_deals') && <BannerSlider2 config={shopShowcaseConfig} />}
 
         <DeferredSection minHeight={320} placeholder={<HomeProductGridSkeleton count={6} />}>
-          <Section3
-            homeSections={homeSections}
-            sectionsLoading={false}
-            initialProducts={topDeals.products}
-            initialTitle={topDeals.title}
-          />
+          <Section3 homeSections={homeSections} sectionsLoading={false} />
         </DeferredSection>
 
         {showSecondaryBannerAt('below_top_deals') && <BannerSlider2 config={shopShowcaseConfig} />}
 
-        {featuredSections.length > 0 && (
+        {featuredSectionsCount > 0 && (
           <DeferredSection
             minHeight={280}
-            placeholder={<HomeCategorySlidersSkeleton sections={Math.min(featuredSections.length, 2)} />}
+            placeholder={<HomeCategorySlidersSkeleton sections={2} />}
           >
-            <Section4 sections={featuredSections} loading={false} />
+            <Section4 />
           </DeferredSection>
         )}
 

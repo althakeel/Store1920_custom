@@ -18,7 +18,7 @@ import { runTrackedOnce } from "@/lib/trackingDedupe";
 import { GTM_EVENTS, gtmDedupeKey } from "@/lib/gtmEvents";
 import { STORE_CURRENCY } from "@/lib/storeCurrency";
 import { getCartEntryProductId, getCartEntryQuantity, isFreeGiftEntry } from "@/lib/freeGiftUtils";
-import { resolveCartLinePricing } from "@/lib/bulkBundleCart";
+import { adjustBundleCartTier, isBulkBundleProduct, resolveCartLinePricing } from "@/lib/bulkBundleCart";
 import { getOrCreateAnonymousId, getOrCreateSessionId } from '@/lib/trackingClient';
 
 export const dynamic = "force-dynamic";
@@ -282,7 +282,7 @@ export default function Cart() {
 
     const handleDeleteItemFromCart = async (cartKey) => {
         const key = String(cartKey || '');
-        if (!key) return;
+        if (!key) return false;
 
         const removedItem = cartArray.find((item) => String(item._cartKey || item._id) === key);
         if (removedItem) {
@@ -305,7 +305,6 @@ export default function Cart() {
                         data: { productId: key },
                     });
 
-                    // Force DB cart to exactly match current Redux cart (extra safety)
                     const latestCart = store.getState()?.cart?.cartItems || {};
                     await axios.post('/api/cart', { cart: latestCart }, {
                         headers: { Authorization: `Bearer ${token}` },
@@ -313,7 +312,8 @@ export default function Cart() {
                 } else {
                     await dispatch(uploadCart({ getToken }));
                 }
-                await dispatch(fetchCart({ getToken }));
+            } catch (error) {
+                console.warn('[Cart] Failed to sync removed item:', error?.response?.data || error?.message);
             } finally {
                 setDeletingKeys((prev) => {
                     const next = { ...prev };
@@ -321,7 +321,7 @@ export default function Cart() {
                     return next;
                 });
             }
-            return;
+            return true;
         }
 
         setDeletingKeys((prev) => {
@@ -329,6 +329,7 @@ export default function Cart() {
             delete next[key];
             return next;
         });
+        return true;
     };
 
     const getMaxQty = (item) => {
@@ -341,14 +342,25 @@ export default function Cart() {
     const outOfStockCartArray = cartArray.filter((item) => getMaxQty(item) === 0);
     const checkoutDisabled = inStockCartArray.length === 0;
 
-    const needsLastItemRemoveConfirm = (cartKey) => {
-        if (inStockCartArray.length !== 1) return false;
-        const onlyItem = inStockCartArray[0];
-        const key = String(onlyItem?._cartKey || onlyItem?._id || '');
-        if (key !== String(cartKey || '')) return false;
-        const qty = Number(onlyItem?.quantity || getCartEntryQuantity(cartItems?.[cartKey]) || 0);
-        return qty <= 1;
+    const getRemovableInStockItems = () => inStockCartArray.filter((item) => !item._isFreeGift);
+
+    const isLastRemovableItem = (cartKey) => {
+        const removableItems = getRemovableInStockItems();
+        if (removableItems.length !== 1) return false;
+        const onlyItem = removableItems[0];
+        return String(onlyItem?._cartKey || onlyItem?._id || '') === String(cartKey || '');
     };
+
+    const wouldDecrementRemoveItem = (item) => {
+        const cartKey = item._cartKey || item._id;
+        const entry = cartItems?.[cartKey];
+        if (item?._isBulkBundle || isBulkBundleProduct(item)) {
+            return adjustBundleCartTier(entry, item, 'down') === 'remove';
+        }
+        return getCartEntryQuantity(entry) <= 1;
+    };
+
+    const needsLastItemRemoveConfirm = (cartKey) => isLastRemovableItem(cartKey);
 
     const handleRequestRemove = (cartKey) => {
         if (needsLastItemRemoveConfirm(cartKey)) {
@@ -363,7 +375,7 @@ export default function Cart() {
     };
 
     const handleRequestDecrease = (cartKey, item) => {
-        if (needsLastItemRemoveConfirm(cartKey)) {
+        if (isLastRemovableItem(cartKey) && wouldDecrementRemoveItem(item)) {
             setPendingRemove({
                 cartKey: String(cartKey),
                 productName: item?.name || 'this item',
@@ -374,10 +386,13 @@ export default function Cart() {
         decrementCartItem(dispatch, { productId: cartKey, entry, product: item });
     };
 
-    const handleConfirmRemove = () => {
+    const handleConfirmRemove = async () => {
         if (!pendingRemove?.cartKey) return;
-        handleDeleteItemFromCart(pendingRemove.cartKey);
-        setPendingRemove(null);
+        const cartKey = pendingRemove.cartKey;
+        const removed = await handleDeleteItemFromCart(cartKey);
+        if (removed) {
+            setPendingRemove(null);
+        }
     };
 
     useEffect(() => {

@@ -11,20 +11,10 @@ import { getLargeBannerSlides } from '@/lib/shopShowcaseLargeBanners'
 import { cleanDisplayText } from '@/lib/displayText'
 import { getProductPath } from '@/lib/productUrl'
 import {
-  Baby,
-  Bike,
-  Car,
   ChevronLeft,
   ChevronRight,
-  Headphones,
-  Info,
-  Laptop,
   Search,
-  Smartphone,
   Truck,
-  ToyBrick,
-  Tv,
-  Watch,
 } from 'lucide-react'
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket'
 import { getProductThumbnailUrl } from '@/lib/productMedia'
@@ -33,6 +23,7 @@ import {
   STOREFRONT_LANGUAGE_EVENT,
 } from '@/lib/storefrontLanguage'
 import { getLocalizedCategoryName } from '@/lib/categoryLocalization'
+import { getCategoryIcon } from '@/lib/categoryIcons'
 
 const NAVBAR_APPEARANCE_CACHE_KEY = 'navbarAppearanceCache'
 const DEFAULT_NAVBAR_BG = '#8f3404'
@@ -118,7 +109,7 @@ function ShopShowcaseSkeleton({ navbarBg = DEFAULT_NAVBAR_BG }) {
   return (
     <section className={`${HOME_SECTION_CLASS} max-w-[1400px] mx-auto px-0 sm:px-6`} aria-label="Loading shop showcase">
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-[280px_minmax(0,1fr)] lg:items-stretch">
-        <div className="relative hidden min-h-0 lg:block">
+        <div className="relative hidden h-full min-h-0 lg:col-start-1 lg:row-start-1 lg:block">
           <aside className="absolute inset-0 flex min-h-0 flex-col overflow-hidden rounded-none border border-slate-200 bg-white shadow-sm">
             <div className="flex items-center justify-between px-4 py-3 text-white" style={{ backgroundColor: navbarBg }}>
               <div className="flex items-center gap-2">
@@ -139,8 +130,8 @@ function ShopShowcaseSkeleton({ navbarBg = DEFAULT_NAVBAR_BG }) {
           </aside>
         </div>
 
-        <div className="shop-showcase-banner-grid">
-          <div className="shop-showcase-banner-row relative overflow-hidden rounded-[2px] border border-slate-200 bg-slate-100 shadow-sm">
+        <div className="shop-showcase-banner-grid lg:col-start-2 lg:row-start-1">
+          <div className="shop-showcase-banner-row shop-showcase-banner-row--main relative overflow-hidden rounded-[2px] border border-slate-200 bg-slate-100 shadow-sm">
             <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-slate-100 via-slate-200 to-slate-100" />
             <div className="absolute inset-0 flex items-center px-8">
               <div className="space-y-3">
@@ -151,7 +142,7 @@ function ShopShowcaseSkeleton({ navbarBg = DEFAULT_NAVBAR_BG }) {
             </div>
           </div>
 
-          <div className="shop-showcase-banner-row relative overflow-hidden rounded-[2px] border border-slate-200 bg-slate-100 shadow-sm">
+          <div className="shop-showcase-banner-row shop-showcase-banner-row--secondary relative overflow-hidden rounded-[2px] border border-slate-200 bg-slate-100 shadow-sm">
             <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-slate-100 via-slate-200 to-slate-100" />
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="h-5 w-56 rounded-[2px] bg-white/65" />
@@ -159,7 +150,7 @@ function ShopShowcaseSkeleton({ navbarBg = DEFAULT_NAVBAR_BG }) {
           </div>
         </div>
 
-        <div className="hidden lg:col-span-2 lg:grid grid-cols-4 gap-2">
+        <div className="hidden lg:col-span-2 lg:row-start-2 lg:grid grid-cols-4 gap-2">
           {Array.from({ length: 4 }).map((_, index) => (
             <div key={index} className="aspect-[1225/639] animate-pulse rounded-[2px] border border-slate-200 bg-slate-100" />
           ))}
@@ -167,20 +158,6 @@ function ShopShowcaseSkeleton({ navbarBg = DEFAULT_NAVBAR_BG }) {
       </div>
     </section>
   )
-}
-
-function getCategoryIconByName(name) {
-  const text = String(name || '').toLowerCase()
-  if (text.includes('mobile') || text.includes('phone')) return Smartphone
-  if (text.includes('electronic') || text.includes('appliance') || text.includes('tv')) return Tv
-  if (text.includes('computer') || text.includes('laptop')) return Laptop
-  if (text.includes('headphone') || text.includes('audio')) return Headphones
-  if (text.includes('watch')) return Watch
-  if (text.includes('sport')) return Bike
-  if (text.includes('baby')) return Baby
-  if (text.includes('car') || text.includes('auto')) return Car
-  if (text.includes('toy')) return ToyBrick
-  return Info
 }
 
 export default function ShopShowcaseSection({
@@ -235,7 +212,12 @@ export default function ShopShowcaseSection({
     clearFlyoutCloseTimer()
     closeFlyoutTimerRef.current = window.setTimeout(() => {
       setHoveredMenuIndex(null)
-    }, 320)
+    }, 120)
+  }
+
+  const closeCategoryFlyout = () => {
+    clearFlyoutCloseTimer()
+    setHoveredMenuIndex(null)
   }
 
   const updateFlyoutPosition = (index) => {
@@ -367,9 +349,35 @@ export default function ShopShowcaseSection({
 
     if (skipInitialFetch && initialShowcaseData) {
       applyMenuStyle(initialStoreSettings || {});
-      loadNavigation()
-        .catch(() => {})
-        .finally(() => setLoading(false));
+      setLoading(false);
+
+      const hasInitialNavigation =
+        (useParentCategoriesInitially && initialStoreSettings?.resolvedNavMenuItems?.length) ||
+        (!useParentCategoriesInitially && initialStoreSettings?.navMenuItems?.length);
+
+      if (!hasInitialNavigation) {
+        loadNavigation()
+          .catch(() => {})
+          .finally(() => setLoading(false));
+      } else {
+        const scheduleNavigationRefresh = () => {
+          loadNavigation().catch(() => {});
+        };
+
+        if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+          const idleId = window.requestIdleCallback(scheduleNavigationRefresh, { timeout: 5000 });
+          return () => {
+            window.removeEventListener('navMenuUpdated', handleMenuUpdated);
+            window.cancelIdleCallback(idleId);
+          };
+        }
+
+        const timerId = window.setTimeout(scheduleNavigationRefresh, 2500);
+        return () => {
+          window.removeEventListener('navMenuUpdated', handleMenuUpdated);
+          window.clearTimeout(timerId);
+        };
+      }
     } else {
       load();
     }
@@ -390,7 +398,7 @@ export default function ShopShowcaseSection({
         title: getLocalizedCategoryName(category, language),
         href: getCategoryHref(category, categories),
         iconImage: String(category?.icon || category?.image || category?.iconUrl || '').trim(),
-        icon: getCategoryIconByName(category?.name),
+        icon: getCategoryIcon({ slug: category?.slug, name: category?.name, href: getCategoryHref(category, categories) }),
       }))
   }, [data?.categories, language])
 
@@ -413,7 +421,11 @@ export default function ShopShowcaseSection({
         dropdownImages: Array.isArray(item?.megaMenu?.images) ? item.megaMenu.images : [],
         linkColumns: Number(item?.megaMenu?.linkColumns) > 0 ? Number(item.megaMenu.linkColumns) : 1,
         iconImage: String(item?.icon || item?.image || item?.iconUrl || '').trim(),
-        icon: getCategoryIconByName(item?.name || item?.label),
+        icon: getCategoryIcon({
+          slug: item?.slug || item?.categorySlug,
+          name: item?.name || item?.label,
+          href: String(item?.link || item?.url || '#').trim() || '#',
+        }),
       }))
       .filter((item) => item.title)
 
@@ -519,19 +531,44 @@ export default function ShopShowcaseSection({
 
   const showCategoryFlyout = Boolean(hoveredMenuItem?.hasDropdown && hoveredDropdownLinks.length)
 
+  const renderShowcaseBanner = (banner) => (
+    <ShowcaseLargeBannerSlider
+      key={banner.type}
+      slides={banner.slides}
+      enabled={banner.sliderEnabled}
+      interval={banner.sliderInterval}
+      gridRow={banner.gridRow}
+      bannerVariant={banner.type === 'top' ? 'main' : 'secondary'}
+      showTruckIcon={banner.showTruckIcon}
+      fallback={{
+        href: banner.href,
+        title: banner.title,
+        showTitle: banner.showTitle,
+        subtitle: banner.subtitle,
+        showSubtitle: banner.showSubtitle,
+        ctaText: banner.ctaText,
+        showCta: banner.showCta,
+        ctaBgColor: banner.ctaBgColor,
+        ctaTextColor: banner.ctaTextColor,
+        accent: banner.accent,
+      }}
+    />
+  )
+
   return (
     <section className={`${HOME_SECTION_CLASS} max-w-[1400px] mx-auto px-4 sm:px-6`}>
-      <div className="grid grid-cols-1 gap-3 overflow-visible lg:grid-cols-[280px_minmax(0,1fr)]">
-        <div
-          ref={menuContainerRef}
-          className="relative z-30 hidden min-h-0 overflow-visible lg:block"
-          style={{ width: showCategoryFlyout ? 560 : undefined }}
-          onMouseEnter={clearFlyoutCloseTimer}
-          onMouseLeave={scheduleFlyoutClose}
-        >
+      <div className="grid grid-cols-1 gap-3 overflow-visible lg:grid-cols-[280px_minmax(0,1fr)] lg:items-stretch">
+        <div className="relative z-30 hidden h-full min-h-0 lg:col-start-1 lg:row-start-1 lg:block">
+          <div
+            ref={menuContainerRef}
+            className="relative h-full min-h-0 overflow-visible"
+            style={{ width: showCategoryFlyout ? 560 : 280 }}
+            onMouseEnter={clearFlyoutCloseTimer}
+            onMouseLeave={scheduleFlyoutClose}
+          >
           <aside
             dir={isArabic ? 'rtl' : 'ltr'}
-            className={`absolute inset-y-0 flex w-[280px] min-h-0 flex-col overflow-hidden rounded-none border border-slate-200 bg-white shadow-sm ${isArabic ? 'right-0' : 'left-0'}`}
+            className="absolute inset-0 flex min-h-0 w-[280px] flex-col overflow-hidden rounded-none border border-slate-200 bg-white shadow-sm"
           >
             <div
               className={`flex items-center justify-between px-4 py-3 text-white ${isArabic ? 'flex-row-reverse' : ''}`}
@@ -628,6 +665,7 @@ export default function ShopShowcaseSection({
                   borderColor: menuStyle.showcaseFlyoutBorderColor,
                 }}
                 onMouseEnter={clearFlyoutCloseTimer}
+                onMouseLeave={scheduleFlyoutClose}
               >
                 <div className={`grid min-h-0 flex-1 ${hoveredDropdownImages.length ? 'grid-cols-[minmax(0,1fr)_120px]' : 'grid-cols-1'}`}>
                   <div className="min-h-0 min-w-0 overflow-y-auto">
@@ -687,35 +725,15 @@ export default function ShopShowcaseSection({
               </div>
             </>
           ) : null}
+          </div>
         </div>
 
-        <div className="shop-showcase-banner-grid">
-          {bannerBlocks.map((banner) => (
-            <ShowcaseLargeBannerSlider
-              key={banner.type}
-              slides={banner.slides}
-              enabled={banner.sliderEnabled}
-              interval={banner.sliderInterval}
-              gridRow={banner.gridRow}
-              showTruckIcon={banner.showTruckIcon}
-              fallback={{
-                href: banner.href,
-                title: banner.title,
-                showTitle: banner.showTitle,
-                subtitle: banner.subtitle,
-                showSubtitle: banner.showSubtitle,
-                ctaText: banner.ctaText,
-                showCta: banner.showCta,
-                ctaBgColor: banner.ctaBgColor,
-                ctaTextColor: banner.ctaTextColor,
-                accent: banner.accent,
-              }}
-            />
-          ))}
+        <div className="shop-showcase-banner-grid lg:col-start-2 lg:row-start-1" onMouseEnter={closeCategoryFlyout}>
+          {bannerBlocks.map((banner) => renderShowcaseBanner(banner))}
         </div>
 
         {/* 4-grid product/banner section below main banners */}
-        <div className="shop-showcase-product-grid lg:col-span-2">
+        <div className="shop-showcase-product-grid lg:col-span-2 lg:row-start-2" onMouseEnter={closeCategoryFlyout}>
           {[0,1,2,3].map((i) => (
             (() => {
               const banner = data.config?.productBanners?.[i] || {}

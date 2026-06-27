@@ -4,7 +4,7 @@ import Product from '@/models/Product';
 import { NextResponse } from 'next/server';
 import { getCachedData, setCachedData } from '@/lib/cache';
 import { FEATURED_SECTIONS_CACHE_KEY } from '@/lib/categorySliderCache';
-import { normalizeCategorySliderBackground, normalizeCategorySliderSideImagePosition } from '@/lib/categorySliderTheme';
+import { normalizeCategorySliderBackground, normalizeCategorySliderSideImagePosition, normalizeCategorySliderAutoSlide, normalizeCategorySliderAutoSlideInterval } from '@/lib/categorySliderTheme';
 import { sortCategorySliders, backfillCategorySliderSortOrdersIfNeeded } from '@/lib/categorySliderOrder';
 import mongoose from 'mongoose';
 
@@ -36,7 +36,7 @@ export async function GET() {
 
     const sections = sortCategorySliders(
       await CategorySlider.find({})
-        .select('title subtitle sideImage sideImagePosition cardsPerRow backgroundColor productIds storeId sortOrder createdAt updatedAt')
+        .select('title subtitle sideImage sideImagePosition cardsPerRow backgroundColor autoSlide autoSlideIntervalMs productIds storeId sortOrder createdAt updatedAt')
         .lean()
     );
 
@@ -64,6 +64,8 @@ export async function GET() {
           sideImagePosition: normalizeCategorySliderSideImagePosition(section.sideImagePosition),
           sortOrder: Number.isFinite(Number(section.sortOrder)) ? Number(section.sortOrder) : 0,
           backgroundColor: normalizeCategorySliderBackground(section.backgroundColor),
+          autoSlide: normalizeCategorySliderAutoSlide(section.autoSlide),
+          autoSlideIntervalMs: normalizeCategorySliderAutoSlideInterval(section.autoSlideIntervalMs),
           products: orderProductsByIds(products, productIds),
         };
       }),

@@ -5,6 +5,7 @@ import AbandonedCart from '@/models/AbandonedCart';
 import {
   scheduleAbandonedCartWhatsAppReminder,
 } from '@/lib/abandonedCheckoutWhatsAppReminder';
+import { getProductThumbnailUrl } from '@/lib/productMedia';
 
 function buildCartFilter({
   storeId,
@@ -49,7 +50,7 @@ export async function POST(request) {
 
     const productIds = items.map((it) => it.productId).filter(Boolean);
     const products = await Product.find({ _id: { $in: productIds } })
-      .select('_id storeId name price')
+      .select('_id storeId name price images image slug useProductsPath')
       .lean();
 
     const productMap = new Map(products.map((p) => [String(p._id), p]));
@@ -66,6 +67,7 @@ export async function POST(request) {
         quantity: it.quantity || 1,
         price: it.price || prod.price || 0,
         variantOptions: it.variantOptions || null,
+        imageUrl: getProductThumbnailUrl(prod, { fallback: '' }) || '',
       });
     }
 

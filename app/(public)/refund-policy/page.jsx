@@ -24,6 +24,7 @@ export default function RefundPolicyPage() {
         <section>
           <h2 className="font-semibold text-gray-900 mb-2">4. Non-Refundable Items</h2>
           <p className="text-gray-700">Certain items may be ineligible for refunds once opened or used (e.g., hygiene products, software with activated licenses), subject to local law.</p>
+          <p className="text-gray-700 mt-2">Mobile phones, smartphones, tablets, laptops, and similar personal electronic devices cannot be returned or refunded once they have been activated, configured, used, or show any signs of use (including removed seals, screen activation, or logged-in accounts).</p>
         </section>
         <section>
           <h2 className="font-semibold text-gray-900 mb-2">5. How to Request</h2>

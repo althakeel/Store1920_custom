@@ -240,13 +240,13 @@ export default function RecommendedProducts() {
   }
 
   return (
-    <section className={HOME_SECTION_CLASS}>
+    <section className={`${HOME_SECTION_CLASS} max-lg:pb-0`}>
       <div className={HOME_SECTION_CAROUSEL_INNER_CLASS}>
-        <div className={HOME_SECTION_HEADER_CLASS}>
+        <div className={`${HOME_SECTION_HEADER_CLASS} max-lg:mb-3`}>
           <div>
             <span className={`${HOME_SECTION_EYEBROW_CLASS} text-blue-600`}>Personalized</span>
             <h2 className={HOME_SECTION_HEADING_CLASS}>Recommended for You</h2>
-            <p className={HOME_SECTION_SUBTITLE_CLASS}>Curated manually from store settings</p>
+            <p className={`${HOME_SECTION_SUBTITLE_CLASS} max-lg:hidden`}>Curated manually from store settings</p>
           </div>
           <Link
             href="/recommended"
@@ -257,7 +257,7 @@ export default function RecommendedProducts() {
           </Link>
         </div>
 
-        <ProductCarousel products={productsToRender} priorityCount={4} />
+        <ProductCarousel products={productsToRender} priorityCount={4} compactBottom />
       </div>
     </section>
   );

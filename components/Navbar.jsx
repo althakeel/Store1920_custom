@@ -104,6 +104,8 @@ const Navbar = () => {
   const [categoriesDropdownOpen, setCategoriesDropdownOpen] = useState(false);
   const [hoveredCategory, setHoveredCategory] = useState(null);
   const categoryTimer = useRef(null);
+  const categoriesTriggerRef = useRef(null);
+  const categoriesDropdownPanelRef = useRef(null);
   const userDropdownRef = useRef(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showSearchModal, setShowSearchModal] = useState(false);
@@ -162,7 +164,7 @@ const Navbar = () => {
     return raw.length > 16 ? `${raw.slice(0, 16)}…` : raw;
   };
 
-  const renderAccountMenuTrigger = ({ signedIn, onClick, tone = 'light', variant = 'full', className = '' }) => {
+  const renderAccountMenuTrigger = ({ signedIn, onClick, tone = 'light', variant = 'full', className = '', compactIcon = false }) => {
     const isLightTone = tone === 'light';
     const iconOnlyClass = isLightTone
       ? 'text-white hover:bg-white/12'
@@ -181,23 +183,26 @@ const Navbar = () => {
     );
 
     if (variant === 'icon') {
+      const iconButtonSizeClass = compactIcon ? 'h-7 w-7' : 'h-9 w-9';
+      const iconUserSize = compactIcon ? 16 : 18;
+
       return (
         <button
           type="button"
           onClick={onClick}
-          className={`inline-flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full transition ${iconOnlyClass} ${className}`.trim()}
+          className={`inline-flex ${iconButtonSizeClass} shrink-0 items-center justify-center overflow-hidden rounded-full transition ${iconOnlyClass} ${className}`.trim()}
           aria-label={signedIn ? t('navbar.account') : t('navbar.signInRegister')}
         >
           {signedIn && firebaseUser?.photoURL ? (
             <Image
               src={firebaseUser.photoURL}
               alt=""
-              width={32}
-              height={32}
+              width={compactIcon ? 28 : 32}
+              height={compactIcon ? 28 : 32}
               className="h-full w-full object-cover"
             />
           ) : (
-            <User size={18} strokeWidth={2.25} aria-hidden="true" />
+            <User size={iconUserSize} strokeWidth={2.25} aria-hidden="true" />
           )}
         </button>
       );
@@ -735,7 +740,15 @@ const Navbar = () => {
     };
   }, []);
 
-  const openCategoriesDropdown = () => {
+  const closeCategoriesDropdownNow = useCallback(() => {
+    if (categoryTimer.current) {
+      window.clearTimeout(categoryTimer.current);
+      categoryTimer.current = null;
+    }
+    setCategoriesDropdownOpen(false);
+  }, []);
+
+  const openCategoriesDropdown = useCallback(() => {
     if (categoryTimer.current) {
       window.clearTimeout(categoryTimer.current);
       categoryTimer.current = null;
@@ -744,16 +757,25 @@ const Navbar = () => {
     if (!hoveredCategory && mainCategories.length > 0) {
       setHoveredCategory(mainCategories[0]);
     }
-  };
+  }, [hoveredCategory, mainCategories]);
 
-  const closeCategoriesDropdown = () => {
+  const closeCategoriesDropdown = useCallback(() => {
     if (categoryTimer.current) {
       window.clearTimeout(categoryTimer.current);
     }
     categoryTimer.current = window.setTimeout(() => {
-      setCategoriesDropdownOpen(false);
-    }, 180);
-  };
+      closeCategoriesDropdownNow();
+    }, 120);
+  }, [closeCategoriesDropdownNow]);
+
+  useEffect(() => {
+    if (!categoriesDropdownOpen) return undefined;
+
+    const handleScroll = () => closeCategoriesDropdownNow();
+
+    window.addEventListener('scroll', handleScroll, { capture: true, passive: true });
+    return () => window.removeEventListener('scroll', handleScroll, { capture: true });
+  }, [categoriesDropdownOpen, closeCategoriesDropdownNow]);
 
   useEffect(() => {
     const syncGuestWishlistToDatabase = async (user) => {
@@ -1315,12 +1337,14 @@ const Navbar = () => {
   );
 
   const desktopCategoriesDropdown = categoriesDropdownOpen && mainCategories.length > 0 ? (
-    <div
-      className="absolute left-1/2 top-full z-[120] hidden w-full -translate-x-1/2 lg:block"
-      onMouseEnter={openCategoriesDropdown}
-      onMouseLeave={closeCategoriesDropdown}
-    >
-      <div className="mx-auto mt-0.5 w-full max-w-[1040px] overflow-hidden rounded-b-[28px] border border-slate-200 bg-white shadow-[0_20px_44px_rgba(15,23,42,0.16)]">
+    <div className="pointer-events-none absolute left-1/2 top-full z-[120] hidden -translate-x-1/2 lg:block">
+      <div
+        ref={categoriesDropdownPanelRef}
+        className="pointer-events-auto relative mx-auto w-[min(1040px,calc(100vw-2rem))] pt-6 -mt-6"
+        onMouseEnter={openCategoriesDropdown}
+        onMouseLeave={closeCategoriesDropdown}
+      >
+        <div className="mt-0.5 overflow-hidden rounded-b-[28px] border border-slate-200 bg-white shadow-[0_20px_44px_rgba(15,23,42,0.16)]">
         <div className="grid max-h-[420px] grid-cols-[minmax(0,220px)_minmax(0,1fr)]">
           <div className="category-dropdown-scroll max-h-[420px] w-full max-w-[220px] shrink-0 overflow-y-auto overflow-x-hidden border-r border-slate-200 bg-white py-2">
             {mainCategories.map((category) => {
@@ -1398,6 +1422,7 @@ const Navbar = () => {
               )}
             </div>
           </div>
+        </div>
         </div>
       </div>
     </div>
@@ -1486,23 +1511,27 @@ const Navbar = () => {
           </form>
 
           <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
-          {firebaseUser ? (
-            renderAccountMenuTrigger({
-              signedIn: true,
-              onClick: () => setMobileMenuOpen(true),
-              tone: mobileNavbarUsesBrandColor ? 'light' : 'dark',
-              variant: 'icon',
-            })
-          ) : (
-            renderAccountMenuTrigger({
-              signedIn: false,
-              onClick: () => {
-                setSignInMode('login');
-                setSignInOpen(true);
-              },
-              tone: mobileNavbarUsesBrandColor ? 'light' : 'dark',
-              variant: 'icon',
-            })
+          {!isHomePage && (
+            firebaseUser ? (
+              renderAccountMenuTrigger({
+                signedIn: true,
+                onClick: () => setMobileMenuOpen(true),
+                tone: mobileNavbarUsesBrandColor ? 'light' : 'dark',
+                variant: 'icon',
+                compactIcon: true,
+              })
+            ) : (
+              renderAccountMenuTrigger({
+                signedIn: false,
+                onClick: () => {
+                  setSignInMode('login');
+                  setSignInOpen(true);
+                },
+                tone: mobileNavbarUsesBrandColor ? 'light' : 'dark',
+                variant: 'icon',
+                compactIcon: true,
+              })
+            )
           )}
 
           {navActionsVisibility.wishlist && renderLabeledNavAction({
@@ -1514,7 +1543,7 @@ const Navbar = () => {
             iconOnly: true,
           })}
 
-          {navActionsVisibility.cart && renderLabeledNavAction({
+          {!isHomePage && navActionsVisibility.cart && renderLabeledNavAction({
             onClick: handleCartClick,
             icon: ShoppingCart,
             label: t('navbar.cart'),
@@ -1597,6 +1626,7 @@ const Navbar = () => {
                 }}
               >
                 <div
+                  ref={categoriesTriggerRef}
                   className="flex shrink-0 items-center"
                   onMouseEnter={openCategoriesDropdown}
                   onMouseLeave={closeCategoriesDropdown}

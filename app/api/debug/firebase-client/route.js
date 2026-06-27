@@ -36,8 +36,6 @@ export async function GET() {
       'Add store1920.com, www.store1920.com, store1920.store, and localhost if missing.',
       'Keep NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN as store1920-7d673.firebaseapp.com (do not use store1920.com here).',
       'Set NEXT_PUBLIC_APP_URL=https://store1920.com in production env (Vercel/hosting).',
-      'For Google One Tap only: set NEXT_PUBLIC_GOOGLE_CLIENT_ID to the Web client ID from Firebase → Authentication → Google (ends with .apps.googleusercontent.com).',
-      'Google popup sign-in does not need NEXT_PUBLIC_GOOGLE_CLIENT_ID.',
     ],
   })
 }

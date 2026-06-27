@@ -78,12 +78,17 @@ function buildPageCopy() {
         title: '2. Return Conditions',
         paragraphs: [
           'To be eligible for a return, your item must be unused, in the same condition you received it, and in original packaging.',
+          'Mobile phones, smartphones, tablets, laptops, and similar personal electronic devices must be completely unused and unactivated. Once such a device has been set up, configured, powered on for normal use, or shows any signs of use (including removed seals, screen activation, or logged-in accounts), it cannot be returned.',
         ],
       },
       {
         title: '3. Non-Returnable Items',
-        paragraphs: ['Several types of goods are exempt from being returned:'],
+        paragraphs: [
+          'Several types of goods are exempt from being returned:',
+          'Mobile phones, smartphones, tablets, laptops, and similar personal electronic devices cannot be returned if they have been used, activated, set up, or show any signs of use — including removed factory seals, screen activation, logged-in accounts, or any configuration.',
+        ],
         bullets: [
+          'Used, activated, or configured mobile phones, smartphones, tablets, laptops, and similar devices',
           'Non-brand electronics, cosmetics, and similar items (contact us to confirm eligibility)',
           'Intimate or sanitary goods',
           'Hazardous materials, flammable liquids, or gases',
@@ -169,12 +174,17 @@ function buildPageCopy() {
         title: '2. شروط الإرجاع',
         paragraphs: [
           'لتكون مؤهلاً للإرجاع، يجب أن يكون المنتج غير مستخدم، وبنفس الحالة التي استلمته بها، وفي عبوته الأصلية.',
+          'يجب أن تكون الهواتف المحمولة والهواتف الذكية والأجهزة اللوحية وأجهزة الكمبيوتر المحمولة والأجهزة الإلكترونية الشخصية المماثلة غير مستخدمة وغير مفعّلة بالكامل. بمجرد تفعيل أو إعداد أو استخدام أي من هذه الأجهزة، أو ظهور أي علامات استخدام (بما في ذلك كسر الأختام أو تفعيل الشاشة أو تسجيل الدخول إلى حساب)، لا يمكن إرجاعها.',
         ],
       },
       {
         title: '3. المنتجات غير القابلة للإرجاع',
-        paragraphs: ['هناك عدة أنواع من السلع مستثناة من الإرجاع:'],
+        paragraphs: [
+          'هناك عدة أنواع من السلع مستثناة من الإرجاع:',
+          'لا يمكن إرجاع الهواتف المحمولة والهواتف الذكية والأجهزة اللوحية وأجهزة الكمبيوتر المحمولة والأجهزة الإلكترونية الشخصية المماثلة إذا تم استخدامها أو تفعيلها أو إعدادها أو ظهرت عليها أي علامات استخدام — بما في ذلك كسر الأختام الأصلية أو تفعيل الشاشة أو تسجيل الدخول إلى حساب أو أي إعداد للجهاز.',
+        ],
         bullets: [
+          'الهواتف المحمولة والهواتف الذكية والأجهزة اللوحية وأجهزة الكمبيوتر المحمولة والأجهزة المماثلة المستخدمة أو المفعّلة أو المُعدّة',
           'الإلكترونيات غير العلامة التجارية ومستحضرات التجميل وما شابه (تواصل معنا للتأكد من الأهلية)',
           'السلع الحميمة أو الصحية',
           'المواد الخطرة أو السوائل أو الغازات القابلة للاشتعال',
