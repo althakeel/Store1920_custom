@@ -393,7 +393,7 @@ export default function CategorySliderPage() {
         const successMsg = updatePayload.subtitle 
           ? `Slider "${updatePayload.title}" with subtitle updated!`
           : `Slider "${updatePayload.title}" updated!`;
-        toast.success(successMsg);
+        toast.success(`${successMsg} Refresh the homepage to see changes.`);
       } else {
         // Create new slider
         console.log('💾 === CREATE START ===');
@@ -423,7 +423,7 @@ export default function CategorySliderPage() {
         const successMsg = createPayload.subtitle 
           ? `Slider "${createPayload.title}" with subtitle created!`
           : `Slider "${createPayload.title}" created!`;
-        toast.success(successMsg);
+        toast.success(`${successMsg} Refresh the homepage to see changes.`);
       }
 
       setShowForm(false);
@@ -799,7 +799,7 @@ export default function CategorySliderPage() {
                       Slider panel background
                     </label>
                     <p className="mb-3 text-xs text-gray-500">
-                      Background color for the product slider panel on desktop{formData.sideImage ? '' : ' (shown when a side image is added)'}.
+                      Background color for the slider panel on the homepage (title + product row). Works with or without a side image. Click <strong>Update Slider</strong> after changing. Avoid pure white (#ffffff) on a white page — it will look unchanged.
                     </p>
                     <div className="mb-3 flex flex-wrap gap-2">
                       {CATEGORY_SLIDER_BACKGROUND_PRESETS.map((preset) => {
@@ -885,7 +885,7 @@ export default function CategorySliderPage() {
                       Auto slide
                     </label>
                     <p className="mb-3 text-xs text-gray-500">
-                      When enabled, the slider on the homepage scrolls automatically on a loop.
+                      Turn <strong>On</strong>, choose a speed, then click <strong>Update Slider</strong> at the bottom. The homepage product row will scroll continuously in a loop (all products, no arrow clicks needed). Requires at least 2 products.
                     </p>
                     <div className="grid grid-cols-2 gap-3">
                       {[
@@ -915,7 +915,7 @@ export default function CategorySliderPage() {
                           Slide speed
                         </label>
                         <p className="mb-3 text-xs text-gray-500">
-                          Time between each automatic scroll on the homepage.
+                          Lower time = faster scroll. The entire product row moves smoothly and loops forever.
                         </p>
                         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                           {CATEGORY_SLIDER_AUTO_SLIDE_SPEED_PRESETS.map(({ label, value }) => {

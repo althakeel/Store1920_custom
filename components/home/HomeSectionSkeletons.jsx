@@ -130,7 +130,7 @@ export function HomeSideImageSliderSkeleton({
           <div className={`${CATEGORY_SLIDER_SIDE_IMAGE_CLASS} animate-pulse bg-slate-200`} />
         ) : null}
 
-        <div className={`min-w-0 ${CATEGORY_SLIDER_PANEL_CLASS} max-lg:[background-color:transparent] lg:bg-[#f3f0ff]`}>
+        <div className={`min-w-0 ${CATEGORY_SLIDER_PANEL_CLASS} rounded-2xl px-3 py-3`} style={{ backgroundColor: 'var(--skeleton-panel-bg, #f3f0ff)' }}>
           {showTitle ? <HomeSectionTitleSkeleton /> : null}
           <div className={`${MOBILE_CAROUSEL_BLEED_CLASS} flex gap-3 overflow-hidden pb-2`}>
             {Array.from({ length: cardCount }).map((_, index) => (

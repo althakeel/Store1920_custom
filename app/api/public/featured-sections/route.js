@@ -9,6 +9,14 @@ import { sortCategorySliders, backfillCategorySliderSortOrdersIfNeeded } from '@
 import mongoose from 'mongoose';
 
 const CACHE_KEY = FEATURED_SECTIONS_CACHE_KEY;
+const SERVER_CACHE_TTL_SECONDS = 30;
+
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+const STOREFRONT_CACHE_HEADERS = {
+  'Cache-Control': 'public, max-age=0, s-maxage=30, must-revalidate',
+};
 
 function orderProductsByIds(products, ids) {
   const productMap = new Map(products.map((product) => [String(product._id), product]));
@@ -24,7 +32,7 @@ export async function GET() {
       return NextResponse.json(cached, {
         status: 200,
         headers: {
-          'Cache-Control': 'public, s-maxage=120, stale-while-revalidate=300',
+          ...STOREFRONT_CACHE_HEADERS,
           'X-Cache': 'HIT',
         },
       });
@@ -71,12 +79,12 @@ export async function GET() {
       }),
     };
 
-    setCachedData(CACHE_KEY, payload, 120);
+    setCachedData(CACHE_KEY, payload, SERVER_CACHE_TTL_SECONDS);
 
     return NextResponse.json(payload, {
       status: 200,
       headers: {
-        'Cache-Control': 'public, s-maxage=120, stale-while-revalidate=300',
+        ...STOREFRONT_CACHE_HEADERS,
         'X-Cache': 'MISS',
       },
     });

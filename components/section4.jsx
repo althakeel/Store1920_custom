@@ -36,22 +36,32 @@ const Section4 = ({ sections: initialSections = null, loading: loadingProp = fal
 
     let cancelled = false
 
-    fetch('/api/public/featured-sections')
-      .then((response) => (response.ok ? response.json() : { sections: [] }))
-      .then((data) => {
-        if (!cancelled) {
-          setSections(Array.isArray(data?.sections) ? data.sections : [])
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setSections([])
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
+    const loadSections = () => {
+      fetch('/api/public/featured-sections', { cache: 'no-store' })
+        .then((response) => (response.ok ? response.json() : { sections: [] }))
+        .then((data) => {
+          if (!cancelled) {
+            setSections(Array.isArray(data?.sections) ? data.sections : [])
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setSections([])
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false)
+        })
+    }
+
+    loadSections()
+
+    const refreshOnVisible = () => {
+      if (document.visibilityState === 'visible') loadSections()
+    }
+    document.addEventListener('visibilitychange', refreshOnVisible)
 
     return () => {
       cancelled = true
+      document.removeEventListener('visibilitychange', refreshOnVisible)
     }
   }, [initialSections])
 
@@ -190,7 +200,7 @@ const HorizontalSlider = ({ section }) => {
   const panelBackground = normalizeCategorySliderBackground(section.backgroundColor)
   const shouldAutoSlide =
     sectionProducts.length > 1 &&
-    (normalizeCategorySliderAutoSlide(section.autoSlide) || hasSideImage)
+    normalizeCategorySliderAutoSlide(section.autoSlide)
 
   const sideImageBlock = hasSideImage ? (
     <div className={CATEGORY_SLIDER_SIDE_IMAGE_CLASS}>
@@ -207,8 +217,8 @@ const HorizontalSlider = ({ section }) => {
 
   const sliderPanel = (
     <div
-      className={`min-w-0 ${hasSideImage ? SIDE_IMAGE_SLIDER_PANEL_CLASS : CATEGORY_SLIDER_PANEL_CLASS} max-lg:[background-color:transparent] lg:[background-color:var(--panel-bg)]`}
-      style={{ '--panel-bg': panelBackground }}
+      className={`min-w-0 w-full ${hasSideImage ? SIDE_IMAGE_SLIDER_PANEL_CLASS : CATEGORY_SLIDER_PANEL_CLASS} rounded-2xl px-3 py-3 xl:px-4 xl:py-4`}
+      style={{ backgroundColor: panelBackground }}
     >
       <div className={`${hasSideImage ? 'mb-3 lg:mb-2 lg:shrink-0' : 'mb-3 lg:mb-5'}`}>
         <h2 className={`text-start font-bold text-gray-900 ${hasSideImage ? 'text-lg lg:line-clamp-1 lg:text-base xl:text-lg' : 'text-xl lg:text-2xl'}`}>
