@@ -1,7 +1,8 @@
 'use client';
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { useInfiniteBannerCarousel } from '@/lib/useInfiniteBannerCarousel';
 
 const sliderFieldMap = {
   primary: {
@@ -28,9 +29,9 @@ const DEFAULT_HEIGHTS = {
 };
 
 const BannerSlider = ({ className = '', variant = 'primary', fullWidth = false, config: configProp = null }) => {
-  const [index, setIndex] = useState(0);
   const [fetchedConfig, setFetchedConfig] = useState(null);
   const [fetchComplete, setFetchComplete] = useState(false);
+  const [slideInterval, setSlideInterval] = useState(4000);
   const router = useRouter();
   const fieldMap = sliderFieldMap[variant] || sliderFieldMap.primary;
   const showcaseConfig = configProp ?? fetchedConfig;
@@ -90,39 +91,39 @@ const BannerSlider = ({ className = '', variant = 'primary', fullWidth = false, 
   }, [configProp]);
 
   useEffect(() => {
-    setIndex(0);
-  }, [banners.length]);
+    const updateInterval = () => {
+      const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+      const intervalMs = isMobile
+        ? Math.max(1500, Number(showcaseConfig?.[fieldMap.mobileInterval]) || 3000)
+        : Math.max(1500, Number(showcaseConfig?.[fieldMap.desktopInterval]) || 4000);
+      setSlideInterval(intervalMs);
+    };
 
-  const bannersSignature = useMemo(
-    () => banners.map((banner) => `${banner.id || ''}:${banner.image || ''}:${banner.mobileImage || ''}`).join('|'),
-    [banners],
-  );
+    updateInterval();
+    window.addEventListener('resize', updateInterval);
+    return () => window.removeEventListener('resize', updateInterval);
+  }, [fieldMap.desktopInterval, fieldMap.mobileInterval, showcaseConfig]);
 
-  useEffect(() => {
-    setIndex(0);
-  }, [bannersSignature]);
+  const {
+    loopSlides,
+    slideCount,
+    slideWidthPercent,
+    trackRef,
+    trackStyle,
+    activeDotIndex,
+    handleTrackTransitionEnd,
+    goToSlide,
+    viewportHandlers,
+    shouldSuppressClick,
+    cursorClass,
+  } = useInfiniteBannerCarousel({
+    slides: banners,
+    enabled: banners.length > 1,
+    interval: slideInterval,
+  });
 
-  const safeIndex = banners.length ? Math.min(index, banners.length - 1) : 0;
-
-  useEffect(() => {
-    if (banners.length <= 1) {
-      return undefined;
-    }
-
-    const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
-    const intervalMs = isMobile
-      ? Math.max(1500, Number(showcaseConfig?.[fieldMap.mobileInterval]) || 3000)
-      : Math.max(1500, Number(showcaseConfig?.[fieldMap.desktopInterval]) || 4000);
-
-    const interval = setInterval(() => {
-      setIndex((prev) => (prev + 1) % banners.length);
-    }, intervalMs);
-
-    return () => clearInterval(interval);
-  }, [banners.length, fieldMap.desktopInterval, fieldMap.mobileInterval, showcaseConfig]);
-
-  const goToSlide = (i) => setIndex(i);
   const handleClick = (link) => {
+    if (shouldSuppressClick()) return;
     if (!link) return;
 
     if (/^https?:\/\//i.test(link)) {
@@ -148,11 +149,7 @@ const BannerSlider = ({ className = '', variant = 'primary', fullWidth = false, 
         : 'max-w-[1400px] mx-auto px-4 sm:px-6'
   } ${className}`.trim();
 
-  const viewportClassName = 'banner-slider__viewport relative w-full overflow-hidden isolate';
-  const slideWidthPercent = banners.length > 0 ? 100 / banners.length : 100;
-  const trackTransform = banners.length > 0
-    ? `translate3d(-${safeIndex * slideWidthPercent}%, 0, 0)`
-    : 'translate3d(0, 0, 0)';
+  const viewportClassName = `banner-slider__viewport relative w-full overflow-hidden isolate touch-pan-y ${cursorClass}`.trim();
 
   const heightStyle = {
     ['--banner-slider-mobile-height']: `${mobileHeight}px`,
@@ -190,21 +187,19 @@ const BannerSlider = ({ className = '', variant = 'primary', fullWidth = false, 
 
   return (
     <div className={wrapperClassName} style={heightStyle} dir="ltr">
-      <div className={viewportClassName} dir="ltr">
+      <div className={viewportClassName} dir="ltr" {...viewportHandlers}>
         <div
-          className="flex will-change-transform"
+          ref={trackRef}
+          className="flex will-change-transform select-none"
           dir="ltr"
-          style={{
-            width: `${banners.length * 100}%`,
-            transform: trackTransform,
-            transition: 'transform 1000ms cubic-bezier(0.45, 0.05, 0.15, 1)',
-          }}
+          onTransitionEnd={handleTrackTransitionEnd}
+          style={trackStyle}
         >
-          {banners.map((banner, i) => (
+          {loopSlides.map((banner, i) => (
             <div
-              key={banner.id || `banner-slide-${i}`}
+              key={`${banner.id || banner.image || 'banner'}-${i}`}
               onClick={() => handleClick(banner.link)}
-              className="banner-slider__slide relative shrink-0 grow-0 cursor-pointer overflow-hidden"
+              className="banner-slider__slide relative shrink-0 grow-0 overflow-hidden"
               style={{ width: `${slideWidthPercent}%` }}
             >
               <Image
@@ -212,32 +207,34 @@ const BannerSlider = ({ className = '', variant = 'primary', fullWidth = false, 
                 alt={banner.alt || `Banner ${i + 1}`}
                 fill
                 sizes="100vw"
-                className={`object-center sm:hidden ${banner.mobileImage ? 'object-cover' : 'object-contain bg-slate-100'}`}
-                priority={i === 0}
+                draggable={false}
+                className={`pointer-events-none object-center sm:hidden ${banner.mobileImage ? 'object-cover' : 'object-contain bg-slate-100'}`}
+                priority={i <= 1}
               />
               <Image
                 src={banner.image || banner.mobileImage}
                 alt={banner.alt || `Banner ${i + 1}`}
                 fill
                 sizes="(max-width: 1400px) 100vw, 1400px"
-                className={`object-cover object-center ${banner.mobileImage ? 'hidden sm:block' : ''}`}
-                priority={i === 0}
+                draggable={false}
+                className={`pointer-events-none object-cover object-center ${banner.mobileImage ? 'hidden sm:block' : ''}`}
+                priority={i <= 1}
               />
             </div>
           ))}
         </div>
       </div>
 
-      {banners.length > 1 ? (
-        <div className="pointer-events-none absolute inset-x-0 bottom-3 z-10 flex justify-center gap-2">
+      {slideCount > 1 ? (
+        <div className="pointer-events-none absolute inset-x-0 bottom-3 z-10 flex justify-center gap-2" data-banner-ignore-drag>
           {banners.map((_, i) => (
             <button
               type="button"
               key={i}
               onClick={() => goToSlide(i)}
               aria-label={`Go to banner ${i + 1}`}
-              className={`pointer-events-auto h-2.5 w-2.5 cursor-pointer rounded-full transition-colors ${
-                i === safeIndex ? 'bg-white' : 'bg-white/50'
+              className={`pointer-events-auto h-2.5 rounded-full transition-all duration-300 ease-out ${
+                i === activeDotIndex ? 'w-7 bg-white shadow-sm' : 'w-2.5 bg-white/50 hover:bg-white/75'
               }`}
             />
           ))}

@@ -1,11 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Search, Truck } from 'lucide-react';
-
-const SLIDE_TRANSITION_MS = 900;
-const SLIDE_EASING = 'cubic-bezier(0.65, 0, 0.35, 1)';
+import { useInfiniteBannerCarousel } from '@/lib/useInfiniteBannerCarousel';
 
 function getOriginalImageUrl(value) {
   const raw = String(value || '').trim();
@@ -15,13 +13,6 @@ function getOriginalImageUrl(value) {
 
 function buildSlidesSignature(slides = []) {
   return slides.map((slide) => `${slide.id || ''}:${slide.image || ''}`).join('|');
-}
-
-function getActiveDotIndex(trackIndex, slideCount) {
-  if (slideCount <= 1) return 0;
-  if (trackIndex <= 0) return slideCount - 1;
-  if (trackIndex >= slideCount + 1) return 0;
-  return trackIndex - 1;
 }
 
 export default function ShowcaseLargeBannerSlider({
@@ -38,6 +29,7 @@ export default function ShowcaseLargeBannerSlider({
     bannerVariant === 'main' ? 'shop-showcase-banner-row--main' : '',
     bannerVariant === 'secondary' ? 'shop-showcase-banner-row--secondary' : '',
   ].filter(Boolean).join(' ');
+
   const activeSlides = useMemo(
     () => slides
       .map((slide) => ({
@@ -53,89 +45,37 @@ export default function ShowcaseLargeBannerSlider({
     [activeSlides],
   );
 
-  const [trackIndex, setTrackIndex] = useState(1);
-  const [transitionEnabled, setTransitionEnabled] = useState(true);
-  const [paused, setPaused] = useState(false);
   const [failedImages, setFailedImages] = useState(() => new Set());
-  const trackRef = useRef(null);
 
   const visibleSlides = useMemo(
     () => activeSlides.filter((slide) => !failedImages.has(slide.image)),
     [activeSlides, failedImages],
   );
 
-  const loopSlides = useMemo(() => {
-    if (visibleSlides.length <= 1) return visibleSlides;
-    return [
-      visibleSlides[visibleSlides.length - 1],
-      ...visibleSlides,
-      visibleSlides[0],
-    ];
-  }, [visibleSlides]);
-
-  const slideCount = visibleSlides.length;
-  const loopCount = loopSlides.length;
-  const isLooping = slideCount > 1;
-  const slideWidthPercent = loopCount > 0 ? 100 / loopCount : 100;
-  const activeDotIndex = getActiveDotIndex(trackIndex, slideCount);
-  const safeTrackIndex = isLooping
-    ? Math.min(Math.max(trackIndex, 0), loopCount - 1)
-    : 0;
-
-  const jumpWithoutTransition = useCallback((nextIndex) => {
-    setTransitionEnabled(false);
-    setTrackIndex(nextIndex);
-  }, []);
+  const {
+    loopSlides,
+    slideCount,
+    slideWidthPercent,
+    trackRef,
+    trackStyle,
+    activeDotIndex,
+    handleTrackTransitionEnd,
+    goToSlide,
+    viewportHandlers,
+    shouldSuppressClick,
+    cursorClass,
+  } = useInfiniteBannerCarousel({
+    slides: visibleSlides,
+    enabled: enabled && visibleSlides.length > 1,
+    interval,
+    pauseOnHover: true,
+  });
 
   useEffect(() => {
-    setTrackIndex(1);
-    setTransitionEnabled(false);
     setFailedImages(new Set());
   }, [slidesSignature]);
 
-  useEffect(() => {
-    if (transitionEnabled) return undefined;
-
-    const frameId = requestAnimationFrame(() => {
-      requestAnimationFrame(() => setTransitionEnabled(true));
-    });
-
-    return () => cancelAnimationFrame(frameId);
-  }, [transitionEnabled, trackIndex]);
-
-  useEffect(() => {
-    if (!enabled || paused || slideCount <= 1) return undefined;
-
-    const timer = setInterval(() => {
-      setTransitionEnabled(true);
-      setTrackIndex((current) => current + 1);
-    }, interval);
-
-    return () => clearInterval(timer);
-  }, [slideCount, enabled, interval, paused]);
-
-  const handleTrackTransitionEnd = (event) => {
-    if (!isLooping) return;
-    if (event.target !== trackRef.current) return;
-    if (event.propertyName !== 'transform') return;
-
-    if (safeTrackIndex === loopCount - 1) {
-      jumpWithoutTransition(1);
-      return;
-    }
-
-    if (safeTrackIndex === 0) {
-      jumpWithoutTransition(slideCount);
-    }
-  };
-
-  const goToSlide = (dotIndex) => {
-    if (slideCount <= 1) return;
-    setTransitionEnabled(true);
-    setTrackIndex(dotIndex + 1);
-  };
-
-  const handleImageError = (imageUrl) => {
+  const handleImageError = useCallback((imageUrl) => {
     if (!imageUrl) return;
     setFailedImages((current) => {
       if (current.has(imageUrl)) return current;
@@ -143,8 +83,7 @@ export default function ShowcaseLargeBannerSlider({
       next.add(imageUrl);
       return next;
     });
-    jumpWithoutTransition(1);
-  };
+  }, []);
 
   if (!visibleSlides.length) {
     if (!fallback) return null;
@@ -186,32 +125,29 @@ export default function ShowcaseLargeBannerSlider({
 
   const currentSlide = visibleSlides[activeDotIndex] || visibleSlides[0];
   const href = currentSlide?.link || fallback?.href || '/shop';
-  const trackTransform = `translate3d(-${safeTrackIndex * slideWidthPercent}%, 0, 0)`;
+
+  const handleLinkClick = (event) => {
+    if (shouldSuppressClick()) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  };
 
   return (
     <Link
       href={href}
-      className={bannerRowClassName}
+      className={`${bannerRowClassName} ${cursorClass}`.trim()}
       style={{ gridRow }}
       dir="ltr"
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-      onFocus={() => setPaused(true)}
-      onBlur={() => setPaused(false)}
+      onClick={handleLinkClick}
     >
-      <div className="absolute inset-0 overflow-hidden" dir="ltr">
+      <div className="absolute inset-0 overflow-hidden touch-pan-y" dir="ltr" {...viewportHandlers}>
         <div
           ref={trackRef}
-          className="flex h-full min-h-full will-change-transform"
+          className="flex h-full min-h-full will-change-transform select-none"
           dir="ltr"
           onTransitionEnd={handleTrackTransitionEnd}
-          style={{
-            width: `${loopCount * 100}%`,
-            transform: trackTransform,
-            transition: isLooping && transitionEnabled
-              ? `transform ${SLIDE_TRANSITION_MS}ms ${SLIDE_EASING}`
-              : 'none',
-          }}
+          style={trackStyle}
         >
           {loopSlides.map((slide, slideIndex) => (
             <div
@@ -224,6 +160,7 @@ export default function ShowcaseLargeBannerSlider({
                 alt={slide.alt || fallback?.title || 'Showcase banner'}
                 loading="eager"
                 decoding="async"
+                draggable={false}
                 onError={() => handleImageError(slide.image)}
                 className="pointer-events-none block h-full min-h-full w-full object-cover object-center"
               />
@@ -233,7 +170,7 @@ export default function ShowcaseLargeBannerSlider({
       </div>
 
       {enabled && slideCount > 1 ? (
-        <div className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2">
+        <div className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2" data-banner-ignore-drag>
           {visibleSlides.map((slide, dotIndex) => (
             <button
               key={`dot-${slide.id || dotIndex}`}
