@@ -1926,10 +1926,19 @@ export default function CheckoutPage() {
         return;
       }
       const data = await res.json();
-      if (data._id || data.id) {
-        const createdOrderId = data._id || data.id;
+      const createdOrderId = data.id || data._id || data.orderId || data.order?._id;
+      if (createdOrderId) {
         dispatch(clearCart());
         setPlacingOrder(false);
+
+        if (payment === 'cod') {
+          const orderTotal = Number(data.total ?? data.order?.total ?? totalAfterWallet ?? 0);
+          setUpsellOrderId(createdOrderId);
+          setUpsellOrderTotal(orderTotal);
+          setShowPrepaidModal(true);
+          return;
+        }
+
         setNavigatingToSuccess(true);
         router.push(`/order-success?orderId=${createdOrderId}`);
       } else {
@@ -3447,6 +3456,8 @@ export default function CheckoutPage() {
       <SignInModal open={showSignIn} onClose={() => setShowSignIn(false)} />
       <PrepaidUpsellModal 
         open={showPrepaidModal}
+        orderTotal={upsellOrderTotal}
+        discountAmount={upsellOrderTotal * 0.05}
         onClose={() => {
           setShowPrepaidModal(false);
           setTimeout(() => router.push(`/order-success?orderId=${upsellOrderId}`), 0);
