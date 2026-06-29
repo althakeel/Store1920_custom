@@ -1440,7 +1440,7 @@ export default function StoreOrders() {
             return;
         }
 
-        const confirmed = window.confirm(`Delete ${selectedOrderIds.length} selected order(s)? This cannot be undone.`);
+        const confirmed = window.confirm(`Move ${selectedOrderIds.length} selected order(s) to trash? You can restore them from Trash.`);
         if (!confirmed) {
             return;
         }
@@ -1459,12 +1459,12 @@ export default function StoreOrders() {
                 headers: { Authorization: `Bearer ${token}` },
             });
 
-            toast.success(data?.message || 'Selected orders deleted successfully');
+            toast.success(data?.message || 'Selected orders moved to trash');
             setSelectedOrderIds([]);
             await fetchOrders();
         } catch (error) {
             console.error('Bulk delete orders failed:', error);
-            toast.error(error?.response?.data?.error || 'Failed to delete selected orders');
+            toast.error(error?.response?.data?.error || 'Failed to move selected orders to trash');
         } finally {
             setDeletingBulkOrders(false);
         }
@@ -2177,7 +2177,7 @@ export default function StoreOrders() {
                             className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                             <Trash2 size={14} />
-                            {deletingBulkOrders ? 'Deleting...' : 'Delete Selected'}
+                            {deletingBulkOrders ? 'Moving...' : 'Move to Trash'}
                         </button>
                     </div>
                 </div>
@@ -3127,24 +3127,24 @@ export default function StoreOrders() {
                             <div className="flex justify-end gap-3">
                                 <button
                                     onClick={async () => {
-                                        if (!window.confirm('Are you sure you want to delete this order? This action cannot be undone.')) return;
+                                        if (!window.confirm('Move this order to trash? You can restore it from Trash.')) return;
                                         try {
                                             const token = await getToken();
                                             await axios.delete(`/api/store/orders/${selectedOrder._id}`, {
                                                 headers: { Authorization: `Bearer ${token}` }
                                             });
-                                            toast.success('Order deleted successfully');
+                                            toast.success('Order moved to trash');
                                             setIsModalOpen(false);
                                             fetchOrders();
                                         } catch (error) {
-                                            toast.error(error?.response?.data?.error || 'Failed to delete order');
+                                            toast.error(error?.response?.data?.error || 'Failed to move order to trash');
                                         }
                                     }}
                                     className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-lg transition-colors shadow backdrop-blur-sm"
-                                    title="Delete Order"
+                                    title="Move to Trash"
                                 >
-                                    <X size={18} />
-                                    <span className="text-sm">Delete</span>
+                                    <Trash2 size={18} />
+                                    <span className="text-sm">Move to Trash</span>
                                 </button>
                             </div>
                         </div>

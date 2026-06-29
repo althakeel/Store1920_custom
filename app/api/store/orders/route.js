@@ -8,6 +8,7 @@ import { fetchNormalizedDelhiveryTracking } from '@/lib/delhivery';
 import AbandonedCart from '@/models/AbandonedCart';
 import { attachConversionToOrders } from '@/lib/storeOrderInsights';
 import { batchPopulateOrderUsers } from '@/lib/storeOrderUsers';
+import { ACTIVE_RECORD_FILTER } from '@/lib/storeTrash';
 
 // Debug log helper
 function debugLog(...args) {
@@ -101,7 +102,7 @@ export async function GET(request){
         }
 
         const [orders, convertedCarts] = await Promise.all([
-            Order.find({ storeId })
+            Order.find({ storeId, ...ACTIVE_RECORD_FILTER })
                 .populate('addressId')
                 .populate({
                     path: 'orderItems.productId',
@@ -112,6 +113,7 @@ export async function GET(request){
                 .lean(),
             AbandonedCart.find({
                 storeId,
+                ...ACTIVE_RECORD_FILTER,
                 status: 'converted',
                 convertedByName: { $nin: [null, ''] },
             })

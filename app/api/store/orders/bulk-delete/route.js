@@ -1,50 +1,46 @@
-import { NextResponse } from 'next/server'
-import connectDB from '@/lib/mongodb'
-import authSeller from '@/middlewares/authSeller'
-import { getAuth } from '@/lib/firebase-admin'
-import Order from '@/models/Order'
+import { NextResponse } from 'next/server';
+import connectDB from '@/lib/mongodb';
+import Order from '@/models/Order';
+import {
+  ACTIVE_RECORD_FILTER,
+  buildTrashMeta,
+  resolveStoreTrashActor,
+} from '@/lib/storeTrash';
 
-export const runtime = 'nodejs'
-
-async function getStoreIdFromRequest(request) {
-  const authHeader = request.headers.get('authorization') || ''
-  if (!authHeader.startsWith('Bearer ')) return null
-
-  const idToken = authHeader.replace('Bearer ', '')
-  const decodedToken = await getAuth().verifyIdToken(idToken)
-  return authSeller(decodedToken.uid)
-}
+export const runtime = 'nodejs';
 
 export async function POST(request) {
   try {
-    const storeId = await getStoreIdFromRequest(request)
-    if (!storeId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const actor = await resolveStoreTrashActor(request);
+    if (actor.error) return actor.error;
 
-    const body = await request.json()
+    const body = await request.json();
     const orderIds = Array.isArray(body?.orderIds)
       ? [...new Set(body.orderIds.map((orderId) => String(orderId).trim()).filter(Boolean))]
-      : []
+      : [];
 
     if (!orderIds.length) {
-      return NextResponse.json({ error: 'Select at least one order to delete.' }, { status: 400 })
+      return NextResponse.json({ error: 'Select at least one order to move to trash.' }, { status: 400 });
     }
 
-    await connectDB()
+    await connectDB();
 
-    const result = await Order.deleteMany({
-      _id: { $in: orderIds },
-      storeId: String(storeId),
-    })
+    const result = await Order.updateMany(
+      {
+        _id: { $in: orderIds },
+        storeId: actor.storeId,
+        ...ACTIVE_RECORD_FILTER,
+      },
+      { $set: buildTrashMeta(actor.userId, actor.userName) },
+    );
 
     return NextResponse.json({
       success: true,
-      deletedCount: Number(result?.deletedCount || 0),
-      message: `Deleted ${Number(result?.deletedCount || 0)} order(s) successfully.`,
-    })
+      trashedCount: Number(result?.modifiedCount || 0),
+      message: `Moved ${Number(result?.modifiedCount || 0)} order(s) to trash.`,
+    });
   } catch (error) {
-    console.error('[store orders bulk-delete POST] error:', error)
-    return NextResponse.json({ error: error?.message || 'Failed to delete selected orders' }, { status: 500 })
+    console.error('[store orders bulk-delete POST] error:', error);
+    return NextResponse.json({ error: error?.message || 'Failed to move selected orders to trash' }, { status: 500 });
   }
 }

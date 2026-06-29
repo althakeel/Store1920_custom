@@ -4,6 +4,7 @@ import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import User from '@/models/User';
 import { appendOrderCommunicationLog } from '@/lib/orderCommunicationLog';
+import { ACTIVE_RECORD_FILTER, buildTrashMeta } from '@/lib/storeTrash';
 
 // Update order status and tracking details
 export async function PUT(request, { params }) {
@@ -288,17 +289,19 @@ export async function DELETE(request, { params }) {
         // Verify the order belongs to this store
         const existingOrder = await Order.findOne({
             _id: orderId,
-            storeId: storeId
+            storeId: storeId,
+            ...ACTIVE_RECORD_FILTER,
         }).lean();
 
         if (!existingOrder) {
             return NextResponse.json({ error: 'Order not found or unauthorized' }, { status: 404 });
         }
 
-        // Delete the order
-        await Order.findByIdAndDelete(orderId);
+        await Order.findByIdAndUpdate(orderId, {
+            $set: buildTrashMeta(userId, decodedToken.name || decodedToken.email || 'Store staff'),
+        });
 
-        return NextResponse.json({ success: true, message: 'Order deleted successfully' });
+        return NextResponse.json({ success: true, message: 'Order moved to trash' });
     } catch (error) {
         console.error(error);
         return NextResponse.json({ error: error.message || 'Failed to delete order' }, { status: 400 });

@@ -7,6 +7,7 @@ import {
   autoConvertAbandonedCartsWithPlacedOrders,
   getPlacedOrderLookbackDate,
 } from '@/lib/abandonedCartOrderMatch';
+import { ACTIVE_RECORD_FILTER, buildTrashMeta } from '@/lib/storeTrash';
 import authSeller from '@/middlewares/authSeller';
 import { getAuth } from '@/lib/firebase-admin';
 import { enrichAbandonedCarts, getAbandonedCartTotal, isPlaceholderName } from '@/lib/abandonedCartUtils';
@@ -49,6 +50,7 @@ async function resolveAbandonedCheckoutAccess(request) {
   return {
     storeId: String(access.storeId),
     userId: decodedToken.uid,
+    userName: String(decodedToken.name || decodedToken.email || 'Store staff').trim(),
     isOwner: Boolean(access.isOwner),
     isPlatformAdmin,
     canDeleteAbandonedCarts: Boolean(access.isOwner || isPlatformAdmin),
@@ -73,11 +75,12 @@ export async function GET(request) {
     await dbConnect();
 
     const [carts, recentOrders] = await Promise.all([
-      AbandonedCart.find({ storeId })
+      AbandonedCart.find({ storeId, ...ACTIVE_RECORD_FILTER })
         .sort({ lastSeenAt: -1, updatedAt: -1 })
         .lean(),
       Order.find({
         storeId,
+        ...ACTIVE_RECORD_FILTER,
         createdAt: { $gte: getPlacedOrderLookbackDate() },
         status: { $nin: ['PAYMENT_FAILED', 'CANCELLED', 'AWAITING_PAYMENT'] },
       })
@@ -101,10 +104,9 @@ export async function GET(request) {
       };
     });
 
-    const userIds = Array.from(new Set(
-      visibleCarts.map((cart) => cart.userId).filter(Boolean).map(String)
-      carts.map((cart) => cart.userId).filter(Boolean).map(String)
-    ));
+    const userIds = [
+      ...new Set(visibleCarts.map((cart) => cart.userId).filter(Boolean).map(String)),
+    ];
 
     const users = userIds.length
       ? await User.find({
@@ -635,13 +637,6 @@ export async function DELETE(request) {
     const auth = await resolveAbandonedCheckoutAccess(request);
     if (auth.error) return auth.error;
 
-    if (!auth.canDeleteAbandonedCarts) {
-      return NextResponse.json(
-        { error: 'Only the store owner can delete abandoned carts' },
-        { status: 403 }
-      );
-    }
-
     const { searchParams } = new URL(request.url);
     const cartId = searchParams.get('cartId');
 
@@ -649,13 +644,20 @@ export async function DELETE(request) {
       return NextResponse.json({ error: 'cartId is required' }, { status: 400 });
     }
 
-    const deleted = await AbandonedCart.findOneAndDelete({ _id: cartId, storeId: auth.storeId }).lean();
-    if (!deleted) {
+    const trashed = await AbandonedCart.findOneAndUpdate(
+      { _id: cartId, storeId: auth.storeId, ...ACTIVE_RECORD_FILTER },
+      {
+        $set: buildTrashMeta(auth.userId, auth.userName || 'Store staff'),
+      },
+      { new: true },
+    ).lean();
+
+    if (!trashed) {
       return NextResponse.json({ error: 'Abandoned cart not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true, cartId: String(deleted._id) });
+    return NextResponse.json({ success: true, cartId: String(trashed._id), message: 'Cart moved to trash' });
   } catch (error) {
-    return NextResponse.json({ error: error.message || 'Failed to delete cart' }, { status: 500 });
+    return NextResponse.json({ error: error.message || 'Failed to move cart to trash' }, { status: 500 });
   }
 }

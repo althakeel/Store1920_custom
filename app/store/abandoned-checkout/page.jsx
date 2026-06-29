@@ -1085,7 +1085,7 @@ function CartRow({
                   className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60"
                 >
                   <Trash2 size={14} />
-                  {deletingId === cart._id ? 'Deleting...' : 'Delete'}
+                  {deletingId === cart._id ? 'Moving...' : 'Move to Trash'}
                 </button>
               ) : null}
               </div>
@@ -1109,7 +1109,7 @@ function CartRow({
                   className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60"
                 >
                   <Trash2 size={14} />
-                  {deletingId === cart._id ? 'Deleting...' : 'Delete'}
+                  {deletingId === cart._id ? 'Moving...' : 'Move to Trash'}
                 </button>
               ) : null}
             </div>
@@ -1477,7 +1477,7 @@ export default function AbandonedCheckoutPage() {
 
     const label = getCustomerLabel(cart);
     const confirmed = window.confirm(
-      `Delete this ${cart.status === 'converted' ? 'converted' : 'abandoned'} cart for ${label}? This cannot be undone.`
+      `Move this ${cart.status === 'converted' ? 'converted' : 'abandoned'} cart for ${label} to trash? You can restore it from Trash.`
     );
     if (!confirmed) return;
 
@@ -1497,7 +1497,7 @@ export default function AbandonedCheckoutPage() {
         setConvertCart(null);
       }
     } catch (err) {
-      setError(err?.response?.data?.error || err.message || 'Failed to delete cart');
+      setError(err?.response?.data?.error || err.message || 'Failed to move cart to trash');
     } finally {
       setDeletingId(null);
     }
@@ -1614,13 +1614,13 @@ export default function AbandonedCheckoutPage() {
                 onConfirmPayment={handleConfirmPayment}
                 onResendEmail={handleResendEmail}
                 onSendWhatsApp={handleSendWhatsAppCartReminder}
-                onDelete={canDeleteAbandonedCarts ? handleDelete : undefined}
+                onDelete={handleDelete}
                 resendingId={resendingId}
                 sendingWhatsAppId={sendingWhatsAppId}
                 whatsappSentCartId={whatsappSentCartId}
                 deletingId={deletingId}
                 confirmingPaymentId={confirmingPaymentId}
-                canDelete={canDeleteAbandonedCarts}
+                canDelete
               />
             ))}
           </div>

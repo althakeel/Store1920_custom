@@ -6,6 +6,7 @@ import MarketingExpense from "@/models/MarketingExpense";
 import authSeller from "@/middlewares/authSeller";
 import { getAuth } from '@/lib/firebase-admin';
 import { buildProductCostMap, calculateOrderProductCost } from '@/lib/storeSalesReport';
+import { ACTIVE_RECORD_FILTER } from '@/lib/storeTrash';
 
 function buildDateFilter(dateRange, fromDate, toDate) {
     const now = new Date();
@@ -119,6 +120,7 @@ export async function GET(req) {
             Order.find({
                 storeId,
                 ...dateFilter,
+                ...ACTIVE_RECORD_FILTER,
                 status: { $ne: 'CANCELLED' },
             })
                 .select('shortOrderNumber createdAt total shippingFee status orderItems')
