@@ -15,15 +15,10 @@ export default function PrepaidUpsellModal({ open, onClose, onNoThanks, onPayNow
     onNoThanks();
   };
   
-  const handleClose = () => {
-    setNavigating(true);
-    onClose();
-  };
-  
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
-      {/* Backdrop - clicking anywhere outside modal continues with COD */}
-      <div className="absolute inset-0 bg-black/60" onClick={handleClose} />
+      {/* Backdrop is visual only — user must choose Pay now or No thanks */}
+      <div className="absolute inset-0 bg-black/60" aria-hidden="true" />
       <div className="relative bg-gradient-to-b from-green-200 to-green-100 rounded-2xl shadow-2xl w-[92vw] max-w-md p-0" onClick={(e) => e.stopPropagation()}>
         <div className="p-6">
           <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-white flex items-center justify-center shadow">

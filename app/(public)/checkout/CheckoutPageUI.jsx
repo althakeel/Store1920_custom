@@ -944,6 +944,7 @@ export default function CheckoutPage() {
       && (!cartItems || Object.keys(cartItems).length === 0)
       && !placingOrder
       && !showPrepaidModal
+      && !upsellOrderId
       && !leavingCheckout
     ) {
       const timer = setTimeout(() => {
@@ -951,7 +952,7 @@ export default function CheckoutPage() {
       }, 3000);
       return () => clearTimeout(timer);
     }
-  }, [authLoading, cartItems, router, placingOrder, showPrepaidModal, leavingCheckout]);
+  }, [authLoading, cartItems, router, placingOrder, showPrepaidModal, upsellOrderId, leavingCheckout]);
 
   const checkoutSelectClass =
     'w-full rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-left text-sm text-slate-900 outline-none transition focus:border-[#f59e0b] focus:bg-white focus:ring-4 focus:ring-[#fde7c2]';
@@ -1928,7 +1929,6 @@ export default function CheckoutPage() {
       const data = await res.json();
       const createdOrderId = data.id || data._id || data.orderId || data.order?._id;
       if (createdOrderId) {
-        dispatch(clearCart());
         setPlacingOrder(false);
 
         if (payment === 'cod') {
@@ -1936,10 +1936,14 @@ export default function CheckoutPage() {
           setUpsellOrderId(createdOrderId);
           setUpsellOrderTotal(orderTotal);
           setShowPrepaidModal(true);
+          setPlacingOrder(false);
+          // Show modal before clearing cart so empty-cart redirect does not fire first.
+          queueMicrotask(() => dispatch(clearCart()));
           return;
         }
 
         setNavigatingToSuccess(true);
+        dispatch(clearCart());
         router.push(`/order-success?orderId=${createdOrderId}`);
       } else {
         // No order ID returned - treat as failure
@@ -2072,7 +2076,7 @@ export default function CheckoutPage() {
 
   if (leavingCheckout) return null;
   
-  if ((!cartItems || Object.keys(cartItems).length === 0) && !showPrepaidModal && !navigatingToSuccess) {
+  if ((!cartItems || Object.keys(cartItems).length === 0) && !showPrepaidModal && !navigatingToSuccess && !upsellOrderId) {
     return (
       <div className="py-20 text-center min-h-[50vh] flex flex-col items-center justify-center">
         <div className="text-6xl mb-4">🛒</div>
@@ -2088,57 +2092,42 @@ export default function CheckoutPage() {
     );
   }
 
-  if (showPrepaidModal || navigatingToSuccess) {
-    // If we just placed a COD order, show the prepaid upsell modal even though cart is empty
-    if (showPrepaidModal || navigatingToSuccess) {
-      return (
-        <>
-          <PrepaidUpsellModal 
-            open={showPrepaidModal || navigatingToSuccess}
-            orderTotal={upsellOrderTotal}
-            discountAmount={upsellOrderTotal * 0.05}
-            onClose={() => { 
-              setNavigatingToSuccess(true); 
-              setTimeout(() => {
-                router.push(`/order-success?orderId=${upsellOrderId}`); 
-              }, 100);
-            }}
-            onNoThanks={() => { 
-              setNavigatingToSuccess(true); 
-              setTimeout(() => {
-                router.push(`/order-success?orderId=${upsellOrderId}`); 
-              }, 100);
-            }}
-            onPayNow={handlePayNowForExistingOrder}
-            loading={payingNow}
-          />
-          <Script 
-            src="https://checkout.razorpay.com/v1/checkout.js" 
-            strategy="afterInteractive"
-            onLoad={() => {
-              console.log('Razorpay script loaded successfully');
-              setRazorpayLoaded(true);
-            }}
-            onError={(e) => {
-              console.error('Failed to load Razorpay script:', e);
-              setFormError('Payment system failed to load. Please check your internet connection and refresh.');
-            }}
-          />
-        </>
-      );
-    }
+  if (showPrepaidModal) {
     return (
-      <div className="py-20 text-center">
-        <div className="text-xl font-bold text-gray-900 mb-2">Your cart is empty</div>
-        <div className="text-gray-600 mb-4">Redirecting to shop...</div>
-        <button 
-          onClick={() => router.push('/shop')}
-          className="mt-4 bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-lg font-semibold"
-        >
-          Continue Shopping Now
-        </button>
-      </div>
+      <>
+        <PrepaidUpsellModal 
+          open={showPrepaidModal}
+          orderTotal={upsellOrderTotal}
+          discountAmount={upsellOrderTotal * 0.05}
+          onClose={() => {}}
+          onNoThanks={() => {
+            const orderId = upsellOrderId;
+            setShowPrepaidModal(false);
+            setUpsellOrderId(null);
+            setNavigatingToSuccess(true);
+            router.push(`/order-success?orderId=${orderId}`);
+          }}
+          onPayNow={handlePayNowForExistingOrder}
+          loading={payingNow}
+        />
+        <Script 
+          src="https://checkout.razorpay.com/v1/checkout.js" 
+          strategy="afterInteractive"
+          onLoad={() => {
+            console.log('Razorpay script loaded successfully');
+            setRazorpayLoaded(true);
+          }}
+          onError={(e) => {
+            console.error('Failed to load Razorpay script:', e);
+            setFormError('Payment system failed to load. Please check your internet connection and refresh.');
+          }}
+        />
+      </>
     );
+  }
+
+  if (navigatingToSuccess) {
+    return null;
   }
 
   const checkoutOrderPreviewItems = cartArray.slice(0, CHECKOUT_ORDER_PREVIEW_LIMIT);
@@ -3459,12 +3448,16 @@ export default function CheckoutPage() {
         orderTotal={upsellOrderTotal}
         discountAmount={upsellOrderTotal * 0.05}
         onClose={() => {
+          const orderId = upsellOrderId;
           setShowPrepaidModal(false);
-          setTimeout(() => router.push(`/order-success?orderId=${upsellOrderId}`), 0);
+          setUpsellOrderId(null);
+          setTimeout(() => router.push(`/order-success?orderId=${orderId}`), 0);
         }}
         onNoThanks={() => {
+          const orderId = upsellOrderId;
           setShowPrepaidModal(false);
-          setTimeout(() => router.push(`/order-success?orderId=${upsellOrderId}`), 0);
+          setUpsellOrderId(null);
+          setTimeout(() => router.push(`/order-success?orderId=${orderId}`), 0);
         }}
         onPayNow={handlePayNowForExistingOrder}
         loading={payingNow}
