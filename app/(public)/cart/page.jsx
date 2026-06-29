@@ -127,6 +127,8 @@ export default function Cart() {
                     _productId: actualProductId,
                     _isFreeGift: isFreeGift,
                     _freeGiftTitle: typeof value === 'object' ? value?.freeGift?.title || '' : '',
+                    variantOptions: typeof value === 'object' ? value?.variantOptions || null : null,
+                    _variantOptions: typeof value === 'object' ? value?.variantOptions || null : null,
                 });
                 const isOutOfStock = product.inStock === false || (typeof product.stockQuantity === 'number' && product.stockQuantity <= 0);
                 if (!isOutOfStock && !isFreeGift) {

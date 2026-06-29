@@ -694,6 +694,8 @@ export default function CheckoutPage() {
           _productId: actualProductId,
           _isFreeGift: isFreeGift,
           _freeGift: freeGift || null,
+          variantOptions: typeof value === 'object' ? value?.variantOptions || null : null,
+          _variantOptions: typeof value === 'object' ? value?.variantOptions || null : null,
         });
       }
     }

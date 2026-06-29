@@ -41,15 +41,20 @@ import {
   getProductImageAspectRatioClass,
 } from '@/lib/productMedia';
 import { useHorizontalCarouselDrag } from '@/lib/useHorizontalCarouselDrag';
+import { getAdjustedDeliveryDate } from '@/lib/deliveryEstimate';
 import ProductVariantPicker from './ProductVariantPicker';
 import {
   buildVariantOptionGroups,
   cartVariantOptionsMatch,
   findVariantBySelectedOptions,
+  formatVariantOptionsLabel,
   getInitialSelectedOptions,
   getVariantMediaIndex,
   isBulkBundleVariantOption,
   isVariantOptionValueAvailable,
+  sanitizeSelectedOptions,
+  sanitizeVariantOptionsForCart,
+  variantOptionKeyInUse,
 } from '@/lib/productVariantOptions';
 
 const PLACEHOLDER_IMAGE = 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png';
@@ -474,16 +479,18 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   }, []);
 
   const deliveryWindow = useMemo(() => {
-    const minDays = Math.max(1, Number(productPageInfo.deliveryMinDays ?? 2));
-    const maxDays = Math.max(minDays, Number(productPageInfo.deliveryMaxDays ?? 3));
+    const baseMinDays = Math.max(1, Number(productPageInfo.deliveryMinDays ?? 2));
+    const baseMaxDays = Math.max(baseMinDays, Number(productPageInfo.deliveryMaxDays ?? 3));
 
     const today = new Date(timeNow);
     today.setHours(0, 0, 0, 0);
 
-    const startDate = new Date(today);
-    const endDate = new Date(today);
-    startDate.setDate(startDate.getDate() + minDays);
-    endDate.setDate(endDate.getDate() + maxDays);
+    const minDelivery = getAdjustedDeliveryDate(today, baseMinDays);
+    const maxDelivery = getAdjustedDeliveryDate(today, baseMaxDays);
+    const startDate = minDelivery.arrival;
+    const endDate = maxDelivery.arrival;
+    const minDays = minDelivery.displayDays;
+    const maxDays = maxDelivery.displayDays;
 
     const locale = getStorefrontLocale(market.code, language);
     const startDay = formatLocalizedNumber(startDate.getDate(), market.code, language, { maximumFractionDigits: 0 });
@@ -500,7 +507,14 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       rangeText = `${startDay} ${startMonth} - ${endDay} ${endMonth}`;
     }
 
-    return { minDays, maxDays, rangeText };
+    return {
+      minDays,
+      maxDays,
+      rangeText,
+      primaryArrivalText: `${startDay} ${startMonth}`,
+      baseMinDays,
+      baseMaxDays,
+    };
   }, [productPageInfo.deliveryMinDays, productPageInfo.deliveryMaxDays, timeNow, language, market.code]);
 
   const deliverySummary = useMemo(() => {
@@ -871,9 +885,13 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const productImagesArray = useMemo(() => normalizeImages(product.images), [product.images]);
   const [selectedOptions, setSelectedOptions] = useState(() => {
     const initial = getInitialSelectedOptions(variantOptionGroups);
-    if (!initial.color && product.colors?.[0]) initial.color = product.colors[0];
-    if (!initial.size && product.sizes?.[0]) initial.size = product.sizes[0];
-    return initial;
+    if (!initial.color && product.colors?.[0] && variantOptionKeyInUse(variants, 'color', { isBulkBundleVariant })) {
+      initial.color = product.colors[0];
+    }
+    if (!initial.size && product.sizes?.[0] && variantOptionKeyInUse(variants, 'size', { isBulkBundleVariant })) {
+      initial.size = product.sizes[0];
+    }
+    return sanitizeSelectedOptions(variants, initial, { isBulkBundleVariant });
   });
   const [selectedBundleQty, setSelectedBundleQty] = useState(
     isBulkBundleProduct ? bulkBundleTiers[0] : (bulkVariants.length ? Number(bulkVariants[0].options.bundleQty) : null)
@@ -886,12 +904,10 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const handleSelectVariantOption = useCallback((key, value) => {
     setSelectedOptions((prev) => ({ ...prev, [key]: value }));
   }, []);
-  const cartVariantOptions = useMemo(() => ({
+  const cartVariantOptions = useMemo(() => sanitizeVariantOptionsForCart({
     ...selectedOptions,
-    color: selectedOptions.color || null,
-    size: selectedOptions.size || null,
     bundleQty: selectedBundleQty || null,
-  }), [selectedOptions, selectedBundleQty]);
+  }, variants, { isBulkBundleVariant }), [selectedOptions, selectedBundleQty, variants, isBulkBundleVariant]);
 
   const selectBulkBundleTier = useCallback((tier) => {
     const qty = Number(tier) || 1;
@@ -1257,18 +1273,14 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       ? product.brandAr
       : (product?.brand || '')
   );
-  const mobileArrivalDate = deliveryWindow.rangeText.includes('-')
-    ? deliveryWindow.rangeText.split('-').pop()?.trim() || deliveryWindow.rangeText
-    : deliveryWindow.rangeText;
+  const mobileArrivalDate = deliveryWindow.primaryArrivalText;
   const qualifiesForFreeMobileDelivery =
     Boolean(product?.freeShippingEligible) || Number(effPrice || 0) >= 100;
   const mobileDeliveryFeeLabel = qualifiesForFreeMobileDelivery
     ? t('product.mobile.freeDeliveryFee')
     : t('product.mobile.deliveryFee', { amount: formatMoney(convertPrice(15), true) });
-  const selectedVariantLabel = variantOptionGroups
-    .map((group) => selectedOptions[group.key])
-    .filter(Boolean)
-    .join(' • ') || (selectedBundleQty ? `Bundle ${selectedBundleQty}` : 'Default');
+  const selectedVariantLabel = formatVariantOptionsLabel(cartVariantOptions)
+    || (selectedBundleQty ? `Bundle ${selectedBundleQty}` : 'Default');
 
   const isSelectionInStock = (() => {
     if (isGloballyOutOfStock) return false;
@@ -1293,8 +1305,12 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
   useEffect(() => {
     const initial = getInitialSelectedOptions(variantOptionGroups);
-    if (!initial.color && product.colors?.[0]) initial.color = product.colors[0];
-    if (!initial.size && product.sizes?.[0]) initial.size = product.sizes[0];
+    if (!initial.color && product.colors?.[0] && variantOptionKeyInUse(variants, 'color', { isBulkBundleVariant })) {
+      initial.color = product.colors[0];
+    }
+    if (!initial.size && product.sizes?.[0] && variantOptionKeyInUse(variants, 'size', { isBulkBundleVariant })) {
+      initial.size = product.sizes[0];
+    }
 
     const availableVariants = variants.filter((variant) => !isBulkBundleVariant(variant) && (variant?.stock ?? 0) > 0);
     if (availableVariants.length === 1) {
@@ -1302,7 +1318,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       variantOptionGroups.forEach((group) => {
         if (variant.options?.[group.key]) initial[group.key] = variant.options[group.key];
       });
-      setSelectedOptions(initial);
+      setSelectedOptions(sanitizeSelectedOptions(variants, initial, { isBulkBundleVariant }));
       return;
     }
 
@@ -1316,7 +1332,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       ));
       if (availableValues.length === 1) initial[group.key] = availableValues[0];
     });
-    setSelectedOptions({ ...initial });
+    setSelectedOptions(sanitizeSelectedOptions(variants, initial, { isBulkBundleVariant }));
   }, [product?._id]);
 
   const imageContainerRef = useRef(null);

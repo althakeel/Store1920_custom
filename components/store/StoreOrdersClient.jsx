@@ -42,6 +42,8 @@ import {
     getOrderDiscountLines,
     getOrderExpectedDeliveryDate,
     getOrderTableTags,
+    getOrderPaymentMethodBadge,
+    normalizeStoreOrderPaymentMethod,
     summarizeDeliveryBuckets,
     isDashboardConvertedOrder,
 } from '@/lib/storeOrderInsights';
@@ -384,19 +386,27 @@ export default function StoreOrders() {
     const isOrderPaid = (order) => {
         if (isAwaitingPaymentOrder(order)) return false;
 
-        const paymentMethod = String(order?.paymentMethod || '').trim().toLowerCase();
+        const paymentMethod = normalizeOrderPaymentMethod(order);
         const orderStatus = String(order?.status || '').trim().toUpperCase();
         const paymentStatus = String(order?.paymentStatus || '').trim().toLowerCase();
 
-        // COD is paid only when delivered/collected
-        if (paymentMethod === 'cod') {
+        // COD is paid when delivered or cash collected on delivery
+        if (paymentMethod === 'COD') {
             if (orderStatus === 'DELIVERED') return true;
             if (order?.delhivery?.payment?.is_cod_recovered) return true;
-            return !!order?.isPaid;
+            if (order?.isPaid === true) return true;
+
+            const delhiveryText = [
+                order?.delhivery?.current_status,
+                order?.delhivery?.events?.[order?.delhivery?.events?.length - 1]?.status,
+            ].filter(Boolean).join(' ').toLowerCase();
+            if (delhiveryText.includes('delivered')) return true;
+
+            return false;
         }
 
         // Non-COD (card/online/prepaid) should appear paid unless explicitly failed/unpaid
-        if (paymentMethod) {
+        if (paymentMethod && paymentMethod !== 'OTHER') {
             const explicitUnpaidStatuses = new Set(['failed', 'payment_failed', 'refunded', 'unpaid', 'pending']);
             if (explicitUnpaidStatuses.has(paymentStatus)) return false;
             if (orderStatus === 'PAYMENT_FAILED') return false;
@@ -406,22 +416,7 @@ export default function StoreOrders() {
         return !!order?.isPaid;
     };
 
-    const normalizeOrderPaymentMethod = (order) => {
-        const raw = String(order?.paymentMethod || order?.payment_method || '').trim().toUpperCase();
-        if (!raw) return 'OTHER';
-        if (raw === 'COD' || raw === 'CASH_ON_DELIVERY' || raw.includes('COD')) return 'COD';
-        if (raw === 'TABBY' || raw.includes('TABBY')) return 'TABBY';
-        if (raw === 'TAMARA' || raw.includes('TAMARA')) return 'TAMARA';
-        if (raw === 'WALLET') return 'WALLET';
-        if (
-            ['CARD', 'STRIPE', 'RAZORPAY', 'UPI', 'NETBANKING', 'ONLINE', 'PREPAID'].includes(raw)
-            || raw.includes('CARD')
-            || raw.includes('STRIPE')
-        ) {
-            return 'CARD';
-        }
-        return raw;
-    };
+    const normalizeOrderPaymentMethod = normalizeStoreOrderPaymentMethod;
 
     const PAYMENT_FILTER_OPTIONS = [
         { value: 'ALL', label: 'All payments' },
@@ -907,26 +902,7 @@ export default function StoreOrders() {
         });
     };
 
-    // Helper function to compute correct payment status
-    const getPaymentStatus = (order) => {
-        const paymentMethod = (order.paymentMethod || '').toLowerCase();
-        const status = (order.status || '').toUpperCase();
-        const resolvedPaid = isOrderPaid(order);
-        
-        console.log('[PAYMENT STATUS DEBUG]', {
-            orderId: order._id,
-            paymentMethod: order.paymentMethod,
-            status: order.status,
-            isPaid: order.isPaid,
-            paymentStatus: order.paymentStatus,
-            normalizedPaymentMethod: paymentMethod,
-            normalizedStatus: status,
-            resolvedPaid,
-            delhiveryPaymentCollected: order.delhivery?.payment?.is_cod_recovered,
-        });
-
-        return resolvedPaid;
-    };
+    const getPaymentStatus = (order) => isOrderPaid(order);
 
     const fetchOrders = async ({ silent = false } = {}) => {
         try {
@@ -2278,9 +2254,27 @@ export default function StoreOrders() {
                                     </td>
                                     <td className="px-4 py-3 font-medium text-slate-800">{currency}{order.total}</td>
                                     <td className="px-4 py-3">
-                                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getPaymentStatus(order) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                            {getPaymentStatus(order) ? '✓ Paid' : 'Pending'}
-                                        </span>
+                                        <div className="flex flex-col items-start gap-1.5">
+                                            {(() => {
+                                                const paymentBadge = getOrderPaymentMethodBadge(order);
+                                                if (!paymentBadge) return null;
+                                                return (
+                                                    <span className={paymentBadge.className}>
+                                                        {paymentBadge.label}
+                                                    </span>
+                                                );
+                                            })()}
+                                            {(() => {
+                                                const isCod = normalizeOrderPaymentMethod(order) === 'COD';
+                                                const paid = getPaymentStatus(order);
+                                                if (isCod && !paid) return null;
+                                                return (
+                                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${paid ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                                        {paid ? '✓ Paid' : 'Pending'}
+                                                    </span>
+                                                );
+                                            })()}
+                                        </div>
                                     </td>
                                     <td className="px-4 py-3">
                                         {(() => {

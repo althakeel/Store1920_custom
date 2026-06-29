@@ -41,6 +41,10 @@ import {
   findBulkBundleVariant,
   isBulkBundleProduct,
 } from '@/lib/bulkBundleCart';
+import {
+  buildVariantStockDecrementQuery,
+  matchVariantByOptions,
+} from '@/lib/productVariantOptions';
 
 const PaymentMethod = {
     COD: 'COD',
@@ -348,13 +352,7 @@ export async function POST(request) {
             let availableQty = typeof product.stockQuantity === 'number' ? product.stockQuantity : 0;
             let variantMatch = null;
             if (item.variantOptions && Array.isArray(product.variants) && product.variants.length > 0) {
-                const { color, size, bundleQty } = item.variantOptions || {};
-                const match = product.variants.find(v => {
-                    const cOk = v.options?.color ? v.options.color === color : !color;
-                    const sOk = v.options?.size ? v.options.size === size : !size;
-                    const bOk = v.options?.bundleQty ? Number(v.options.bundleQty) === Number(bundleQty) : !bundleQty;
-                    return cOk && sOk && bOk;
-                });
+                const match = matchVariantByOptions(product.variants, item.variantOptions);
                 if (!match) {
                     return NextResponse.json({ error: 'Selected variant not found', id: item.id, variantOptions: item.variantOptions }, { status: 400 });
                 }
@@ -916,17 +914,19 @@ export async function POST(request) {
 
                     await Promise.all(
                         stockUpdates
-                            .filter(({ variantOptions }) => variantOptions?.color && variantOptions?.size)
-                            .map(({ id, qty, variantOptions }) =>
-                                Product.updateOne(
-                                    {
-                                        _id: id,
-                                        'variants.options.color': variantOptions.color,
-                                        'variants.options.size': variantOptions.size,
-                                    },
-                                    { $inc: { 'variants.$.stock': -qty } }
-                                )
-                            )
+                            .map(({ id, qty, variantOptions }) => {
+                                if (!variantOptions) return null;
+                                const productDoc = productById.get(String(id));
+                                const matchedVariant = productDoc?.variants?.length
+                                    ? matchVariantByOptions(productDoc.variants, variantOptions)
+                                    : null;
+                                if (!matchedVariant) return null;
+                                return Product.updateOne(
+                                    buildVariantStockDecrementQuery(id, matchedVariant),
+                                    { $inc: { 'variants.$.stock': -qty } },
+                                );
+                            })
+                            .filter(Boolean),
                     );
                 } catch (stockErr) {
                     console.error('Stock decrement batch error:', stockErr);
@@ -959,6 +959,14 @@ export async function POST(request) {
                     appId: 'Qui'
                 }
             });
+            if (orderIds.length > 0) {
+                await Order.updateMany(
+                    { _id: { $in: orderIds } },
+                    { $set: { stripeCheckoutSessionId: session.id } },
+                ).catch((err) => {
+                    console.error('[orders] Failed to save Stripe session id:', err?.message || err);
+                });
+            }
             return NextResponse.json({ session, orderId: primaryOrderId });
         }
 

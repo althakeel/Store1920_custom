@@ -27,6 +27,7 @@ import { getProductImageAspectRatioClass } from '@/lib/productMedia';
 import { compressImageForUpload, getUploadErrorMessage } from '@/lib/compressImageForUpload';
 import { uploadStoreImage } from '@/lib/uploadStoreImage';
 import { sanitizeRichTextMedia } from '@/lib/sanitizeRichTextMedia';
+import { getVariantCardLabel } from '@/lib/productVariantOptions';
 
 const toArabicPriceDisplay = (amount) => {
     const numeric = Number(amount);
@@ -2496,7 +2497,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                       <div className="space-y-4">
                         {variants.length === 0 ? (
                           <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/80 px-6 py-8 text-center">
-                            <p className="text-sm text-slate-600">No variants yet. Add your first size or color option below.</p>
+                            <p className="text-sm text-slate-600">No variants yet. Add a variant title, a custom option (e.g. Storage → 128GB), and/or color and size.</p>
                           </div>
                         ) : null}
 
@@ -2508,7 +2509,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                                   <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold">{idx + 1}</span>
                                   <div className="min-w-0">
                                     <h4 className="text-sm font-semibold text-slate-800 truncate">
-                                      {v.options?.title || v.options?.color || v.options?.size ? [v.options?.title, v.options?.color, v.options?.size].filter(Boolean).join(' · ') : `Variant ${idx + 1}`}
+                                      {getVariantCardLabel(v, idx)}
                                     </h4>
                                     {v.sku ? <p className="text-xs text-slate-500 truncate">SKU: {v.sku}</p> : null}
                                   </div>
@@ -2520,9 +2521,10 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                                   <div className="sm:col-span-2">
                                     <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Variant title</label>
-                                    <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200" placeholder="e.g., Black - Large"
+                                    <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200" placeholder="e.g., Black - Large (optional display name)"
                                       value={v.options?.title || ''}
                                       onChange={(e) => { const nv = [...variants]; nv[idx] = { ...v, options: { ...(v.options || {}), title: e.target.value } }; setVariants(nv) }} />
+                                    <p className="mt-1 text-[11px] text-slate-500">Optional label shown on the product page. You can also use the custom option fields below.</p>
                                   </div>
                                   <div>
                                     <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">SKU</label>
@@ -2540,13 +2542,28 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
 
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                   <div>
-                                    <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Color</label>
+                                    <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Option label</label>
+                                    <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200" placeholder="e.g., Storage, Material, Model"
+                                      value={v.options?.optionLabel || ''}
+                                      onChange={(e) => { const nv = [...variants]; nv[idx] = { ...v, options: { ...(v.options || {}), optionLabel: e.target.value } }; setVariants(nv) }} />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Option value</label>
+                                    <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200" placeholder="e.g., 128GB, Cotton, Pro Max"
+                                      value={v.options?.option || ''}
+                                      onChange={(e) => { const nv = [...variants]; nv[idx] = { ...v, options: { ...(v.options || {}), option: e.target.value } }; setVariants(nv) }} />
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                  <div>
+                                    <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Color <span className="font-normal normal-case text-slate-400">(optional)</span></label>
                                     <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200" placeholder="Black, White..."
                                       value={v.options?.color || ''}
                                       onChange={(e) => { const nv = [...variants]; nv[idx] = { ...v, options: { ...(v.options || {}), color: e.target.value } }; setVariants(nv) }} />
                                   </div>
                                   <div>
-                                    <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Size</label>
+                                    <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Size <span className="font-normal normal-case text-slate-400">(optional)</span></label>
                                     <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200" placeholder="S, M, L..."
                                       value={v.options?.size || ''}
                                       onChange={(e) => { const nv = [...variants]; nv[idx] = { ...v, options: { ...(v.options || {}), size: e.target.value } }; setVariants(nv) }} />
