@@ -22,6 +22,8 @@ import { markAbandonedCartsConvertedForOrder } from '@/lib/markAbandonedCartsCon
 import {
   applyDeferredPaymentOrderDefaults,
   isDeferredPaymentMethod,
+  shouldDeferPaymentAtCreate,
+  isPrepaidCapturedAtCreate,
   upsertAbandonedCartForPendingOrder,
 } from '@/lib/deferredOrderFlow';
 import { allocateShortOrderNumber } from '@/lib/orderNumber';
@@ -578,6 +580,10 @@ export async function POST(request) {
 
             const normalizedPaymentMethod = String(paymentMethod || '').toUpperCase();
             const paidOnlineMethods = new Set(['CARD', 'RAZORPAY', 'UPI', 'NETBANKING', 'ONLINE', 'PREPAID', 'WALLET']);
+            const prepaidCapturedAtCreate = isPrepaidCapturedAtCreate(normalizedPaymentMethod, {
+              razorpayPaymentId,
+            });
+            const deferPaymentAtCreate = shouldDeferPaymentAtCreate(paymentMethod, { razorpayPaymentId });
 
             if (normalizedPaymentMethod === 'COD') {
                 orderData.isPaid = false;
@@ -589,8 +595,16 @@ export async function POST(request) {
 
             Object.assign(
                 orderData,
-                manualStoreOrder ? {} : applyDeferredPaymentOrderDefaults(orderData, paymentMethod),
+                manualStoreOrder || prepaidCapturedAtCreate
+                  ? {}
+                  : applyDeferredPaymentOrderDefaults(orderData, paymentMethod),
             );
+
+            if (prepaidCapturedAtCreate) {
+                orderData.status = 'ORDER_PLACED';
+                orderData.isPaid = true;
+                orderData.paymentStatus = 'PAID';
+            }
 
             if (manualStoreOrder) {
                 orderData.status = 'ORDER_PLACED';
@@ -800,7 +814,7 @@ export async function POST(request) {
             }
             
             // Assign sequential store order number starting at 612345
-            if (isDeferredPaymentMethod(paymentMethod)) {
+            if (deferPaymentAtCreate) {
                 deferPostOrderTask('short-order-number', async () => {
                     try {
                         order.shortOrderNumber = await allocateShortOrderNumber(storeId);
@@ -817,7 +831,7 @@ export async function POST(request) {
             orderIds.push(order._id.toString());
             createdOrderTotals.set(order._id.toString(), order.total);
 
-            if (!isDeferredPaymentMethod(paymentMethod)) {
+            if (!deferPaymentAtCreate) {
                 deferPostOrderTask('abandoned-cart-convert', () =>
                     markAbandonedCartsConvertedForOrder(order, { orderId: order._id })
                 );
@@ -849,7 +863,7 @@ export async function POST(request) {
                 );
             }
 
-            if (!isDeferredPaymentMethod(paymentMethod)) {
+            if (!deferPaymentAtCreate) {
                 deferPostOrderTask('confirmation-notifications', async () => {
                     try {
                         let customerEmail = '';
@@ -875,7 +889,7 @@ export async function POST(request) {
                 });
             }
 
-            if (isDeferredPaymentMethod(paymentMethod) && !manualStoreOrder) {
+            if (deferPaymentAtCreate && !manualStoreOrder) {
                 deferPostOrderTask('awaiting-payment-abandoned-cart', () =>
                     upsertAbandonedCartForPendingOrder(order, { source: 'checkout_payment' })
                 );
@@ -889,7 +903,7 @@ export async function POST(request) {
                 }))
                 .filter((item) => item.qty > 0 && item.id);
 
-            if (stockUpdates.length > 0 && !isDeferredPaymentMethod(paymentMethod)) {
+            if (stockUpdates.length > 0 && !deferPaymentAtCreate) {
                 try {
                     await Product.bulkWrite(
                         stockUpdates.map(({ id, qty }) => ({

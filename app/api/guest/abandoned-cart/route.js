@@ -4,6 +4,10 @@ import Product from '@/models/Product';
 import AbandonedCart from '@/models/AbandonedCart';
 import { scheduleAbandonedCartWhatsAppReminder } from '@/lib/abandonedCheckoutWhatsAppReminder';
 import { getProductThumbnailUrl } from '@/lib/productMedia';
+import {
+  normalizeAbandonedCartItemFromClient,
+  sumAbandonedCartItemsTotal,
+} from '@/lib/abandonedCartLineItems';
 
 export async function POST(request) {
   try {
@@ -37,7 +41,7 @@ export async function POST(request) {
 
     const productIds = items.map((it) => it.productId || it.id).filter(Boolean);
     const products = await Product.find({ _id: { $in: productIds } })
-      .select('_id storeId name price images image slug useProductsPath')
+      .select('_id storeId name price salePrice images image slug useProductsPath variants')
       .lean();
 
     const productMap = new Map(products.map((p) => [String(p._id), p]));
@@ -52,11 +56,7 @@ export async function POST(request) {
       if (!grouped.has(storeId)) grouped.set(storeId, []);
 
       grouped.get(storeId).push({
-        productId: String(prod._id),
-        name: it.name || prod.name,
-        quantity: it.quantity || 1,
-        price: it.price || prod.price || 0,
-        variantOptions: it.variantOptions || null,
+        ...normalizeAbandonedCartItemFromClient(it, prod),
         imageUrl: getProductThumbnailUrl(prod, { fallback: '' }) || '',
       });
     }
@@ -83,10 +83,7 @@ export async function POST(request) {
         ...(orClauses.length ? { $or: orClauses } : {}),
       };
 
-      const cartTotal = storeItems.reduce(
-        (sum, item) => sum + (Number(item.price || 0) * Number(item.quantity || 0)),
-        0,
-      );
+      const cartTotal = sumAbandonedCartItemsTotal({ items: storeItems }, productMap);
 
       await AbandonedCart.updateOne(
         filter,

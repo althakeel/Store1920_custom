@@ -19,6 +19,7 @@ import {
 import { useAuth } from '@/lib/useAuth';
 import Loading from '@/components/Loading';
 import { getAbandonedCartDisplayName, getAbandonedCartTotal, isAnonymousAbandonedCart } from '@/lib/abandonedCartUtils';
+import { getAbandonedCartDisplayItems } from '@/lib/abandonedCartLineItems';
 import { getConversionPaymentMethodLabel, isValidPaymentLink } from '@/lib/abandonedCartRecoveryPayment';
 
 const PAGE_SIZE = 10;
@@ -840,6 +841,7 @@ function CartRow({
   canDelete = false,
 }) {
   const items = Array.isArray(cart.items) ? cart.items : [];
+  const displayItems = useMemo(() => getAbandonedCartDisplayItems(cart), [cart]);
   const isConverted = cart.status === 'converted';
   const isPendingPayment = cart.status === 'pending_payment';
   const isAnonymous = cart.isAnonymousGuest || isAnonymousAbandonedCart(cart);
@@ -995,17 +997,21 @@ function CartRow({
           {items.length > 0 ? (
             <div className="mt-3 space-y-1.5">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Products</p>
-              {items.map((item, index) => (
+              {displayItems.map((item, index) => (
                 <div
                   key={`${item?.productId || item?.name || 'item'}-${index}`}
                   className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2"
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm text-slate-900">{item?.name || 'Product'}</p>
-                    <p className="text-xs text-slate-500">Qty {item?.quantity || 1}</p>
+                    <p className="text-xs text-slate-500">
+                      {item.isBulkBundle
+                        ? `Bundle of ${item.bundleUnits || item.quantity} (${item.packQuantity} pack${item.packQuantity > 1 ? 's' : ''})`
+                        : `Qty ${item.quantity || 1}`}
+                    </p>
                   </div>
                   <p className="shrink-0 text-sm font-medium text-slate-800">
-                    {formatMoney(Number(item?.price || 0) * Number(item?.quantity || 1), cart.currency || 'AED')}
+                    {formatMoney(item.lineTotal, cart.currency || 'AED')}
                   </p>
                 </div>
               ))}

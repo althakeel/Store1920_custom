@@ -6,6 +6,10 @@ import {
   scheduleAbandonedCartWhatsAppReminder,
 } from '@/lib/abandonedCheckoutWhatsAppReminder';
 import { getProductThumbnailUrl } from '@/lib/productMedia';
+import {
+  normalizeAbandonedCartItemFromClient,
+  sumAbandonedCartItemsTotal,
+} from '@/lib/abandonedCartLineItems';
 
 function buildCartFilter({
   storeId,
@@ -50,7 +54,7 @@ export async function POST(request) {
 
     const productIds = items.map((it) => it.productId).filter(Boolean);
     const products = await Product.find({ _id: { $in: productIds } })
-      .select('_id storeId name price images image slug useProductsPath')
+      .select('_id storeId name price salePrice images image slug useProductsPath variants')
       .lean();
 
     const productMap = new Map(products.map((p) => [String(p._id), p]));
@@ -62,11 +66,7 @@ export async function POST(request) {
       const storeId = String(prod.storeId);
       if (!grouped.has(storeId)) grouped.set(storeId, []);
       grouped.get(storeId).push({
-        productId: it.productId,
-        name: it.name || prod.name,
-        quantity: it.quantity || 1,
-        price: it.price || prod.price || 0,
-        variantOptions: it.variantOptions || null,
+        ...normalizeAbandonedCartItemFromClient(it, prod),
         imageUrl: getProductThumbnailUrl(prod, { fallback: '' }) || '',
       });
     }
@@ -114,7 +114,8 @@ export async function POST(request) {
         phoneCode,
         address: customer?.address || null,
         items: storeItems,
-        cartTotal: typeof cartTotal === 'number' ? cartTotal : null,
+        cartTotal: sumAbandonedCartItemsTotal({ items: storeItems }, productMap)
+          || (typeof cartTotal === 'number' ? cartTotal : null),
         currency: currency || null,
         lastSeenAt: now,
         source: 'checkout',

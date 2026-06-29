@@ -127,6 +127,21 @@ const OrderSchema = new mongoose.Schema({
     sentAt: { type: Date, default: Date.now },
   }],
 
+  paymentFailedFollowUp: {
+    reason: { type: String, default: null },
+    discountAmount: { type: Number, default: null },
+    discountType: { type: String, default: null },
+    discountValue: { type: Number, default: null },
+    originalTotal: { type: Number, default: null },
+    adjustedTotal: { type: Number, default: null },
+    savedAt: { type: Date, default: null },
+    savedByUid: { type: String, default: null },
+    savedByName: { type: String, default: null },
+    savedByEmail: { type: String, default: null },
+    paymentMethod: { type: String, default: null },
+    previousPaymentMethod: { type: String, default: null },
+  },
+
   deletedAt: { type: Date, default: null, index: true },
   deletedBy: { type: String, default: null },
   deletedByName: { type: String, default: null },

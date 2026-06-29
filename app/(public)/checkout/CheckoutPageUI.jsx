@@ -374,22 +374,35 @@ export default function CheckoutPage() {
           const productId = getCartEntryProductId(id, value);
           const quantity = getCartEntryQuantity(value);
           const product = products.find((p) => String(p._id) === String(productId));
-          const price = isFreeGiftEntry(value)
-            ? 0
-            : (typeof value === 'object' && value?.price !== undefined ? value.price : (product?.salePrice || product?.price || 0));
+          if (isFreeGiftEntry(value)) {
+            return {
+              productId,
+              quantity,
+              price: 0,
+              lineTotal: 0,
+              name: product?.name || 'Product',
+              variantOptions: typeof value === 'object' ? value?.variantOptions || null : null,
+              isFreeGift: true,
+            };
+          }
+          const pricing = resolveCartLinePricing(product, value, quantity);
           return {
             productId,
-            quantity,
-            price,
+            quantity: pricing.isBulkBundle ? 1 : quantity,
+            price: pricing.unitPrice,
+            lineTotal: pricing.lineTotal,
             name: product?.name || 'Product',
             variantOptions: typeof value === 'object' ? value?.variantOptions || null : null,
-            isFreeGift: isFreeGiftEntry(value),
+            isFreeGift: false,
           };
         }).filter((it) => it.quantity > 0 && it.productId);
 
         if (items.length === 0) return;
 
-        const cartTotal = items.reduce((sum, it) => sum + (Number(it.price) * Number(it.quantity)), 0);
+        const cartTotal = items.reduce(
+          (sum, it) => sum + Number(it.lineTotal ?? (Number(it.price) * Number(it.quantity))),
+          0,
+        );
         const anonymousId = typeof window !== 'undefined' ? getOrCreateAnonymousId() : null;
         const sessionId = typeof window !== 'undefined' ? getOrCreateSessionId() : null;
 

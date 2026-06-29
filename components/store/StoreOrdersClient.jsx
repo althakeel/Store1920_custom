@@ -8,8 +8,9 @@ import PageSkeleton from "@/components/PageSkeleton";
 import { readPageCache, writePageCache, clearPageCache } from "@/lib/storePageCache";
 import axios from "axios";
 import toast from "react-hot-toast";
-import { Package, Truck, X, Download, Printer, RefreshCw, MapPin, Trash2, CalendarClock, AlertTriangle, Search, Plus, ArrowUp, ArrowDown, ArrowUpDown, History, Pencil, Filter } from "lucide-react";
+import { Package, Truck, X, Download, Printer, RefreshCw, MapPin, Trash2, CalendarClock, AlertTriangle, Search, Plus, ArrowUp, ArrowDown, ArrowUpDown, History, Pencil, Filter, Phone } from "lucide-react";
 import StoreCreateOrderModal from '@/components/store/StoreCreateOrderModal';
+import PaymentFailedCallCustomerModal from '@/components/store/PaymentFailedCallCustomerModal';
 import StoreEditOrderPanel from '@/components/store/StoreEditOrderPanel';
 import OrderStatusPicker, { STORE_ORDER_STATUS_FILTER_OPTIONS, STORE_ORDER_STATUS_OPTIONS } from '@/components/store/OrderStatusPicker';
 
@@ -62,6 +63,7 @@ import {
   buildWooCommerceOrderExportCsv,
 } from '@/lib/storeOrderWooExport';
 import { isAwaitingPaymentOrder, isVisibleStoreOrder } from '@/lib/deferredOrderStatus';
+import { isPaymentFailedStoreOrder, hasPaymentFailedFollowUpDiscount, hasPaymentFailedFollowUp } from '@/lib/paymentFailedFollowUp';
 
 function normalizeOrderSearchQuery(value = '') {
     return String(value || '').trim().toLowerCase();
@@ -267,6 +269,8 @@ export default function StoreOrders() {
     const [sortBy, setSortBy] = useState('date');
     const [sortDirection, setSortDirection] = useState('desc');
     const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false);
+    const [paymentFailedCallOrder, setPaymentFailedCallOrder] = useState(null);
+    const [savingPaymentFailedFollowUp, setSavingPaymentFailedFollowUp] = useState(false);
     const [schedulingPickup, setSchedulingPickup] = useState(false);
     const [sendingToC3xpress, setSendingToC3xpress] = useState(false);
     const [showCommunicationHistory, setShowCommunicationHistory] = useState(false);
@@ -973,6 +977,56 @@ export default function StoreOrders() {
             toast.error(error?.response?.data?.error || error.message);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const savePaymentFailedFollowUp = async ({ reason, discountAmount, discountType, handledByName, paymentMethod }) => {
+        if (!paymentFailedCallOrder?._id) return;
+
+        try {
+            setSavingPaymentFailedFollowUp(true);
+            const token = await getToken(true);
+            if (!token) {
+                toast.error('Authentication failed. Please sign in again.');
+                return;
+            }
+
+            const { data } = await axios.post(
+                `/api/store/orders/${paymentFailedCallOrder._id}/payment-failed-follow-up`,
+                { reason, discountAmount, discountType, handledByName, paymentMethod },
+                { headers: { Authorization: `Bearer ${token}` } },
+            );
+
+            const followUp = data?.paymentFailedFollowUp;
+            const updatedOrder = data?.order;
+            const orderId = String(paymentFailedCallOrder._id);
+
+            setOrders((prev) => prev.map((order) => (
+                String(order._id) === orderId
+                    ? {
+                        ...order,
+                        ...(updatedOrder || {}),
+                        paymentFailedFollowUp: followUp,
+                    }
+                    : order
+            )));
+
+            setSelectedOrder((prev) => (
+                prev && String(prev._id) === orderId
+                    ? {
+                        ...prev,
+                        ...(updatedOrder || {}),
+                        paymentFailedFollowUp: followUp,
+                    }
+                    : prev
+            ));
+
+            toast.success('Customer follow-up saved');
+            setPaymentFailedCallOrder(null);
+        } catch (error) {
+            toast.error(error?.response?.data?.error || 'Failed to save follow-up');
+        } finally {
+            setSavingPaymentFailedFollowUp(false);
         }
     };
 
@@ -2252,7 +2306,20 @@ export default function StoreOrders() {
                                             )}
                                         </div>
                                     </td>
-                                    <td className="px-4 py-3 font-medium text-slate-800">{currency}{order.total}</td>
+                                    <td className="px-4 py-3 font-medium text-slate-800">
+                                        {hasPaymentFailedFollowUpDiscount(order) && Number(order?.paymentFailedFollowUp?.originalTotal) > Number(order?.total) ? (
+                                            <div className="flex flex-col leading-tight">
+                                                <span className="text-xs text-slate-400 line-through">
+                                                    {currency}{Number(order.paymentFailedFollowUp.originalTotal).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                                </span>
+                                                <span className="text-emerald-700">
+                                                    {currency}{Number(order.total || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                                </span>
+                                            </div>
+                                        ) : (
+                                            <span>{currency}{order.total}</span>
+                                        )}
+                                    </td>
                                     <td className="px-4 py-3">
                                         <div className="flex flex-col items-start gap-1.5">
                                             {(() => {
@@ -2285,13 +2352,28 @@ export default function StoreOrders() {
                                             return (
                                                 <div className="flex max-w-[220px] flex-wrap gap-1">
                                                     {tableTags.map((tag) => (
-                                                        <span
-                                                            key={`${order._id}-${tag.key}`}
-                                                            className={tag.className}
-                                                            title={tag.title || undefined}
-                                                        >
-                                                            {tag.label}
-                                                        </span>
+                                                        tag.key === 'payment-failed-follow-up' ? (
+                                                            <button
+                                                                key={`${order._id}-${tag.key}`}
+                                                                type="button"
+                                                                onClick={(event) => {
+                                                                    event.stopPropagation();
+                                                                    setPaymentFailedCallOrder(order);
+                                                                }}
+                                                                className={`${tag.className} cursor-pointer hover:opacity-90`}
+                                                                title={tag.title ? `${tag.title} · Click to edit` : 'Click to edit follow-up'}
+                                                            >
+                                                                {tag.label}
+                                                            </button>
+                                                        ) : (
+                                                            <span
+                                                                key={`${order._id}-${tag.key}`}
+                                                                className={tag.className}
+                                                                title={tag.title || undefined}
+                                                            >
+                                                                {tag.label}
+                                                            </span>
+                                                        )
                                                     ))}
                                                 </div>
                                             );
@@ -2321,23 +2403,35 @@ export default function StoreOrders() {
                                         })()}
                                     </td>
                                     <td className="px-4 py-3" onClick={e => { e.stopPropagation(); }}>
-                                        <div className="flex min-w-[180px] items-center gap-2">
-                                            <OrderStatusPicker
-                                                value={order.status}
-                                                size="sm"
-                                                className="min-w-[160px] flex-1"
-                                                onChange={(newStatus) => updateOrderStatus(order._id, newStatus, getToken, fetchOrders)}
-                                            />
-                                            {order.trackingId && (
+                                        <div className="flex min-w-[180px] flex-col items-start gap-2">
+                                            <div className="flex w-full items-center gap-2">
+                                                <OrderStatusPicker
+                                                    value={order.status}
+                                                    size="sm"
+                                                    className="min-w-[160px] flex-1"
+                                                    onChange={(newStatus) => updateOrderStatus(order._id, newStatus, getToken, fetchOrders)}
+                                                />
+                                                {order.trackingId && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => autoSyncStatusFromTracking(order)}
+                                                        className="text-xs font-semibold px-2 py-1 rounded border border-slate-300 text-slate-700 hover:bg-slate-100"
+                                                        title="Auto-set status from latest tracking"
+                                                    >
+                                                        Auto
+                                                    </button>
+                                                )}
+                                            </div>
+                                            {isPaymentFailedStoreOrder(order) && !hasPaymentFailedFollowUp(order) ? (
                                                 <button
                                                     type="button"
-                                                    onClick={() => autoSyncStatusFromTracking(order)}
-                                                    className="text-xs font-semibold px-2 py-1 rounded border border-slate-300 text-slate-700 hover:bg-slate-100"
-                                                    title="Auto-set status from latest tracking"
+                                                    onClick={() => setPaymentFailedCallOrder(order)}
+                                                    className="inline-flex items-center gap-1.5 rounded-lg border border-orange-300 bg-orange-50 px-2.5 py-1.5 text-xs font-semibold text-orange-800 hover:bg-orange-100"
                                                 >
-                                                    Auto
+                                                    <Phone size={13} />
+                                                    Call customer
                                                 </button>
-                                            )}
+                                            ) : null}
                                         </div>
                                     </td>
                                     <td className="px-4 py-3">
@@ -3334,6 +3428,17 @@ export default function StoreOrders() {
                     setOrderSearchQuery('');
                     fetchOrders();
                 }}
+            />
+
+            <PaymentFailedCallCustomerModal
+                open={Boolean(paymentFailedCallOrder)}
+                order={paymentFailedCallOrder}
+                currency={currency}
+                saving={savingPaymentFailedFollowUp}
+                onClose={() => {
+                    if (!savingPaymentFailedFollowUp) setPaymentFailedCallOrder(null);
+                }}
+                onSave={savePaymentFailedFollowUp}
             />
         </>
     );

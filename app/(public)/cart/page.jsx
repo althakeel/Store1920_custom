@@ -252,8 +252,9 @@ export default function Cart() {
                 const pricing = resolveCartLinePricing(product, value, quantity);
                 return {
                     productId,
-                    quantity,
+                    quantity: pricing.isBulkBundle ? 1 : quantity,
                     price: pricing.unitPrice,
+                    lineTotal: pricing.lineTotal,
                     name: product?.name || 'Product',
                     variantOptions: typeof value === 'object' ? value?.variantOptions || null : null,
                 };

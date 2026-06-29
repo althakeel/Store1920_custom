@@ -170,12 +170,20 @@ function OrderSuccessContent() {
   const order = orders && orders.length > 0 ? orders[0] : null;
 
   useEffect(() => {
-    if (!order?._id || purchaseTrackedRef.current) return;
+    if (loading || !order?._id || purchaseTrackedRef.current) return;
     if (!isConfirmedPaidOrder(order)) return;
 
-    purchaseTrackedRef.current = true;
-    trackPurchase(order, { user });
-  }, [order, user]);
+    const firePurchase = () => {
+      if (purchaseTrackedRef.current) return;
+      if (trackPurchase(order, { user })) {
+        purchaseTrackedRef.current = true;
+      }
+    };
+
+    firePurchase();
+    const retryTimer = window.setTimeout(firePurchase, 800);
+    return () => window.clearTimeout(retryTimer);
+  }, [loading, order, user]);
   function getOrderNumber(orderObj) {
     return getDisplayOrderNumber(orderObj);
   }
