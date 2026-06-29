@@ -20,6 +20,8 @@ import {
 } from '@/lib/categoryLookup'
 import { getProductThumbnailUrl } from '@/lib/productMedia'
 
+const FBT_PICKER_LIMIT = 48
+
 const ProductForm = nextDynamic(() => import('../add-product/page'), {
     ssr: false,
     loading: () => (
@@ -113,6 +115,11 @@ export default function StoreManageProducts() {
     const [selectedFbtProductIds, setSelectedFbtProductIds] = useState([])
     const [fbtBundleDiscount, setFbtBundleDiscount] = useState('')
     const [searchFbt, setSearchFbt] = useState('')
+    const [debouncedSearchFbt, setDebouncedSearchFbt] = useState('')
+    const searchFbtDebounceRef = useRef(null)
+    const [fbtCatalogProducts, setFbtCatalogProducts] = useState([])
+    const [fbtCatalogLoading, setFbtCatalogLoading] = useState(false)
+    const [fbtCatalogTotal, setFbtCatalogTotal] = useState(0)
     const [selectedProductIds, setSelectedProductIds] = useState([])
     const [deletingBulkProducts, setDeletingBulkProducts] = useState(false)
     const [showBulkEditModal, setShowBulkEditModal] = useState(false)
@@ -165,6 +172,46 @@ export default function StoreManageProducts() {
             setListLoading(false)
         }
     }, [currentPage, debouncedSearch, selectedCategory, pageSize, getToken])
+
+    const fetchFbtCatalogProducts = useCallback(async (search = '') => {
+        setFbtCatalogLoading(true)
+        try {
+            const token = await getToken()
+            let page = 1
+            let totalPages = 1
+            let catalogTotal = 0
+            const collected = []
+
+            while (page <= totalPages) {
+                const { data } = await axios.get('/api/store/product', {
+                    headers: { Authorization: `Bearer ${token}` },
+                    params: {
+                        page,
+                        limit: FBT_PICKER_LIMIT,
+                        search: search || undefined,
+                        manage: 'true',
+                        sort: 'newest',
+                    },
+                })
+
+                const batch = Array.isArray(data?.products) ? data.products : []
+                collected.push(...batch)
+                totalPages = Number(data?.pagination?.totalPages) || 1
+                catalogTotal = Number(data?.pagination?.total) || collected.length
+                page += 1
+                if (!batch.length) break
+            }
+
+            setFbtCatalogProducts(collected)
+            setFbtCatalogTotal(catalogTotal)
+        } catch (error) {
+            toast.error(error?.response?.data?.error || 'Failed to load products for FBT')
+            setFbtCatalogProducts([])
+            setFbtCatalogTotal(0)
+        } finally {
+            setFbtCatalogLoading(false)
+        }
+    }, [getToken])
 
     const fetchBulkAutofillStatus = useCallback(async () => {
         try {
@@ -467,6 +514,9 @@ export default function StoreManageProducts() {
         setSelectedFbtProductIds([])
         setFbtBundleDiscount('')
         setSearchFbt('')
+        setDebouncedSearchFbt('')
+        setFbtCatalogProducts([])
+        setFbtCatalogTotal(0)
     }
 
     const toggleFbtProduct = (productId) => {
@@ -556,6 +606,21 @@ export default function StoreManageProducts() {
     }, [searchQuery])
 
     useEffect(() => {
+        if (searchFbtDebounceRef.current) clearTimeout(searchFbtDebounceRef.current)
+        searchFbtDebounceRef.current = setTimeout(() => {
+            setDebouncedSearchFbt(searchFbt.trim())
+        }, 300)
+        return () => {
+            if (searchFbtDebounceRef.current) clearTimeout(searchFbtDebounceRef.current)
+        }
+    }, [searchFbt])
+
+    useEffect(() => {
+        if (!showFbtModal) return
+        fetchFbtCatalogProducts(debouncedSearchFbt)
+    }, [showFbtModal, debouncedSearchFbt, fetchFbtCatalogProducts])
+
+    useEffect(() => {
         if (!user) return
         fetchStoreProducts({
             page: currentPage,
@@ -582,17 +647,8 @@ export default function StoreManageProducts() {
     const paginationStart = totalProducts ? ((safeCurrentPage - 1) * pageSize) + 1 : 0
     const paginationEnd = totalProducts ? Math.min(safeCurrentPage * pageSize, totalProducts) : 0
 
-    const filteredFbtProducts = products
+    const filteredFbtProducts = fbtCatalogProducts
         .filter((p) => String(p._id) !== String(fbtTargetProduct?._id || ''))
-        .filter((p) => {
-            if (!searchFbt.trim()) return true
-            const q = searchFbt.toLowerCase().trim()
-            return (
-                p.name?.toLowerCase().includes(q) ||
-                p.sku?.toLowerCase().includes(q) ||
-                p.tags?.some((tag) => tag?.toLowerCase().includes(q))
-            )
-        })
 
     const productNameById = useMemo(
         () => Object.fromEntries(products.map((product) => [String(product._id), product.name || 'Product'])),
@@ -1556,10 +1612,17 @@ export default function StoreManageProducts() {
                                         className="w-full border border-slate-300 rounded px-3 py-2 text-sm text-slate-900"
                                         placeholder="Search products by name, SKU or tags"
                                     />
+                                    <p className="mt-1 text-xs text-slate-500">
+                                        {fbtCatalogLoading
+                                            ? 'Loading full product catalog...'
+                                            : `Showing ${filteredFbtProducts.length} of ${fbtCatalogTotal} products. You can select up to 10.`}
+                                    </p>
                                 </div>
 
                                 <div className="border border-slate-200 rounded-lg max-h-[360px] overflow-y-auto">
-                                    {filteredFbtProducts.length === 0 ? (
+                                    {fbtCatalogLoading ? (
+                                        <div className="p-4 text-sm text-slate-500">Loading products...</div>
+                                    ) : filteredFbtProducts.length === 0 ? (
                                         <div className="p-4 text-sm text-slate-500">No products found.</div>
                                     ) : (
                                         <div className="divide-y divide-slate-100">
