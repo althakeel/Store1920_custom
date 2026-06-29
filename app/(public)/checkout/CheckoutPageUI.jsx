@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Check, Tag, Truck, Zap } from "lucide-react";
 import axios from "axios";
 import { countryCodes } from "@/assets/countryCodes";
@@ -1962,6 +1962,15 @@ export default function CheckoutPage() {
     }
   };
 
+  const completePrepaidUpsell = useCallback(() => {
+    const orderId = upsellOrderId;
+    if (!orderId) return;
+    setShowPrepaidModal(false);
+    setUpsellOrderId(null);
+    setNavigatingToSuccess(true);
+    router.push(`/order-success?orderId=${orderId}`);
+  }, [router, upsellOrderId]);
+
   const handlePayNowForExistingOrder = async () => {
     if (!upsellOrderId) return;
     
@@ -2100,13 +2109,8 @@ export default function CheckoutPage() {
           orderTotal={upsellOrderTotal}
           discountAmount={upsellOrderTotal * 0.05}
           onClose={() => {}}
-          onNoThanks={() => {
-            const orderId = upsellOrderId;
-            setShowPrepaidModal(false);
-            setUpsellOrderId(null);
-            setNavigatingToSuccess(true);
-            router.push(`/order-success?orderId=${orderId}`);
-          }}
+          onNoThanks={completePrepaidUpsell}
+          onAutoDismiss={completePrepaidUpsell}
           onPayNow={handlePayNowForExistingOrder}
           loading={payingNow}
         />
@@ -3447,18 +3451,9 @@ export default function CheckoutPage() {
         open={showPrepaidModal}
         orderTotal={upsellOrderTotal}
         discountAmount={upsellOrderTotal * 0.05}
-        onClose={() => {
-          const orderId = upsellOrderId;
-          setShowPrepaidModal(false);
-          setUpsellOrderId(null);
-          setTimeout(() => router.push(`/order-success?orderId=${orderId}`), 0);
-        }}
-        onNoThanks={() => {
-          const orderId = upsellOrderId;
-          setShowPrepaidModal(false);
-          setUpsellOrderId(null);
-          setTimeout(() => router.push(`/order-success?orderId=${orderId}`), 0);
-        }}
+        onClose={completePrepaidUpsell}
+        onNoThanks={completePrepaidUpsell}
+        onAutoDismiss={completePrepaidUpsell}
         onPayNow={handlePayNowForExistingOrder}
         loading={payingNow}
       />

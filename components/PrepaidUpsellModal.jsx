@@ -3,21 +3,75 @@
 import React from "react";
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
 
-export default function PrepaidUpsellModal({ open, onClose, onNoThanks, onPayNow, loading = false, orderTotal = 0, discountAmount = 0 }) {
-  if (!open) return null;
-  
+const DEFAULT_AUTO_DISMISS_SECONDS = 15;
+
+export default function PrepaidUpsellModal({
+  open,
+  onClose,
+  onNoThanks,
+  onPayNow,
+  onAutoDismiss,
+  loading = false,
+  orderTotal = 0,
+  discountAmount = 0,
+  autoDismissSeconds = DEFAULT_AUTO_DISMISS_SECONDS,
+}) {
   const { market, formatAmount } = useStorefrontMarket();
   const currency = market.currency;
   const [navigating, setNavigating] = React.useState(false);
-  
+  const [secondsLeft, setSecondsLeft] = React.useState(autoDismissSeconds);
+  const [payAttempted, setPayAttempted] = React.useState(false);
+  const dismissedRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!open) {
+      dismissedRef.current = false;
+      setNavigating(false);
+      setPayAttempted(false);
+      setSecondsLeft(autoDismissSeconds);
+      return undefined;
+    }
+
+    if (!autoDismissSeconds || !onAutoDismiss || loading || payAttempted) {
+      return undefined;
+    }
+
+    setSecondsLeft(autoDismissSeconds);
+    const timer = window.setInterval(() => {
+      setSecondsLeft((prev) => {
+        if (prev <= 1) {
+          window.clearInterval(timer);
+          if (!dismissedRef.current) {
+            dismissedRef.current = true;
+            setNavigating(true);
+            onAutoDismiss();
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [open, autoDismissSeconds, onAutoDismiss, loading, payAttempted]);
+
+  if (!open) return null;
+
   const handleNoThanks = () => {
+    if (dismissedRef.current) return;
+    dismissedRef.current = true;
     setNavigating(true);
     onNoThanks();
   };
-  
+
+  const handlePayNow = () => {
+    if (dismissedRef.current || navigating) return;
+    setPayAttempted(true);
+    onPayNow();
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
-      {/* Backdrop is visual only — user must choose Pay now or No thanks */}
       <div className="absolute inset-0 bg-black/60" aria-hidden="true" />
       <div className="relative bg-gradient-to-b from-green-200 to-green-100 rounded-2xl shadow-2xl w-[92vw] max-w-md p-0" onClick={(e) => e.stopPropagation()}>
         <div className="p-6">
@@ -30,7 +84,13 @@ export default function PrepaidUpsellModal({ open, onClose, onNoThanks, onPayNow
           <div className="bg-white rounded-2xl p-6 shadow">
             <h3 className="text-center text-xl font-bold text-slate-900">Your order is confirmed! <span role="img" aria-label="celebrate">🎉</span></h3>
             <p className="text-center text-slate-600 mt-2">Get an extra <span className="text-green-600 font-bold">5% OFF</span> when you pay now!</p>
-            
+
+            {autoDismissSeconds > 0 && !loading && !navigating ? (
+              <p className="mt-3 text-center text-xs font-medium text-slate-500">
+                Continuing with your COD order in {secondsLeft}s...
+              </p>
+            ) : null}
+
             {orderTotal > 0 && (
               <div className="mt-4 bg-gradient-to-r from-green-50 to-green-100 rounded-xl p-4 border-2 border-green-300">
                 <div className="flex justify-between items-center mb-2">
@@ -52,8 +112,9 @@ export default function PrepaidUpsellModal({ open, onClose, onNoThanks, onPayNow
 
             <div className="mt-4 space-y-3">
               <button
+                type="button"
                 className={`w-full rounded-xl py-3.5 font-bold text-slate-900 bg-yellow-400 hover:bg-yellow-500 shadow-lg flex items-center justify-center gap-2 ${loading || navigating ? 'opacity-70 cursor-not-allowed' : ''}`}
-                onClick={onPayNow}
+                onClick={handlePayNow}
                 disabled={loading || navigating}
               >
                 <span>⚡</span>
@@ -64,6 +125,7 @@ export default function PrepaidUpsellModal({ open, onClose, onNoThanks, onPayNow
                 </span>
               </button>
               <button
+                type="button"
                 className={`w-full rounded-xl py-3.5 font-semibold text-slate-700 bg-white border-2 border-slate-200 hover:bg-slate-50 ${navigating ? 'opacity-70 cursor-not-allowed' : ''}`}
                 onClick={handleNoThanks}
                 disabled={loading || navigating}
