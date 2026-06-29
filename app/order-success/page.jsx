@@ -20,6 +20,7 @@ import { useAuth } from '@/lib/useAuth';
 import { trackPurchase } from '@/lib/tracking';
 import { isConfirmedPaidOrder } from '@/lib/orderConfirmationPolicy';
 import { getDisplayOrderNumber } from '@/lib/orderDisplay';
+import { resolveOrderLinePackQuantity, resolveOrderLineQuantity } from '@/lib/gtmEcommerceHelpers';
 import { clearPendingCheckoutOrder } from '@/lib/pendingCheckoutOrder';
 
 export default function OrderSuccess() {
@@ -180,7 +181,11 @@ function OrderSuccessContent() {
   }
   // Calculate totals
   const products = order ? order.orderItems : [];
-  const subtotal = products.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const subtotal = products.reduce((sum, item) => {
+    const product = typeof item.productId === 'object' ? item.productId : null;
+    const packQty = resolveOrderLinePackQuantity(item);
+    return sum + (item.price * packQty);
+  }, 0);
   // Use shippingFee from order if available
   const shipping = typeof order?.shippingFee === 'number' ? order.shippingFee : 0;
   const discount = order?.coupon?.discount ? (order.coupon.discountType === 'percentage' ? (order.coupon.discount / 100 * subtotal) : Math.min(order.coupon.discount, subtotal)) : 0;
@@ -376,7 +381,9 @@ function OrderSuccessContent() {
                       const key = (p && p._id) || (typeof item.productId === 'string' ? item.productId : idx);
                       const name = p?.name || item.name || 'Product';
                       const image = Array.isArray(p?.images) && p.images[0] ? p.images[0] : null;
-                      const lineTotal = Number(item.price) * Number(item.quantity);
+                      const displayQty = resolveOrderLineQuantity(item, p);
+                      const packQty = resolveOrderLinePackQuantity(item);
+                      const lineTotal = Number(item.price) * packQty;
 
                       return (
                         <div
@@ -400,7 +407,7 @@ function OrderSuccessContent() {
                           </div>
                           <div className="min-w-0 flex-1">
                             <p className="line-clamp-2 font-medium text-slate-900">{name}</p>
-                            <p className="mt-1 text-xs text-slate-500">Qty {item.quantity}</p>
+                            <p className="mt-1 text-xs text-slate-500">Qty {displayQty}</p>
                           </div>
                           <p className="shrink-0 text-sm font-semibold text-slate-900">
                             {currency} {lineTotal.toLocaleString()}

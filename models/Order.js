@@ -5,6 +5,7 @@ const OrderItemSchema = new mongoose.Schema({
   name: String,
   price: Number,
   quantity: Number,
+  variantOptions: { type: Object, default: null },
   // Add more fields as needed
 }, { _id: false });
 

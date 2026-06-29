@@ -2910,6 +2910,8 @@ export default function StoreOrders() {
                                         const itemImage = item.image || item.productId?.images?.[0] || item.product?.images?.[0] || null;
                                         const unitPrice = Number(item.price || 0);
                                         const quantity = Number(item.quantity || 1);
+                                        const packQuantity = Number(item.packQuantity || 1);
+                                        const lineTotal = Number(item.lineTotal ?? unitPrice * packQuantity);
 
                                         return (
                                         <div key={i} className="flex items-center gap-4 border border-slate-200 rounded-xl p-3 bg-white hover:shadow-md transition-shadow">
@@ -2932,10 +2934,15 @@ export default function StoreOrders() {
                                                     <p className="text-xs text-orange-600">Imported item (not linked to catalog)</p>
                                                 ) : null}
                                                 <p className="text-sm text-slate-600">Quantity: {quantity}</p>
-                                                <p className="text-sm font-semibold text-slate-900">{currency}{unitPrice} each</p>
+                                                {item.variantLabel ? (
+                                                    <p className="text-xs text-slate-500">{item.variantLabel}</p>
+                                                ) : null}
+                                                <p className="text-sm font-semibold text-slate-900">
+                                                    {currency}{unitPrice} {item.isBulkBundle ? 'per bundle' : 'each'}
+                                                </p>
                                             </div>
                                             <div className="text-right">
-                                                <p className="text-lg font-bold text-slate-900">{currency}{(unitPrice * quantity).toFixed(0)}</p>
+                                                <p className="text-lg font-bold text-slate-900">{currency}{lineTotal.toFixed(0)}</p>
                                             </div>
                                         </div>
                                     )});

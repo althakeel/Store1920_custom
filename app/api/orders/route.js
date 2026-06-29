@@ -571,7 +571,8 @@ export async function POST(request) {
                     productId: item.id,
                     name: item.name || item.productName || item.title || '',
                     quantity: item.quantity,
-                    price: item.price
+                    price: item.price,
+                    variantOptions: item.variantOptions || null,
                 }))
             };
 
