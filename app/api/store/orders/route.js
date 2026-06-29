@@ -10,8 +10,48 @@ import { attachConversionToOrders } from '@/lib/storeOrderInsights';
 import { batchPopulateOrderUsers } from '@/lib/storeOrderUsers';
 import { ACTIVE_RECORD_FILTER } from '@/lib/storeTrash';
 import { repairOrderBundleLines } from '@/lib/bundleOrderRepair';
+import { getOrderLineProduct } from '@/lib/orderDisplay';
 
 const ORDER_LINE_PRODUCT_SELECT = 'name slug images sku variants price salePrice';
+
+async function hydrateOrderItemProducts(orders = []) {
+  const missingIds = new Set();
+
+  for (const order of orders) {
+    for (const item of order.orderItems || []) {
+      const product = getOrderLineProduct(item);
+      const rawId = typeof item.productId === 'object'
+        ? item.productId?._id
+        : item.productId;
+      if (!rawId) continue;
+      if (!product?.variants?.length) {
+        missingIds.add(String(rawId));
+      }
+    }
+  }
+
+  if (!missingIds.size) return orders;
+
+  const products = await Product.find({ _id: { $in: [...missingIds] } })
+    .select(ORDER_LINE_PRODUCT_SELECT)
+    .lean();
+  const productById = new Map(products.map((product) => [String(product._id), product]));
+
+  return orders.map((order) => ({
+    ...order,
+    orderItems: (order.orderItems || []).map((item) => {
+      const rawId = typeof item.productId === 'object'
+        ? String(item.productId?._id || '')
+        : String(item.productId || '');
+      const hydrated = productById.get(rawId);
+      if (!hydrated) return item;
+      if (typeof item.productId === 'object') {
+        return { ...item, productId: { ...item.productId, ...hydrated } };
+      }
+      return { ...item, productId: hydrated };
+    }),
+  }));
+}
 
 // Debug log helper
 function debugLog(...args) {
@@ -139,6 +179,7 @@ export async function GET(request){
         }
 
         let enrichedOrders = attachConversionToOrders(orders, convertedCarts);
+        enrichedOrders = await hydrateOrderItemProducts(enrichedOrders);
 
         const bundleRepairUpdates = [];
         enrichedOrders = enrichedOrders.map((order) => {

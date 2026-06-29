@@ -114,7 +114,7 @@ export async function PUT(request, { params }) {
                     quantity: Math.max(1, Number(item?.quantity) || 1),
                     ...(item?.variantOptions ? { variantOptions: item.variantOptions } : {}),
                 };
-                return getRepairedBundleOrderLine(base, product) || base;
+                return getRepairedBundleOrderLine(base, product, existingOrder) || base;
             }).filter((item) => item.name && item.quantity > 0);
         }
 
