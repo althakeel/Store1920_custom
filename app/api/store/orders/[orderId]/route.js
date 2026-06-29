@@ -5,6 +5,10 @@ import Order from '@/models/Order';
 import User from '@/models/User';
 import { appendOrderCommunicationLog } from '@/lib/orderCommunicationLog';
 import { ACTIVE_RECORD_FILTER, buildTrashMeta } from '@/lib/storeTrash';
+import { getRepairedBundleOrderLine } from '@/lib/bundleOrderRepair';
+import { getOrderLineProduct } from '@/lib/orderDisplay';
+
+const ORDER_LINE_PRODUCT_SELECT = 'name slug images sku variants price salePrice';
 
 // Update order status and tracking details
 export async function PUT(request, { params }) {
@@ -67,7 +71,8 @@ export async function PUT(request, { params }) {
         })
         .populate({
             path: 'orderItems.productId',
-            model: 'Product'
+            model: 'Product',
+            select: ORDER_LINE_PRODUCT_SELECT,
         })
         .lean();
 
@@ -98,12 +103,19 @@ export async function PUT(request, { params }) {
         if (total !== undefined) updateData.total = Number(total) || 0;
         if (notes !== undefined) updateData.notes = String(notes || '').slice(0, 5000);
         if (Array.isArray(orderItems)) {
-            updateData.orderItems = orderItems.map((item) => ({
-                productId: item?.productId || undefined,
-                name: String(item?.name || '').trim(),
-                price: Number(item?.price) || 0,
-                quantity: Math.max(1, Number(item?.quantity) || 1),
-            })).filter((item) => item.name && item.quantity > 0);
+            updateData.orderItems = orderItems.map((item, index) => {
+                const existingItem = existingOrder.orderItems?.[index] || {};
+                const product = getOrderLineProduct(existingItem)
+                  || getOrderLineProduct(item);
+                const base = {
+                    productId: item?.productId?._id || item?.productId || existingItem?.productId?._id || existingItem?.productId || undefined,
+                    name: String(item?.name || '').trim(),
+                    price: Number(item?.price) || 0,
+                    quantity: Math.max(1, Number(item?.quantity) || 1),
+                    ...(item?.variantOptions ? { variantOptions: item.variantOptions } : {}),
+                };
+                return getRepairedBundleOrderLine(base, product) || base;
+            }).filter((item) => item.name && item.quantity > 0);
         }
 
         const referenceId = String(paymentReferenceId || tabbyPaymentId || tamaraOrderId || '').trim();
@@ -154,7 +166,7 @@ export async function PUT(request, { params }) {
         .populate({
             path: 'orderItems.productId',
             model: 'Product',
-            select: 'name slug images sku',
+            select: ORDER_LINE_PRODUCT_SELECT,
         })
         .lean();
 

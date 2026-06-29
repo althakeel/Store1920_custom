@@ -9,6 +9,9 @@ import AbandonedCart from '@/models/AbandonedCart';
 import { attachConversionToOrders } from '@/lib/storeOrderInsights';
 import { batchPopulateOrderUsers } from '@/lib/storeOrderUsers';
 import { ACTIVE_RECORD_FILTER } from '@/lib/storeTrash';
+import { repairOrderBundleLines } from '@/lib/bundleOrderRepair';
+
+const ORDER_LINE_PRODUCT_SELECT = 'name slug images sku variants price salePrice';
 
 // Debug log helper
 function debugLog(...args) {
@@ -107,7 +110,7 @@ export async function GET(request){
                 .populate({
                     path: 'orderItems.productId',
                     model: 'Product',
-                    select: 'name slug images sku',
+                    select: ORDER_LINE_PRODUCT_SELECT,
                 })
                 .sort({ createdAt: -1, shortOrderNumber: -1 })
                 .lean(),
@@ -136,6 +139,21 @@ export async function GET(request){
         }
 
         let enrichedOrders = attachConversionToOrders(orders, convertedCarts);
+
+        const bundleRepairUpdates = [];
+        enrichedOrders = enrichedOrders.map((order) => {
+            const { items, changed } = repairOrderBundleLines(order);
+            if (!changed) return order;
+            bundleRepairUpdates.push(
+                Order.findByIdAndUpdate(order._id, { orderItems: items }).catch((err) => {
+                    debugLog('bundle order repair failed for', order._id, err?.message || err);
+                }),
+            );
+            return { ...order, orderItems: items };
+        });
+        if (bundleRepairUpdates.length) {
+            Promise.all(bundleRepairUpdates).catch(() => {});
+        }
 
         if (includeDelhivery) {
             const shouldFetchDelhivery = (order) => {

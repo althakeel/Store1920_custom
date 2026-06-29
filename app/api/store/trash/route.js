@@ -11,6 +11,8 @@ import {
   resolveStoreTrashActor,
 } from '@/lib/storeTrash';
 
+const ORDER_LINE_PRODUCT_SELECT = 'name slug images sku variants price salePrice';
+
 export async function GET(request) {
   try {
     const actor = await resolveStoreTrashActor(request);
@@ -23,7 +25,7 @@ export async function GET(request) {
         .populate({
           path: 'orderItems.productId',
           model: 'Product',
-          select: 'name slug images sku',
+          select: ORDER_LINE_PRODUCT_SELECT,
         })
         .sort({ deletedAt: -1, createdAt: -1 })
         .lean(),
