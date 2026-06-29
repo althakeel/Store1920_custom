@@ -18,6 +18,7 @@ import {
 import Loading from '@/components/Loading';
 import { useAuth } from '@/lib/useAuth';
 import { trackPurchase } from '@/lib/tracking';
+import { isConfirmedPaidOrder } from '@/lib/orderConfirmationPolicy';
 import { getDisplayOrderNumber } from '@/lib/orderDisplay';
 import { clearPendingCheckoutOrder } from '@/lib/pendingCheckoutOrder';
 
@@ -151,10 +152,6 @@ function OrderSuccessContent() {
             }).catch(() => {});
           }
 
-          if (!purchaseTrackedRef.current) {
-            purchaseTrackedRef.current = true;
-            trackPurchase(loadedOrder, { user });
-          }
         }
       } catch {
         if (!cancelled) setOrders(null);
@@ -170,6 +167,14 @@ function OrderSuccessContent() {
   }, [params, router, user, getToken]);
 
   const order = orders && orders.length > 0 ? orders[0] : null;
+
+  useEffect(() => {
+    if (!order?._id || purchaseTrackedRef.current) return;
+    if (!isConfirmedPaidOrder(order)) return;
+
+    purchaseTrackedRef.current = true;
+    trackPurchase(order, { user });
+  }, [order, user]);
   function getOrderNumber(orderObj) {
     return getDisplayOrderNumber(orderObj);
   }

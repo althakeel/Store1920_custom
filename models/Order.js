@@ -50,6 +50,7 @@ const OrderSchema = new mongoose.Schema({
   cancelReason: String,
   paymentRecoveryNotifiedAt: { type: Date, default: null },
   orderPlacedEmailSentAt: { type: Date, default: null },
+  metaPurchaseSentAt: { type: Date, default: null },
   orderConfirmedEmailSentAt: { type: Date, default: null },
   adminOrderEmailSentAt: { type: Date, default: null },
   returnReason: String,

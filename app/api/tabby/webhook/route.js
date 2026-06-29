@@ -10,6 +10,7 @@ import {
     parseTabbyWebhookPayload,
 } from '@/lib/tabbyOrderPayment';
 import { verifyTabbyWebhookRequest } from '@/lib/tabbyWebhookAuth';
+import { resolveOrderMongoIdFromPaymentReference } from '@/lib/orderPaymentReference';
 
 export async function POST(request) {
     try {
@@ -27,9 +28,15 @@ export async function POST(request) {
 
         await connectDB();
 
+        const mongoOrderId = await resolveOrderMongoIdFromPaymentReference(orderId);
+        if (!mongoOrderId) {
+            console.warn('[tabby] webhook order not found for reference:', orderId);
+            return NextResponse.json({ received: true });
+        }
+
         if (isTabbyPaymentSuccessful(parsed)) {
-            const order = await Order.findById(orderId).select('total').lean();
-            await finalizeTabbyOrderPayment(orderId, {
+            const order = await Order.findById(mongoOrderId).select('total').lean();
+            await finalizeTabbyOrderPayment(mongoOrderId, {
                 paymentId,
                 skipCapture: status === 'closed' || isTabbyPaymentFullyCaptured({
                     captureTotal,
@@ -39,7 +46,7 @@ export async function POST(request) {
             });
         } else if (isTabbyPaymentFailed(parsed)) {
             await handlePaymentCancellationRecovery({
-                orderId,
+                orderId: mongoOrderId,
                 reason: `Tabby payment ${status}`,
             });
         }

@@ -31,6 +31,7 @@ import { createTamaraSession } from '@/lib/tamara';
 import { buildCheckoutRedirectUrl, resolveTamaraMerchantBaseUrl } from '@/lib/checkoutOrigin';
 import { getProductAbsoluteUrl } from '@/lib/productUrl';
 import { createTabbySession } from '@/lib/tabby';
+import { formatPaymentProviderOrderReference } from '@/lib/orderPaymentReference';
 import { normalizeEmail } from '@/lib/orderIdentity';
 import { getCouponAccessErrorAsync } from '@/lib/couponAccess';
 import { linkGuestOrdersToUser, resolveContactForGuestLinking } from '@/lib/linkGuestOrders';
@@ -975,7 +976,13 @@ export async function POST(request) {
             const origin = resolveTamaraMerchantBaseUrl(request);
             const primaryOrderId = orderIds[0] || '';
             // Build consumer info from the saved order address
-            const primaryOrder = await Order.findById(primaryOrderId).populate('addressId').lean();
+            let primaryOrder = await Order.findById(primaryOrderId).populate('addressId').lean();
+            primaryOrder = await ensurePersistedShortOrderNumber(primaryOrder);
+            const paymentReference = formatPaymentProviderOrderReference(primaryOrder);
+            if (!paymentReference) {
+                return NextResponse.json({ error: 'Could not assign order number for Tamara checkout' }, { status: 500 });
+            }
+
             const addr = primaryOrder?.shippingAddress || primaryOrder?.addressId || {};
             const fullName = addr.name || guestInfo?.name || '';
             const nameParts = fullName.trim().split(' ');
@@ -1004,7 +1011,7 @@ export async function POST(request) {
             );
 
             const tamaraResult = await createTamaraSession({
-                orderId: primaryOrderId,
+                orderId: paymentReference,
                 amount: fullAmount,
                 siteUrl: origin,
                 consumer: { first_name: firstName, last_name: lastName, email, phone_number: phoneNumber },
@@ -1030,7 +1037,7 @@ export async function POST(request) {
                     reason: 'Payment cancelled',
                 }),
                 notificationUrl: buildCheckoutRedirectUrl(origin, '/api/tamara/webhook'),
-                description: `Order #${primaryOrderId}`,
+                description: paymentReference,
             });
 
             // Store Tamara order ID on our order
@@ -1048,7 +1055,13 @@ export async function POST(request) {
             const origin = request.headers.get('origin') || process.env.NEXT_PUBLIC_BASE_URL || 'https://store1920.com';
             const primaryOrderId = orderIds[0] || '';
 
-            const primaryOrder = await Order.findById(primaryOrderId).populate('addressId').lean();
+            let primaryOrder = await Order.findById(primaryOrderId).populate('addressId').lean();
+            primaryOrder = await ensurePersistedShortOrderNumber(primaryOrder);
+            const paymentReference = formatPaymentProviderOrderReference(primaryOrder);
+            if (!paymentReference) {
+                return NextResponse.json({ error: 'Could not assign order number for Tabby checkout' }, { status: 500 });
+            }
+
             const addr = primaryOrder?.shippingAddress || primaryOrder?.addressId || {};
             const fullName = addr.name || guestInfo?.name || 'Customer';
             const phoneNumber = addr.phone || guestInfo?.phone || '';
@@ -1066,7 +1079,7 @@ export async function POST(request) {
             );
 
             const tabbyResult = await createTabbySession({
-                orderId: primaryOrderId,
+                orderId: paymentReference,
                 amount: fullAmount,
                 buyer: {
                     name: fullName,

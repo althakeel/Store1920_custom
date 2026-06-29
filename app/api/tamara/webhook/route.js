@@ -12,6 +12,10 @@ import { handlePaymentCancellationRecovery } from '@/lib/paymentCancellationReco
 import { markOrderPaymentSucceeded } from '@/lib/deferredOrderFlow';
 import { recordPurchaseFromOrder } from '@/lib/serverCustomerTracking';
 import { sendMetaPurchaseFromOrder } from '@/lib/metaConversionsApi';
+import {
+    formatPaymentProviderOrderReference,
+    resolveOrderByPaymentReference,
+} from '@/lib/orderPaymentReference';
 
 const APPROVED_EVENTS = new Set(['order_approved', 'order_authorised']);
 const CANCELLED_EVENTS = new Set(['order_declined', 'order_expired', 'order_canceled']);
@@ -21,10 +25,11 @@ async function finalizeTamaraPayment(orderId, tamaraOrderId, order) {
         return order;
     }
 
-    const updatedOrder = await markOrderPaymentSucceeded(orderId, { paymentStatus: 'PAID' });
+    const mongoOrderId = String(order._id);
+    const updatedOrder = await markOrderPaymentSucceeded(mongoOrderId, { paymentStatus: 'PAID' });
 
     if (tamaraOrderId) {
-        await Order.findByIdAndUpdate(orderId, { tamaraOrderId });
+        await Order.findByIdAndUpdate(mongoOrderId, { tamaraOrderId });
     }
 
     try {
@@ -37,13 +42,13 @@ async function finalizeTamaraPayment(orderId, tamaraOrderId, order) {
             source: 'tamara_webhook',
         });
     } catch (trackingError) {
-        console.error('Tamara purchase tracking failed for order', orderId, trackingError);
+        console.error('Tamara purchase tracking failed for order', mongoOrderId, trackingError);
     }
 
     if (tamaraOrderId) {
         try {
             await captureTamaraPayment(tamaraOrderId, {
-                orderId,
+                orderId: formatPaymentProviderOrderReference(updatedOrder) || mongoOrderId,
                 amount: updatedOrder.total,
                 items: buildTamaraCaptureItemsFromOrder(updatedOrder),
             });
@@ -53,7 +58,7 @@ async function finalizeTamaraPayment(orderId, tamaraOrderId, order) {
     }
 
     try {
-        const notificationResult = await sendPaidOrderConfirmationNotifications(orderId);
+        const notificationResult = await sendPaidOrderConfirmationNotifications(mongoOrderId);
         console.log('[tamara] Paid confirmation notifications:', notificationResult);
     } catch (notificationError) {
         console.error('[tamara] Confirmation notifications failed:', notificationError);
@@ -83,30 +88,37 @@ export async function POST(request) {
         const body = await request.json();
         const eventType = String(body?.event_type || '').toLowerCase();
         const tamaraOrderId = body?.order_id || body?.order?.order_id || '';
-        const orderId = body?.order_reference_id || body?.order?.reference_id || '';
+        const orderRef = body?.order_reference_id || body?.order?.reference_id || '';
 
-        if (!orderId) {
+        if (!orderRef) {
             return NextResponse.json({ error: 'Missing order reference' }, { status: 400 });
         }
 
         await connectDB();
 
-        if (APPROVED_EVENTS.has(eventType)) {
-            const existing = await Order.findById(orderId)
-                .populate('orderItems.productId')
-                .lean();
+        const existing = await resolveOrderByPaymentReference(orderRef);
+        const mongoOrderId = existing?._id ? String(existing._id) : null;
 
-            if (existing) {
-                await finalizeTamaraPayment(orderId, tamaraOrderId, existing);
+        if (APPROVED_EVENTS.has(eventType)) {
+            if (existing && mongoOrderId) {
+                const populated = await Order.findById(mongoOrderId)
+                    .populate('orderItems.productId')
+                    .lean();
+                if (populated) {
+                    await finalizeTamaraPayment(mongoOrderId, tamaraOrderId, populated);
+                }
             }
         } else if (CANCELLED_EVENTS.has(eventType)) {
+            if (!mongoOrderId) {
+                return NextResponse.json({ received: true });
+            }
             const reasonMap = {
                 order_declined: 'Tamara payment declined',
                 order_expired: 'Tamara payment expired',
                 order_canceled: 'Tamara payment canceled',
             };
             await handlePaymentCancellationRecovery({
-                orderId,
+                orderId: mongoOrderId,
                 reason: reasonMap[eventType] || `Tamara payment ${eventType}`,
             });
         }
