@@ -92,6 +92,32 @@ function OrderSuccessContent() {
           const orderIsPaid = loadedOrder.isPaid === true
             || String(loadedOrder.paymentStatus || '').toLowerCase() === 'paid'
             || status === 'ORDER_PLACED';
+
+          if (params.get('tabby') === '1' && !orderIsPaid) {
+            fetch('/api/orders/verify-tabby', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ orderId: loadedOrder._id }),
+            })
+              .then((res) => (res.ok ? res.json() : null))
+              .then((result) => {
+                if (result?.success && !cancelled) {
+                  return fetch(`/api/orders?orderId=${orderId}`, fetchOptions);
+                }
+                return null;
+              })
+              .then((res) => (res?.ok ? res.json() : null))
+              .then((data) => {
+                if (cancelled) return;
+                if (data?.order) {
+                  setOrders([data.order]);
+                } else if (Array.isArray(data?.orders) && data.orders.length) {
+                  setOrders(data.orders);
+                }
+              })
+              .catch(() => {});
+          }
+
           if (paidRedirect && orderIsPaid) {
             fetch('/api/orders/confirm-paid', {
               method: 'POST',

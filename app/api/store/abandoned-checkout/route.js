@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import AbandonedCart from '@/models/AbandonedCart';
+import Order from '@/models/Order';
 import User from '@/models/User';
+import {
+  autoConvertAbandonedCartsWithPlacedOrders,
+  getPlacedOrderLookbackDate,
+} from '@/lib/abandonedCartOrderMatch';
 import authSeller from '@/middlewares/authSeller';
 import { getAuth } from '@/lib/firebase-admin';
 import { enrichAbandonedCarts, getAbandonedCartTotal, isPlaceholderName } from '@/lib/abandonedCartUtils';
@@ -66,11 +71,38 @@ export async function GET(request) {
     }
 
     await dbConnect();
-    const carts = await AbandonedCart.find({ storeId })
-      .sort({ lastSeenAt: -1, updatedAt: -1 })
-      .lean();
+
+    const [carts, recentOrders] = await Promise.all([
+      AbandonedCart.find({ storeId })
+        .sort({ lastSeenAt: -1, updatedAt: -1 })
+        .lean(),
+      Order.find({
+        storeId,
+        createdAt: { $gte: getPlacedOrderLookbackDate() },
+        status: { $nin: ['PAYMENT_FAILED', 'CANCELLED', 'AWAITING_PAYMENT'] },
+      })
+        .select('storeId status paymentMethod paymentStatus isPaid guestEmail guestPhone alternatePhone shippingAddress userId orderItems items createdAt')
+        .lean(),
+    ]);
+
+    const { convertedCartIds } = await autoConvertAbandonedCartsWithPlacedOrders(
+      carts,
+      recentOrders,
+      AbandonedCart,
+    );
+
+    const convertedCartIdSet = new Set(convertedCartIds);
+    const visibleCarts = carts.map((cart) => {
+      if (!convertedCartIdSet.has(String(cart._id))) return cart;
+      return {
+        ...cart,
+        status: 'converted',
+        convertedAt: cart.convertedAt || new Date(),
+      };
+    });
 
     const userIds = Array.from(new Set(
+      visibleCarts.map((cart) => cart.userId).filter(Boolean).map(String)
       carts.map((cart) => cart.userId).filter(Boolean).map(String)
     ));
 
@@ -85,7 +117,7 @@ export async function GET(request) {
         .lean()
       : [];
 
-    const enrichedCarts = enrichAbandonedCarts(carts, users);
+    const enrichedCarts = enrichAbandonedCarts(visibleCarts, users);
 
     const access = await resolveDashboardAccess(userId, decodedToken);
     const isPlatformAdmin = Boolean(

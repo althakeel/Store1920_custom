@@ -47,8 +47,8 @@ async function registerWebhook() {
 
     if (TABBY_WEBHOOK_SECRET) {
         body.header = {
-            title: 'Authorization',
-            value: `Bearer ${TABBY_WEBHOOK_SECRET}`,
+            title: process.env.TABBY_WEBHOOK_HEADER || 'x-tabby-signature',
+            value: TABBY_WEBHOOK_SECRET,
         };
     }
 

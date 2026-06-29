@@ -8,10 +8,30 @@ import PageSkeleton from "@/components/PageSkeleton";
 import { readPageCache, writePageCache, clearPageCache } from "@/lib/storePageCache";
 import axios from "axios";
 import toast from "react-hot-toast";
-import { Package, Truck, X, Download, Printer, RefreshCw, MapPin, Trash2, CalendarClock, AlertTriangle, Search, Plus, ArrowUp, ArrowDown, ArrowUpDown, History, Pencil } from "lucide-react";
+import { Package, Truck, X, Download, Printer, RefreshCw, MapPin, Trash2, CalendarClock, AlertTriangle, Search, Plus, ArrowUp, ArrowDown, ArrowUpDown, History, Pencil, Filter } from "lucide-react";
 import StoreCreateOrderModal from '@/components/store/StoreCreateOrderModal';
 import StoreEditOrderPanel from '@/components/store/StoreEditOrderPanel';
 import OrderStatusPicker, { STORE_ORDER_STATUS_FILTER_OPTIONS, STORE_ORDER_STATUS_OPTIONS } from '@/components/store/OrderStatusPicker';
+
+function formatFilterDateLabel(value = '') {
+    if (!value) return '';
+    const parsed = new Date(`${value}T12:00:00`);
+    if (Number.isNaN(parsed.getTime())) return value;
+    return parsed.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function buildDateRangeSummary(fromDate, toDate) {
+    if (fromDate && toDate) {
+        return `${formatFilterDateLabel(fromDate)} – ${formatFilterDateLabel(toDate)}`;
+    }
+    if (fromDate) {
+        return `from ${formatFilterDateLabel(fromDate)}`;
+    }
+    if (toDate) {
+        return `until ${formatFilterDateLabel(toDate)}`;
+    }
+    return '';
+}
 import { downloadInvoice, printInvoice } from "@/lib/generateInvoice";
 import { schedulePickup } from '@/lib/delhivery';
 import { STORE_ORDER_NOTIFICATION_EVENT, STORE_ORDER_TOAST_ID, dispatchStoreOrdersImportEnd, dispatchStoreOrdersImportStart } from '@/lib/storeOrderNotifications';
@@ -231,6 +251,11 @@ export default function StoreOrders() {
     const [importingOrdersCsv, setImportingOrdersCsv] = useState(false);
     const [importProgress, setImportProgress] = useState({ current: 0, total: 0, phase: 'idle' });
     const [showImportExportPanel, setShowImportExportPanel] = useState(false);
+    const [showDeliverySchedule, setShowDeliverySchedule] = useState(false);
+    const [showOrderFilters, setShowOrderFilters] = useState(false);
+    const [paymentReconcileStatus, setPaymentReconcileStatus] = useState(null);
+    const paymentReconcileRunningRef = useRef(false);
+    const PAYMENT_RECONCILE_INTERVAL_MS = 15 * 60 * 1000;
     const [showCreateOrderModal, setShowCreateOrderModal] = useState(false);
     const suppressLiveAlertsRef = useRef(false);
     const [selectedOrderIds, setSelectedOrderIds] = useState([]);
@@ -494,6 +519,23 @@ export default function StoreOrders() {
         }
         setCurrentPage(1);
     };
+
+    const clearDateRange = () => {
+        setDatePreset('ALL');
+        setFromDate('');
+        setToDate('');
+        setCurrentPage(1);
+    };
+
+    const dateRangeSummary = buildDateRangeSummary(fromDate, toDate);
+
+    const activeOrderFilterCount = useMemo(() => {
+        let count = 0;
+        if (filterStatus !== 'ALL') count += 1;
+        if (filterPayment !== 'ALL') count += 1;
+        if (filterTrafficSource !== 'ALL') count += 1;
+        return count;
+    }, [filterStatus, filterPayment, filterTrafficSource]);
 
     const paymentStats = useMemo(() => {
         const counts = { ALL: 0, COD: 0, CARD: 0, TABBY: 0, TAMARA: 0, WALLET: 0 };
@@ -958,6 +1000,45 @@ export default function StoreOrders() {
         }
     };
 
+    const runPaymentReconciliation = async ({ silent = true } = {}) => {
+        if (paymentReconcileRunningRef.current) return;
+        paymentReconcileRunningRef.current = true;
+        try {
+            let token = await getToken(false);
+            if (!token) token = await getToken(true);
+            if (!token) return;
+
+            const { data } = await axios.post(
+                '/api/store/orders/reconcile-payments',
+                { hours: 24 },
+                { headers: { Authorization: `Bearer ${token}` } },
+            );
+
+            const summary = data?.summary || null;
+            setPaymentReconcileStatus(summary);
+
+            if (summary?.fixed > 0) {
+                toast.success(
+                    `Fixed ${summary.fixed} order(s) that were paid but showing failed/pending`,
+                    { id: 'payment-reconcile-fixed' },
+                );
+                await fetchOrders({ silent: true });
+            } else if (!silent) {
+                toast.success('Payment check complete — no paid orders needed fixing', {
+                    id: 'payment-reconcile-ok',
+                });
+            }
+        } catch (error) {
+            if (!silent) {
+                toast.error(error?.response?.data?.error || 'Payment check failed');
+            } else {
+                console.error('Payment reconciliation failed:', error);
+            }
+        } finally {
+            paymentReconcileRunningRef.current = false;
+        }
+    };
+
     useEffect(() => {
         const cached = readPageCache('store-orders');
         if (cached?.orders?.length) {
@@ -974,6 +1055,24 @@ export default function StoreOrders() {
             return;
         }
         fetchOrders({ silent: Boolean(readPageCache('store-orders')) });
+        // eslint-disable-next-line
+    }, [authLoading, user]);
+
+    useEffect(() => {
+        if (authLoading || !user) return undefined;
+
+        const initialTimer = setTimeout(() => {
+            runPaymentReconciliation({ silent: true });
+        }, 45000);
+
+        const intervalId = setInterval(() => {
+            runPaymentReconciliation({ silent: true });
+        }, PAYMENT_RECONCILE_INTERVAL_MS);
+
+        return () => {
+            clearTimeout(initialTimer);
+            clearInterval(intervalId);
+        };
         // eslint-disable-next-line
     }, [authLoading, user]);
 
@@ -1544,6 +1643,31 @@ export default function StoreOrders() {
                     </button>
                 </div>
             ) : null}
+
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                <div>
+                    <p className="font-semibold text-slate-900">Payment health check (last 24 hours)</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                        Auto-runs every 15 minutes. Re-checks Stripe, Tabby, Tamara, and card payments that may show failed/pending due to webhook issues.
+                        {paymentReconcileStatus?.checkedAt ? (
+                            <>
+                                {' '}Last check: {new Date(paymentReconcileStatus.checkedAt).toLocaleString('en-GB')}
+                                {paymentReconcileStatus.fixed > 0
+                                    ? ` · Fixed ${paymentReconcileStatus.fixed}`
+                                    : ` · Scanned ${paymentReconcileStatus.scanned || 0}`}
+                            </>
+                        ) : null}
+                    </p>
+                </div>
+                <button
+                    type="button"
+                    onClick={() => runPaymentReconciliation({ silent: false })}
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                >
+                    <RefreshCw size={14} />
+                    Check payments now
+                </button>
+            </div>
             
             {/* Order Statistics Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
@@ -1595,48 +1719,54 @@ export default function StoreOrders() {
                 </div>
             </div>
 
+            {/* Order filters — status, payment, traffic source */}
             <div className="mb-6">
-                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-700">
-                    <CalendarClock size={16} />
-                    <span>Delivery schedule</span>
-                </div>
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                    <div
-                        onClick={() => setFilterStatus('DELIVERY_TODAY')}
-                        className={`cursor-pointer rounded-lg border p-4 transition-all ${filterStatus === 'DELIVERY_TODAY' ? 'border-sky-600 bg-sky-600 text-white shadow-lg' : 'border-sky-200 bg-sky-50 text-sky-900 hover:border-sky-300'}`}
-                    >
-                        <p className="text-xs opacity-80">Delivering today</p>
-                        <p className="text-2xl font-bold">{deliverySummary.today}</p>
-                    </div>
-                    <div
-                        onClick={() => setFilterStatus('DELIVERY_TOMORROW')}
-                        className={`cursor-pointer rounded-lg border p-4 transition-all ${filterStatus === 'DELIVERY_TOMORROW' ? 'border-indigo-600 bg-indigo-600 text-white shadow-lg' : 'border-indigo-200 bg-indigo-50 text-indigo-900 hover:border-indigo-300'}`}
-                    >
-                        <p className="text-xs opacity-80">Delivering tomorrow</p>
-                        <p className="text-2xl font-bold">{deliverySummary.tomorrow}</p>
-                    </div>
-                    <div
-                        onClick={() => setFilterStatus('DELIVERY_DELAYED')}
-                        className={`cursor-pointer rounded-lg border p-4 transition-all ${filterStatus === 'DELIVERY_DELAYED' ? 'border-amber-600 bg-amber-600 text-white shadow-lg' : 'border-amber-200 bg-amber-50 text-amber-900 hover:border-amber-300'}`}
-                    >
-                        <div className="flex items-center gap-1 text-xs opacity-80">
-                            <AlertTriangle size={12} />
-                            <span>Delayed delivery</span>
-                        </div>
-                        <p className="text-2xl font-bold">{deliverySummary.delayed}</p>
-                    </div>
-                </div>
-                {convertedOrderCount > 0 ? (
+                <div className="mb-3 flex flex-wrap items-center gap-3">
                     <button
                         type="button"
-                        onClick={() => setFilterStatus('CONVERTED')}
-                        className={`mt-3 rounded-lg border px-4 py-2 text-sm font-medium transition ${filterStatus === 'CONVERTED' ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:border-emerald-300'}`}
+                        onClick={() => setShowOrderFilters((prev) => !prev)}
+                        className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold transition ${
+                            showOrderFilters
+                                ? 'border-blue-700 bg-blue-700 text-white'
+                                : 'border-blue-200 bg-blue-50 text-blue-900 hover:border-blue-300'
+                        }`}
                     >
-                        Converted orders: {convertedOrderCount}
+                        <Filter size={16} />
+                        {showOrderFilters ? 'Hide order filters' : 'Order filters'}
+                        {!showOrderFilters && activeOrderFilterCount > 0 ? (
+                            <span className="rounded-full bg-white/90 px-2 py-0.5 text-xs font-bold text-blue-900">
+                                {activeOrderFilterCount} active
+                            </span>
+                        ) : null}
                     </button>
-                ) : null}
-            </div>
+                    <button
+                        type="button"
+                        onClick={() => setShowDeliverySchedule((prev) => !prev)}
+                        className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold transition ${
+                            showDeliverySchedule
+                                ? 'border-sky-700 bg-sky-700 text-white'
+                                : 'border-sky-200 bg-sky-50 text-sky-900 hover:border-sky-300'
+                        }`}
+                    >
+                        <CalendarClock size={16} />
+                        {showDeliverySchedule ? 'Hide delivery schedule' : 'Delivery schedule'}
+                        {!showDeliverySchedule && (deliverySummary.today + deliverySummary.tomorrow + deliverySummary.delayed) > 0 ? (
+                            <span className="rounded-full bg-white/90 px-2 py-0.5 text-xs font-bold text-sky-900">
+                                {deliverySummary.today + deliverySummary.tomorrow + deliverySummary.delayed}
+                            </span>
+                        ) : null}
+                    </button>
+                    {!showOrderFilters && activeOrderFilterCount > 0 ? (
+                        <p className="text-xs text-slate-500">
+                            {filterStatus !== 'ALL' ? `Status: ${STORE_ORDER_STATUS_FILTER_OPTIONS.find((t) => t.value === filterStatus)?.label || filterStatus}` : null}
+                            {filterPayment !== 'ALL' ? `${filterStatus !== 'ALL' ? ' · ' : ''}Payment: ${PAYMENT_FILTER_OPTIONS.find((o) => o.value === filterPayment)?.label || filterPayment}` : null}
+                            {filterTrafficSource !== 'ALL' ? `${filterStatus !== 'ALL' || filterPayment !== 'ALL' ? ' · ' : ''}Source: ${TRAFFIC_SOURCE_FILTER_OPTIONS.find((o) => o.value === filterTrafficSource)?.label || filterTrafficSource}` : null}
+                        </p>
+                    ) : null}
+                </div>
 
+                {showOrderFilters ? (
+                <>
             {/* Status Filter Tabs */}
             <div className="mb-6 flex flex-wrap gap-2">
                 {STORE_ORDER_STATUS_FILTER_OPTIONS.map((tab) => {
@@ -1742,6 +1872,49 @@ export default function StoreOrders() {
                     ))}
                 </div>
             </div>
+                </>
+                ) : null}
+
+                {showDeliverySchedule ? (
+                <>
+                <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <div
+                        onClick={() => setFilterStatus('DELIVERY_TODAY')}
+                        className={`cursor-pointer rounded-lg border p-4 transition-all ${filterStatus === 'DELIVERY_TODAY' ? 'border-sky-600 bg-sky-600 text-white shadow-lg' : 'border-sky-200 bg-sky-50 text-sky-900 hover:border-sky-300'}`}
+                    >
+                        <p className="text-xs opacity-80">Delivering today</p>
+                        <p className="text-2xl font-bold">{deliverySummary.today}</p>
+                    </div>
+                    <div
+                        onClick={() => setFilterStatus('DELIVERY_TOMORROW')}
+                        className={`cursor-pointer rounded-lg border p-4 transition-all ${filterStatus === 'DELIVERY_TOMORROW' ? 'border-indigo-600 bg-indigo-600 text-white shadow-lg' : 'border-indigo-200 bg-indigo-50 text-indigo-900 hover:border-indigo-300'}`}
+                    >
+                        <p className="text-xs opacity-80">Delivering tomorrow</p>
+                        <p className="text-2xl font-bold">{deliverySummary.tomorrow}</p>
+                    </div>
+                    <div
+                        onClick={() => setFilterStatus('DELIVERY_DELAYED')}
+                        className={`cursor-pointer rounded-lg border p-4 transition-all ${filterStatus === 'DELIVERY_DELAYED' ? 'border-amber-600 bg-amber-600 text-white shadow-lg' : 'border-amber-200 bg-amber-50 text-amber-900 hover:border-amber-300'}`}
+                    >
+                        <div className="flex items-center gap-1 text-xs opacity-80">
+                            <AlertTriangle size={12} />
+                            <span>Delayed delivery</span>
+                        </div>
+                        <p className="text-2xl font-bold">{deliverySummary.delayed}</p>
+                    </div>
+                </div>
+                {convertedOrderCount > 0 ? (
+                    <button
+                        type="button"
+                        onClick={() => setFilterStatus('CONVERTED')}
+                        className={`mt-3 rounded-lg border px-4 py-2 text-sm font-medium transition ${filterStatus === 'CONVERTED' ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:border-emerald-300'}`}
+                    >
+                        Converted orders: {convertedOrderCount}
+                    </button>
+                ) : null}
+                </>
+                ) : null}
+            </div>
 
             {/* Date Range Filters */}
             <div className="mb-6 bg-white border border-gray-200 rounded-lg p-4 flex flex-col gap-4">
@@ -1779,17 +1952,66 @@ export default function StoreOrders() {
                         {showImportExportPanel || importingOrdersCsv ? 'Hide Import / Export' : 'Import / Export'}
                     </button>
                 </div>
+
+                <div className="flex flex-wrap items-end gap-3 border-t border-slate-100 pt-4">
+                    <div className="min-w-[160px]">
+                        <label htmlFor="orders-from-date" className="text-xs font-medium text-slate-500">From date</label>
+                        <input
+                            id="orders-from-date"
+                            type="date"
+                            value={fromDate}
+                            max={toDate || undefined}
+                            onChange={(e) => {
+                                setFromDate(e.target.value);
+                                setDatePreset('CUSTOM');
+                                setCurrentPage(1);
+                            }}
+                            className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                        />
+                    </div>
+                    <div className="min-w-[160px]">
+                        <label htmlFor="orders-to-date" className="text-xs font-medium text-slate-500">To date</label>
+                        <input
+                            id="orders-to-date"
+                            type="date"
+                            value={toDate}
+                            min={fromDate || undefined}
+                            onChange={(e) => {
+                                setToDate(e.target.value);
+                                setDatePreset('CUSTOM');
+                                setCurrentPage(1);
+                            }}
+                            className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                        />
+                    </div>
+                    {hasDateFilter ? (
+                        <button
+                            type="button"
+                            onClick={clearDateRange}
+                            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                        >
+                            Clear dates
+                        </button>
+                    ) : null}
+                    {hasDateFilter && dateRangeSummary ? (
+                        <p className="pb-2 text-sm text-slate-600">
+                            Filter: <strong>{dateRangeSummary}</strong>
+                        </p>
+                    ) : null}
+                </div>
+
                 {(hasDateFilter || orders.length > 0) && (
                     <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
                         <div className="flex flex-wrap items-center gap-3">
                             <span>
-                                Showing <strong>{filteredOrders.length}</strong> of <strong>{orders.length}</strong> loaded orders
+                                Showing <strong>{filteredOrders.length}</strong>
+                                {hasDateFilter ? ' matching orders' : ` of ${orders.length} loaded orders`}
+                                {!hasDateFilter ? null : (
+                                    <>
+                                        {' '}<span className="text-slate-500">({orders.length.toLocaleString()} loaded total)</span>
+                                    </>
+                                )}
                             </span>
-                            {hasDateFilter ? (
-                                <span>
-                                    · <strong>{ordersMatchingDateRange.length}</strong> match the selected date range
-                                </span>
-                            ) : null}
                         </div>
                         <label className="flex items-center gap-2 text-slate-600">
                             <span className="font-medium text-slate-500">Sort by</span>
@@ -1812,31 +2034,7 @@ export default function StoreOrders() {
                     </div>
                 )}
                 {(showImportExportPanel || importingOrdersCsv) ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 border-t border-slate-100 pt-4">
-                    <div>
-                        <label className="text-xs text-slate-500">From</label>
-                        <input
-                            type="date"
-                            value={fromDate}
-                            onChange={(e) => {
-                                setFromDate(e.target.value);
-                                setDatePreset('CUSTOM');
-                            }}
-                            className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                        />
-                    </div>
-                    <div>
-                        <label className="text-xs text-slate-500">To</label>
-                        <input
-                            type="date"
-                            value={toDate}
-                            onChange={(e) => {
-                                setToDate(e.target.value);
-                                setDatePreset('CUSTOM');
-                            }}
-                            className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                        />
-                    </div>
+                <div className="grid grid-cols-1 gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2 lg:grid-cols-3">
                     <div>
                         <label className="text-xs text-slate-500">Export Type</label>
                         <select
