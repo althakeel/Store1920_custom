@@ -1,6 +1,7 @@
-import { buildLlmsFullTxt, llmsResponseHeaders, LLMS_REVALIDATE_SECONDS } from '@/lib/llmsTxt';
+import { buildLlmsFullTxt, llmsResponseHeaders } from '@/lib/llmsTxt';
 
-export const revalidate = LLMS_REVALIDATE_SECONDS;
+// Next.js requires a static literal for route segment config (see lib/llmsTxt.js LLMS_REVALIDATE_SECONDS).
+export const revalidate = 3600;
 
 export async function GET() {
   const body = await buildLlmsFullTxt();
