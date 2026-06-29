@@ -2909,8 +2909,9 @@ export default function StoreOrders() {
                                         const itemName = item.name || item.productId?.name || item.product?.name || 'Product';
                                         const itemImage = item.image || item.productId?.images?.[0] || item.product?.images?.[0] || null;
                                         const unitPrice = Number(item.price || 0);
-                                        const quantity = Number(item.quantity || 1);
                                         const packQuantity = Number(item.packQuantity || 1);
+                                        const bundleUnits = Number(item.bundleUnits || 0);
+                                        const quantity = Number(item.quantity || 1);
                                         const lineTotal = Number(item.lineTotal ?? unitPrice * packQuantity);
 
                                         return (
@@ -2933,16 +2934,20 @@ export default function StoreOrders() {
                                                 {!item.productId && !item.product?.name && item.name ? (
                                                     <p className="text-xs text-orange-600">Imported item (not linked to catalog)</p>
                                                 ) : null}
-                                                <p className="text-sm text-slate-600">Quantity: {quantity}</p>
-                                                {item.variantLabel ? (
+                                                <p className="text-sm text-slate-600">
+                                                    {item.isBulkBundle
+                                                        ? `Bundle of ${bundleUnits || quantity} (${packQuantity} pack${packQuantity > 1 ? 's' : ''})`
+                                                        : `Quantity: ${quantity}`}
+                                                </p>
+                                                {item.variantLabel && !item.isBulkBundle ? (
                                                     <p className="text-xs text-slate-500">{item.variantLabel}</p>
                                                 ) : null}
                                                 <p className="text-sm font-semibold text-slate-900">
-                                                    {currency}{unitPrice} {item.isBulkBundle ? 'per bundle' : 'each'}
+                                                    {currency}{unitPrice.toFixed(2)} {item.isBulkBundle ? 'per bundle' : 'each'}
                                                 </p>
                                             </div>
                                             <div className="text-right">
-                                                <p className="text-lg font-bold text-slate-900">{currency}{lineTotal.toFixed(0)}</p>
+                                                <p className="text-lg font-bold text-slate-900">{currency}{lineTotal.toFixed(2)}</p>
                                             </div>
                                         </div>
                                     )});

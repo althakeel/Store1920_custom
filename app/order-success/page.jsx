@@ -20,7 +20,7 @@ import { useAuth } from '@/lib/useAuth';
 import { trackPurchase } from '@/lib/tracking';
 import { isConfirmedPaidOrder } from '@/lib/orderConfirmationPolicy';
 import { getDisplayOrderNumber } from '@/lib/orderDisplay';
-import { resolveOrderLinePackQuantity, resolveOrderLineQuantity } from '@/lib/gtmEcommerceHelpers';
+import { resolveOrderLineLineTotal, resolveOrderLinePackQuantity, resolveOrderLineQuantity } from '@/lib/gtmEcommerceHelpers';
 import { clearPendingCheckoutOrder } from '@/lib/pendingCheckoutOrder';
 
 export default function OrderSuccess() {
@@ -183,8 +183,7 @@ function OrderSuccessContent() {
   const products = order ? order.orderItems : [];
   const subtotal = products.reduce((sum, item) => {
     const product = typeof item.productId === 'object' ? item.productId : null;
-    const packQty = resolveOrderLinePackQuantity(item);
-    return sum + (item.price * packQty);
+    return sum + resolveOrderLineLineTotal(item, product);
   }, 0);
   // Use shippingFee from order if available
   const shipping = typeof order?.shippingFee === 'number' ? order.shippingFee : 0;
@@ -382,8 +381,7 @@ function OrderSuccessContent() {
                       const name = p?.name || item.name || 'Product';
                       const image = Array.isArray(p?.images) && p.images[0] ? p.images[0] : null;
                       const displayQty = resolveOrderLineQuantity(item, p);
-                      const packQty = resolveOrderLinePackQuantity(item);
-                      const lineTotal = Number(item.price) * packQty;
+                      const lineTotal = resolveOrderLineLineTotal(item, p);
 
                       return (
                         <div
