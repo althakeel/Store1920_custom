@@ -83,11 +83,13 @@ function OrderToastShell({ toastInstance, title, children, onDismissAll = false 
   };
 
   return (
-    <div
-      className={`${
-        toastInstance.visible ? 'animate-enter' : 'animate-leave'
-      } pointer-events-auto relative z-[9999] flex w-full max-w-md rounded-xl border border-emerald-200 bg-white p-4 shadow-lg`}
-    >
+    <div className="pointer-events-none flex w-full justify-center px-2">
+      <div
+        className={`${
+          toastInstance.visible ? 'animate-enter' : 'animate-leave'
+        } pointer-events-auto relative z-[9999] w-full max-w-md rounded-xl border border-emerald-200 bg-white p-4 shadow-lg`}
+      >
+        <div className="flex">
       <div className="flex-1">
         <p className="text-sm font-semibold text-emerald-700">{title}</p>
         {children}
@@ -107,6 +109,8 @@ function OrderToastShell({ toastInstance, title, children, onDismissAll = false 
       >
         ×
       </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -202,6 +206,13 @@ export default function StoreOrderNotificationProvider({
 
     playStoreAlertSound();
 
+    dispatchStoreNewOrderEvent({ orders: freshOrders });
+
+    // On the orders page, use the inline banner only — avoid a blocking toast overlay.
+    if (pathname === '/store/orders') {
+      return;
+    }
+
     if (freshOrders.length >= BATCH_TOAST_THRESHOLD) {
       dismissOrderToasts();
       showBatchOrderToast(freshOrders);
@@ -209,9 +220,7 @@ export default function StoreOrderNotificationProvider({
       dismissOrderToasts();
       showNewOrderToast(freshOrders[0]);
     }
-
-    dispatchStoreNewOrderEvent({ orders: freshOrders });
-  }, [storeId]);
+  }, [storeId, pathname]);
 
   const refreshNotifications = useCallback(async () => {
     if (!canViewOrders || !storeId) return;

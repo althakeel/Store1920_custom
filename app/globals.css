@@ -605,6 +605,11 @@ body::-webkit-scrollbar-thumb {
     pointer-events: none;
 }
 
+/* Toast slot wrappers are full-width; only the visible card should capture clicks. */
 .storefront-toaster > div {
+    pointer-events: none;
+}
+
+.storefront-toaster > div > * {
     pointer-events: auto;
 }

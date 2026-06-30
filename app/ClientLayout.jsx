@@ -80,7 +80,7 @@ export default function ClientLayout({ children, initialStorefrontLanguage = 'en
             background: 'transparent',
             boxShadow: 'none',
             padding: 0,
-            maxWidth: 'none',
+            maxWidth: '28rem',
           },
         }}
       />
