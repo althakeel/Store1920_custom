@@ -11,7 +11,7 @@ import { ACTIVE_RECORD_FILTER, buildTrashMeta } from '@/lib/storeTrash';
 import authSeller from '@/middlewares/authSeller';
 import { getAuth } from '@/lib/firebase-admin';
 import { enrichAbandonedCarts, getAbandonedCartTotal, isPlaceholderName } from '@/lib/abandonedCartUtils';
-import { getConversionPaymentMethodLabel, resolveConversionPaymentLink, conversionRequiresPaymentConfirmation } from '@/lib/abandonedCartRecoveryPayment';
+import { getConversionPaymentMethodLabel, resolveConversionPaymentLink, conversionRequiresPaymentConfirmation, normalizeConversionPaymentMethod } from '@/lib/abandonedCartRecoveryPayment';
 import { sendAbandonedCartConversionEmail, sendAbandonedCartRecoveryLinkEmail } from '@/lib/email';
 import Store from '@/models/Store';
 import { resolveDashboardAccess } from '@/lib/storeAccessControl';
@@ -23,6 +23,11 @@ import {
   generateRecoveryToken,
 } from '@/lib/abandonedCartRecoveryOffer';
 import { sendAbandonedCartWhatsAppReminder } from '@/lib/whatsapp/abandonedCartMessaging';
+import {
+  createOrderFromAbandonedCart,
+  markLinkedOrderPaidFromAbandonedCart,
+} from '@/lib/createOrderFromAbandonedCart';
+import { formatWhatsAppErrorMessage } from '@/lib/whatsapp/formatWhatsAppError';
 
 async function resolveAbandonedCheckoutAccess(request) {
   const authHeader = request.headers.get('authorization');
@@ -375,7 +380,6 @@ export async function PATCH(request) {
           whatsappResult = await sendAbandonedCartWhatsAppReminder(
             { ...updated, phone: phoneForWhatsApp, name: trimmedCustomerName },
             {
-              variant: 'cart',
               useRecoveryLink: true,
               offerTotal,
             },
@@ -421,16 +425,30 @@ export async function PATCH(request) {
         buttonPath: body?.buttonPath,
       });
 
-      if (whatsapp?.success) {
+      const sent = Boolean(whatsapp?.success);
+      const alreadySent = Boolean(whatsapp?.alreadySent);
+
+      if (sent) {
         await AbandonedCart.updateOne(
           { _id: cartId, storeId },
           {
             $set: {
-              whatsappCheckoutReminderStatus: 'sent',
+              whatsappCheckoutReminderStatus: alreadySent ? 'sent' : 'sent',
               whatsappCheckoutReminderSentAt: new Date(),
               whatsappCheckoutReminderError: null,
             },
-          }
+          },
+        );
+      } else if (!whatsapp?.skipped) {
+        const errorText = formatWhatsAppErrorMessage(whatsapp?.reason || whatsapp?.error);
+        await AbandonedCart.updateOne(
+          { _id: cartId, storeId },
+          {
+            $set: {
+              whatsappCheckoutReminderStatus: 'failed',
+              whatsappCheckoutReminderError: errorText,
+            },
+          },
         );
       }
 
@@ -442,15 +460,68 @@ export async function PATCH(request) {
     }
 
     if (action === 'confirm-payment') {
+      const pendingCart = await AbandonedCart.findOne({
+        _id: cartId,
+        storeId,
+        status: 'pending_payment',
+      }).lean();
+
+      if (!pendingCart) {
+        return NextResponse.json({ error: 'Pending cart not found' }, { status: 404 });
+      }
+
+      const staffName = String(
+        convertedByName
+        || decodedToken.name
+        || decodedToken.email
+        || 'Store staff',
+      ).trim();
+
+      let orderId = String(pendingCart.linkedOrderId || '').trim();
+      let order = null;
+      let orderCreated = false;
+
+      try {
+        if (orderId) {
+          order = await markLinkedOrderPaidFromAbandonedCart(pendingCart, { storeId });
+        }
+
+        if (!order) {
+          const created = await createOrderFromAbandonedCart(pendingCart, {
+            storeId,
+            finalTotal: pendingCart.convertedCartTotal,
+            paymentMethod: pendingCart.conversionPaymentMethod,
+            convertedByName: pendingCart.convertedByName || staffName,
+            convertedByUserId: pendingCart.convertedBy || sellerUid,
+            conversionNote: pendingCart.conversionNote,
+            customerName: pendingCart.name,
+            customerEmail: pendingCart.conversionCustomerEmail || pendingCart.email,
+            customerPhone: pendingCart.phone,
+            requestUrl: request.url,
+            markPaid: true,
+            awaitingPayment: false,
+            paymentReferenceId: pendingCart.conversionPaymentLinkId,
+          });
+          orderId = created.orderId;
+          order = created.order;
+          orderCreated = created.created;
+        }
+      } catch (orderError) {
+        return NextResponse.json({
+          error: orderError.message || 'Failed to create order for this conversion',
+        }, { status: 400 });
+      }
+
       const updated = await AbandonedCart.findOneAndUpdate(
         { _id: cartId, storeId, status: 'pending_payment' },
         {
           $set: {
             status: 'converted',
             convertedAt: new Date(),
+            ...(orderId ? { linkedOrderId: orderId } : {}),
           },
         },
-        { new: true }
+        { new: true },
       ).lean();
 
       if (!updated) {
@@ -459,6 +530,9 @@ export async function PATCH(request) {
 
       return NextResponse.json({
         success: true,
+        orderId,
+        orderCreated,
+        shortOrderNumber: order?.shortOrderNumber || null,
         cart: { ...updated, _id: String(updated._id) },
       });
     }
@@ -504,6 +578,7 @@ export async function PATCH(request) {
       : (isPlaceholderName(cart.name) ? null : cart.name);
 
     const customerEmail = String(customerEmailInput || cart.email || '').trim().toLowerCase();
+    const resolvedCustomerPhone = String(customerPhoneInput || cart.phone || '').trim();
     let resolvedCustomerEmail = customerEmail;
 
     if (!resolvedCustomerEmail && cart.userId) {
@@ -534,6 +609,43 @@ export async function PATCH(request) {
 
     const requiresPaymentConfirmation = conversionRequiresPaymentConfirmation(paymentDetails.paymentMethod);
     const nextStatus = requiresPaymentConfirmation ? 'pending_payment' : 'converted';
+    const staffName = String(
+      convertedByName
+      || decodedToken.name
+      || decodedToken.email
+      || 'Store staff',
+    ).trim();
+    const staffUid = convertedByUserId ? String(convertedByUserId) : sellerUid;
+    const recoveryMethod = normalizeConversionPaymentMethod(paymentDetails.paymentMethod);
+
+    let orderId = String(cart.linkedOrderId || '').trim();
+    let order = null;
+    let orderCreated = false;
+
+    try {
+      const orderResult = await createOrderFromAbandonedCart(cart, {
+        storeId,
+        finalTotal,
+        paymentMethod: paymentDetails.paymentMethod,
+        convertedByName: staffName,
+        convertedByUserId: staffUid,
+        conversionNote,
+        customerName: resolvedCustomerName || trimmedCustomerName || cart.name,
+        customerEmail: resolvedCustomerEmail,
+        customerPhone: resolvedCustomerPhone,
+        requestUrl: request.url,
+        markPaid: recoveryMethod === 'card',
+        awaitingPayment: requiresPaymentConfirmation,
+        paymentReferenceId: paymentDetails.paymentLinkId,
+      });
+      orderId = orderResult.orderId;
+      order = orderResult.order;
+      orderCreated = orderResult.created;
+    } catch (orderError) {
+      return NextResponse.json({
+        error: orderError.message || 'Failed to create order for this conversion',
+      }, { status: 400 });
+    }
 
     const updated = await AbandonedCart.findOneAndUpdate(
       { _id: cartId, storeId, status: { $ne: 'converted' } },
@@ -541,15 +653,8 @@ export async function PATCH(request) {
         $set: {
           status: nextStatus,
           ...(requiresPaymentConfirmation ? {} : { convertedAt: new Date() }),
-          convertedBy: convertedByUserId
-            ? String(convertedByUserId)
-            : sellerUid,
-          convertedByName: String(
-            convertedByName
-            || decodedToken.name
-            || decodedToken.email
-            || 'Store staff'
-          ).trim(),
+          convertedBy: staffUid,
+          convertedByName: staffName,
           convertedCartTotal: finalTotal,
           conversionNote: String(conversionNote || '').trim() || null,
           conversionDiscountType: discountType,
@@ -557,8 +662,10 @@ export async function PATCH(request) {
           conversionPaymentMethod: paymentDetails.paymentMethod,
           conversionPaymentLink: paymentDetails.paymentLink,
           conversionPaymentLinkId: paymentDetails.paymentLinkId,
+          linkedOrderId: orderId || null,
           ...(resolvedCustomerName ? { name: resolvedCustomerName } : {}),
           ...(resolvedCustomerEmail ? { email: resolvedCustomerEmail } : {}),
+          ...(resolvedCustomerPhone ? { phone: resolvedCustomerPhone } : {}),
         },
       },
       { new: true }
@@ -623,6 +730,9 @@ export async function PATCH(request) {
       emailError,
       customerEmail: resolvedCustomerEmail || null,
       pendingPayment: requiresPaymentConfirmation,
+      orderId: orderId || null,
+      orderCreated,
+      shortOrderNumber: order?.shortOrderNumber || null,
       cart: { ...finalCart, _id: String(finalCart._id) },
     });
   } catch (error) {

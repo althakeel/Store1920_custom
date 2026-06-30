@@ -3133,10 +3133,17 @@ export default function StoreOrders() {
 
                                     {isDashboardConvertedOrder(selectedOrder) ? (
                                         <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-                                            <p className="text-sm font-semibold text-emerald-800">Converted order</p>
-                                            <p className="mt-1 text-sm text-emerald-900">
-                                                Converted by {selectedOrder.conversion.convertedByName}
-                                            </p>
+                                            <p className="text-sm font-semibold text-emerald-800">Converted from abandoned checkout</p>
+                                            {selectedOrder.conversion.convertedByName ? (
+                                                <p className="mt-1 text-sm text-emerald-900">
+                                                    Converted by {selectedOrder.conversion.convertedByName}
+                                                </p>
+                                            ) : (
+                                                <p className="mt-1 text-sm text-emerald-900">
+                                                    Linked to abandoned checkout
+                                                    {selectedOrder.conversion.cartId ? ` #${String(selectedOrder.conversion.cartId).slice(-6)}` : ''}
+                                                </p>
+                                            )}
                                             {selectedOrder.conversion.convertedAt ? (
                                                 <p className="mt-1 text-xs text-emerald-700">
                                                     {new Date(selectedOrder.conversion.convertedAt).toLocaleString()}

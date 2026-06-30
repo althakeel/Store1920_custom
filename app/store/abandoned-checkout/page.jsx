@@ -21,6 +21,7 @@ import Loading from '@/components/Loading';
 import { getAbandonedCartDisplayName, getAbandonedCartTotal, isAnonymousAbandonedCart } from '@/lib/abandonedCartUtils';
 import { getAbandonedCartDisplayItems } from '@/lib/abandonedCartLineItems';
 import { getConversionPaymentMethodLabel, isValidPaymentLink } from '@/lib/abandonedCartRecoveryPayment';
+import { formatWhatsAppErrorMessage } from '@/lib/whatsapp/formatWhatsAppError';
 
 const PAGE_SIZE = 10;
 
@@ -353,6 +354,7 @@ function ConvertModal({
       conversionNote: note,
       customerName,
       customerEmail: customerEmail.trim(),
+      customerPhone: customerPhone.trim(),
       sendCustomerEmail,
       conversionDiscountType: pricingMode,
       conversionDiscountValue: pricingMode === 'amount' || pricingMode === 'percent'
@@ -411,7 +413,7 @@ function ConvertModal({
               </p>
               {isPendingPayment ? (
                 <p className="mt-1 text-xs">
-                  This cart moves to Converted only after the customer pays through the link.
+                  Order created on Orders (awaiting payment). Cart moves to Converted after you confirm payment.
                 </p>
               ) : null}
               <p className="mt-1">
@@ -428,6 +430,12 @@ function ConvertModal({
               {successCart.emailError ? (
                 <p className="mt-1 text-amber-800">
                   Email not sent: {successCart.emailError}
+                </p>
+              ) : null}
+              {successCart.shortOrderNumber || successCart.orderId ? (
+                <p className="mt-2 font-medium">
+                  Order {successCart.shortOrderNumber ? `#${successCart.shortOrderNumber}` : 'created'} — view it on the{' '}
+                  <a href="/store/orders" className="underline">Orders</a> page.
                 </p>
               ) : null}
             </div>
@@ -916,6 +924,18 @@ function CartRow({
                 ) : null}
               </p>
             ) : null}
+            {cart.whatsappCheckoutReminderSentAt ? (
+              <p className="flex items-center gap-2 text-emerald-700">
+                <MessageCircle size={14} className="shrink-0 text-emerald-500" />
+                <span>WhatsApp sent · {formatDate(cart.whatsappCheckoutReminderSentAt)}</span>
+              </p>
+            ) : null}
+            {cart.whatsappCheckoutReminderError ? (
+              <p className="flex items-center gap-2 text-amber-800">
+                <MessageCircle size={14} className="shrink-0 text-amber-500" />
+                <span>{formatWhatsAppErrorMessage(cart.whatsappCheckoutReminderError)}</span>
+              </p>
+            ) : null}
           </div>
 
           {isConverted ? (
@@ -1319,13 +1339,15 @@ export default function AbandonedCheckoutPage() {
 
       if (data?.whatsapp?.success) {
         const displayPhone = data.whatsapp.to || cart.phone;
-        const queued = data.whatsapp.queued !== false;
+        const queued = data.whatsapp.queued !== false && !data.whatsapp.alreadySent;
         setError('');
         setWhatsappSentCartId(cart._id);
         setWhatsappSuccess(
-          queued
-            ? `WhatsApp queued to ${displayPhone}. Customer should receive it within a few minutes if that number has WhatsApp.`
-            : `WhatsApp sent to ${displayPhone}`,
+          data.whatsapp.alreadySent
+            ? (data.whatsapp.message || `WhatsApp was already sent to ${displayPhone} recently.`)
+            : queued
+              ? `WhatsApp queued to ${displayPhone}. Customer should receive it within a few minutes if that number has WhatsApp.`
+              : `WhatsApp sent to ${displayPhone}`,
         );
         setTimeout(() => {
           setWhatsappSentCartId(null);
@@ -1335,14 +1357,16 @@ export default function AbandonedCheckoutPage() {
       }
 
       if (data?.whatsapp?.skipped) {
-        setError(data.whatsapp.reason || 'WhatsApp could not be sent');
+        setError(formatWhatsAppErrorMessage(data.whatsapp.reason || 'WhatsApp could not be sent'));
         return;
       }
 
-      const reason = data?.whatsapp?.reason || data?.whatsapp?.error || 'WhatsApp could not be sent';
+      const reason = formatWhatsAppErrorMessage(
+        data?.whatsapp?.reason || data?.whatsapp?.error || data?.whatsapp?.message || 'WhatsApp could not be sent',
+      );
       setError(reason.includes('missing token') ? `${reason}. Add WABA_TOKEN_* to .env and restart the server.` : reason);
     } catch (err) {
-      setError(err?.response?.data?.error || err.message || 'Failed to send WhatsApp reminder');
+      setError(formatWhatsAppErrorMessage(err?.response?.data?.error || err.message || 'Failed to send WhatsApp reminder'));
     } finally {
       setSendingWhatsAppId(null);
     }
@@ -1359,6 +1383,7 @@ export default function AbandonedCheckoutPage() {
     conversionPaymentMethod,
     conversionPaymentLink,
     customerEmail,
+    customerPhone,
     sendCustomerEmail,
   }) => {
     if (!convertCart?._id) return null;
@@ -1381,6 +1406,7 @@ export default function AbandonedCheckoutPage() {
           conversionPaymentMethod,
           conversionPaymentLink,
           customerEmail,
+          customerPhone,
           sendCustomerEmail,
           convertedByUserId,
           convertedByName,
@@ -1401,6 +1427,8 @@ export default function AbandonedCheckoutPage() {
           emailSent: Boolean(data.emailSent),
           emailError: data.emailError || null,
           customerEmail: data.customerEmail || customerEmail || null,
+          orderId: data.orderId || null,
+          shortOrderNumber: data.shortOrderNumber || null,
         };
       }
 

@@ -9,7 +9,8 @@ import {
   detectLanguageFromAcceptLanguage,
 } from "@/lib/storefrontLanguage";
 import { GTM_ID, getGtmHeadScript, getGtmNoscriptSrc } from "@/lib/gtm";
-import { META_PIXEL_ID, getMetaPixelBootstrapScript, getMetaPurchaseGuardInlineScript } from "@/lib/metaPixelConfig";
+import { META_PIXEL_ID, getMetaPixelBootstrapScript } from "@/lib/metaPixelConfig";
+import { TIKTOK_PIXEL_ID, getTikTokPixelBootstrapScript } from "@/lib/tiktokPixelConfig";
 import OrganizationJsonLd from "@/components/OrganizationJsonLd";
 import { SITE_URL } from "@/lib/sitemapData";
 
@@ -74,16 +75,11 @@ export default async function RootLayout({ children }) {
         )}
         <link rel="dns-prefetch" href="https://www.googletagmanager.com" />
         <link rel="preconnect" href="https://www.googletagmanager.com" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://analytics.tiktok.com" />
+        <link rel="preconnect" href="https://analytics.tiktok.com" crossOrigin="anonymous" />
         <link rel="sitemap" type="application/xml" title="Sitemap" href="/sitemap.xml" />
       </head>
       <body className="overflow-x-clip antialiased" suppressHydrationWarning>
-        <Script
-          id="meta-purchase-guard"
-          strategy="beforeInteractive"
-          dangerouslySetInnerHTML={{
-            __html: getMetaPurchaseGuardInlineScript(META_PIXEL_ID),
-          }}
-        />
         <Script
           id="google-tag-manager"
           strategy="afterInteractive"
@@ -106,6 +102,13 @@ export default async function RootLayout({ children }) {
           strategy="afterInteractive"
           dangerouslySetInnerHTML={{
             __html: getMetaPixelBootstrapScript(META_PIXEL_ID),
+          }}
+        />
+        <Script
+          id="tiktok-pixel"
+          strategy="afterInteractive"
+          dangerouslySetInnerHTML={{
+            __html: getTikTokPixelBootstrapScript(TIKTOK_PIXEL_ID),
           }}
         />
         {/* Add Navbar and Footer globally via ClientLayout */}

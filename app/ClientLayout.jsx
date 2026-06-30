@@ -9,6 +9,7 @@ import Footer from "@/components/Footer";
 import SupportBar from "@/components/SupportBar";
 import DynamicMetaTags from "@/components/DynamicMetaTags";
 import MetaPixel from "@/components/MetaPixel";
+import TikTokPixel from "@/components/TikTokPixel";
 import GtmPageView from "@/components/GtmPageView";
 import { Toaster } from "react-hot-toast";
 
@@ -54,6 +55,7 @@ export default function ClientLayout({ children, initialStorefrontLanguage = 'en
       <Suspense fallback={null}>
         <GtmPageView />
         <MetaPixel />
+        <TikTokPixel />
       </Suspense>
       {!hideStorefrontChrome && (
         <>

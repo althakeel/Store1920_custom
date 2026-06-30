@@ -157,7 +157,6 @@ export async function GET(request){
             AbandonedCart.find({
                 storeId,
                 ...ACTIVE_RECORD_FILTER,
-                status: 'converted',
                 convertedByName: { $nin: [null, ''] },
             })
                 .select('_id userId email phone status convertedAt convertedBy convertedByName convertedCartTotal cartTotal conversionNote conversionDiscountType conversionDiscountValue conversionPaymentMethod linkedOrderId')
