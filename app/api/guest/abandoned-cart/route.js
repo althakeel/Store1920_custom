@@ -8,6 +8,7 @@ import {
   normalizeAbandonedCartItemFromClient,
   sumAbandonedCartItemsTotal,
 } from '@/lib/abandonedCartLineItems';
+import { cartRestoreTokenSetOnInsert } from '@/lib/abandonedCartRestore';
 
 export async function POST(request) {
   try {
@@ -105,6 +106,7 @@ export async function POST(request) {
             source: 'guest-cart',
             status: 'active',
           },
+          $setOnInsert: cartRestoreTokenSetOnInsert(),
         },
         { upsert: true },
       );

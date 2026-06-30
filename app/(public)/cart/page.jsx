@@ -2,13 +2,22 @@
 "use client";
 
 import { useDispatch, useSelector, useStore } from "react-redux";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import axios from "axios";
 import CartLineItem from "@/components/CartLineItem";
 import CartSummaryBox, { CartSummaryActions } from "@/components/CartSummaryBox";
 import CartRemoveConfirm from "@/components/CartRemoveConfirm";
 import ProductCard from "@/components/ProductCard";
-import { deleteItemFromCart, fetchCart, uploadCart } from "@/lib/features/cart/cartSlice";
+import Loading from "@/components/Loading";
+import {
+    clearCart,
+    clearCartClearedLocally,
+    deleteItemFromCart,
+    fetchCart,
+    setCartEntry,
+    uploadCart,
+} from "@/lib/features/cart/cartSlice";
 import { decrementCartItem } from "@/lib/bundleCartActions";
 import { PackageIcon } from "lucide-react";
 import { useAuth } from "@/lib/useAuth";
@@ -24,8 +33,19 @@ import { getOrCreateAnonymousId, getOrCreateSessionId } from '@/lib/trackingClie
 export const dynamic = "force-dynamic";
 
 export default function Cart() {
+    return (
+        <Suspense fallback={<Loading />}>
+            <CartContent />
+        </Suspense>
+    );
+}
+
+function CartContent() {
     const dispatch = useDispatch();
     const store = useStore();
+    const router = useRouter();
+    const searchParams = useSearchParams();
+    const restoreToken = searchParams.get('restore');
     const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || "AED";
     const { user, getToken } = useAuth();
     const isSignedIn = !!user;
@@ -43,6 +63,72 @@ export default function Cart() {
     const [pendingRemove, setPendingRemove] = useState(null);
     const [cartHeartbeat, setCartHeartbeat] = useState(0);
     const viewCartTrackedRef = useRef(false);
+    const restoreAppliedRef = useRef(false);
+    const skipNextServerSyncRef = useRef(false);
+    const [restoringCart, setRestoringCart] = useState(Boolean(restoreToken));
+    const [restoreError, setRestoreError] = useState('');
+
+    useEffect(() => {
+        if (!restoreToken || restoreAppliedRef.current) return;
+
+        let cancelled = false;
+
+        (async () => {
+            try {
+                setRestoringCart(true);
+                const { data } = await axios.get(
+                    `/api/abandoned-cart-restore/${encodeURIComponent(restoreToken)}`,
+                );
+
+                if (cancelled || !data?.items?.length) {
+                    if (!cancelled) {
+                        setRestoreError('This saved cart has no items left');
+                    }
+                    return;
+                }
+
+                dispatch(clearCart());
+                data.items.forEach(({ productId, entry }) => {
+                    if (!productId || !entry) return;
+                    dispatch(setCartEntry({ productId, entry }));
+                });
+
+                clearCartClearedLocally();
+
+                const cartState = store.getState().cart;
+                if (typeof window !== 'undefined') {
+                    localStorage.setItem('cartState', JSON.stringify({
+                        cartItems: cartState.cartItems,
+                        total: cartState.total,
+                    }));
+                }
+
+                if (user && getToken) {
+                    try {
+                        await dispatch(uploadCart({ getToken })).unwrap();
+                    } catch {
+                        // Non-fatal — local cart is restored
+                    }
+                }
+
+                restoreAppliedRef.current = true;
+                skipNextServerSyncRef.current = true;
+                router.replace('/cart', { scroll: false });
+            } catch (error) {
+                if (!cancelled) {
+                    setRestoreError(
+                        error?.response?.data?.error || 'Could not restore your saved cart',
+                    );
+                }
+            } finally {
+                if (!cancelled) setRestoringCart(false);
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [restoreToken, dispatch, store, user, getToken, router]);
 
 
     // Load only cart product IDs via batch API (never download full catalog)
@@ -196,10 +282,14 @@ export default function Cart() {
 
     // Keep cart in sync with DB for signed-in users (initial + on focus)
     useEffect(() => {
-        if (!user) return;
+        if (!user || restoringCart || restoreToken) return;
 
         const syncFromServer = () => {
-            dispatch(fetchCart({ getToken: async () => user.getIdToken() }));
+            if (skipNextServerSyncRef.current) {
+                skipNextServerSyncRef.current = false;
+                return;
+            }
+            dispatch(fetchCart({ getToken }));
         };
 
         syncFromServer();
@@ -208,7 +298,7 @@ export default function Cart() {
         return () => {
             window.removeEventListener('focus', syncFromServer);
         };
-    }, [user, dispatch]);
+    }, [user, dispatch, getToken, restoringCart, restoreToken]);
 
     // Keep abandoned-cart timer alive while customer is still on the cart page
     useEffect(() => {
@@ -422,9 +512,18 @@ export default function Cart() {
         });
     }, [productsLoaded, inStockCartArray, totalPrice]);
 
+    if (restoringCart) {
+        return <Loading />;
+    }
+
     return (
         <div className="min-h-[40dvh] bg-slate-50/60 pb-28 lg:pb-0">
             <div className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6">
+                {restoreError && (
+                    <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                        {restoreError}
+                    </div>
+                )}
                 {!productsLoaded ? (
                     <div className="py-16 text-center text-slate-400">Loading cart…</div>
                 ) : cartArray.length > 0 ? (

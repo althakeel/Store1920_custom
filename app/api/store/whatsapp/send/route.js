@@ -84,7 +84,6 @@ export async function POST(request) {
       const whatsapp = await sendAbandonedCartWhatsAppReminder(cart, {
         variant: template === 'abandoned_checkout' ? 'checkout' : 'cart',
         buttonPath: body?.buttonPath,
-        useRecoveryLink: body?.useRecoveryLink !== false && Boolean(cart.recoveryToken),
         offerTotal: body?.offerTotal ?? cart.recoveryOfferTotal ?? null,
       });
 

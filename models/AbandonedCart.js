@@ -36,6 +36,7 @@ const AbandonedCartSchema = new mongoose.Schema({
   conversionEmailError: { type: String, default: null },
   linkedOrderId: { type: String, default: null, index: true },
   recoveryToken: { type: String, default: null, index: true, sparse: true },
+  cartRestoreToken: { type: String, default: null, index: true, sparse: true },
   recoveryDiscountType: { type: String, enum: ['none', 'amount', 'percent', 'custom'], default: null },
   recoveryDiscountValue: { type: Number, default: null },
   recoveryCartTotal: { type: Number, default: null },

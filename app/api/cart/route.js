@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 import { getCartEntryProductId, getCartEntryQuantity, isFreeGiftEntry } from "@/lib/freeGiftUtils";
 import { isPlaceholderName } from "@/lib/abandonedCartUtils";
 import { scheduleAbandonedCartWhatsAppReminder } from "@/lib/abandonedCheckoutWhatsAppReminder";
+import { cartRestoreTokenSetOnInsert } from '@/lib/abandonedCartRestore';
 import { getProductThumbnailUrl } from '@/lib/productMedia';
 
 
@@ -120,6 +121,7 @@ export async function POST(request){
                                 source: 'cart',
                                 status: 'active',
                             },
+                            $setOnInsert: cartRestoreTokenSetOnInsert(),
                         },
                         { upsert: true }
                     );

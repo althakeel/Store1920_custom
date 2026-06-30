@@ -173,16 +173,9 @@ function OrderSuccessContent() {
     if (loading || !order?._id || purchaseTrackedRef.current) return;
     if (!isConfirmedPaidOrder(order)) return;
 
-    const firePurchase = () => {
-      if (purchaseTrackedRef.current) return;
-      if (trackPurchase(order, { user })) {
-        purchaseTrackedRef.current = true;
-      }
-    };
-
-    firePurchase();
-    const retryTimer = window.setTimeout(firePurchase, 800);
-    return () => window.clearTimeout(retryTimer);
+    if (trackPurchase(order, { user })) {
+      purchaseTrackedRef.current = true;
+    }
   }, [loading, order, user]);
   function getOrderNumber(orderObj) {
     return getDisplayOrderNumber(orderObj);

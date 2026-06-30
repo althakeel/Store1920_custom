@@ -10,6 +10,7 @@ import {
   normalizeAbandonedCartItemFromClient,
   sumAbandonedCartItemsTotal,
 } from '@/lib/abandonedCartLineItems';
+import { cartRestoreTokenSetOnInsert } from '@/lib/abandonedCartRestore';
 
 function buildCartFilter({
   storeId,
@@ -122,7 +123,11 @@ export async function POST(request) {
         status: 'active',
       };
 
-      await AbandonedCart.updateOne(filter, { $set: cartFields }, { upsert: true });
+      await AbandonedCart.updateOne(
+        filter,
+        { $set: cartFields, $setOnInsert: cartRestoreTokenSetOnInsert() },
+        { upsert: true },
+      );
       savedCount += 1;
 
       if (phone) {
