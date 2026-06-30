@@ -12,6 +12,10 @@ export default function MetaPixel() {
   useEffect(() => {
     if (typeof window === "undefined" || !pathname) return;
 
+    if (window.fbq) {
+      window.fbq('set', 'autoConfig', false, META_PIXEL_ID);
+    }
+
     const query = searchParams?.toString();
     const routeKey = query ? `${pathname}?${query}` : pathname;
     trackPageView({ pagePath: routeKey });
