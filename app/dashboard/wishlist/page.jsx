@@ -8,6 +8,8 @@ import Image from "next/image";
 import { HeartIcon, ShoppingCartIcon, TrashIcon, StarIcon, CheckCircle2 } from "lucide-react";
 import { useDispatch } from "react-redux";
 import { addToCart } from "@/lib/features/cart/cartSlice";
+import { trackProductAddToCart } from '@/lib/ecommerceTracking';
+import { STORE_CURRENCY } from '@/lib/storeCurrency';
 import Loading from "@/components/Loading";
 import DashboardSidebar from "@/components/DashboardSidebar";
 import Link from "next/link";
@@ -71,6 +73,13 @@ export default function DashboardWishlistPage() {
     const handleAddToCart = (product) => {
         const productId = product?._id || product?.id;
         if (!productId) return;
+        trackProductAddToCart({
+            productId,
+            name: product?.name || product?.title || 'Product',
+            price: Number(product?.price) || 0,
+            quantity: 1,
+            currency: STORE_CURRENCY,
+        });
         dispatch(addToCart({
             productId,
             price: Number(product?.price) || 0,

@@ -29,7 +29,7 @@ import ProductReviewsSection from "./ProductReviewsSection";
 import StorefrontActionToast from "./StorefrontActionToast";
 import { useAuth } from '@/lib/useAuth';
 import { trackMetaEvent } from "@/lib/metaPixelClient";
-import { trackViewContentDual } from "@/lib/ecommerceTracking";
+import { trackViewContentDual, trackProductAddToCart } from "@/lib/ecommerceTracking";
 import { getStorefrontLocale, formatLocalizedNumber } from '@/lib/storefrontMarket';
 import { useStorefrontMarket } from '@/lib/useStorefrontMarket';
 import { useStorefrontI18n } from '@/lib/useStorefrontI18n';
@@ -738,13 +738,10 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
     const eventPrice = Number(product?.price || 0);
 
-    const eventKey = `meta_viewcontent_sent_${String(product._id)}`;
-    if (sessionStorage.getItem(eventKey)) return;
-
     trackViewContentDual({
       productId: product._id,
       name: product.name || product.title || 'Product',
-      price: Number(product.price || 0),
+      price: eventPrice,
       currency: 'AED',
       gtmItem: {
         item_id: String(product._id || product.id || ''),
@@ -753,8 +750,6 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
         quantity: 1,
       },
     });
-
-    sessionStorage.setItem(eventKey, '1');
   }, [product?._id, product?.id, product?.name, product?.title, product?.price]);
 
   useEffect(() => {
@@ -2038,15 +2033,12 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       ? Number(findBulkBundleVariant(product, activeBundleTier)?.price ?? effPrice ?? product.price ?? 0)
       : Number(effPrice || product.price || 0);
 
-    pushGtmEcommerceEvent(GTM_EVENTS.ADD_TO_CART, {
+    trackProductAddToCart({
+      productId: product._id || product.id,
+      name: product.name || product.title || 'Product',
+      price: gtmLinePrice,
+      quantity: gtmQty,
       currency: 'AED',
-      value: Number(gtmLinePrice * gtmQty),
-      items: [{
-        item_id: String(product._id || product.id || ''),
-        item_name: product.name || product.title || 'Product',
-        price: gtmLinePrice,
-        quantity: gtmQty,
-      }],
     });
 
     if (isSignedIn) {
@@ -2173,6 +2165,14 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       relatedProductIds: selectedBundleProducts.map((p) => String(p._id)),
     });
 
+    trackProductAddToCart({
+      productId: cartProductId,
+      name: product.name || product.title || 'Product',
+      price: Number(effPrice || 0),
+      quantity: 1,
+      currency: 'AED',
+    });
+
     // Add main product
     dispatch(addToCart({
       productId: cartProductId,
@@ -2183,6 +2183,13 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     
     // Add selected FBT products
     selectedBundleProducts.forEach(p => {
+      trackProductAddToCart({
+        productId: p._id,
+        name: p.name || 'Product',
+        price: Number(p.price || 0),
+        quantity: 1,
+        currency: 'AED',
+      });
       dispatch(addToCart({ productId: p._id, price: p.price }));
     });
     

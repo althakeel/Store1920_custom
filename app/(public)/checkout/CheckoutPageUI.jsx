@@ -27,7 +27,7 @@ import { useStorefrontI18n } from "@/lib/useStorefrontI18n";
 import { useStorefrontMarket } from "@/lib/useStorefrontMarket";
 import { trackCustomerEvent, withOrderTrackingFields, getOrCreateAnonymousId, getOrCreateSessionId } from '@/lib/trackingClient';
 import { pushGtmEcommerceEvent } from '@/lib/pushGtmEcommerceEvent';
-import { cartLinesToGtmItems } from '@/lib/gtmEcommerceHelpers';
+import { cartLinesToGtmItems, cartLinesToMetaItems } from '@/lib/gtmEcommerceHelpers';
 import { runTrackedOnce } from '@/lib/trackingDedupe';
 import { GTM_EVENTS, gtmDedupeKey } from '@/lib/gtmEvents';
 import { getCartEntryProductId, getCartEntryQuantity, isFreeGiftEntry } from "@/lib/freeGiftUtils";
@@ -848,6 +848,7 @@ export default function CheckoutPage() {
       value,
       currency: currencyCode,
       gtmItems,
+      metaItems: cartLinesToMetaItems(cartArray),
       pageKey: '/checkout',
     });
 

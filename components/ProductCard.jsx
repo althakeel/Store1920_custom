@@ -22,8 +22,7 @@ import {
   resolveCardVideoPreview,
 } from '@/lib/productMedia'
 import { PRODUCT_CARD_CELL_CLASS, PRODUCT_CARD_SHELL_CLASS } from '@/lib/storefrontCarousel'
-import { pushGtmEcommerceEvent } from '@/lib/pushGtmEcommerceEvent'
-import { GTM_EVENTS } from '@/lib/gtmEvents'
+import { trackProductAddToCart } from '@/lib/ecommerceTracking'
 import { STORE_CURRENCY } from '@/lib/storeCurrency'
 import { getProductPath } from '@/lib/productUrl'
 
@@ -189,20 +188,6 @@ const ProductCard = ({
     }
   }, [cardPreview.type, cardPreview.delayMs, cardPreview.videoSrc])
 
-  const pushDataLayerAddToCart = () => {
-    const unitPrice = Number(priceNum > 0 ? priceNum : product.price || 0)
-    pushGtmEcommerceEvent(GTM_EVENTS.ADD_TO_CART, {
-      currency: STORE_CURRENCY,
-      value: unitPrice,
-      items: [{
-        item_id: String(product._id || product.id || ''),
-        item_name: product.name || product.title || 'Product',
-        price: unitPrice,
-        quantity: 1,
-      }],
-    })
-  }
-
   const handleAddToCart = (e) => {
     e.preventDefault()
     e.stopPropagation()
@@ -210,7 +195,14 @@ const ProductCard = ({
       toast.error(t('common.outOfStock'))
       return
     }
-    pushDataLayerAddToCart()
+    const unitPrice = Number(priceNum > 0 ? priceNum : product.price || 0)
+    trackProductAddToCart({
+      productId: product._id,
+      name: product.name || product.title || 'Product',
+      price: unitPrice,
+      quantity: 1,
+      currency: STORE_CURRENCY,
+    })
     dispatch(addToCart({
       productId: product._id,
       price: priceNum > 0 ? priceNum : undefined,
@@ -269,6 +261,14 @@ const ProductCard = ({
               onClick={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
+                const unitPrice = Number(priceNum > 0 ? priceNum : product.price || 0)
+                trackProductAddToCart({
+                  productId: product._id,
+                  name: product.name || product.title || 'Product',
+                  price: unitPrice,
+                  quantity: 1,
+                  currency: STORE_CURRENCY,
+                })
                 dispatch(addToCart({
                   productId: product._id,
                   price: priceNum > 0 ? priceNum : undefined,

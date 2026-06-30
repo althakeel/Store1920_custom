@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import { useDispatch } from "react-redux";
 import { addToCart } from "@/lib/features/cart/cartSlice";
+import { trackProductAddToCart } from '@/lib/ecommerceTracking';
+import { STORE_CURRENCY } from '@/lib/storeCurrency';
 import { getProductPath } from "@/lib/productUrl";
 import { useStorefrontMarket } from "@/lib/useStorefrontMarket";
 import PageTitle from "@/components/PageTitle";
@@ -342,6 +344,13 @@ function WishlistAuthed() {
       if (product) {
         const productId = product._id || product.productId || product._pid || item?.productId || item?.id;
         if (!productId) return;
+        trackProductAddToCart({
+          productId,
+          name: product.name || product.title || 'Product',
+          price: Number(product.price) || 0,
+          quantity: 1,
+          currency: STORE_CURRENCY,
+        });
         dispatch(addToCart({ productId, price: Number(product.price) || 0 }));
         added += 1;
       }
@@ -469,12 +478,20 @@ function WishlistAuthed() {
                       convertPrice={convertPrice}
                       onToggleSelect={() => toggleSelect(product._pid)}
                       onRemove={() => removeFromWishlist(product._pid)}
-                      onAddToCart={() =>
-                        dispatch(addToCart({
-                          productId: product._id || product.productId || product._pid,
+                      onAddToCart={() => {
+                        const productId = product._id || product.productId || product._pid;
+                        trackProductAddToCart({
+                          productId,
+                          name: product.name || product.title || 'Product',
                           price: Number(product.price) || 0,
-                        }))
-                      }
+                          quantity: 1,
+                          currency: STORE_CURRENCY,
+                        });
+                        dispatch(addToCart({
+                          productId,
+                          price: Number(product.price) || 0,
+                        }));
+                      }}
                       onOpenProduct={async () => {
                         const productPath = await resolveProductPath(product);
                         if (productPath) router.push(productPath);

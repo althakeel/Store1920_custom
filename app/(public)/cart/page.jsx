@@ -23,7 +23,6 @@ import { PackageIcon } from "lucide-react";
 import { useAuth } from "@/lib/useAuth";
 import { trackViewCartDual } from "@/lib/ecommerceTracking";
 import { pushGtmEcommerceEvent, toGtmItem } from "@/lib/pushGtmEcommerceEvent";
-import { runTrackedOnce } from "@/lib/trackingDedupe";
 import { GTM_EVENTS, gtmDedupeKey } from "@/lib/gtmEvents";
 import { STORE_CURRENCY } from "@/lib/storeCurrency";
 import { getCartEntryProductId, getCartEntryQuantity, isFreeGiftEntry } from "@/lib/freeGiftUtils";
