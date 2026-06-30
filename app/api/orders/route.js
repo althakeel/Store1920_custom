@@ -32,7 +32,7 @@ import { fetchNormalizedDelhiveryTracking } from '@/lib/delhivery';
 import { createTamaraSession } from '@/lib/tamara';
 import { buildCheckoutRedirectUrl, resolveTamaraMerchantBaseUrl } from '@/lib/checkoutOrigin';
 import { getProductAbsoluteUrl } from '@/lib/productUrl';
-import { createTabbySession } from '@/lib/tabby';
+import { createTabbySession, buildTabbyBuyerHistory, buildTabbyOrderHistoryEntries } from '@/lib/tabby';
 import { formatPaymentProviderOrderReference } from '@/lib/orderPaymentReference';
 import { normalizeEmail } from '@/lib/orderIdentity';
 import { getCouponAccessErrorAsync } from '@/lib/couponAccess';
@@ -1067,7 +1067,7 @@ export async function POST(request) {
 
         // Tabby BNPL payment
         if (paymentMethod === 'TABBY') {
-            const origin = request.headers.get('origin') || process.env.NEXT_PUBLIC_BASE_URL || 'https://store1920.com';
+            const baseUrl = resolveTamaraMerchantBaseUrl(request);
             const primaryOrderId = orderIds[0] || '';
 
             let primaryOrder = await Order.findById(primaryOrderId).populate('addressId').lean();
@@ -1080,7 +1080,8 @@ export async function POST(request) {
             const addr = primaryOrder?.shippingAddress || primaryOrder?.addressId || {};
             const fullName = addr.name || guestInfo?.name || 'Customer';
             const phoneNumber = addr.phone || guestInfo?.phone || '';
-            const email = addr.email || guestInfo?.email || (userId ? (await User.findById(userId).select('email').lean())?.email : '') || '';
+            const phoneCode = addr.phoneCode || guestInfo?.phoneCode || '+971';
+            const email = addr.email || guestInfo?.email || (userId ? (await User.findById(userId).select('email createdAt').lean())?.email : '') || '';
 
             const allOrders = await Order.find({ _id: { $in: orderIds } }).populate('orderItems.productId').lean();
             const tabbyItems = allOrders.flatMap(o =>
@@ -1093,28 +1094,61 @@ export async function POST(request) {
                 }))
             );
 
+            const buyer = {
+                name: fullName,
+                email,
+                phone: phoneNumber,
+                phoneCode,
+            };
+            const tabbyShippingAddress = {
+                address: addr.street || '',
+                street: addr.street || '',
+                city: addr.city || 'Dubai',
+                zip: addr.zip || addr.pincode || '00000',
+                pincode: addr.pincode || addr.zip || '00000',
+            };
+
+            let userDoc = null;
+            let previousOrders = [];
+            const tabbyStoreId = String(primaryOrder?.storeId || Array.from(checkoutStoreIds)[0] || '').trim();
+            if (userId && userId !== 'guest' && tabbyStoreId) {
+                userDoc = await User.findById(userId).select('email createdAt').lean();
+                previousOrders = await Order.find({
+                    storeId: tabbyStoreId,
+                    userId,
+                    _id: { $nin: orderIds },
+                    status: { $nin: ['CANCELLED', 'PAYMENT_FAILED'] },
+                })
+                    .populate('orderItems.productId')
+                    .sort({ createdAt: -1 })
+                    .limit(10)
+                    .lean();
+            }
+
             const tabbyResult = await createTabbySession({
                 orderId: paymentReference,
                 amount: fullAmount,
-                buyer: {
-                    name: fullName,
-                    email,
-                    phone: phoneNumber,
-                },
-                shippingAddress: {
-                    address: addr.street || '',
-                    city: addr.city || '',
-                    zip: addr.zip || addr.pincode || '',
-                },
+                buyer,
+                shippingAddress: tabbyShippingAddress,
                 items: tabbyItems,
-                successUrl: `${origin}/order-success?orderId=${primaryOrderId}&tabby=1`,
-                failureUrl: `${origin}/order-failed?orderId=${primaryOrderId}&reason=${encodeURIComponent('Tabby payment failed')}`,
-                cancelUrl: `${origin}/order-failed?orderId=${primaryOrderId}&reason=${encodeURIComponent('Payment cancelled')}`,
+                successUrl: buildCheckoutRedirectUrl(baseUrl, '/order-success', {
+                    orderId: primaryOrderId,
+                    tabby: '1',
+                }),
+                failureUrl: buildCheckoutRedirectUrl(baseUrl, '/order-failed', {
+                    orderId: primaryOrderId,
+                    reason: 'Tabby payment failed',
+                }),
+                cancelUrl: buildCheckoutRedirectUrl(baseUrl, '/order-failed', {
+                    orderId: primaryOrderId,
+                    reason: 'Payment cancelled',
+                }),
+                buyerHistory: buildTabbyBuyerHistory(userDoc, previousOrders.length),
+                orderHistory: buildTabbyOrderHistoryEntries(previousOrders, {
+                    buyer,
+                    shippingAddress: tabbyShippingAddress,
+                }),
             });
-
-            if (!tabbyResult.web_url) {
-                throw new Error('Tabby checkout URL was not returned');
-            }
 
             await Order.findByIdAndUpdate(primaryOrderId, { tabbyPaymentId: tabbyResult.payment_id || '' });
 
