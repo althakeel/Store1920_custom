@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { META_PIXEL_ID } from "@/lib/metaPixelConfig";
 import { trackPageView } from "@/lib/metaPixelTracking";
+import { installMetaPurchaseGuard } from "@/lib/metaPurchaseGuard";
 
 export default function MetaPixel() {
   const pathname = usePathname();
@@ -11,6 +12,8 @@ export default function MetaPixel() {
 
   useEffect(() => {
     if (typeof window === "undefined" || !pathname) return;
+
+    installMetaPurchaseGuard();
 
     if (window.fbq) {
       window.fbq('set', 'autoConfig', false, META_PIXEL_ID);

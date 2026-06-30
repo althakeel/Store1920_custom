@@ -9,7 +9,7 @@ import {
   detectLanguageFromAcceptLanguage,
 } from "@/lib/storefrontLanguage";
 import { GTM_ID, getGtmHeadScript, getGtmNoscriptSrc } from "@/lib/gtm";
-import { META_PIXEL_ID, getMetaPixelBootstrapScript } from "@/lib/metaPixelConfig";
+import { META_PIXEL_ID, getMetaPixelBootstrapScript, getMetaPurchaseGuardInlineScript } from "@/lib/metaPixelConfig";
 import OrganizationJsonLd from "@/components/OrganizationJsonLd";
 import { SITE_URL } from "@/lib/sitemapData";
 
@@ -77,6 +77,13 @@ export default async function RootLayout({ children }) {
         <link rel="sitemap" type="application/xml" title="Sitemap" href="/sitemap.xml" />
       </head>
       <body className="overflow-x-clip antialiased" suppressHydrationWarning>
+        <Script
+          id="meta-purchase-guard"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{
+            __html: getMetaPurchaseGuardInlineScript(META_PIXEL_ID),
+          }}
+        />
         <Script
           id="google-tag-manager"
           strategy="afterInteractive"

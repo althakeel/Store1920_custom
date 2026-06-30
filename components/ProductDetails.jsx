@@ -3193,17 +3193,13 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                               price: effPrice,
                             });
                           } else if (cartQty < Math.max(1, maxOrderQty)) {
-                            const payload = {
+                            incrementCartItem(dispatch, {
                               productId: cartProductId,
+                              entry: cartEntry,
+                              product,
                               price: effPrice,
                               maxQty: maxOrderQty,
-                              variantOptions: cartVariantOptions,
-                            };
-                            if (product.specialOffer?.offerToken) {
-                              payload.offerToken = product.specialOffer.offerToken;
-                              payload.discountPercent = product.specialOffer.discountPercent;
-                            }
-                            dispatch(addToCart(payload));
+                            });
                           }
                           if (isSignedIn) { try { await dispatch(uploadCart()).unwrap(); } catch (_) {} }
                         }}

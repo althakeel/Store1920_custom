@@ -81,7 +81,7 @@ const flows = [
   ['Paid after Tamara/Tabby/Stripe', 'sendOrderPaidWhatsApp — payment webhooks'],
   ['Order shipped', 'sendOrderShippedWhatsApp — store status SHIPPED'],
   ['Order delivered', 'store1920_order_delivered — store status DELIVERED'],
-  ['Abandoned cart (browse)', 'cart_reminder_1920 — cron after ~60s idle'],
+  ['Abandoned cart (browse)', 'cart_reminder_1920 — cron after ~5 min idle'],
   ['Abandoned checkout', 'abandoned_checkout_reminder — 5% off default, product image'],
   ['Order reminder', 'order_reminder_ — manual from store dashboard'],
   ['Promotional offer', 'promotional_offer__coupon — webhook / manual'],

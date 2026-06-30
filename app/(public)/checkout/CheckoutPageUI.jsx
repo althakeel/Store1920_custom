@@ -53,6 +53,19 @@ import Creditimage2 from '../../../assets/creditcards/16 - Copy.webp';
 import Creditimage3 from '../../../assets/creditcards/20.webp';
 import Creditimage4 from '../../../assets/creditcards/11.webp';
 import { STORE_CURRENCY } from '@/lib/storeCurrency';
+
+function hasCheckoutDetailsForMeta(form = {}, addressList = []) {
+  if (form.addressId && addressList.some((address) => address._id === form.addressId)) {
+    return true;
+  }
+
+  const name = String(form.name || '').trim();
+  const phoneOk = isValidPhoneNumber(form.phone, form.phoneCode || '+971');
+  const street = String(form.street || '').trim();
+  const state = String(form.state || '').trim();
+
+  return name.length >= 2 && phoneOk && street.length >= 3 && state.length >= 1;
+}
 import { getProductSubtitle } from '@/lib/productDisplay';
 import { getProductPath } from '@/lib/productUrl';
 import { collectCheckoutValidationIssues, scrollToCheckoutField } from '@/lib/checkoutValidation';
@@ -838,6 +851,8 @@ export default function CheckoutPage() {
     const gtmItems = cartLinesToGtmItems(cartArray);
     if (gtmItems.length === 0) return;
 
+    if (!hasCheckoutDetailsForMeta(form, addressList)) return;
+
     beginCheckoutTrackedRef.current = true;
 
     const itemsValue = gtmItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
@@ -865,7 +880,22 @@ export default function CheckoutPage() {
           cartValue: value,
         },
       });
-  }, [checkoutProductsLoaded, cartArray, totalAfterWallet, subtotal, effectiveShipping, user?.uid, market.currency]);
+  }, [
+    checkoutProductsLoaded,
+    cartArray,
+    form.name,
+    form.phone,
+    form.phoneCode,
+    form.street,
+    form.state,
+    form.addressId,
+    addressList,
+    totalAfterWallet,
+    subtotal,
+    effectiveShipping,
+    user?.uid,
+    market.currency,
+  ]);
 
   useEffect(() => {
     if (hasPersonalizedOfferItem && form.payment === 'cod') {

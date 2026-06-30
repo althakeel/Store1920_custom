@@ -71,7 +71,7 @@ export default function StoreEditOrderPanel({
       const token = await getToken();
       const { data } = await axios.get('/api/store/product', {
         headers: { Authorization: `Bearer ${token}` },
-        params: { picker: true, search: query, limit: 8 },
+        params: { picker: true, search: query, limit: 8, page: 1 },
       });
       setProductResults(Array.isArray(data?.products) ? data.products : []);
     } catch (error) {

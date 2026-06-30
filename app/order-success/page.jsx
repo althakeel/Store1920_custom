@@ -18,7 +18,8 @@ import {
 import Loading from '@/components/Loading';
 import { useAuth } from '@/lib/useAuth';
 import { trackPurchase } from '@/lib/tracking';
-import { isConfirmedPaidOrder } from '@/lib/orderConfirmationPolicy';
+import { trackOrderSuccessPurchaseOnce } from '@/lib/orderSuccessMetaPurchase';
+import { canTrackMetaPurchaseOnOrderSuccess } from '@/lib/orderConfirmationPolicy';
 import { getDisplayOrderNumber } from '@/lib/orderDisplay';
 import { resolveOrderLineLineTotal, resolveOrderLinePackQuantity, resolveOrderLineQuantity } from '@/lib/gtmEcommerceHelpers';
 import { clearPendingCheckoutOrder } from '@/lib/pendingCheckoutOrder';
@@ -171,11 +172,31 @@ function OrderSuccessContent() {
 
   useEffect(() => {
     if (loading || !order?._id || purchaseTrackedRef.current) return;
-    if (!isConfirmedPaidOrder(order)) return;
+    if (!canTrackMetaPurchaseOnOrderSuccess(order)) return;
 
-    if (trackPurchase(order, { user })) {
-      purchaseTrackedRef.current = true;
-    }
+    let cancelled = false;
+    let attempts = 0;
+
+    const run = async () => {
+      while (!cancelled && !purchaseTrackedRef.current && attempts < 40) {
+        attempts += 1;
+        const ok = await trackOrderSuccessPurchaseOnce(order, {
+          onAnalytics: () => trackPurchase(order, { user, metaSkip: true }),
+        });
+        if (cancelled) return;
+        if (ok) {
+          purchaseTrackedRef.current = true;
+          return;
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 200));
+      }
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
   }, [loading, order, user]);
   function getOrderNumber(orderObj) {
     return getDisplayOrderNumber(orderObj);

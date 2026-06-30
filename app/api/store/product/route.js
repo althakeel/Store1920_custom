@@ -507,6 +507,33 @@ export async function GET(request) {
             );
         }
 
+        if (picker) {
+            if (!search || search.length < 2) {
+                return NextResponse.json(
+                    {
+                        products: [],
+                        pagination: { page: 1, limit: 12, total: 0, totalPages: 1 },
+                    },
+                    { headers: { 'Cache-Control': 'private, no-cache, no-store, must-revalidate' } },
+                );
+            }
+
+            const limit = Math.min(48, Math.max(1, Number.parseInt(searchParams.get('limit') || '12', 10) || 12));
+            const pickerResult = await fetchPickerPage(Product, {
+                storeId,
+                page: 1,
+                limit,
+                search,
+                sort: 'relevance',
+                mode: 'picker',
+            });
+
+            return NextResponse.json(
+                { products: pickerResult.products, pagination: pickerResult.pagination },
+                { headers: { 'Cache-Control': 'private, no-cache, no-store, must-revalidate' } },
+            );
+        }
+
         const STORE_PRODUCT_LIST_SELECT =
             '_id name slug sku price AED mrp images category categories inStock stockQuantity fastDelivery freeShippingEligible createdAt updatedAt tags hasVariants imageAspectRatio';
 
@@ -515,21 +542,15 @@ export async function GET(request) {
                 .select(slim ? '_id name slug sku price AED images category inStock createdAt' : STORE_PRODUCT_LIST_SELECT)
                 .sort({ createdAt: -1 })
                 .lean(),
-            picker
-                ? Promise.resolve([])
-                : Category.find({}).select('_id name nameAr slug legacySourceId parentId').lean(),
+            Category.find({}).select('_id name nameAr slug legacySourceId parentId').lean(),
         ]);
 
-        const enrichedProducts = picker
-            ? products
-            : products.map((product) => ({
+        const enrichedProducts = products.map((product) => ({
                 ...product,
                 categoryNames: getProductCategoryLabels(product, buildCategoryLookup(categories)),
             }));
 
-        const responsePayload = picker
-            ? { products: enrichedProducts }
-            : {
+        const responsePayload = {
                 products: enrichedProducts,
                 categoryLookup: buildCategoryLookup(categories),
             };

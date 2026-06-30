@@ -113,7 +113,7 @@ export default function StoreCreateOrderModal({ open, onClose, getToken, onCreat
       try {
         const token = await getToken();
         const { data } = await axios.get('/api/store/product', {
-          params: { picker: true, search: query, limit: 12 },
+          params: { picker: true, search: query, limit: 12, page: 1 },
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
         setProductResults(Array.isArray(data?.products) ? data.products : []);
@@ -276,13 +276,19 @@ export default function StoreCreateOrderModal({ open, onClose, getToken, onCreat
                 <input
                   value={productSearch}
                   onChange={(e) => setProductSearch(e.target.value)}
-                  placeholder="Search products by name, SKU, or slug..."
+                  placeholder="Type at least 2 characters — name, SKU, or slug..."
                   className="w-full rounded-lg border border-slate-200 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 />
                 {searchingProducts ? (
                   <Loader2 size={16} className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-slate-400" />
                 ) : null}
               </div>
+
+              {productSearch.trim().length >= 2 && !searchingProducts && productResults.length === 0 ? (
+                <p className="mb-4 rounded-lg border border-dashed border-slate-200 px-3 py-2 text-sm text-slate-500">
+                  No products match &ldquo;{productSearch.trim()}&rdquo;. Try SKU or a shorter name.
+                </p>
+              ) : null}
 
               {productResults.length > 0 ? (
                 <div className="mb-4 max-h-44 overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-100">
