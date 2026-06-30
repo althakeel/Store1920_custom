@@ -173,9 +173,25 @@ function OrderSuccessContent() {
     if (loading || !order?._id || purchaseTrackedRef.current) return;
     if (!isConfirmedPaidOrder(order)) return;
 
-    if (trackPurchase(order, { user })) {
-      purchaseTrackedRef.current = true;
-    }
+    const attemptTrack = () => {
+      if (purchaseTrackedRef.current) return true;
+      if (trackPurchase(order, { user })) {
+        purchaseTrackedRef.current = true;
+        return true;
+      }
+      return false;
+    };
+
+    if (attemptTrack()) return undefined;
+
+    let attempts = 0;
+    const interval = window.setInterval(() => {
+      if (attemptTrack() || attempts++ >= 40) {
+        window.clearInterval(interval);
+      }
+    }, 250);
+
+    return () => window.clearInterval(interval);
   }, [loading, order, user]);
   function getOrderNumber(orderObj) {
     return getDisplayOrderNumber(orderObj);
