@@ -7,7 +7,7 @@ import Loading from "@/components/Loading"
 import PageSkeleton from "@/components/PageSkeleton"
 import { isValidCustomerImage } from "@/lib/storeCustomersApi"
 import axios from "axios"
-import { Calendar, Mail, Package, Search, ShoppingBag, TrendingUp, User, X } from "lucide-react"
+import { Calendar, Download, Mail, Package, Search, ShoppingBag, TrendingUp, User, X } from "lucide-react"
 import Image from "next/image"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import toast from "react-hot-toast"
@@ -68,6 +68,7 @@ export default function CustomersPage() {
     const [walletAmount, setWalletAmount] = useState('')
     const [walletDeductAmount, setWalletDeductAmount] = useState('')
     const [viewMode, setViewMode] = useState('all') // 'all' or 'registered'
+    const [exporting, setExporting] = useState(false)
 
     const fetchCustomers = useCallback(async (page = 1, { initial = false } = {}) => {
         try {
@@ -184,6 +185,46 @@ export default function CustomersPage() {
         setCustomerDetails(null)
     }
 
+    const handleExportExcel = async () => {
+        setExporting(true)
+        try {
+            let token = await getToken(false)
+            if (!token) token = await getToken(true)
+            if (!token) {
+                toast.error('Please sign in again to export customers')
+                return
+            }
+
+            const response = await axios.get('/api/store/customers/export', {
+                params: {
+                    search: debouncedSearch || undefined,
+                    view: viewMode,
+                },
+                headers: { Authorization: `Bearer ${token}` },
+                responseType: 'blob',
+            })
+
+            const blob = new Blob([response.data], {
+                type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            })
+            const url = window.URL.createObjectURL(blob)
+            const link = document.createElement('a')
+            const dateLabel = new Date().toISOString().slice(0, 10)
+            const viewLabel = viewMode === 'registered' ? 'registered' : 'all'
+            link.href = url
+            link.download = `customers-${viewLabel}-${dateLabel}.xlsx`
+            document.body.appendChild(link)
+            link.click()
+            link.remove()
+            window.URL.revokeObjectURL(url)
+            toast.success('Customers exported to Excel')
+        } catch (error) {
+            toast.error(error?.response?.data?.error || error.message || 'Failed to export customers')
+        } finally {
+            setExporting(false)
+        }
+    }
+
     useEffect(() => {
         const timer = window.setTimeout(() => {
             setDebouncedSearch(searchQuery.trim())
@@ -221,6 +262,15 @@ export default function CustomersPage() {
                         <p className="text-slate-600 mt-1">Manage and track your customer relationships</p>
                     </div>
                     <div className="flex items-center gap-4">
+                        <button
+                            type="button"
+                            onClick={handleExportExcel}
+                            disabled={exporting || listLoading}
+                            className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                            <Download size={16} />
+                            {exporting ? 'Exporting...' : 'Export Excel'}
+                        </button>
                         {/* Toggle Buttons */}
                         <div className="flex bg-white rounded-xl shadow-sm border border-slate-200 p-1">
                             <button
