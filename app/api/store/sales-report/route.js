@@ -5,90 +5,17 @@ import Product from "@/models/Product";
 import MarketingExpense from "@/models/MarketingExpense";
 import authSeller from "@/middlewares/authSeller";
 import { getAuth } from '@/lib/firebase-admin';
-import { buildProductCostMap, calculateOrderProductCost } from '@/lib/storeSalesReport';
+import {
+    buildProductCostMap,
+    buildSalesReportDateFilter,
+    buildSalesReportPaymentSummary,
+    calculateOrderProductCost,
+    getSalesReportOrderBucket,
+    getSalesReportPaymentBucketLabel,
+    shouldCountSalesReportRevenue,
+} from '@/lib/storeSalesReport';
+import { normalizeStoreOrderPaymentMethod } from '@/lib/storeOrderInsights';
 import { ACTIVE_RECORD_FILTER } from '@/lib/storeTrash';
-
-function buildDateFilter(dateRange, fromDate, toDate) {
-    const now = new Date();
-
-    switch (dateRange) {
-        case 'TODAY':
-            return {
-                createdAt: {
-                    $gte: new Date(now.getFullYear(), now.getMonth(), now.getDate()),
-                    $lt: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1),
-                },
-            };
-        case 'YESTERDAY':
-            return {
-                createdAt: {
-                    $gte: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1),
-                    $lt: new Date(now.getFullYear(), now.getMonth(), now.getDate()),
-                },
-            };
-        case 'THIS_WEEK': {
-            const startOfWeek = new Date(now);
-            startOfWeek.setDate(now.getDate() - now.getDay());
-            startOfWeek.setHours(0, 0, 0, 0);
-            return { createdAt: { $gte: startOfWeek } };
-        }
-        case 'LAST_WEEK': {
-            const startOfLastWeek = new Date(now);
-            startOfLastWeek.setDate(now.getDate() - now.getDay() - 7);
-            startOfLastWeek.setHours(0, 0, 0, 0);
-            const endOfLastWeek = new Date(startOfLastWeek);
-            endOfLastWeek.setDate(startOfLastWeek.getDate() + 7);
-            return {
-                createdAt: {
-                    $gte: startOfLastWeek,
-                    $lt: endOfLastWeek,
-                },
-            };
-        }
-        case 'THIS_MONTH':
-            return {
-                createdAt: {
-                    $gte: new Date(now.getFullYear(), now.getMonth(), 1),
-                },
-            };
-        case 'LAST_MONTH':
-            return {
-                createdAt: {
-                    $gte: new Date(now.getFullYear(), now.getMonth() - 1, 1),
-                    $lt: new Date(now.getFullYear(), now.getMonth(), 1),
-                },
-            };
-        case 'THIS_YEAR':
-            return {
-                createdAt: {
-                    $gte: new Date(now.getFullYear(), 0, 1),
-                },
-            };
-        case 'LAST_YEAR':
-            return {
-                createdAt: {
-                    $gte: new Date(now.getFullYear() - 1, 0, 1),
-                    $lt: new Date(now.getFullYear(), 0, 1),
-                },
-            };
-        case 'CUSTOM':
-            if (fromDate && toDate) {
-                return {
-                    createdAt: {
-                        $gte: new Date(fromDate),
-                        $lte: new Date(new Date(toDate).setHours(23, 59, 59, 999)),
-                    },
-                };
-            }
-            return {};
-        default:
-            return {
-                createdAt: {
-                    $gte: new Date(now.getFullYear(), now.getMonth(), 1),
-                },
-            };
-    }
-}
 
 export async function GET(req) {
     try {
@@ -114,7 +41,9 @@ export async function GET(req) {
         const dateRange = searchParams.get('dateRange') || 'THIS_MONTH';
         const fromDate = searchParams.get('fromDate');
         const toDate = searchParams.get('toDate');
-        const dateFilter = buildDateFilter(dateRange, fromDate, toDate);
+        const page = Math.max(1, Number.parseInt(searchParams.get('page') || '1', 10) || 1);
+        const limit = Math.min(100, Math.max(1, Number.parseInt(searchParams.get('limit') || '20', 10) || 20));
+        const dateFilter = buildSalesReportDateFilter(dateRange, fromDate, toDate);
 
         const [orders, marketingExpenses] = await Promise.all([
             Order.find({
@@ -123,13 +52,15 @@ export async function GET(req) {
                 ...ACTIVE_RECORD_FILTER,
                 status: { $ne: 'CANCELLED' },
             })
-                .select('shortOrderNumber createdAt total shippingFee status orderItems')
+                .select('shortOrderNumber createdAt total shippingFee status orderItems paymentMethod paymentStatus isPaid delhivery')
                 .sort({ createdAt: -1 })
                 .lean(),
             MarketingExpense.find({ storeId, ...dateFilter }).select('amount').lean(),
         ]);
 
-        const productCostMap = await buildProductCostMap(orders, Product);
+        const paymentSummary = buildSalesReportPaymentSummary(orders);
+        const revenueOrders = orders.filter((order) => shouldCountSalesReportRevenue(order));
+        const productCostMap = await buildProductCostMap(revenueOrders, Product);
 
         let totalRevenue = 0;
         let totalProductCosts = 0;
@@ -140,14 +71,22 @@ export async function GET(req) {
         );
 
         const ordersWithProfit = orders.map((order) => {
-            const orderProductCost = calculateOrderProductCost(order, productCostMap);
+            const paymentBucket = getSalesReportOrderBucket(order);
+            const countsTowardRevenue = shouldCountSalesReportRevenue(order);
+            const orderProductCost = countsTowardRevenue
+                ? calculateOrderProductCost(order, productCostMap)
+                : 0;
             const orderRevenue = Number(order.total || 0);
-            const orderDeliveryCost = Number(order.shippingFee || 0);
-            const orderProfit = orderRevenue - orderProductCost - orderDeliveryCost;
+            const orderDeliveryCost = countsTowardRevenue ? Number(order.shippingFee || 0) : 0;
+            const orderProfit = countsTowardRevenue
+                ? orderRevenue - orderProductCost - orderDeliveryCost
+                : 0;
 
-            totalRevenue += orderRevenue;
-            totalProductCosts += orderProductCost;
-            totalDeliveryCosts += orderDeliveryCost;
+            if (countsTowardRevenue) {
+                totalRevenue += orderRevenue;
+                totalProductCosts += orderProductCost;
+                totalDeliveryCosts += orderDeliveryCost;
+            }
 
             return {
                 _id: order._id,
@@ -158,18 +97,28 @@ export async function GET(req) {
                 shippingFee: orderDeliveryCost,
                 profit: orderProfit,
                 status: order.status,
+                paymentMethod: normalizeStoreOrderPaymentMethod(order),
+                paymentBucket,
+                paymentBucketLabel: getSalesReportPaymentBucketLabel(paymentBucket),
+                countsTowardRevenue,
             };
         });
 
         const totalCosts = totalProductCosts + totalDeliveryCosts + totalMarketingCosts;
         const totalProfit = totalRevenue - totalCosts;
         const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
-        const avgOrderValue = orders.length > 0 ? totalRevenue / orders.length : 0;
-        const avgProfit = orders.length > 0 ? totalProfit / orders.length : 0;
+        const avgOrderValue = paymentSummary.totalOrders > 0
+            ? totalRevenue / paymentSummary.totalOrders
+            : 0;
+        const avgProfit = paymentSummary.totalOrders > 0
+            ? totalProfit / paymentSummary.totalOrders
+            : 0;
 
         const monthsMap = new Map();
 
         ordersWithProfit.forEach((order) => {
+            if (!order.countsTowardRevenue) return;
+
             const monthYear = new Date(order.createdAt).toLocaleDateString('en-US', {
                 month: 'long',
                 year: 'numeric',
@@ -200,16 +149,28 @@ export async function GET(req) {
             marketingCosts: totalMarketingCosts,
             totalProfit,
             profitMargin,
-            totalOrders: orders.length,
+            totalOrders: paymentSummary.totalOrders,
+            totalOrdersInRange: orders.length,
             avgOrderValue,
             avgProfit,
             monthlyData: Array.from(monthsMap.values()),
+            paymentSummary,
         };
+
+        const totalOrderRows = ordersWithProfit.length;
+        const skip = (page - 1) * limit;
+        const paginatedOrders = ordersWithProfit.slice(skip, skip + limit);
 
         return NextResponse.json({
             success: true,
             report,
-            orders: ordersWithProfit,
+            orders: paginatedOrders,
+            pagination: {
+                page,
+                limit,
+                total: totalOrderRows,
+                totalPages: Math.max(1, Math.ceil(totalOrderRows / limit)),
+            },
         });
     } catch (error) {
         console.error('Sales report error:', error);

@@ -24,14 +24,55 @@ export async function GET(req) {
             return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
         }
 
-        const products = await Product.find({ storeId })
-            .select('name sku price AED costPrice images inStock')
-            .sort({ createdAt: -1 })
-            .lean();
+        const { searchParams } = new URL(req.url);
+        const page = Math.max(1, Number.parseInt(searchParams.get('page') || '1', 10) || 1);
+        const limit = Math.min(100, Math.max(1, Number.parseInt(searchParams.get('limit') || '20', 10) || 20));
+        const search = String(searchParams.get('search') || '').trim();
+        const skip = (page - 1) * limit;
+
+        const query = { storeId };
+        if (search) {
+            const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp(escaped, 'i');
+            query.$or = [{ name: regex }, { sku: regex }];
+        }
+
+        const [products, total, withCostPrice, needConfiguration] = await Promise.all([
+            Product.find(query)
+                .select('name sku price AED costPrice images inStock')
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+            Product.countDocuments(query),
+            Product.countDocuments({
+                storeId,
+                costPrice: { $exists: true, $ne: null, $gt: 0 },
+            }),
+            Product.countDocuments({
+                storeId,
+                $or: [
+                    { costPrice: { $exists: false } },
+                    { costPrice: null },
+                    { costPrice: { $lte: 0 } },
+                ],
+            }),
+        ]);
 
         return NextResponse.json({
             success: true,
             products,
+            pagination: {
+                page,
+                limit,
+                total,
+                totalPages: Math.max(1, Math.ceil(total / limit)),
+            },
+            stats: {
+                totalProducts: withCostPrice + needConfiguration,
+                withCostPrice,
+                needConfiguration,
+            },
         });
     } catch (error) {
         console.error('Product pricing fetch error:', error);

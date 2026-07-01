@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/useAuth";
 import Loading from "@/components/Loading";
@@ -11,14 +11,17 @@ import {
     TrendingDown, 
     DollarSign, 
     Package, 
-    Truck, 
     BarChart3,
     Calendar,
-    Filter,
     Download,
-    Settings
+    Settings,
+    CreditCard,
+    Banknote,
+    AlertTriangle,
 } from "lucide-react";
 import Link from "next/link";
+
+const PAGE_SIZE = 20;
 
 export default function SalesReport() {
     const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || 'AED';
@@ -31,39 +34,89 @@ export default function SalesReport() {
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState('');
     const [ordersData, setOrdersData] = useState([]);
-    
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pagination, setPagination] = useState({
+        page: 1,
+        limit: PAGE_SIZE,
+        total: 0,
+        totalPages: 1,
+    });
+    const [tableLoading, setTableLoading] = useState(false);
+    const reportDataRef = useRef(null);
+
     useEffect(() => {
-        if (!authLoading && !user) {
-            router.push('/login');
-        }
-        if (user) {
-            fetchReportData();
-        }
-    }, [user, authLoading, dateRange, fromDate, toDate]);
-    
-    const fetchReportData = async () => {
+        reportDataRef.current = reportData;
+    }, [reportData]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+        setReportData(null);
+        reportDataRef.current = null;
+    }, [dateRange, fromDate, toDate]);
+
+    const fetchReportData = useCallback(async (page) => {
         try {
-            setLoading(true);
+            setTableLoading(true);
+            if (!reportDataRef.current) {
+                setLoading(true);
+            }
             const token = await getToken(true);
             if (!token) {
                 toast.error('Authentication failed');
                 return;
             }
-            
+
             const response = await axios.get('/api/store/sales-report', {
-                params: { dateRange, fromDate, toDate },
-                headers: { Authorization: `Bearer ${token}` }
+                params: { dateRange, fromDate, toDate, page, limit: PAGE_SIZE },
+                headers: { Authorization: `Bearer ${token}` },
             });
-            
+
             setReportData(response.data.report);
-            setOrdersData(response.data.orders);
+            setOrdersData(response.data.orders || []);
+            setPagination(response.data.pagination || {
+                page,
+                limit: PAGE_SIZE,
+                total: 0,
+                totalPages: 1,
+            });
         } catch (error) {
             console.error('Error fetching report:', error);
             toast.error(error?.response?.data?.error || 'Failed to load report');
         } finally {
             setLoading(false);
+            setTableLoading(false);
         }
-    };
+    }, [dateRange, fromDate, toDate, getToken]);
+
+    useEffect(() => {
+        if (!authLoading && !user) {
+            router.push('/login');
+            return;
+        }
+        if (user) {
+            fetchReportData(currentPage);
+        }
+    }, [user, authLoading, router, currentPage, fetchReportData]);
+
+    const totalPages = Math.max(1, pagination.totalPages || 1);
+    const safeCurrentPage = Math.min(currentPage, totalPages);
+    const showingFrom = pagination.total === 0 ? 0 : ((safeCurrentPage - 1) * PAGE_SIZE) + 1;
+    const showingTo = Math.min(safeCurrentPage * PAGE_SIZE, pagination.total);
+    const paginationWindowEnd = Math.min(totalPages, Math.max(1, safeCurrentPage - 2) + 4);
+
+    const pageNumbers = useMemo(() => {
+        const pages = [];
+        for (let page = Math.max(1, paginationWindowEnd - 4); page <= paginationWindowEnd; page += 1) {
+            pages.push(page);
+        }
+        return pages;
+    }, [paginationWindowEnd]);
+
+    useEffect(() => {
+        if (currentPage !== safeCurrentPage) {
+            setCurrentPage(safeCurrentPage);
+        }
+    }, [currentPage, safeCurrentPage]);
     
     const exportReport = async () => {
         try {
@@ -92,11 +145,13 @@ export default function SalesReport() {
         }
     };
     
-    if (authLoading || loading) {
+    if (authLoading || (loading && !reportData)) {
         return <Loading />;
     }
     
     const isProfitable = reportData?.totalProfit >= 0;
+    const paymentSummary = reportData?.paymentSummary || {};
+    const formatAmount = (value = 0) => Number(value || 0).toLocaleString('en-AE');
     
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-white p-6">
@@ -190,8 +245,13 @@ export default function SalesReport() {
                             <span className="text-blue-100">Total Revenue</span>
                             <DollarSign size={24} className="text-blue-200" />
                         </div>
-                        <p className="text-3xl font-bold">{currency}{reportData?.totalRevenue?.toLocaleString('en-AE') || 0}</p>
-                        <p className="text-sm text-blue-100 mt-2">{reportData?.totalOrders || 0} orders</p>
+                        <p className="text-3xl font-bold">{currency}{formatAmount(reportData?.totalRevenue)}</p>
+                        <p className="text-sm text-blue-100 mt-2">
+                            {reportData?.totalOrders || 0} successful orders
+                            {reportData?.totalOrdersInRange > reportData?.totalOrders ? (
+                                <span> • {reportData.totalOrdersInRange - reportData.totalOrders} failed excluded</span>
+                            ) : null}
+                        </p>
                     </div>
                     
                     {/* Total Costs */}
@@ -200,10 +260,10 @@ export default function SalesReport() {
                             <span className="text-orange-100">Total Costs</span>
                             <Package size={24} className="text-orange-200" />
                         </div>
-                        <p className="text-3xl font-bold">{currency}{reportData?.totalCosts?.toLocaleString('en-AE') || 0}</p>
+                        <p className="text-3xl font-bold">{currency}{formatAmount(reportData?.totalCosts)}</p>
                         <div className="text-sm text-orange-100 mt-2 space-y-1">
-                            <p>Products: {currency}{reportData?.productCosts?.toLocaleString('en-AE') || 0}</p>
-                            <p>Delivery: {currency}{reportData?.deliveryCosts?.toLocaleString('en-AE') || 0}</p>
+                            <p>Products: {currency}{formatAmount(reportData?.productCosts)}</p>
+                            <p>Delivery: {currency}{formatAmount(reportData?.deliveryCosts)}</p>
                         </div>
                     </div>
                     
@@ -219,7 +279,7 @@ export default function SalesReport() {
                             }
                         </div>
                         <p className="text-3xl font-bold">
-                            {currency}{Math.abs(reportData?.totalProfit || 0).toLocaleString('en-AE')}
+                            {currency}{formatAmount(Math.abs(reportData?.totalProfit || 0))}
                         </p>
                         <p className={`text-sm ${isProfitable ? 'text-emerald-100' : 'text-red-100'} mt-2`}>
                             {reportData?.profitMargin?.toFixed(2) || 0}% margin
@@ -232,10 +292,41 @@ export default function SalesReport() {
                             <span className="text-purple-100">Avg Order Value</span>
                             <BarChart3 size={24} className="text-purple-200" />
                         </div>
-                        <p className="text-3xl font-bold">{currency}{reportData?.avgOrderValue?.toLocaleString('en-AE') || 0}</p>
-                        <p className="text-sm text-purple-100 mt-2">Avg Profit: {currency}{reportData?.avgProfit?.toLocaleString('en-AE') || 0}</p>
+                        <p className="text-3xl font-bold">{currency}{formatAmount(reportData?.avgOrderValue)}</p>
+                        <p className="text-sm text-purple-100 mt-2">Avg Profit: {currency}{formatAmount(reportData?.avgProfit)}</p>
                     </div>
                     
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="bg-white rounded-xl shadow-md border border-amber-200 p-6">
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-medium text-amber-800">COD Orders</span>
+                            <Banknote size={22} className="text-amber-600" />
+                        </div>
+                        <p className="text-3xl font-bold text-amber-900">{currency}{formatAmount(paymentSummary?.cod?.revenue)}</p>
+                        <p className="text-sm text-amber-700 mt-2">{paymentSummary?.cod?.count || 0} orders</p>
+                    </div>
+
+                    <div className="bg-white rounded-xl shadow-md border border-emerald-200 p-6">
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-medium text-emerald-800">Payment Success</span>
+                            <CreditCard size={22} className="text-emerald-600" />
+                        </div>
+                        <p className="text-3xl font-bold text-emerald-900">{currency}{formatAmount(paymentSummary?.paidOnline?.revenue)}</p>
+                        <p className="text-sm text-emerald-700 mt-2">{paymentSummary?.paidOnline?.count || 0} orders</p>
+                    </div>
+
+                    <div className="bg-white rounded-xl shadow-md border border-red-200 p-6">
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-medium text-red-800">Failed Orders</span>
+                            <AlertTriangle size={22} className="text-red-600" />
+                        </div>
+                        <p className="text-3xl font-bold text-red-900">{currency}{formatAmount(paymentSummary?.failed?.revenue)}</p>
+                        <p className="text-sm text-red-700 mt-2">
+                            {paymentSummary?.failed?.count || 0} orders excluded from revenue
+                        </p>
+                    </div>
                 </div>
                 
                 {/* Marketing Expenses (if tracked) */}
@@ -245,7 +336,7 @@ export default function SalesReport() {
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div className="p-4 bg-gradient-to-br from-pink-50 to-pink-100 rounded-lg">
                                 <p className="text-sm text-pink-700 mb-1">Total Marketing Spend</p>
-                                <p className="text-2xl font-bold text-pink-900">{currency}{reportData?.marketingCosts?.toLocaleString('en-AE')}</p>
+                                <p className="text-2xl font-bold text-pink-900">{currency}{formatAmount(reportData?.marketingCosts)}</p>
                             </div>
                             <div className="p-4 bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-lg">
                                 <p className="text-sm text-indigo-700 mb-1">Cost Per Order</p>
@@ -263,7 +354,10 @@ export default function SalesReport() {
                 <div className="bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden">
                     <div className="p-6 border-b border-slate-200 bg-gradient-to-r from-slate-50 to-white">
                         <h3 className="text-xl font-bold text-slate-800">Order-wise Profit/Loss</h3>
-                        <p className="text-sm text-slate-600 mt-1">Detailed breakdown of each order's profitability</p>
+                        <p className="text-sm text-slate-600 mt-1">
+                            Detailed breakdown of each order&apos;s profitability
+                            {pagination.total > 0 ? ` • ${pagination.total} orders` : ''}
+                        </p>
                     </div>
                     
                     <div className="overflow-x-auto">
@@ -272,6 +366,7 @@ export default function SalesReport() {
                                 <tr>
                                     <th className="px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Order #</th>
                                     <th className="px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Date</th>
+                                    <th className="px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Payment</th>
                                     <th className="px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Revenue</th>
                                     <th className="px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Product Cost</th>
                                     <th className="px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Delivery</th>
@@ -280,35 +375,53 @@ export default function SalesReport() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-200">
-                                {ordersData && ordersData.length > 0 ? (
+                                {tableLoading ? (
+                                    <tr>
+                                        <td colSpan="8" className="px-6 py-12 text-center text-slate-500">
+                                            Loading orders...
+                                        </td>
+                                    </tr>
+                                ) : ordersData && ordersData.length > 0 ? (
                                     ordersData.map((order) => {
                                         const orderProfit = order.profit || 0;
                                         const isOrderProfitable = orderProfit >= 0;
+                                        const isFailedOrder = order.paymentBucket === 'failed';
                                         
                                         return (
-                                            <tr key={order._id} className="hover:bg-slate-50 transition-colors">
+                                            <tr key={order._id} className={`hover:bg-slate-50 transition-colors ${isFailedOrder ? 'bg-red-50/40' : ''}`}>
                                                 <td className="px-6 py-4 text-sm font-medium text-slate-900">
                                                     #{order.shortOrderNumber}
                                                 </td>
                                                 <td className="px-6 py-4 text-sm text-slate-600">
                                                     {new Date(order.createdAt).toLocaleDateString('en-AE')}
                                                 </td>
-                                                <td className="px-6 py-4 text-sm font-semibold text-slate-900">
-                                                    {currency}{order.total?.toLocaleString('en-AE') || 0}
+                                                <td className="px-6 py-4">
+                                                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                                                        order.paymentBucket === 'cod'
+                                                            ? 'bg-amber-100 text-amber-800'
+                                                            : order.paymentBucket === 'paidOnline'
+                                                                ? 'bg-emerald-100 text-emerald-800'
+                                                                : 'bg-red-100 text-red-800'
+                                                    }`}>
+                                                        {order.paymentBucketLabel || order.paymentMethod}
+                                                    </span>
+                                                </td>
+                                                <td className={`px-6 py-4 text-sm font-semibold ${isFailedOrder ? 'text-slate-400 line-through' : 'text-slate-900'}`}>
+                                                    {currency}{formatAmount(order.total)}
                                                 </td>
                                                 <td className="px-6 py-4 text-sm text-slate-600">
-                                                    {currency}{order.productCost?.toLocaleString('en-AE') || 0}
+                                                    {isFailedOrder ? '—' : `${currency}${formatAmount(order.productCost)}`}
                                                 </td>
                                                 <td className="px-6 py-4 text-sm text-slate-600">
-                                                    {currency}{order.shippingFee?.toLocaleString('en-AE') || 0}
+                                                    {isFailedOrder ? '—' : `${currency}${formatAmount(order.shippingFee)}`}
                                                 </td>
-                                                <td className={`px-6 py-4 text-sm font-bold ${isOrderProfitable ? 'text-emerald-600' : 'text-red-600'}`}>
-                                                    {isOrderProfitable ? '+' : ''}{currency}{orderProfit.toLocaleString('en-AE')}
+                                                <td className={`px-6 py-4 text-sm font-bold ${isFailedOrder ? 'text-slate-400' : isOrderProfitable ? 'text-emerald-600' : 'text-red-600'}`}>
+                                                    {isFailedOrder ? 'Excluded' : `${isOrderProfitable ? '+' : ''}${currency}${formatAmount(orderProfit)}`}
                                                 </td>
                                                 <td className="px-6 py-4">
                                                     <span className={`px-3 py-1 rounded-full text-xs font-medium ${
                                                         order.status === 'DELIVERED' ? 'bg-emerald-100 text-emerald-700' :
-                                                        order.status === 'CANCELLED' ? 'bg-red-100 text-red-700' :
+                                                        order.status === 'CANCELLED' || order.status === 'PAYMENT_FAILED' ? 'bg-red-100 text-red-700' :
                                                         'bg-blue-100 text-blue-700'
                                                     }`}>
                                                         {order.status}
@@ -319,13 +432,64 @@ export default function SalesReport() {
                                     })
                                 ) : (
                                     <tr>
-                                        <td colSpan="7" className="px-6 py-12 text-center text-slate-500">
+                                        <td colSpan="8" className="px-6 py-12 text-center text-slate-500">
                                             No orders found for the selected date range
                                         </td>
                                     </tr>
                                 )}
                             </tbody>
                         </table>
+                    </div>
+
+                    <div className="flex flex-col gap-3 border-t border-slate-200 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+                        <p className="text-sm text-slate-600">
+                            Showing {showingFrom}-{showingTo} of {pagination.total} order{pagination.total === 1 ? '' : 's'}
+                        </p>
+
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                                disabled={safeCurrentPage <= 1 || tableLoading}
+                                className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                Previous
+                            </button>
+
+                            <div className="flex items-center gap-1">
+                                {pageNumbers.map((page, index) => {
+                                    const previousPage = pageNumbers[index - 1];
+                                    const shouldInsertGap = previousPage && page - previousPage > 1;
+
+                                    return (
+                                        <div key={page} className="flex items-center gap-1">
+                                            {shouldInsertGap ? <span className="px-1 text-slate-400">...</span> : null}
+                                            <button
+                                                type="button"
+                                                onClick={() => setCurrentPage(page)}
+                                                disabled={tableLoading}
+                                                className={`h-9 min-w-9 rounded-lg px-3 text-sm font-medium transition ${
+                                                    page === safeCurrentPage
+                                                        ? 'bg-slate-900 text-white'
+                                                        : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                                                }`}
+                                            >
+                                                {page}
+                                            </button>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                                disabled={safeCurrentPage >= totalPages || tableLoading}
+                                className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                Next
+                            </button>
+                        </div>
                     </div>
                 </div>
                 
@@ -343,11 +507,11 @@ export default function SalesReport() {
                                         <div className="flex items-center gap-4">
                                             <div className="w-32 font-medium text-slate-700">{month.month}</div>
                                             <div className="text-sm text-slate-600">
-                                                {month.orders} orders • {currency}{month.revenue?.toLocaleString('en-AE')} revenue
+                                                {month.orders} orders • {currency}{formatAmount(month.revenue)} revenue
                                             </div>
                                         </div>
                                         <div className={`text-lg font-bold ${isMonthProfitable ? 'text-emerald-600' : 'text-red-600'}`}>
-                                            {isMonthProfitable ? '+' : ''}{currency}{monthProfit.toLocaleString('en-AE')}
+                                            {isMonthProfitable ? '+' : ''}{currency}{formatAmount(monthProfit)}
                                         </div>
                                     </div>
                                 );

@@ -21,15 +21,42 @@ function formatFilterDateLabel(value = '') {
     return parsed.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-function buildDateRangeSummary(fromDate, toDate) {
+const DEFAULT_ORDER_FILTER_TIME = '10:00';
+
+function normalizeFilterTimeValue(value = '', fallback = DEFAULT_ORDER_FILTER_TIME) {
+    const text = String(value || fallback).trim();
+    if (/^\d{2}:\d{2}$/.test(text)) return text;
+    if (/^\d{2}:\d{2}:\d{2}$/.test(text)) return text.slice(0, 5);
+    return fallback;
+}
+
+function buildFilterDateTime(dateValue = '', timeValue = '') {
+    if (!dateValue) return null;
+    const time = normalizeFilterTimeValue(timeValue);
+    const parsed = new Date(`${dateValue}T${time}:00`);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatFilterTimeLabel(value = '') {
+    const time = normalizeFilterTimeValue(value);
+    const parsed = new Date(`2000-01-01T${time}:00`);
+    if (Number.isNaN(parsed.getTime())) return time;
+    return parsed.toLocaleTimeString('en-GB', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+    });
+}
+
+function buildDateRangeSummary(fromDate, toDate, fromTime = DEFAULT_ORDER_FILTER_TIME, toTime = DEFAULT_ORDER_FILTER_TIME) {
     if (fromDate && toDate) {
-        return `${formatFilterDateLabel(fromDate)} – ${formatFilterDateLabel(toDate)}`;
+        return `${formatFilterDateLabel(fromDate)} ${formatFilterTimeLabel(fromTime)} – ${formatFilterDateLabel(toDate)} ${formatFilterTimeLabel(toTime)}`;
     }
     if (fromDate) {
-        return `from ${formatFilterDateLabel(fromDate)}`;
+        return `from ${formatFilterDateLabel(fromDate)} ${formatFilterTimeLabel(fromTime)}`;
     }
     if (toDate) {
-        return `until ${formatFilterDateLabel(toDate)}`;
+        return `until ${formatFilterDateLabel(toDate)} ${formatFilterTimeLabel(toTime)}`;
     }
     return '';
 }
@@ -249,6 +276,8 @@ export default function StoreOrders() {
     const [datePreset, setDatePreset] = useState('ALL');
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState('');
+    const [fromTime, setFromTime] = useState(DEFAULT_ORDER_FILTER_TIME);
+    const [toTime, setToTime] = useState(DEFAULT_ORDER_FILTER_TIME);
     const [exportTypeFilter, setExportTypeFilter] = useState('ALL');
     const [orderSearchQuery, setOrderSearchQuery] = useState('');
     const [orderCsvFile, setOrderCsvFile] = useState(null);
@@ -448,8 +477,11 @@ export default function StoreOrders() {
     };
     const getDateRange = () => {
         if (!fromDate && !toDate) return { start: null, end: null };
-        const start = fromDate ? new Date(`${fromDate}T00:00:00`) : null;
-        const end = toDate ? new Date(`${toDate}T23:59:59`) : null;
+        const start = fromDate ? buildFilterDateTime(fromDate, fromTime) : null;
+        let end = toDate ? buildFilterDateTime(toDate, toTime) : null;
+        if (start && end && end <= start) {
+            end = new Date(end.getTime() + 24 * 60 * 60 * 1000);
+        }
         return { start, end };
     };
 
@@ -523,10 +555,12 @@ export default function StoreOrders() {
         setDatePreset('ALL');
         setFromDate('');
         setToDate('');
+        setFromTime(DEFAULT_ORDER_FILTER_TIME);
+        setToTime(DEFAULT_ORDER_FILTER_TIME);
         setCurrentPage(1);
     };
 
-    const dateRangeSummary = buildDateRangeSummary(fromDate, toDate);
+    const dateRangeSummary = buildDateRangeSummary(fromDate, toDate, fromTime, toTime);
 
     const activeOrderFilterCount = useMemo(() => {
         let count = 0;
@@ -577,7 +611,7 @@ export default function StoreOrders() {
     const hasDateFilter = Boolean(fromDate || toDate);
     const ordersMatchingDateRange = useMemo(
         () => orders.filter(isOrderInRange),
-        [orders, fromDate, toDate],
+        [orders, fromDate, toDate, fromTime, toTime],
     );
     const filteredOrders = getFilteredOrders();
     const totalPages = Math.max(1, Math.ceil(filteredOrders.length / ordersPerPage));
@@ -1127,7 +1161,7 @@ export default function StoreOrders() {
 
     useEffect(() => {
         setCurrentPage(1);
-    }, [filterStatus, filterPayment, filterTrafficSource, fromDate, toDate, datePreset, ordersPerPage, orderSearchQuery]);
+    }, [filterStatus, filterPayment, filterTrafficSource, fromDate, toDate, fromTime, toTime, datePreset, ordersPerPage, orderSearchQuery]);
 
     useEffect(() => {
         if (currentPage > totalPages) {
@@ -1159,6 +1193,8 @@ export default function StoreOrders() {
         if (datePreset === 'TODAY') {
             setFromDate(todayStr);
             setToDate(todayStr);
+            setFromTime(DEFAULT_ORDER_FILTER_TIME);
+            setToTime(DEFAULT_ORDER_FILTER_TIME);
             return;
         }
         if (datePreset === 'LAST_7_DAYS') {
@@ -1169,11 +1205,15 @@ export default function StoreOrders() {
             const wdd = String(lastWeek.getDate()).padStart(2, '0');
             setFromDate(`${wyyyy}-${wmm}-${wdd}`);
             setToDate(todayStr);
+            setFromTime(DEFAULT_ORDER_FILTER_TIME);
+            setToTime(DEFAULT_ORDER_FILTER_TIME);
             return;
         }
         if (datePreset === 'ALL') {
             setFromDate('');
             setToDate('');
+            setFromTime(DEFAULT_ORDER_FILTER_TIME);
+            setToTime(DEFAULT_ORDER_FILTER_TIME);
         }
     }, [datePreset]);
 
@@ -1999,6 +2039,20 @@ export default function StoreOrders() {
                             className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                         />
                     </div>
+                    <div className="min-w-[130px]">
+                        <label htmlFor="orders-from-time" className="text-xs font-medium text-slate-500">From time</label>
+                        <input
+                            id="orders-from-time"
+                            type="time"
+                            value={fromTime}
+                            onChange={(e) => {
+                                setFromTime(normalizeFilterTimeValue(e.target.value));
+                                setDatePreset('CUSTOM');
+                                setCurrentPage(1);
+                            }}
+                            className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                        />
+                    </div>
                     <div className="min-w-[160px]">
                         <label htmlFor="orders-to-date" className="text-xs font-medium text-slate-500">To date</label>
                         <input
@@ -2008,6 +2062,20 @@ export default function StoreOrders() {
                             min={fromDate || undefined}
                             onChange={(e) => {
                                 setToDate(e.target.value);
+                                setDatePreset('CUSTOM');
+                                setCurrentPage(1);
+                            }}
+                            className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                        />
+                    </div>
+                    <div className="min-w-[130px]">
+                        <label htmlFor="orders-to-time" className="text-xs font-medium text-slate-500">To time</label>
+                        <input
+                            id="orders-to-time"
+                            type="time"
+                            value={toTime}
+                            onChange={(e) => {
+                                setToTime(normalizeFilterTimeValue(e.target.value));
                                 setDatePreset('CUSTOM');
                                 setCurrentPage(1);
                             }}
@@ -3432,6 +3500,8 @@ export default function StoreOrders() {
                     setDatePreset('ALL');
                     setFromDate('');
                     setToDate('');
+                    setFromTime(DEFAULT_ORDER_FILTER_TIME);
+                    setToTime(DEFAULT_ORDER_FILTER_TIME);
                     setOrderSearchQuery('');
                     fetchOrders();
                 }}

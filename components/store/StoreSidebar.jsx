@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation"
 
-import { HomeIcon, LayoutListIcon, SquarePenIcon, SquarePlusIcon, StarIcon, FolderIcon, TicketIcon, TruckIcon, RefreshCw, User as UserIcon, Users as UsersIcon, MessageSquare, Sparkles, BellIcon, MailIcon, Image as ImageIcon, ShoppingCart, Wallet, BarChart3, Target, Gift, Palette, CircleDashed, PackagePlus, Activity, Layers, LineChart, Warehouse, MousePointerClick, ShieldAlert, Zap, Trash2 } from "lucide-react"
+import { HomeIcon, LayoutListIcon, SquarePenIcon, SquarePlusIcon, StarIcon, FolderIcon, TicketIcon, TruckIcon, RefreshCw, User as UserIcon, Users as UsersIcon, MessageSquare, Sparkles, BellIcon, MailIcon, Image as ImageIcon, ShoppingCart, Wallet, BarChart3, Target, Gift, Palette, CircleDashed, PackagePlus, Package, Activity, Layers, LineChart, Warehouse, MousePointerClick, ShieldAlert, Zap, Trash2 } from "lucide-react"
 
 import StoreNavLink from "@/components/store/StoreNavLink"
 
@@ -81,6 +81,8 @@ const StoreSidebar = ({ storeInfo, isOwner = false, permissions = {} }) => {
         { name: 'Manage Users', href: '/store/settings/users', icon: UserIcon },
 
         { name: 'Orders', href: '/store/orders', icon: LayoutListIcon },
+
+        { name: 'Orders by Product', href: '/store/orders-by-product', icon: Package },
 
         { name: 'Trash', href: '/store/trash', icon: Trash2 },
 
@@ -193,6 +195,8 @@ const StoreSidebar = ({ storeInfo, isOwner = false, permissions = {} }) => {
             links: [
 
                 '/store/orders',
+
+                '/store/orders-by-product',
 
                 '/store/trash',
 

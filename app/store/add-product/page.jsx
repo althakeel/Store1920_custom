@@ -22,6 +22,7 @@ import { TableCell } from '@tiptap/extension-table-cell'
 import { TableHeader } from '@tiptap/extension-table-header'
 
 import { useAuth } from '@/lib/useAuth';
+import { Trash2 } from 'lucide-react';
 import { formatStorefrontMoney } from '@/lib/storefrontMarket';
 import { getProductImageAspectRatioClass } from '@/lib/productMedia';
 import { compressImageForUpload, getUploadErrorMessage } from '@/lib/compressImageForUpload';
@@ -151,6 +152,24 @@ const mergeSpecTableRows = (existingRows = [], incomingRows = [], columnCount = 
     })
 
     return merged
+}
+
+const removeSpecTableColumnAt = (columns = [], rows = [], colIndex = 0) => {
+    if (!Array.isArray(columns) || columns.length <= 1) {
+        return { columns, rows }
+    }
+
+    const nextColumns = columns.filter((_, idx) => idx !== colIndex)
+    const nextRows = (rows || []).map((row) => (
+        Array.isArray(row) ? row.filter((_, idx) => idx !== colIndex) : row
+    ))
+
+    return { columns: nextColumns, rows: nextRows }
+}
+
+const removeSpecTableRowAt = (rows = [], rowIndex = 0) => {
+    if (!Array.isArray(rows) || rows.length <= 1) return rows
+    return rows.filter((_, idx) => idx !== rowIndex)
 }
 
 const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.ogg', '.mov', '.m4v', '.avi', '.mkv']
@@ -1990,15 +2009,104 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                             className="w-full rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-amber-200"
                             placeholder="مواصفات المنتج"
                           />
+                          <div className="flex flex-wrap gap-2 justify-end">
+                            <button
+                              type="button"
+                              onClick={() => setProductInfo((prev) => ({
+                                ...prev,
+                                specTableColumnsAr: [...(prev.specTableColumnsAr || []), `عمود ${(prev.specTableColumnsAr || []).length + 1}`],
+                                specTableRowsAr: (prev.specTableRowsAr || []).map((row) => ([...(Array.isArray(row) ? row : []), ''])),
+                              }))}
+                              className="px-3 py-1.5 rounded text-xs font-medium bg-blue-100 hover:bg-blue-200 text-blue-800"
+                            >
+                              + إضافة عمود
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setProductInfo((prev) => {
+                                const colCount = Math.max((prev.specTableColumnsAr || []).length, 1)
+                                return {
+                                  ...prev,
+                                  specTableRowsAr: [...(prev.specTableRowsAr || []), Array(colCount).fill('')],
+                                }
+                              })}
+                              className="px-3 py-1.5 rounded text-xs font-medium bg-blue-100 hover:bg-blue-200 text-blue-800"
+                            >
+                              + إضافة صف
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setProductInfo((prev) => {
+                                const nextColumns = (prev.specTableColumnsAr || []).length > 1
+                                  ? prev.specTableColumnsAr.slice(0, -1)
+                                  : prev.specTableColumnsAr
+                                const nextRows = (prev.specTableRowsAr || []).map((row) => (
+                                  Array.isArray(row) && row.length > 1 ? row.slice(0, -1) : row
+                                ))
+                                return {
+                                  ...prev,
+                                  specTableColumnsAr: nextColumns,
+                                  specTableRowsAr: nextRows,
+                                }
+                              })}
+                              disabled={(productInfo.specTableColumnsAr || []).length <= 1}
+                              className="px-3 py-1.5 rounded text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-40"
+                            >
+                              - حذف آخر عمود
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setProductInfo((prev) => ({
+                                ...prev,
+                                specTableRowsAr: (prev.specTableRowsAr || []).length > 1
+                                  ? prev.specTableRowsAr.slice(0, -1)
+                                  : prev.specTableRowsAr,
+                              }))}
+                              disabled={(productInfo.specTableRowsAr || []).length <= 1}
+                              className="px-3 py-1.5 rounded text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-40"
+                            >
+                              - حذف آخر صف
+                            </button>
+                          </div>
                           <div className="overflow-x-auto rounded-lg border border-amber-200 bg-white">
                             <table className="min-w-full text-sm">
                               <thead>
                                 <tr>
                                   {(productInfo.specTableColumnsAr || ['الخاصية', 'القيمة']).map((col, colIndex) => (
-                                    <th key={`spec-ar-head-${colIndex}`} className="border-b border-amber-100 bg-amber-50 px-2 py-2 text-right font-semibold text-gray-700">
-                                      {col}
+                                    <th key={`spec-ar-head-${colIndex}`} className="border-b border-amber-100 bg-amber-50 p-2 min-w-[180px]">
+                                      <div className="flex items-center gap-1">
+                                        <input
+                                          type="text"
+                                          value={col || ''}
+                                          onChange={(e) => setProductInfo((prev) => {
+                                            const nextColumns = [...(prev.specTableColumnsAr || [])]
+                                            nextColumns[colIndex] = e.target.value
+                                            return { ...prev, specTableColumnsAr: nextColumns }
+                                          })}
+                                          dir="rtl"
+                                          className="w-full min-w-0 flex-1 rounded border border-amber-200 px-2 py-1 text-xs font-medium text-right"
+                                          placeholder={`عمود ${colIndex + 1}`}
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => setProductInfo((prev) => {
+                                            const { columns, rows } = removeSpecTableColumnAt(
+                                              prev.specTableColumnsAr,
+                                              prev.specTableRowsAr,
+                                              colIndex,
+                                            )
+                                            return { ...prev, specTableColumnsAr: columns, specTableRowsAr: rows }
+                                          })}
+                                          disabled={(productInfo.specTableColumnsAr || []).length <= 1}
+                                          className="shrink-0 rounded p-1 text-red-500 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-30"
+                                          title="حذف العمود"
+                                        >
+                                          <Trash2 size={14} />
+                                        </button>
+                                      </div>
                                     </th>
                                   ))}
+                                  <th className="border-b border-amber-100 bg-amber-50 p-2 w-10" aria-label="حذف الصف" />
                                 </tr>
                               </thead>
                               <tbody>
@@ -2018,9 +2126,24 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                                           })}
                                           dir="rtl"
                                           className="w-full rounded border border-amber-200 px-2 py-1 text-xs text-right"
+                                          placeholder={`صف ${rowIndex + 1}، عمود ${colIndex + 1}`}
                                         />
                                       </td>
                                     ))}
+                                    <td className="border-t border-amber-100 p-2 w-10 text-center">
+                                      <button
+                                        type="button"
+                                        onClick={() => setProductInfo((prev) => ({
+                                          ...prev,
+                                          specTableRowsAr: removeSpecTableRowAt(prev.specTableRowsAr, rowIndex),
+                                        }))}
+                                        disabled={(productInfo.specTableRowsAr || []).length <= 1}
+                                        className="rounded p-1 text-red-500 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-30"
+                                        title="حذف الصف"
+                                      >
+                                        <Trash2 size={14} />
+                                      </button>
+                                    </td>
                                   </tr>
                                 ))}
                               </tbody>
@@ -2117,19 +2240,38 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                                         <tr>
                                             {(productInfo.specTableColumns || []).map((col, colIndex) => (
                                                 <th key={`spec-col-${colIndex}`} className="border-b border-slate-200 p-2 min-w-[180px]">
-                                                    <input
-                                                        type="text"
-                                                        value={col || ''}
-                                                        onChange={(e) => setProductInfo((prev) => {
-                                                            const nextColumns = [...(prev.specTableColumns || [])]
-                                                            nextColumns[colIndex] = e.target.value
-                                                            return { ...prev, specTableColumns: nextColumns }
-                                                        })}
-                                                        className="w-full rounded border border-slate-300 px-2 py-1 text-xs font-medium"
-                                                        placeholder={`Column ${colIndex + 1}`}
-                                                    />
+                                                    <div className="flex items-center gap-1">
+                                                        <input
+                                                            type="text"
+                                                            value={col || ''}
+                                                            onChange={(e) => setProductInfo((prev) => {
+                                                                const nextColumns = [...(prev.specTableColumns || [])]
+                                                                nextColumns[colIndex] = e.target.value
+                                                                return { ...prev, specTableColumns: nextColumns }
+                                                            })}
+                                                            className="w-full min-w-0 flex-1 rounded border border-slate-300 px-2 py-1 text-xs font-medium"
+                                                            placeholder={`Column ${colIndex + 1}`}
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setProductInfo((prev) => {
+                                                                const { columns, rows } = removeSpecTableColumnAt(
+                                                                    prev.specTableColumns,
+                                                                    prev.specTableRows,
+                                                                    colIndex,
+                                                                )
+                                                                return { ...prev, specTableColumns: columns, specTableRows: rows }
+                                                            })}
+                                                            disabled={(productInfo.specTableColumns || []).length <= 1}
+                                                            className="shrink-0 rounded p-1 text-red-500 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-30"
+                                                            title="Delete column"
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </div>
                                                 </th>
                                             ))}
+                                            <th className="border-b border-slate-200 p-2 w-10" aria-label="Delete row" />
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -2152,6 +2294,20 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                                                         />
                                                     </td>
                                                 ))}
+                                                <td className="border-t border-slate-200 p-2 w-10 text-center">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setProductInfo((prev) => ({
+                                                            ...prev,
+                                                            specTableRows: removeSpecTableRowAt(prev.specTableRows, rowIndex),
+                                                        }))}
+                                                        disabled={(productInfo.specTableRows || []).length <= 1}
+                                                        className="rounded p-1 text-red-500 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-30"
+                                                        title="Delete row"
+                                                    >
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                </td>
                                             </tr>
                                         ))}
                                     </tbody>
