@@ -67,6 +67,7 @@ export async function POST(request) {
       couponCode,
       notes,
       paymentReferenceId,
+      discount,
     } = body || {};
 
     if (!Array.isArray(items) || items.length === 0) {
@@ -163,6 +164,31 @@ export async function POST(request) {
 
       const isCod = paymentMethod === 'COD';
 
+      // Resolve an optional manual discount entered by store staff. Applied here
+      // (authenticated store route) rather than in the public /api/orders so
+      // customers cannot discount their own orders.
+      const baseTotal = Number(savedOrder?.total ?? 0);
+      const orderShipping = Number(savedOrder?.shippingFee ?? normalizedShippingFee ?? 0);
+      const merchandiseBase = Math.max(0, baseTotal - orderShipping);
+      const discountType = discount?.type === 'percentage' ? 'percentage' : 'fixed';
+      const discountValue = Math.max(0, Number(discount?.value) || 0);
+
+      let discountAmount = 0;
+      if (discountValue > 0) {
+        discountAmount = discountType === 'percentage'
+          ? (merchandiseBase * Math.min(discountValue, 100)) / 100
+          : Math.min(discountValue, merchandiseBase);
+        discountAmount = Math.round(discountAmount * 100) / 100;
+      }
+
+      const adjustedTotal = Math.max(0, Number((baseTotal - discountAmount).toFixed(2)));
+
+      if (discountAmount > 0) {
+        noteLines.unshift(
+          `Manual discount: ${discountType === 'percentage' ? `${discountValue}%` : `${discountValue}`} (-${discountAmount.toFixed(2)})`,
+        );
+      }
+
       savedOrder = await Order.findOneAndUpdate(
         { _id: orderId, storeId },
         {
@@ -176,6 +202,17 @@ export async function POST(request) {
             storeCreatedByName: sellerName,
             ...(referenceId ? { paymentReferenceId: referenceId } : {}),
             ...buildPaymentReferenceUpdate(paymentMethod, referenceId),
+            ...(discountAmount > 0
+              ? {
+                  total: adjustedTotal,
+                  manualDiscount: {
+                    type: discountType,
+                    value: discountValue,
+                    amount: discountAmount,
+                    originalTotal: baseTotal,
+                  },
+                }
+              : {}),
           },
         },
         { new: true },

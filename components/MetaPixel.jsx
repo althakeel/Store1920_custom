@@ -12,6 +12,9 @@ export default function MetaPixel() {
   useEffect(() => {
     if (typeof window === "undefined" || !pathname) return;
 
+    const pathOnly = pathname.split('?')[0];
+    if (pathOnly === '/order-success') return;
+
     if (window.fbq) {
       window.fbq('set', 'autoConfig', false, META_PIXEL_ID);
     }

@@ -20,6 +20,7 @@ import { useAuth } from '@/lib/useAuth';
 import { trackPurchase } from '@/lib/tracking';
 import { trackOrderSuccessPurchaseOnce } from '@/lib/orderSuccessMetaPurchase';
 import { canTrackMetaPurchaseOnOrderSuccess } from '@/lib/orderConfirmationPolicy';
+import { hasTrackedPersistently, markTrackedPersistently } from '@/lib/trackingDedupe';
 import { getDisplayOrderNumber } from '@/lib/orderDisplay';
 import { resolveOrderLineLineTotal, resolveOrderLinePackQuantity, resolveOrderLineQuantity } from '@/lib/gtmEcommerceHelpers';
 import { clearPendingCheckoutOrder } from '@/lib/pendingCheckoutOrder';
@@ -174,6 +175,12 @@ function OrderSuccessContent() {
     if (loading || !order?._id || purchaseTrackedRef.current) return;
     if (!canTrackMetaPurchaseOnOrderSuccess(order)) return;
 
+    const orderTrackingKey = `order-success:tracked:${String(order._id)}`;
+    if (hasTrackedPersistently(orderTrackingKey)) {
+      purchaseTrackedRef.current = true;
+      return;
+    }
+
     let cancelled = false;
     let attempts = 0;
 
@@ -186,6 +193,7 @@ function OrderSuccessContent() {
         if (cancelled) return;
         if (ok) {
           purchaseTrackedRef.current = true;
+          markTrackedPersistently(orderTrackingKey);
           return;
         }
         await new Promise((resolve) => window.setTimeout(resolve, 200));

@@ -28,7 +28,12 @@ import { getProductImageAspectRatioClass } from '@/lib/productMedia';
 import { compressImageForUpload, getUploadErrorMessage } from '@/lib/compressImageForUpload';
 import { uploadStoreImage } from '@/lib/uploadStoreImage';
 import { sanitizeRichTextMedia } from '@/lib/sanitizeRichTextMedia';
-import { getVariantCardLabel } from '@/lib/productVariantOptions';
+import { getVariantCardLabel, isMatrixVariant } from '@/lib/productVariantOptions';
+
+const VARIANT_MATRIX_SELECTION_FIELDS = ['title', 'optionLabel', 'option', 'color', 'size'];
+const getVariantMatrixKey = (options = {}) =>
+    VARIANT_MATRIX_SELECTION_FIELDS.map((field) => `${field}:${String(options?.[field] || '').trim()}`).join('|');
+const buildMatrixCellKey = (options = {}, qty) => `${getVariantMatrixKey(options)}__${Number(qty) || 0}`;
 
 const toArabicPriceDisplay = (amount) => {
     const numeric = Number(amount);
@@ -487,6 +492,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
         const aspectRatioOptions = ['1:1', '4:5', '3:4', '16:9'];
         const [hasVariants, setHasVariants] = useState(false);
         const [bulkOptions, setBulkOptions] = useState([]);
+        const [matrixCells, setMatrixCells] = useState({});
         const [aiAdditionalDetails, setAiAdditionalDetails] = useState('');
         const [aiLoading, setAiLoading] = useState(false);
         const [aiProgress, setAiProgress] = useState(null);
@@ -808,10 +814,69 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
             const pv = Array.isArray(product.variants) ? product.variants : []
             setHasVariants(Boolean(product.hasVariants))
             setVariants(pv)
+            const isMatrix = product.attributes?.variantType === 'variant_bundles'
+              || pv.some((v) => isMatrixVariant(v))
+            if (isMatrix) {
+                // Reconstruct base variants, bundle tiers, and the price/stock matrix.
+                setHasVariants(true)
+                setBulkEnabled(true)
+
+                const baseMap = new Map()
+                const tierMap = new Map()
+                const cells = {}
+                pv.forEach((v) => {
+                    const opts = v?.options || {}
+                    const qty = Number(opts.bundleQty) || 1
+                    const baseOpts = { ...opts }
+                    delete baseOpts.bundleQty
+                    delete baseOpts.tag
+                    const key = getVariantMatrixKey(baseOpts)
+                    if (!baseMap.has(key)) {
+                        baseMap.set(key, {
+                            options: baseOpts,
+                            price: v.price ?? '',
+                            AED: v.AED ?? v.price ?? '',
+                            stock: v.stock ?? 0,
+                            sku: v.sku || '',
+                        })
+                    }
+                    if (!tierMap.has(qty)) {
+                        tierMap.set(qty, {
+                            title: opts.title || (qty === 1 ? 'Buy 1' : `Bundle of ${qty}`),
+                            qty,
+                            price: v.price ?? '',
+                            AED: v.AED ?? v.price ?? '',
+                            stock: v.stock ?? 0,
+                            tag: opts.tag || v.tag || '',
+                            image: '',
+                            imageSlot: '',
+                        })
+                    }
+                    cells[buildMatrixCellKey(baseOpts, qty)] = {
+                        price: v.price ?? '',
+                        AED: v.AED ?? v.price ?? '',
+                        stock: v.stock ?? 0,
+                    }
+                })
+                setVariants([...baseMap.values()])
+                setBulkOptions([...tierMap.values()].sort((a, b) => a.qty - b.qty))
+                setMatrixCells(cells)
+                const matrixImgState = { "1": null, "2": null, "3": null, "4": null, "5": null, "6": null, "7": null, "8": null }
+                if (product.images && Array.isArray(product.images)) {
+                    product.images.forEach((img, i) => { if (i < 8) matrixImgState[String(i + 1)] = img })
+                }
+                setImages(matrixImgState)
+                return
+            }
             const isBulk = product.attributes?.variantType === 'bulk_bundles'
               || (pv.length > 0 && pv.every(v => v?.options && (v.options.bundleQty || v.options.bundleQty === 0) && !v.options.color && !v.options.size))
             if (isBulk) {
                 setBulkEnabled(true)
+                // A pure bulk product's "variants" are the bundle rows, which live in
+                // bulkOptions. Keep the variant editor empty so the seller can opt in to
+                // color/size variants (which turns the product into a variant+bundle matrix).
+                setHasVariants(false)
+                setVariants([])
                 // Map into editable bulkOptions
                 const mapped = pv.map(v => ({
                     title: v?.options?.title || (Number(v?.options?.bundleQty) === 1 ? 'Buy 1' : `Bundle of ${Number(v?.options?.bundleQty) || 1}`),
@@ -1593,7 +1658,46 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 }))
                 : variants
             let hasVariantsFlag = hasVariants
-            if (bulkEnabled) {
+
+            // Base variant rows carry a color/size/option selection and are NOT
+            // bundle rows themselves (bundle rows have bundleQty and live in bulkOptions).
+            const baseVariantRows = (Array.isArray(variants) ? variants : []).filter((v) => {
+                const opts = v?.options || {}
+                const isBundleRow = opts.bundleQty != null && opts.bundleQty !== ''
+                if (isBundleRow) return false
+                return VARIANT_MATRIX_SELECTION_FIELDS.some((f) => String(opts[f] || '').trim())
+            })
+            const isMatrixMode = hasVariants && bulkEnabled && baseVariantRows.length > 0
+
+            if (isMatrixMode) {
+                // Matrix: every base variant × every bundle tier is its own priced variant.
+                const bundleRows = bulkOptions.filter((b) => Number(b.qty) > 0)
+                const expanded = []
+                baseVariantRows.forEach((v) => {
+                    const baseOpts = { ...(v.options || {}) }
+                    delete baseOpts.bundleQty
+                    bundleRows.forEach((b) => {
+                        const cell = matrixCells[buildMatrixCellKey(v.options, b.qty)] || {}
+                        const price = Number(cell.price ?? v.price ?? b.price)
+                        if (!(price > 0)) return
+                        const aed = Number(cell.AED ?? v.AED ?? b.AED ?? price) || price
+                        const stock = Number(cell.stock ?? v.stock ?? b.stock ?? 0) || 0
+                        expanded.push({
+                            sku: v.sku || '',
+                            options: resolveVariantImageOptions({
+                                ...baseOpts,
+                                bundleQty: Number(b.qty),
+                                ...(b.tag ? { tag: b.tag } : {}),
+                            }),
+                            price,
+                            AED: aed,
+                            stock,
+                        })
+                    })
+                })
+                variantsToSend = expanded
+                hasVariantsFlag = expanded.length > 0
+            } else if (bulkEnabled) {
                 variantsToSend = bulkOptions
                     .filter(b => Number(b.qty) > 0 && Number(b.price) > 0)
                     .map(b => ({
@@ -1632,7 +1736,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 soldBy: productInfo.soldBy,
                 paymentInfo: productInfo.paymentInfo,
                 additionalDetails: aiAdditionalDetails || '',
-                variantType: bulkEnabled ? 'bulk_bundles' : '',
+                variantType: isMatrixMode ? 'variant_bundles' : (bulkEnabled ? 'bulk_bundles' : ''),
             }
 
             const payload = {
@@ -1647,12 +1751,16 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 shortDescription2Ar: productInfo.shortDescription2Ar || '',
                 description,
                 descriptionAr,
-                price: bulkEnabled && variantsToSend.length > 0
-                    ? Number(variantsToSend[0].price)
-                    : Number(productInfo.price),
-                AED: bulkEnabled && variantsToSend.length > 0
-                    ? Number(variantsToSend[0].AED)
-                    : Number(productInfo.AED),
+                price: isMatrixMode
+                    ? (Number(productInfo.price) || (variantsToSend.length > 0 ? Number(variantsToSend[0].price) : 0))
+                    : (bulkEnabled && variantsToSend.length > 0
+                        ? Number(variantsToSend[0].price)
+                        : Number(productInfo.price)),
+                AED: isMatrixMode
+                    ? (Number(productInfo.AED) || (variantsToSend.length > 0 ? Number(variantsToSend[0].AED) : 0))
+                    : (bulkEnabled && variantsToSend.length > 0
+                        ? Number(variantsToSend[0].AED)
+                        : Number(productInfo.AED)),
                 sku: productInfo.sku || '',
                 stockQuantity: Number(productInfo.stockQuantity) || 0,
                 colors: productInfo.colors || [],
@@ -2524,7 +2632,6 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                             const enabled = e.target.checked
                             setBulkEnabled(enabled)
                             if (enabled) {
-                              setHasVariants(true)
                               if (bulkOptions.length === 0) {
                                 const existingBulk = (Array.isArray(variants) ? variants : []).filter(
                                   (v) => v?.options && (v.options.bundleQty || v.options.bundleQty === 0) && !v.options?.color && !v.options?.size
@@ -2649,8 +2756,13 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                       </div>
                     )}
 
-                    {hasVariants && !bulkEnabled && (
+                    {hasVariants && (
                       <div className="space-y-4">
+                        {bulkEnabled && (
+                          <div className="rounded-lg border border-violet-200 bg-violet-50/50 px-4 py-2.5 text-xs text-violet-800">
+                            Both <strong>Product variants</strong> and <strong>Bulk bundles</strong> are on. Define your color/size variants below and bundle tiers above, then set the price &amp; stock for each combination in the matrix at the bottom.
+                          </div>
+                        )}
                         {variants.length === 0 ? (
                           <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/80 px-6 py-8 text-center">
                             <p className="text-sm text-slate-600">No variants yet. Add a variant title, a custom option (e.g. Storage → 128GB), and/or color and size.</p>
@@ -2798,6 +2910,44 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                         </button>
                       </div>
                     )}
+
+                    {hasVariants && bulkEnabled && (() => {
+                      const baseRows = variants.filter((v) => VARIANT_MATRIX_SELECTION_FIELDS.some((f) => String(v?.options?.[f] || '').trim()))
+                      const tiers = bulkOptions.filter((b) => Number(b.qty) > 0)
+                      if (!baseRows.length || !tiers.length) return null
+                      const setCell = (opts, qty, field, value) => {
+                        const key = buildMatrixCellKey(opts, qty)
+                        setMatrixCells((prev) => ({ ...prev, [key]: { ...(prev[key] || {}), [field]: value } }))
+                      }
+                      return (
+                        <div className="rounded-xl border border-violet-200 bg-violet-50/30 overflow-hidden">
+                          <div className="px-4 py-3 border-b border-violet-100 bg-white/80">
+                            <h4 className="text-sm font-semibold text-slate-800">Variant + bundle pricing</h4>
+                            <p className="text-xs text-slate-500 mt-0.5">Set sale price, regular price, and stock for each variant × bundle combination. A combination with sale price 0 will not be saved.</p>
+                          </div>
+                          <div className="p-4 space-y-3">
+                            {baseRows.map((v, vi) => (
+                              <div key={vi} className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+                                <div className="px-3 py-2 border-b border-slate-100 bg-slate-50 text-sm font-semibold text-slate-700">{getVariantCardLabel(v, vi)}</div>
+                                <div className="p-3 space-y-2">
+                                  {tiers.map((b, bi) => {
+                                    const cell = matrixCells[buildMatrixCellKey(v.options, b.qty)] || {}
+                                    return (
+                                      <div key={bi} className="grid grid-cols-[minmax(90px,1fr)_100px_100px_84px] gap-2 items-center">
+                                        <div className="text-xs font-medium text-slate-600 truncate">{b.title || `Bundle of ${b.qty}`} <span className="text-slate-400">(×{b.qty})</span></div>
+                                        <input type="number" step="0.01" placeholder="Sale" className="border border-slate-200 rounded-md px-2 py-1.5 text-sm bg-white" value={cell.price ?? ''} onChange={(e) => setCell(v.options, b.qty, 'price', e.target.value)} />
+                                        <input type="number" step="0.01" placeholder="Regular" className="border border-slate-200 rounded-md px-2 py-1.5 text-sm bg-white" value={cell.AED ?? ''} onChange={(e) => setCell(v.options, b.qty, 'AED', e.target.value)} />
+                                        <input type="number" placeholder="Stock" className="border border-slate-200 rounded-md px-2 py-1.5 text-sm bg-white" value={cell.stock ?? ''} onChange={(e) => setCell(v.options, b.qty, 'stock', Number(e.target.value))} />
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })()}
                   </div>
                 </FormSection>
 

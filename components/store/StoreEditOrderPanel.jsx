@@ -12,6 +12,7 @@ import {
 import {
   buildOrderDetailsUpdatePayload,
   calculateEditOrderSubtotal,
+  orderHasManualTotal,
   orderToEditForm,
   orderToEditLineItems,
 } from '@/lib/storeOrderEdit';
@@ -36,7 +37,7 @@ export default function StoreEditOrderPanel({
 }) {
   const [form, setForm] = useState(() => orderToEditForm(order));
   const [lineItems, setLineItems] = useState(() => orderToEditLineItems(order));
-  const [useManualTotal, setUseManualTotal] = useState(false);
+  const [useManualTotal, setUseManualTotal] = useState(() => orderHasManualTotal(order));
   const [productSearch, setProductSearch] = useState('');
   const [productResults, setProductResults] = useState([]);
   const [searchingProducts, setSearchingProducts] = useState(false);
@@ -45,7 +46,7 @@ export default function StoreEditOrderPanel({
   useEffect(() => {
     setForm(orderToEditForm(order));
     setLineItems(orderToEditLineItems(order).length ? orderToEditLineItems(order) : [emptyLineItem()]);
-    setUseManualTotal(false);
+    setUseManualTotal(orderHasManualTotal(order));
     setProductSearch('');
     setProductResults([]);
   }, [order?._id]);
@@ -329,6 +330,18 @@ export default function StoreEditOrderPanel({
           <p className="mt-1 text-[11px] text-slate-500">
             Subtotal {currency}{subtotal.toFixed(2)}
             {!useManualTotal ? ' · auto-calculated' : ' · manual override'}
+            {useManualTotal ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setUseManualTotal(false);
+                  setForm((current) => ({ ...current, total: computedTotal }));
+                }}
+                className="ml-2 font-medium text-blue-600 underline"
+              >
+                Reset to auto
+              </button>
+            ) : null}
           </p>
         </div>
       </div>

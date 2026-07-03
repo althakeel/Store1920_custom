@@ -58,7 +58,7 @@ export async function GET() {
     ];
 
     const products = allProductIds.length
-      ? await Product.find({ _id: { $in: allProductIds } })
+      ? await Product.find({ _id: { $in: allProductIds }, published: { $ne: false } })
           .select('name nameAr slug price mrp AED images category inStock stockQuantity fastDelivery freeShippingEligible useProductsPath imageAspectRatio averageRating ratingCount')
           .lean()
       : [];

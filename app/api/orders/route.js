@@ -423,15 +423,7 @@ export async function POST(request) {
                 }
             }
 
-            if (
-                recoveryPriceByProduct?.has(String(item.id))
-                && !item.offerToken
-                && !item.freeGift?.campaignId
-                && !isBundleOrder
-            ) {
-                finalPrice = recoveryPriceByProduct.get(String(item.id));
-            }
-
+            // Base catalog pricing: bundle tier price or matched variant price.
             if (isBundleOrder) {
                 const bundleVariant = findBulkBundleVariant(product, item.variantOptions.bundleQty) || variantMatch;
                 if (bundleVariant?.price != null) {
@@ -439,6 +431,16 @@ export async function POST(request) {
                 }
             } else if (variantMatch?.price != null) {
                 finalPrice = Number(variantMatch.price);
+            }
+
+            // Private recovery-link offer price overrides catalog pricing (incl. bundles),
+            // so the recovered checkout matches the discounted total the customer was shown.
+            if (
+                recoveryPriceByProduct?.has(String(item.id))
+                && !item.offerToken
+                && !item.freeGift?.campaignId
+            ) {
+                finalPrice = recoveryPriceByProduct.get(String(item.id));
             }
             
             const storeId = product.storeId;

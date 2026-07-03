@@ -237,12 +237,12 @@ export async function GET() {
 
     const [sectionProducts, products, categories] = await Promise.all([
       validSectionProductIds.length
-        ? Product.find({ _id: { $in: validSectionProductIds } })
+        ? Product.find({ _id: { $in: validSectionProductIds }, published: { $ne: false } })
             .select('_id name slug images price AED')
             .lean()
         : Promise.resolve([]),
       validProductIds.length
-        ? Product.find({ _id: { $in: validProductIds } })
+        ? Product.find({ _id: { $in: validProductIds }, published: { $ne: false } })
             .select('_id name slug images price AED')
             .lean()
         : Promise.resolve([]),

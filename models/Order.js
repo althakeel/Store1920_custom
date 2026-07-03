@@ -115,6 +115,14 @@ const OrderSchema = new mongoose.Schema({
   storeCreatedByName: { type: String, default: null },
   paymentReferenceId: { type: String, default: null },
 
+  // Manual discount applied by store staff when creating an order
+  manualDiscount: {
+    type: { type: String, default: null },        // 'fixed' | 'percentage'
+    value: { type: Number, default: null },        // entered value (AED or %)
+    amount: { type: Number, default: null },        // resolved discount amount in currency
+    originalTotal: { type: Number, default: null }, // total before the manual discount
+  },
+
   communicationLog: [{
     channel: { type: String, default: 'system' },
     template: { type: String, default: '' },

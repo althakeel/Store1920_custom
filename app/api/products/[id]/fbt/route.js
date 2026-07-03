@@ -69,6 +69,7 @@ export async function GET(request, { params }) {
 
     const rawFbtProducts = await Product.find({
       _id: { $in: product.fbtProductIds },
+      published: { $ne: false },
     })
       .select('name nameAr price images slug hasVariants variants inStock stockQuantity')
       .lean();

@@ -6,6 +6,7 @@ import axios from 'axios';
 import Image from 'next/image';
 import { useDispatch } from 'react-redux';
 import { clearCart, setCartEntry } from '@/lib/features/cart/cartSlice';
+import { formatVariantOptionsLabel } from '@/lib/productVariantOptions';
 import Loading from '@/components/Loading';
 import { Gift, ImageIcon, ShoppingCart, Tag } from 'lucide-react';
 
@@ -64,6 +65,7 @@ export default function RecoverCartPage() {
           entry: {
             quantity: Math.max(1, Number(item.quantity || 1)),
             price: Number(item.offerUnitPrice || item.price || 0),
+            ...(item.variantOptions ? { variantOptions: item.variantOptions } : {}),
             recoveryToken,
           },
         }));
@@ -79,6 +81,7 @@ export default function RecoverCartPage() {
           cartState.cartItems[productId] = {
             quantity,
             price: Number(item.offerUnitPrice || item.price || 0),
+            ...(item.variantOptions ? { variantOptions: item.variantOptions } : {}),
             recoveryToken,
           };
           cartState.total += quantity;
@@ -172,6 +175,9 @@ export default function RecoverCartPage() {
 
                     <div className="min-w-0 flex-1">
                       <p className="line-clamp-2 font-semibold text-slate-900">{item.name || 'Product'}</p>
+                      {formatVariantOptionsLabel(item.variantOptions) ? (
+                        <p className="mt-0.5 text-xs text-slate-500">{formatVariantOptionsLabel(item.variantOptions)}</p>
+                      ) : null}
                       <p className="mt-1 text-sm text-slate-500">Qty {quantity}</p>
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         {hasDiscount ? (

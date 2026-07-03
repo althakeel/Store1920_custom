@@ -37,6 +37,8 @@ export default function StoreCreateOrderModal({ open, onClose, getToken, onCreat
   const [shippingSetting, setShippingSetting] = useState(null);
   const [notes, setNotes] = useState('');
   const [couponCode, setCouponCode] = useState('');
+  const [discountType, setDiscountType] = useState('fixed');
+  const [discountValue, setDiscountValue] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [invalidFieldIds, setInvalidFieldIds] = useState(new Set());
   const [validationMessage, setValidationMessage] = useState('');
@@ -50,6 +52,8 @@ export default function StoreCreateOrderModal({ open, onClose, getToken, onCreat
     setProductResults([]);
     setNotes('');
     setCouponCode('');
+    setDiscountType('fixed');
+    setDiscountValue('');
     setInvalidFieldIds(new Set());
     setValidationMessage('');
 
@@ -97,7 +101,16 @@ export default function StoreCreateOrderModal({ open, onClose, getToken, onCreat
     setShippingFee(Number(fee || 0));
   }, [shippingSetting, validLineItems, form.state, form.country, form.payment, subtotal]);
 
-  const orderTotal = subtotal + Number(shippingFee || 0);
+  const discountAmount = useMemo(() => {
+    const value = Math.max(0, Number(discountValue) || 0);
+    if (value <= 0) return 0;
+    const amount = discountType === 'percentage'
+      ? (subtotal * Math.min(value, 100)) / 100
+      : Math.min(value, subtotal);
+    return Math.round(amount * 100) / 100;
+  }, [discountType, discountValue, subtotal]);
+
+  const orderTotal = Math.max(0, subtotal - discountAmount + Number(shippingFee || 0));
 
   useEffect(() => {
     if (!open) return undefined;
@@ -226,6 +239,9 @@ export default function StoreCreateOrderModal({ open, onClose, getToken, onCreat
             : undefined,
           shippingFee,
           couponCode: couponCode.trim() || undefined,
+          discount: Number(discountValue) > 0
+            ? { type: discountType, value: Number(discountValue) }
+            : undefined,
           notes: notes.trim() || undefined,
         },
         { headers: { Authorization: `Bearer ${token}` } },
@@ -454,6 +470,31 @@ export default function StoreCreateOrderModal({ open, onClose, getToken, onCreat
                   />
                 </div>
                 <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-600">Discount (optional)</label>
+                  <div className="flex overflow-hidden rounded-lg border border-slate-200 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100">
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={discountValue}
+                      onChange={(e) => setDiscountValue(e.target.value)}
+                      placeholder="0"
+                      className="min-w-0 flex-1 px-3 py-2.5 text-sm outline-none"
+                    />
+                    <select
+                      value={discountType}
+                      onChange={(e) => setDiscountType(e.target.value)}
+                      className="border-l border-slate-200 bg-slate-50 px-2 text-sm text-slate-700 outline-none"
+                    >
+                      <option value="fixed">{currency}</option>
+                      <option value="percentage">%</option>
+                    </select>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {discountType === 'percentage' ? 'Percent off the products subtotal.' : 'Flat amount off the products subtotal.'}
+                  </p>
+                </div>
+                <div>
                   <label className="mb-1 block text-xs font-medium text-slate-600">Internal note (optional)</label>
                   <textarea
                     value={notes}
@@ -471,6 +512,12 @@ export default function StoreCreateOrderModal({ open, onClose, getToken, onCreat
                 <span>Subtotal</span>
                 <span>{currency} {subtotal.toLocaleString()}</span>
               </div>
+              {discountAmount > 0 ? (
+                <div className="mt-2 flex items-center justify-between text-sm text-emerald-600">
+                  <span>Discount{discountType === 'percentage' ? ` (${Number(discountValue) || 0}%)` : ''}</span>
+                  <span>- {currency} {discountAmount.toLocaleString()}</span>
+                </div>
+              ) : null}
               <div className="mt-2 flex items-center justify-between text-sm text-slate-600">
                 <span>Shipping</span>
                 <span>{currency} {Number(shippingFee || 0).toLocaleString()}</span>

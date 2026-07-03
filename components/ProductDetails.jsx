@@ -55,6 +55,10 @@ import {
   sanitizeSelectedOptions,
   sanitizeVariantOptionsForCart,
   variantOptionKeyInUse,
+  isMatrixVariant,
+  isMatrixVariantProduct,
+  getMatrixBundleTiers,
+  matchMatrixVariant,
 } from '@/lib/productVariantOptions';
 
 const PLACEHOLDER_IMAGE = 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png';
@@ -869,13 +873,27 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     [bulkVariants]
   );
   const isBulkBundleProduct = bulkBundleTiers.length > 0;
-  const isBundleTierQty = (qty) => isBulkBundleProduct && bulkBundleTiers.includes(Number(qty));
-  const isBundleModeActive = isBulkBundleProduct;
+  // Matrix products combine color/size variants with bundle tiers.
+  const isMatrixProduct = useMemo(() => isMatrixVariantProduct(variants), [variants]);
+  const matrixBundleTiers = useMemo(() => {
+    const all = getMatrixBundleTiers(variants);
+    const inStock = getMatrixBundleTiers(variants, { inStockOnly: true });
+    return inStock.length ? inStock : all;
+  }, [variants]);
+  const isBundleTierQty = (qty) =>
+    (isBulkBundleProduct && bulkBundleTiers.includes(Number(qty)))
+    || (isMatrixProduct && matrixBundleTiers.includes(Number(qty)));
+  const isBundleModeActive = isBulkBundleProduct || isMatrixProduct;
   const showBundleOptions = isBundleModeActive;
-  const variantOptionGroups = useMemo(
-    () => buildVariantOptionGroups(variants, { isBulkBundleVariant }),
-    [variants],
-  );
+  const variantOptionGroups = useMemo(() => {
+    const groups = buildVariantOptionGroups(variants, { isBulkBundleVariant });
+    if (!isMatrixProduct) return groups;
+    // In matrix mode the bundle tier is chosen separately, so the "title" and
+    // "tag" columns (which hold bundle labels like "Buy 1" / "MOST_POPULAR")
+    // must never appear as variant selectors. Keep the real dimensions only.
+    const realGroups = groups.filter((g) => g.key !== 'tag' && g.key !== 'title');
+    return realGroups.length ? realGroups : groups.filter((g) => g.key !== 'tag');
+  }, [variants, isMatrixProduct]);
   const showVariantPicker = !isBulkBundleProduct && variantOptionGroups.length > 0;
   const productImagesArray = useMemo(() => normalizeImages(product.images), [product.images]);
   const [selectedOptions, setSelectedOptions] = useState(() => {
@@ -889,13 +907,21 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     return sanitizeSelectedOptions(variants, initial, { isBulkBundleVariant });
   });
   const [selectedBundleQty, setSelectedBundleQty] = useState(
-    isBulkBundleProduct ? bulkBundleTiers[0] : (bulkVariants.length ? Number(bulkVariants[0].options.bundleQty) : null)
+    isBulkBundleProduct
+      ? bulkBundleTiers[0]
+      : (isMatrixProduct
+        ? (matrixBundleTiers[0] || null)
+        : (bulkVariants.length ? Number(bulkVariants[0].options.bundleQty) : null))
   );
   const activeBundleTier = useMemo(() => {
-    if (!isBulkBundleProduct) return null;
+    if (!isBulkBundleProduct && !isMatrixProduct) return null;
+    if (isMatrixProduct) {
+      // Matrix keeps the stepper at 1; the tier is chosen via the bundle selector.
+      return Number(selectedBundleQty) || matrixBundleTiers[0] || 1;
+    }
     if (isBundleTierQty(quantity)) return Number(quantity);
     return Number(selectedBundleQty) || bulkBundleTiers[0] || 1;
-  }, [isBulkBundleProduct, quantity, selectedBundleQty, bulkBundleTiers]);
+  }, [isBulkBundleProduct, isMatrixProduct, quantity, selectedBundleQty, bulkBundleTiers, matrixBundleTiers]);
   const handleSelectVariantOption = useCallback((key, value) => {
     setSelectedOptions((prev) => ({ ...prev, [key]: value }));
   }, []);
@@ -906,10 +932,14 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
   const selectBulkBundleTier = useCallback((tier) => {
     const qty = Number(tier) || 1;
-    if (!bulkBundleTiers.includes(qty)) return;
+    const tiers = isMatrixProduct ? matrixBundleTiers : bulkBundleTiers;
+    if (!tiers.includes(qty)) return;
     setSelectedBundleQty(qty);
-    setQuantity(qty);
-  }, [bulkBundleTiers]);
+    if (!isMatrixProduct) {
+      // Pure bundles use quantity as the tier; matrix keeps quantity at 1.
+      setQuantity(qty);
+    }
+  }, [bulkBundleTiers, matrixBundleTiers, isMatrixProduct]);
 
   const handleBundleTierSelect = useCallback((tier) => {
     selectBulkBundleTier(tier);
@@ -931,7 +961,9 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
   const selectedVariant = (isBulkBundleProduct
     ? bulkVariants.find((v) => Number(v.options?.bundleQty) === Number(activeBundleTier))
-    : findVariantBySelectedOptions(variants, selectedOptions, { isBulkBundleVariant })
+    : (isMatrixProduct
+      ? matchMatrixVariant(variants, selectedOptions, activeBundleTier)
+      : findVariantBySelectedOptions(variants, selectedOptions, { isBulkBundleVariant }))
   ) || null;
 
   const variantMediaIndex = useMemo(() => {
@@ -976,6 +1008,14 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   }
   
   const availableStock = useMemo(() => {
+    if (isMatrixProduct) {
+      const match = matchMatrixVariant(variants, selectedOptions, activeBundleTier);
+      if (typeof match?.stock === 'number') {
+        return Math.max(0, match.stock);
+      }
+      return 0;
+    }
+
     if (isBundleTierQty(quantity)) {
       const bundleVariant = bulkVariants.find((v) => Number(v.options?.bundleQty) === Number(quantity));
       if (typeof bundleVariant?.stock === 'number') {
@@ -997,6 +1037,8 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     return product.inStock === false ? 0 : 999;
   }, [
     isBulkBundleProduct,
+    isMatrixProduct,
+    activeBundleTier,
     quantity,
     bulkBundleTiers,
     bulkVariants,
@@ -1009,6 +1051,37 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
   const upsertProductCartLines = useCallback((requestedQty) => {
     const normalizedQty = Math.max(1, Number(requestedQty) || 1);
+
+    if (isMatrixProduct) {
+      const tier = matrixBundleTiers.includes(Number(selectedBundleQty))
+        ? Number(selectedBundleQty)
+        : (matrixBundleTiers.includes(normalizedQty) ? normalizedQty : matrixBundleTiers[0]);
+      const variant = matchMatrixVariant(variants, selectedOptions, tier);
+      const safeMax = Math.max(0, Number(variant?.stock) || 0);
+      if (!variant || safeMax <= 0) return 0;
+
+      const offerFields = product.specialOffer?.offerToken
+        ? {
+            offerToken: product.specialOffer.offerToken,
+            discountPercent: product.specialOffer.discountPercent,
+          }
+        : {};
+
+      dispatch(setCartEntry({
+        productId: cartProductId,
+        entry: {
+          quantity: 1,
+          price: Number(variant.price),
+          productName: product.name || product.title || 'Product',
+          variantOptions: {
+            ...cartVariantOptions,
+            bundleQty: tier,
+          },
+          ...offerFields,
+        },
+      }));
+      return tier;
+    }
 
     if (isBulkBundleProduct) {
       const tier = bulkBundleTiers.includes(normalizedQty)
@@ -1064,6 +1137,10 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     return targetQty;
   }, [
     isBulkBundleProduct,
+    isMatrixProduct,
+    matrixBundleTiers,
+    variants,
+    selectedOptions,
     bulkBundleTiers,
     maxOrderQty,
     selectedBundleQty,
@@ -1109,7 +1186,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const convertedEffPrice = convertPrice(effPrice);
   const convertedEffAED = convertPrice(effAED);
   const savingsAmount = Math.max(0, Number(convertedEffAED || 0) - Number(convertedEffPrice || 0));
-  const pricingQuantity = isBulkBundleProduct ? 1 : Math.max(1, Number(quantity) || 1);
+  const pricingQuantity = (isBulkBundleProduct || isMatrixProduct) ? 1 : Math.max(1, Number(quantity) || 1);
   const convertedLineTotal = Number(convertedEffPrice || 0) * pricingQuantity;
   const convertedLineRegularTotal = Number(convertedEffAED || 0) * pricingQuantity;
   const buyBoxSalePrice = pricingQuantity > 1 ? convertedLineTotal : convertedEffPrice;
@@ -1136,7 +1213,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   );
 
   const renderBundleOptions = () => {
-    if (bulkVariants.length === 0) return null;
+    if (bulkVariants.length === 0 && !isMatrixProduct) return null;
 
     const getBundleTagLabel = (tag) => {
       if (tag === 'MOST_POPULAR') return t('product.mostPopular');
@@ -1144,14 +1221,22 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       return '';
     };
 
+    // In matrix mode, each tier's price/stock come from the variant matching
+    // the currently selected color/size + that tier.
+    const bundleRowVariants = isMatrixProduct
+      ? matrixBundleTiers
+          .map((qty) => matchMatrixVariant(variants, selectedOptions, qty)
+            || { options: { bundleQty: qty }, price: product.price, stock: 0 })
+      : bulkVariants
+          .slice()
+          .filter((v) => bulkBundleTiers.includes(Number(v.options?.bundleQty)));
+
     return (
       <div className="space-y-2">
         <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-700">
           {t('product.bundleAndSave')}
         </p>
-        {bulkVariants
-          .slice()
-          .filter((v) => bulkBundleTiers.includes(Number(v.options?.bundleQty)))
+        {bundleRowVariants
           .sort((a, b) => Number(a.options.bundleQty) - Number(b.options.bundleQty))
           .map((v, idx) => {
             const qty = Number(v.options.bundleQty) || 1;
@@ -1161,7 +1246,9 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
             const tag = v.tag || v.options?.tag || '';
             const tagLabel = getBundleTagLabel(tag);
             const bundleImage = getBundleOptionImage(v);
-            const label = v.options?.title?.trim() || (qty === 1 ? t('product.buy1') : t('product.bundleOf', { qty }));
+            const label = isMatrixProduct
+              ? (qty === 1 ? t('product.buy1') : t('product.bundleOf', { qty }))
+              : (v.options?.title?.trim() || (qty === 1 ? t('product.buy1') : t('product.bundleOf', { qty })));
             const rowOutOfStock = Number(v.stock) <= 0;
 
             return (
@@ -2013,7 +2100,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     if (isOrderingNow || !isSelectionInStock || maxOrderQty <= 0) return;
     setIsOrderingNow(true);
     try {
-      const qtyToAdd = isBulkBundleProduct ? (activeBundleTier ?? quantity) : quantity;
+      const qtyToAdd = (isBulkBundleProduct || isMatrixProduct) ? (activeBundleTier ?? quantity) : quantity;
       upsertProductCartLines(qtyToAdd);
       router.push('/checkout');
     } catch (error) {
@@ -2026,12 +2113,14 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const handleAddToCart = async () => {
     if (!isSelectionInStock || maxOrderQty <= 0) return;
 
-    const qtyToAdd = isBulkBundleProduct ? (activeBundleTier ?? quantity) : quantity;
+    const qtyToAdd = (isBulkBundleProduct || isMatrixProduct) ? (activeBundleTier ?? quantity) : quantity;
     upsertProductCartLines(qtyToAdd);
-    const gtmQty = isBulkBundleProduct ? 1 : Math.min(Math.max(1, Number(quantity) || 1), maxOrderQty);
+    const gtmQty = (isBulkBundleProduct || isMatrixProduct) ? 1 : Math.min(Math.max(1, Number(quantity) || 1), maxOrderQty);
     const gtmLinePrice = isBulkBundleProduct
       ? Number(findBulkBundleVariant(product, activeBundleTier)?.price ?? effPrice ?? product.price ?? 0)
-      : Number(effPrice || product.price || 0);
+      : (isMatrixProduct
+        ? Number(matchMatrixVariant(variants, selectedOptions, activeBundleTier)?.price ?? effPrice ?? product.price ?? 0)
+        : Number(effPrice || product.price || 0));
 
     trackProductAddToCart({
       productId: product._id || product.id,
@@ -2082,12 +2171,18 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   useEffect(() => {
     if (!cartMatchesSelection) return;
     if (isCartBundleLine && cartBundleTier) {
-      setQuantity(cartBundleTier);
-      setSelectedBundleQty(cartBundleTier);
+      if (isMatrixProduct) {
+        // Matrix keeps the stepper at 1; the tier lives in selectedBundleQty.
+        setSelectedBundleQty(cartBundleTier);
+        setQuantity(1);
+      } else {
+        setQuantity(cartBundleTier);
+        setSelectedBundleQty(cartBundleTier);
+      }
       return;
     }
     setQuantity(cartQty);
-  }, [cartMatchesSelection, product?._id, cartQty, isCartBundleLine, cartBundleTier]);
+  }, [cartMatchesSelection, product?._id, cartQty, isCartBundleLine, cartBundleTier, isMatrixProduct]);
 
   // Toggle FBT product selection
   const toggleFbtProduct = (productId) => {
@@ -2596,13 +2691,26 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 ) : null}
               </div>
 
+              {showVariantPicker ? (
+                <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                  <ProductVariantPicker
+                    groups={variantOptionGroups}
+                    variants={variants}
+                    selectedOptions={selectedOptions}
+                    onSelect={handleSelectVariantOption}
+                    productImages={productImagesArray}
+                    isBulkBundleVariant={isBulkBundleVariant}
+                  />
+                </div>
+              ) : null}
+
               {showBundleOptions ? (
                 <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
                   {renderBundleOptions()}
                 </div>
               ) : null}
 
-              {isSelectionInStock && !isBulkBundleProduct ? (
+              {isSelectionInStock && !isBulkBundleProduct && !isMatrixProduct ? (
                 <ProductQuantitySelector
                   quantity={quantity}
                   maxOrderQty={maxOrderQty}
@@ -2658,19 +2766,6 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   </div>
                 </div>
               </div>
-
-              {showVariantPicker ? (
-                <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                  <ProductVariantPicker
-                    groups={variantOptionGroups}
-                    variants={variants}
-                    selectedOptions={selectedOptions}
-                    onSelect={handleSelectVariantOption}
-                    productImages={productImagesArray}
-                    isBulkBundleVariant={isBulkBundleVariant}
-                  />
-                </div>
-              ) : null}
 
               <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
                 <ProductDescription
@@ -3085,7 +3180,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
             </div>
 
             {/* Quantity */}
-            {isSelectionInStock && !cartMatchesSelection ? (
+            {isSelectionInStock && !cartMatchesSelection && !isMatrixProduct ? (
               <ProductQuantitySelector
                 quantity={quantity}
                 maxOrderQty={maxOrderQty}
