@@ -34,6 +34,16 @@ const VARIANT_MATRIX_SELECTION_FIELDS = ['title', 'optionLabel', 'option', 'colo
 const getVariantMatrixKey = (options = {}) =>
     VARIANT_MATRIX_SELECTION_FIELDS.map((field) => `${field}:${String(options?.[field] || '').trim()}`).join('|');
 const buildMatrixCellKey = (options = {}, qty) => `${getVariantMatrixKey(options)}__${Number(qty) || 0}`;
+// Pick the first usable numeric value, skipping undefined/null/empty-string so a
+// blank matrix cell falls back to the variant price, then the shared bundle-row price.
+const pickMatrixNumber = (...vals) => {
+    for (const val of vals) {
+        if (val === undefined || val === null || val === '') continue;
+        const num = Number(val);
+        if (Number.isFinite(num)) return num;
+    }
+    return 0;
+};
 
 const toArabicPriceDisplay = (amount) => {
     const numeric = Number(amount);
@@ -1678,10 +1688,13 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                     delete baseOpts.bundleQty
                     bundleRows.forEach((b) => {
                         const cell = matrixCells[buildMatrixCellKey(v.options, b.qty)] || {}
-                        const price = Number(cell.price ?? v.price ?? b.price)
+                        // Blank matrix cells fall back to the variant price, then the
+                        // shared bundle-row price, so the seller doesn't have to fill
+                        // every cell for the bundle price to apply.
+                        const price = pickMatrixNumber(cell.price, v.price, b.price)
                         if (!(price > 0)) return
-                        const aed = Number(cell.AED ?? v.AED ?? b.AED ?? price) || price
-                        const stock = Number(cell.stock ?? v.stock ?? b.stock ?? 0) || 0
+                        const aed = pickMatrixNumber(cell.AED, v.AED, b.AED, price) || price
+                        const stock = pickMatrixNumber(cell.stock, v.stock, b.stock, 0)
                         expanded.push({
                             sku: v.sku || '',
                             options: resolveVariantImageOptions({
@@ -2922,22 +2935,31 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                       return (
                         <div className="rounded-xl border border-violet-200 bg-violet-50/30 overflow-hidden">
                           <div className="px-4 py-3 border-b border-violet-100 bg-white/80">
-                            <h4 className="text-sm font-semibold text-slate-800">Variant + bundle pricing</h4>
-                            <p className="text-xs text-slate-500 mt-0.5">Set sale price, regular price, and stock for each variant × bundle combination. A combination with sale price 0 will not be saved.</p>
+                            <h4 className="text-sm font-semibold text-slate-800">Bundle pricing per variant</h4>
+                            <p className="text-xs text-slate-500 mt-0.5">Each variant has its own bundle options below. Leave a field blank to use the shared <strong>Bundle pricing row</strong> price above; fill it to override that variant. The greyed value shows what will be used.</p>
                           </div>
                           <div className="p-4 space-y-3">
                             {baseRows.map((v, vi) => (
                               <div key={vi} className="rounded-lg border border-slate-200 bg-white overflow-hidden">
                                 <div className="px-3 py-2 border-b border-slate-100 bg-slate-50 text-sm font-semibold text-slate-700">{getVariantCardLabel(v, vi)}</div>
                                 <div className="p-3 space-y-2">
+                                  <div className="grid grid-cols-[minmax(90px,1fr)_100px_100px_84px] gap-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                                    <div>Bundle</div>
+                                    <div>Sale (AED)</div>
+                                    <div>Regular (AED)</div>
+                                    <div>Stock</div>
+                                  </div>
                                   {tiers.map((b, bi) => {
                                     const cell = matrixCells[buildMatrixCellKey(v.options, b.qty)] || {}
+                                    const fallbackPrice = pickMatrixNumber(v.price, b.price)
+                                    const fallbackAED = pickMatrixNumber(v.AED, b.AED, fallbackPrice)
+                                    const fallbackStock = pickMatrixNumber(v.stock, b.stock)
                                     return (
                                       <div key={bi} className="grid grid-cols-[minmax(90px,1fr)_100px_100px_84px] gap-2 items-center">
                                         <div className="text-xs font-medium text-slate-600 truncate">{b.title || `Bundle of ${b.qty}`} <span className="text-slate-400">(×{b.qty})</span></div>
-                                        <input type="number" step="0.01" placeholder="Sale" className="border border-slate-200 rounded-md px-2 py-1.5 text-sm bg-white" value={cell.price ?? ''} onChange={(e) => setCell(v.options, b.qty, 'price', e.target.value)} />
-                                        <input type="number" step="0.01" placeholder="Regular" className="border border-slate-200 rounded-md px-2 py-1.5 text-sm bg-white" value={cell.AED ?? ''} onChange={(e) => setCell(v.options, b.qty, 'AED', e.target.value)} />
-                                        <input type="number" placeholder="Stock" className="border border-slate-200 rounded-md px-2 py-1.5 text-sm bg-white" value={cell.stock ?? ''} onChange={(e) => setCell(v.options, b.qty, 'stock', Number(e.target.value))} />
+                                        <input type="number" step="0.01" placeholder={fallbackPrice > 0 ? String(fallbackPrice) : 'Sale'} className="border border-slate-200 rounded-md px-2 py-1.5 text-sm bg-white" value={cell.price ?? ''} onChange={(e) => setCell(v.options, b.qty, 'price', e.target.value)} />
+                                        <input type="number" step="0.01" placeholder={fallbackAED > 0 ? String(fallbackAED) : 'Regular'} className="border border-slate-200 rounded-md px-2 py-1.5 text-sm bg-white" value={cell.AED ?? ''} onChange={(e) => setCell(v.options, b.qty, 'AED', e.target.value)} />
+                                        <input type="number" placeholder={fallbackStock > 0 ? String(fallbackStock) : 'Stock'} className="border border-slate-200 rounded-md px-2 py-1.5 text-sm bg-white" value={cell.stock ?? ''} onChange={(e) => setCell(v.options, b.qty, 'stock', e.target.value === '' ? '' : Number(e.target.value))} />
                                       </div>
                                     )
                                   })}
