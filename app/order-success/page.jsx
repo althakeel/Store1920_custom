@@ -96,6 +96,11 @@ function OrderSuccessContent() {
           const orderIsPaid = loadedOrder.isPaid === true
             || String(loadedOrder.paymentStatus || '').toLowerCase() === 'paid'
             || status === 'ORDER_PLACED';
+          // Prepaid upsell: the base order is COD (often already ORDER_PLACED),
+          // so verify strictly by actual payment state instead of order status.
+          const isPrepaidReturn = params.get('prepaid') === '1';
+          const orderTrulyPaid = loadedOrder.isPaid === true
+            || String(loadedOrder.paymentStatus || '').toLowerCase() === 'paid';
 
           if (params.get('tabby') === '1' && !orderIsPaid) {
             fetch('/api/orders/verify-tabby', {
@@ -122,7 +127,7 @@ function OrderSuccessContent() {
               .catch(() => {});
           }
 
-          if (params.get('stripe') === '1' && !orderIsPaid) {
+          if (params.get('stripe') === '1' && (isPrepaidReturn ? !orderTrulyPaid : !orderIsPaid)) {
             fetch('/api/orders/verify-stripe', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },

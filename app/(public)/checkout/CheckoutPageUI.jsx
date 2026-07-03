@@ -2019,102 +2019,30 @@ export default function CheckoutPage() {
 
   const handlePayNowForExistingOrder = async () => {
     if (!upsellOrderId) return;
-    
-    // Check if Razorpay is loaded
-    if (!window.Razorpay) {
-      alert('Payment gateway is loading... Please try again in a moment.');
-      return;
-    }
-    
+
     try {
       setPayingNow(true);
-      // Fetch order to get accurate total
-      const orderRes = await fetch(`/api/orders?orderId=${upsellOrderId}`);
-      const orderData = await orderRes.json();
-      const order = orderData.order;
-      if (!order) {
-        setPayingNow(false);
-        setShowPrepaidModal(false);
-        router.push(`/order-success?orderId=${upsellOrderId}`);
-        return;
-      }
-      const discountedAmount = Math.round((order.total || 0) * 0.95);
-
-      // Create Razorpay order
-      const rpRes = await fetch('/api/razorpay/order', {
+      // Create a Stripe Checkout session for the existing COD order (5% prepaid
+      // discount is applied only after Stripe confirms payment).
+      const res = await fetch('/api/orders/prepaid-upsell', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: discountedAmount, currency: 'AED', receipt: `order_${upsellOrderId}` })
+        body: JSON.stringify({ orderId: upsellOrderId }),
       });
-      const rpData = await rpRes.json();
-      if (!rpRes.ok || !rpData.success || !rpData.orderId) {
-        setPayingNow(false);
-        alert('Failed to create payment. Redirecting to order page...');
-        setTimeout(() => {
-          setShowPrepaidModal(false);
-          router.push(`/order-success?orderId=${upsellOrderId}`);
-        }, 1500);
+      const data = await res.json().catch(() => ({}));
+
+      if (res.ok && data?.url) {
+        // Redirect to Stripe-hosted card checkout.
+        window.location.href = data.url;
         return;
       }
 
-      const options = {
-        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
-        order_id: rpData.orderId,
-        amount: Math.round(discountedAmount * 100),
-        currency: 'AED',
-        name: 'store1920',
-        description: 'Prepaid Payment (5% OFF)',
-        image: STORE1920_LOGO_PATH,
-        handler: async function (response) {
-          try {
-            const verifyRes = await fetch('/api/razorpay/verify', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_order_id: response.razorpay_order_id,
-                razorpay_signature: response.razorpay_signature,
-                paymentPayload: { existingOrderId: upsellOrderId }
-              })
-            });
-            const verifyData = await verifyRes.json();
-            setPayingNow(false);
-            setNavigatingToSuccess(true);
-            setTimeout(() => {
-              setShowPrepaidModal(false);
-              router.push(`/order-success?orderId=${upsellOrderId}`);
-            }, 300);
-          } catch (err) {
-            setPayingNow(false);
-            setNavigatingToSuccess(true);
-            setTimeout(() => {
-              setShowPrepaidModal(false);
-              router.push(`/order-success?orderId=${upsellOrderId}`);
-            }, 300);
-          }
-        },
-        prefill: {
-          name: user?.displayName || form.name || '',
-          email: user?.email || form.email || '',
-          contact: form.phone || '',
-        },
-        theme: { color: '#16a34a' },
-        modal: {
-          ondismiss: function () {
-            // User cancelled payment - continue with COD
-            setPayingNow(false);
-            setNavigatingToSuccess(true);
-            setTimeout(() => {
-              setShowPrepaidModal(false);
-              router.push(`/order-success?orderId=${upsellOrderId}`);
-            }, 300);
-          }
-        }
-      };
-
-      const rzp = new window.Razorpay(options);
-      setPayingNow(false); // Enable Pay Now button while Razorpay is open
-      rzp.open();
+      setPayingNow(false);
+      alert('Failed to create payment. Redirecting to order page...');
+      setTimeout(() => {
+        setShowPrepaidModal(false);
+        router.push(`/order-success?orderId=${upsellOrderId}`);
+      }, 1500);
     } catch (err) {
       console.error('Payment error:', err);
       setPayingNow(false);

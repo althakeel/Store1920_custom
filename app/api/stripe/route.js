@@ -9,6 +9,7 @@ import { sendMetaPurchaseFromOrder } from '@/lib/metaConversionsApi';
 import { finalizeAbandonedCartFromStripeSession } from '@/lib/abandonedCartConversion';
 import { handlePaymentCancellationRecovery } from '@/lib/paymentCancellationRecovery';
 import { markOrderPaymentSucceeded } from '@/lib/deferredOrderFlow';
+import { finalizePrepaidUpsellPayment } from '@/lib/stripeOrderPayment';
 
 export async function POST(request){
     try {
@@ -91,7 +92,11 @@ export async function POST(request){
 
                 if (session.payment_status === 'paid') {
                     const { orderIds, userId } = extractMeta(session.metadata)
-                    if (orderIds.length) await markOrdersPaid(orderIds, userId)
+                    if (session.metadata?.prepaidUpsell === '1' && orderIds.length) {
+                        await finalizePrepaidUpsellPayment(orderIds[0], session, { source: 'stripe_webhook_prepaid' })
+                    } else if (orderIds.length) {
+                        await markOrdersPaid(orderIds, userId)
+                    }
                 }
                 break
             }
@@ -104,7 +109,11 @@ export async function POST(request){
                 if (recoveredCart) break
 
                 const { orderIds, userId } = extractMeta(session.metadata)
-                if (orderIds.length) await markOrdersPaid(orderIds, userId)
+                if (session.metadata?.prepaidUpsell === '1' && orderIds.length) {
+                    await finalizePrepaidUpsellPayment(orderIds[0], session, { source: 'stripe_webhook_prepaid' })
+                } else if (orderIds.length) {
+                    await markOrdersPaid(orderIds, userId)
+                }
                 break
             }
 

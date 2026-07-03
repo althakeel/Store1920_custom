@@ -98,14 +98,27 @@ function buildPageCopy() {
         ],
       },
       {
-        title: '4. Return Requirements',
+        title: '4. Orders Above AED 2,000',
+        paragraphs: [
+          'Orders with a total value above AED 2,000 are not eligible for return. No return option is available for such orders, as long as subject to company policy.',
+        ],
+      },
+      {
+        title: '5. Return Requirements',
         bullets: [
           'A receipt or proof of purchase is required to complete your return.',
           'Please do not send your purchase back to the manufacturer.',
         ],
       },
       {
-        title: '5. Partial Refund Cases (if applicable)',
+        title: '6. Photo or Video Proof & Verification',
+        paragraphs: [
+          'For any return or replacement request, a photo or video of the product must be submitted together with your request.',
+          'Returns and replacements will only be processed after the original condition of the item has been verified by our management.',
+        ],
+      },
+      {
+        title: '7. Partial Refund Cases (if applicable)',
         paragraphs: ['Only partial refunds may be granted in certain situations, including:'],
         bullets: [
           'Book with obvious signs of use',
@@ -114,7 +127,7 @@ function buildPageCopy() {
         ],
       },
       {
-        title: '6. Refunds (if applicable)',
+        title: '8. Refunds (if applicable)',
         paragraphs: [
           'Once your return is received and inspected, we will notify you by email about approval or rejection of your refund.',
           'If approved, your refund will be processed and credited to your original payment method within a certain number of days.',
@@ -122,7 +135,7 @@ function buildPageCopy() {
         ],
       },
       {
-        title: '7. Late or Missing Refunds',
+        title: '9. Late or Missing Refunds',
         paragraphs: ['If you still have not received your refund, contact our support team:', supportLineEn],
         bullets: [
           'Check your bank account again.',
@@ -131,19 +144,19 @@ function buildPageCopy() {
         ],
       },
       {
-        title: '8. Sale Items',
+        title: '10. Sale Items',
         paragraphs: ['Only regular-priced items may be refunded. Sale items are non-refundable.'],
       },
       {
-        title: '9. Exchanges',
+        title: '11. Exchanges',
         paragraphs: ['We currently do not offer exchanges.'],
       },
       {
-        title: '10. Gifts',
+        title: '12. Gifts',
         paragraphs: ['We currently do not offer refunds if your item was a gift.'],
       },
       {
-        title: '11. Shipping for Returns',
+        title: '13. Shipping for Returns',
         paragraphs: [
           `To return your product, submit a Return Request from My Orders or contact customer service at ${STORE1920_SUPPORT_EMAIL}.`,
           'You are responsible for paying return shipping costs. Shipping costs are non-refundable. If a refund is issued, return shipping cost will be deducted from your refund.',
@@ -194,14 +207,27 @@ function buildPageCopy() {
         ],
       },
       {
-        title: '4. متطلبات الإرجاع',
+        title: '4. الطلبات التي تتجاوز 2000 درهم',
+        paragraphs: [
+          'الطلبات التي تتجاوز قيمتها الإجمالية 2000 درهم إماراتي غير مؤهلة للإرجاع. لا يتوفر خيار الإرجاع لهذه الطلبات، وذلك وفقًا لسياسة الشركة.',
+        ],
+      },
+      {
+        title: '5. متطلبات الإرجاع',
         bullets: [
           'مطلوب إيصال أو إثبات شراء لإتمام الإرجاع.',
           'يرجى عدم إرسال مشترياتك مباشرة إلى الشركة المصنعة.',
         ],
       },
       {
-        title: '5. حالات الاسترداد الجزئي (إن وجدت)',
+        title: '6. إرفاق صورة أو فيديو والتحقق',
+        paragraphs: [
+          'لأي طلب إرجاع أو استبدال، يجب إرفاق صورة أو فيديو للمنتج مع طلبك.',
+          'لن تتم معالجة عمليات الإرجاع والاستبدال إلا بعد التحقق من الحالة الأصلية للمنتج من قبل إدارتنا.',
+        ],
+      },
+      {
+        title: '7. حالات الاسترداد الجزئي (إن وجدت)',
         paragraphs: ['قد يُمنح استرداد جزئي فقط في حالات معينة، بما في ذلك:'],
         bullets: [
           'كتاب بعلامات استخدام واضحة',
@@ -210,7 +236,7 @@ function buildPageCopy() {
         ],
       },
       {
-        title: '6. الاسترداد (إن وجد)',
+        title: '8. الاسترداد (إن وجد)',
         paragraphs: [
           'بمجرد استلام مرتجعك وفحصه، سنخطرك عبر البريد الإلكتروني بالموافقة على الاسترداد أو رفضه.',
           'إذا تمت الموافقة، سيتم معالجة الاسترداد وإضافته إلى طريقة الدفع الأصلية خلال عدد معين من الأيام.',
@@ -218,7 +244,7 @@ function buildPageCopy() {
         ],
       },
       {
-        title: '7. تأخر الاسترداد أو فقده',
+        title: '9. تأخر الاسترداد أو فقده',
         paragraphs: ['إذا لم تستلم الاسترداد بعد، تواصل مع فريق الدعم:', supportLineAr],
         bullets: [
           'تحقق من حسابك البنكي مرة أخرى.',
@@ -227,19 +253,19 @@ function buildPageCopy() {
         ],
       },
       {
-        title: '8. منتجات التخفيضات',
+        title: '10. منتجات التخفيضات',
         paragraphs: ['يمكن استرداد المنتجات بسعرها العادي فقط. منتجات التخفيضات غير قابلة للاسترداد.'],
       },
       {
-        title: '9. الاستبدال',
+        title: '11. الاستبدال',
         paragraphs: ['لا نقدم حاليًا خدمة الاستبدال.'],
       },
       {
-        title: '10. الهدايا',
+        title: '12. الهدايا',
         paragraphs: ['لا نقدم حاليًا استردادًا إذا كان المنتج هدية.'],
       },
       {
-        title: '11. شحن المرتجعات',
+        title: '13. شحن المرتجعات',
         paragraphs: [
           `لإرجاع منتجك، قدّم طلب إرجاع من صفحة طلباتي أو تواصل مع خدمة العملاء عبر ${STORE1920_SUPPORT_EMAIL}.`,
           'أنت مسؤول عن دفع تكاليف شحن الإرجاع. تكاليف الشحن غير قابلة للاسترداد. إذا تم إصدار استرداد، سيتم خصم تكلفة شحن الإرجاع من مبلغ الاسترداد.',
