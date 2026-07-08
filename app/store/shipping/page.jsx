@@ -1,11 +1,11 @@
 'use client'
 
 export const dynamic = 'force-dynamic'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 
 import axios from 'axios'
 import toast from 'react-hot-toast'
-import { SaveIcon, TruckIcon, PackageIcon, DollarSignIcon, SearchIcon, XIcon, PlusIcon, Trash2Icon } from 'lucide-react'
+import { SaveIcon, TruckIcon, PackageIcon, SearchIcon, XIcon, PlusIcon, Trash2Icon, ChevronDown } from 'lucide-react'
 import { useAuth } from '@/lib/useAuth'
 import { UAE_EMIRATES } from '@/lib/uaeEmirateAreas'
 import {
@@ -17,6 +17,109 @@ import {
   upsertExpressShippingOption,
 } from '@/lib/shippingOptions'
 
+const SHIPPING_SECTIONS_STORAGE_KEY = 'store1920-shipping-sections'
+const SHIPPING_OPTIONS_STORAGE_KEY = 'store1920-shipping-delivery-options'
+
+function parseSettingNumber(value, fallback = 0) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function parseOptionalFeeInput(value) {
+  if (value === '' || value === null || value === undefined) return ''
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : ''
+}
+
+function mapSettingToForm(setting) {
+  const shippingOptions = resolveShippingOptions(setting).map((option) => ({
+    ...option,
+    maxItemFee: option.maxItemFee == null ? '' : option.maxItemFee,
+  }))
+
+  return {
+    enabled: Boolean(setting.enabled),
+    shippingOptions: shippingOptions.length
+      ? shippingOptions
+      : [createEmptyShippingOption({ isDefault: true })],
+    freeShippingMin: parseSettingNumber(setting.freeShippingMin, 100),
+    enableProductSpecificFreeShipping: Boolean(setting.enableProductSpecificFreeShipping),
+    localDeliveryFee: setting.localDeliveryFee != null && setting.localDeliveryFee !== ''
+      ? parseSettingNumber(setting.localDeliveryFee, '')
+      : '',
+    regionalDeliveryFee: setting.regionalDeliveryFee != null && setting.regionalDeliveryFee !== ''
+      ? parseSettingNumber(setting.regionalDeliveryFee, '')
+      : '',
+    stateCharges: Array.isArray(setting.stateCharges)
+      ? setting.stateCharges.map((entry) => ({
+          state: String(entry?.state || '').trim(),
+          fee: parseSettingNumber(entry?.fee, 0),
+        })).filter((entry) => entry.state)
+      : [],
+    enableCOD: Boolean(setting.enableCOD),
+    codFee: parseSettingNumber(setting.codFee, 0),
+    maxCODAmount: parseSettingNumber(setting.maxCODAmount, 0),
+    maxCardAmount: parseSettingNumber(setting.maxCardAmount, 0),
+    maxTabbyAmount: parseSettingNumber(setting.maxTabbyAmount, 0),
+    maxTamaraAmount: parseSettingNumber(setting.maxTamaraAmount, 0),
+  }
+}
+
+function readStoredOpenState(storageKey) {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = window.localStorage.getItem(storageKey)
+    return raw ? JSON.parse(raw) : {}
+  } catch {
+    return {}
+  }
+}
+
+function persistOpenState(storageKey, value) {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(value))
+  } catch {
+    // ignore
+  }
+}
+
+function ShippingSection({ title, icon: Icon, iconLabel, description, isOpen, onToggle, children }) {
+  return (
+    <div className='overflow-hidden rounded-xl border border-slate-200 bg-white'>
+      <button
+        type='button'
+        onClick={onToggle}
+        className='flex w-full items-start justify-between gap-3 p-5 text-left transition hover:bg-slate-50'
+      >
+        <div className='min-w-0'>
+          <h2 className='flex items-center gap-2 text-xl font-semibold text-slate-800'>
+            {iconLabel ? (
+              <span className='inline-flex h-5 shrink-0 items-center rounded bg-slate-100 px-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-700'>
+                {iconLabel}
+              </span>
+            ) : Icon ? (
+              <Icon size={20} className='shrink-0 text-slate-700' />
+            ) : null}
+            {title}
+          </h2>
+          {description && !isOpen ? (
+            <p className='mt-1 text-sm text-slate-500'>{description}</p>
+          ) : null}
+        </div>
+        <ChevronDown
+          size={20}
+          className={`mt-1 shrink-0 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+        />
+      </button>
+      {isOpen ? (
+        <div className='border-t border-slate-100 px-5 pb-5 pt-4'>
+          {children}
+        </div>
+      ) : null}
+    </div>
+  )
+}
 
 export default function StoreShippingSettings() {
   const { getToken } = useAuth()
@@ -27,10 +130,14 @@ export default function StoreShippingSettings() {
   const [allProducts, setAllProducts] = useState([])
   const [selectedFreeProducts, setSelectedFreeProducts] = useState([])
   const [productSearch, setProductSearch] = useState('')
+  const [openSections, setOpenSections] = useState(() => readStoredOpenState(SHIPPING_SECTIONS_STORAGE_KEY))
+  const [openDeliveryOptions, setOpenDeliveryOptions] = useState(() => readStoredOpenState(SHIPPING_OPTIONS_STORAGE_KEY))
+  const isDirtyRef = useRef(false)
+  const hasAppliedServerDataRef = useRef(false)
   const [form, setForm] = useState({
     enabled: true,
     shippingOptions: [createEmptyShippingOption({ isDefault: true })],
-    freeShippingMin: 499,
+    freeShippingMin: 100,
     enableProductSpecificFreeShipping: false,
     localDeliveryFee: '',
     regionalDeliveryFee: '',
@@ -38,42 +145,39 @@ export default function StoreShippingSettings() {
     enableCOD: true,
     codFee: 0,
     maxCODAmount: 0,
+    maxCardAmount: 0,
+    maxTabbyAmount: 0,
+    maxTamaraAmount: 0,
   })
 
+  const markDirty = () => {
+    isDirtyRef.current = true
+  }
+
   useEffect(() => {
+    let cancelled = false
+
     const load = async () => {
       try {
-        const token = await getToken();
-        const [shippingRes, productsRes] = await Promise.all([
-          axios.get('/api/shipping', { headers: token ? { Authorization: `Bearer ${token}` } : {} }),
-          axios.get('/api/store/product', { headers: token ? { Authorization: `Bearer ${token}` } : {} }),
-        ]);
-        if (shippingRes.data?.setting) {
-          const setting = shippingRes.data.setting
-          const shippingOptions = resolveShippingOptions(setting).map((option) => ({
-            ...option,
-            maxItemFee: option.maxItemFee == null ? '' : option.maxItemFee,
-          }))
-          setForm({
-            enabled: Boolean(setting.enabled),
-            shippingOptions: shippingOptions.length
-              ? shippingOptions
-              : [createEmptyShippingOption({ isDefault: true })],
-            freeShippingMin: Number(setting.freeShippingMin || 499),
-            enableProductSpecificFreeShipping: Boolean(setting.enableProductSpecificFreeShipping),
-            localDeliveryFee: setting.localDeliveryFee ? Number(setting.localDeliveryFee) : '',
-            regionalDeliveryFee: setting.regionalDeliveryFee ? Number(setting.regionalDeliveryFee) : '',
-            stateCharges: Array.isArray(setting.stateCharges)
-              ? setting.stateCharges.map((entry) => ({
-                  state: String(entry?.state || '').trim(),
-                  fee: Number(entry?.fee || 0)
-                })).filter((entry) => entry.state)
-              : [],
-            enableCOD: Boolean(setting.enableCOD),
-            codFee: Number(setting.codFee || 0),
-            maxCODAmount: Number(setting.maxCODAmount || 0),
-          })
+        const token = await getToken()
+        if (cancelled) return
+        if (!token) {
+          setLoading(false)
+          return
         }
+
+        const [shippingRes, productsRes] = await Promise.all([
+          axios.get('/api/shipping', { headers: { Authorization: `Bearer ${token}` } }),
+          axios.get('/api/store/product', { headers: { Authorization: `Bearer ${token}` } }),
+        ])
+
+        if (cancelled || isDirtyRef.current || hasAppliedServerDataRef.current) return
+
+        if (shippingRes.data?.setting) {
+          setForm(mapSettingToForm(shippingRes.data.setting))
+          hasAppliedServerDataRef.current = true
+        }
+
         if (productsRes.data?.products) {
           setAllProducts(productsRes.data.products)
           setSelectedFreeProducts(
@@ -83,16 +187,40 @@ export default function StoreShippingSettings() {
           )
         }
       } catch (e) {
-        // ignore; keep defaults
+        // keep current form values if load fails
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
+
     load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    return () => {
+      cancelled = true
+    }
+  }, [getToken])
+
+  const isSectionOpen = (sectionId) => Boolean(openSections[sectionId])
+
+  const toggleSection = (sectionId) => {
+    setOpenSections((prev) => {
+      const next = { ...prev, [sectionId]: !prev[sectionId] }
+      persistOpenState(SHIPPING_SECTIONS_STORAGE_KEY, next)
+      return next
+    })
+  }
+
+  const isDeliveryOptionOpen = (optionId) => Boolean(openDeliveryOptions[optionId])
+
+  const toggleDeliveryOption = (optionId) => {
+    setOpenDeliveryOptions((prev) => {
+      const next = { ...prev, [optionId]: !prev[optionId] }
+      persistOpenState(SHIPPING_OPTIONS_STORAGE_KEY, next)
+      return next
+    })
+  }
 
   const toggleFreeShippingProduct = (productId) => {
+    markDirty()
     const id = String(productId);
     setSelectedFreeProducts((prev) =>
       prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
@@ -100,6 +228,7 @@ export default function StoreShippingSettings() {
   };
 
   const updateShippingOption = (optionId, patch) => {
+    markDirty()
     setForm((prev) => ({
       ...prev,
       shippingOptions: prev.shippingOptions.map((option) =>
@@ -109,6 +238,7 @@ export default function StoreShippingSettings() {
   };
 
   const setDefaultShippingOption = (optionId) => {
+    markDirty()
     setForm((prev) => ({
       ...prev,
       shippingOptions: prev.shippingOptions.map((option) => ({
@@ -119,20 +249,32 @@ export default function StoreShippingSettings() {
   };
 
   const addShippingOption = () => {
+    markDirty()
+    const newOption = createEmptyShippingOption({
+      name: `Delivery Option ${form.shippingOptions.length + 1}`,
+      isDefault: form.shippingOptions.length === 0,
+      sortOrder: form.shippingOptions.length,
+    })
+
     setForm((prev) => ({
       ...prev,
-      shippingOptions: [
-        ...prev.shippingOptions,
-        createEmptyShippingOption({
-          name: `Delivery Option ${prev.shippingOptions.length + 1}`,
-          isDefault: prev.shippingOptions.length === 0,
-          sortOrder: prev.shippingOptions.length,
-        }),
-      ],
-    }));
-  };
+      shippingOptions: [...prev.shippingOptions, newOption],
+    }))
+
+    setOpenDeliveryOptions((openPrev) => {
+      const next = { ...openPrev, [newOption.id]: true }
+      persistOpenState(SHIPPING_OPTIONS_STORAGE_KEY, next)
+      return next
+    })
+    setOpenSections((sectionPrev) => {
+      const next = { ...sectionPrev, 'delivery-options': true }
+      persistOpenState(SHIPPING_SECTIONS_STORAGE_KEY, next)
+      return next
+    })
+  }
 
   const removeShippingOption = (optionId) => {
+    markDirty()
     setForm((prev) => {
       const next = prev.shippingOptions.filter((option) => option.id !== optionId);
       if (!next.length) {
@@ -146,6 +288,7 @@ export default function StoreShippingSettings() {
   };
 
   const toggleOptionStateRestriction = (optionId, stateName) => {
+    markDirty()
     setForm((prev) => ({
       ...prev,
       shippingOptions: prev.shippingOptions.map((option) => {
@@ -173,7 +316,7 @@ export default function StoreShippingSettings() {
               type='number'
               step='0.01'
               value={option.flatRate}
-              onChange={(e) => updateShippingOption(option.id, { flatRate: Number(e.target.value) })}
+              onChange={(e) => updateShippingOption(option.id, { flatRate: parseOptionalFeeInput(e.target.value) })}
               className='w-40 rounded border border-slate-300 px-3 py-2'
             />
           </div>
@@ -192,7 +335,7 @@ export default function StoreShippingSettings() {
                 type='number'
                 step='0.01'
                 value={option.perItemFee}
-                onChange={(e) => updateShippingOption(option.id, { perItemFee: Number(e.target.value) })}
+                onChange={(e) => updateShippingOption(option.id, { perItemFee: parseOptionalFeeInput(e.target.value) })}
                 className='w-40 rounded border border-slate-300 px-3 py-2'
               />
             </div>
@@ -245,7 +388,7 @@ export default function StoreShippingSettings() {
                 type='number'
                 step='0.1'
                 value={option.baseWeight}
-                onChange={(e) => updateShippingOption(option.id, { baseWeight: Number(e.target.value) })}
+                onChange={(e) => updateShippingOption(option.id, { baseWeight: parseOptionalFeeInput(e.target.value) })}
                 className='w-full rounded border border-slate-300 px-3 py-2'
               />
             </div>
@@ -257,7 +400,7 @@ export default function StoreShippingSettings() {
                   type='number'
                   step='0.01'
                   value={option.baseWeightFee}
-                  onChange={(e) => updateShippingOption(option.id, { baseWeightFee: Number(e.target.value) })}
+                  onChange={(e) => updateShippingOption(option.id, { baseWeightFee: parseOptionalFeeInput(e.target.value) })}
                   className='w-full rounded border border-slate-300 px-3 py-2'
                 />
               </div>
@@ -272,7 +415,7 @@ export default function StoreShippingSettings() {
                   type='number'
                   step='0.01'
                   value={option.additionalWeightFee}
-                  onChange={(e) => updateShippingOption(option.id, { additionalWeightFee: Number(e.target.value) })}
+                  onChange={(e) => updateShippingOption(option.id, { additionalWeightFee: parseOptionalFeeInput(e.target.value) })}
                   className='w-full rounded border border-slate-300 px-3 py-2'
                 />
               </div>
@@ -300,6 +443,9 @@ export default function StoreShippingSettings() {
       const payload = {
         ...form,
         enableProductSpecificFreeShipping: hasFreeShippingProducts || form.enableProductSpecificFreeShipping,
+        productSpecificFreeShippingMode: hasFreeShippingProducts
+          ? 'MARKED_ITEMS_ONLY'
+          : (form.productSpecificFreeShippingMode || 'ORDER_LEVEL'),
       };
       console.log('Saving form with maxCODAmount:', payload.maxCODAmount, 'Full form:', payload)
       const token = await getToken()
@@ -310,10 +456,16 @@ export default function StoreShippingSettings() {
         { productIds: selectedFreeProducts },
         { headers: { Authorization: `Bearer ${token}` } }
       )
-      setForm((prev) => ({
-        ...prev,
-        enableProductSpecificFreeShipping: hasFreeShippingProducts || prev.enableProductSpecificFreeShipping,
-      }));
+      if (response.data?.setting) {
+        setForm(mapSettingToForm(response.data.setting))
+      } else {
+        setForm((prev) => ({
+          ...prev,
+          enableProductSpecificFreeShipping: hasFreeShippingProducts || prev.enableProductSpecificFreeShipping,
+        }))
+      }
+      isDirtyRef.current = false
+      hasAppliedServerDataRef.current = true
       toast.success(
         hasFreeShippingProducts
           ? `Shipping settings saved — ${selectedFreeProducts.length} product(s) get free shipping`
@@ -335,6 +487,7 @@ export default function StoreShippingSettings() {
   const expressEstimatedDays = expressOption?.estimatedDays || '1-2'
 
   const setExpressEnabled = (enabled) => {
+    markDirty()
     setForm((prev) => ({
       ...prev,
       shippingOptions: upsertExpressShippingOption(prev.shippingOptions, {
@@ -346,6 +499,7 @@ export default function StoreShippingSettings() {
   }
 
   const setExpressExtraFee = (fee) => {
+    markDirty()
     setForm((prev) => ({
       ...prev,
       shippingOptions: upsertExpressShippingOption(prev.shippingOptions, {
@@ -357,6 +511,7 @@ export default function StoreShippingSettings() {
   }
 
   const setExpressEstimatedDays = (days) => {
+    markDirty()
     setForm((prev) => ({
       ...prev,
       shippingOptions: upsertExpressShippingOption(prev.shippingOptions, {
@@ -379,7 +534,10 @@ export default function StoreShippingSettings() {
         <div className='bg-white p-6 rounded-xl border border-slate-200'>
           <label className='flex items-center gap-3 cursor-pointer'>
             <input type='checkbox' checked={form.enabled} 
-              onChange={(e) => setForm(s => ({ ...s, enabled: e.target.checked }))}
+              onChange={(e) => {
+                markDirty()
+                setForm((s) => ({ ...s, enabled: e.target.checked }))
+              }}
               className='w-5 h-5 accent-slate-700' />
             <div>
               <span className='text-lg font-medium text-slate-700'>Enable Shipping Charges</span>
@@ -391,16 +549,17 @@ export default function StoreShippingSettings() {
         {form.enabled && (
           <>
             {/* Delivery Options */}
-            <div className='bg-white p-6 rounded-xl border border-slate-200'>
+            <ShippingSection
+              title='Delivery Options'
+              icon={PackageIcon}
+              description={`${form.shippingOptions.length} option(s) configured`}
+              isOpen={isSectionOpen('delivery-options')}
+              onToggle={() => toggleSection('delivery-options')}
+            >
               <div className='mb-4 flex flex-wrap items-center justify-between gap-3'>
-                <div>
-                  <h2 className='text-xl font-semibold text-slate-800 flex items-center gap-2'>
-                    <PackageIcon size={20} /> Delivery Options
-                  </h2>
-                  <p className='mt-1 text-sm text-slate-500'>
-                    Add multiple delivery methods. Each option can use its own pricing logic.
-                  </p>
-                </div>
+                <p className='text-sm text-slate-500'>
+                  Add multiple delivery methods. Each option can use its own pricing logic.
+                </p>
                 <button
                   type='button'
                   onClick={addShippingOption}
@@ -411,12 +570,57 @@ export default function StoreShippingSettings() {
               </div>
 
               <div className='space-y-4'>
-                {form.shippingOptions.map((option, index) => (
-                  <div key={option.id} className='rounded-xl border border-slate-200 bg-slate-50/40 p-4'>
+                {form.shippingOptions.map((option, index) => {
+                  const optionOpen = isDeliveryOptionOpen(option.id)
+                  const logicLabel = SHIPPING_LOGIC_LABELS[option.shippingType] || option.shippingType
+                  const feeSummary = option.shippingType === 'FLAT_RATE'
+                    ? `${currency} ${option.flatRate}`
+                    : logicLabel
+
+                  return (
+                  <div key={option.id} className='overflow-hidden rounded-xl border border-slate-200 bg-slate-50/40'>
+                    <button
+                      type='button'
+                      onClick={() => toggleDeliveryOption(option.id)}
+                      className='flex w-full items-start justify-between gap-3 p-4 text-left transition hover:bg-slate-100/60'
+                    >
+                      <div className='min-w-0 flex-1'>
+                        <div className='flex flex-wrap items-center gap-2'>
+                          <span className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
+                            Option {index + 1}
+                          </span>
+                          {option.isDefault ? (
+                            <span className='rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-700'>
+                              Default
+                            </span>
+                          ) : null}
+                          {!option.enabled ? (
+                            <span className='rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800'>
+                              Disabled
+                            </span>
+                          ) : null}
+                        </div>
+                        <p className='mt-1 truncate text-sm font-semibold text-slate-800'>
+                          {option.name || `Delivery Option ${index + 1}`}
+                        </p>
+                        {!optionOpen ? (
+                          <p className='mt-0.5 text-xs text-slate-500'>
+                            {logicLabel} · {feeSummary} · {option.estimatedDays || '3-5'} days
+                          </p>
+                        ) : null}
+                      </div>
+                      <ChevronDown
+                        size={18}
+                        className={`mt-1 shrink-0 text-slate-400 transition-transform ${optionOpen ? 'rotate-180' : ''}`}
+                      />
+                    </button>
+
+                    {optionOpen ? (
+                    <div className='border-t border-slate-200 p-4'>
                     <div className='flex flex-wrap items-start justify-between gap-3'>
                       <div className='min-w-0 flex-1'>
                         <label className='mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500'>
-                          Option {index + 1}
+                          Option name
                         </label>
                         <input
                           type='text'
@@ -527,18 +731,24 @@ export default function StoreShippingSettings() {
                         })}
                       </div>
                     </div>
+                    </div>
+                    ) : null}
                   </div>
-                ))}
+                  )
+                })}
               </div>
-            </div>
+            </ShippingSection>
 
             {/* Product-specific free shipping */}
-            <div className='bg-white p-6 rounded-xl border border-slate-200'>
-                <h2 className='text-xl font-semibold text-slate-800 mb-1 flex items-center gap-2'>
-                  <PackageIcon size={20} /> Free Shipping by Product
-                </h2>
+            <ShippingSection
+              title='Free Shipping by Product'
+              icon={PackageIcon}
+              description={`${selectedFreeProducts.length} product(s) with free shipping`}
+              isOpen={isSectionOpen('free-shipping-products')}
+              onToggle={() => toggleSection('free-shipping-products')}
+            >
                 <p className='text-sm text-slate-500 mb-4'>
-                  Select products that should always ship free. If the cart contains any of these products, shipping is waived for that order.
+                  Select products that should always ship free. Only these products get free delivery; other products use the standard fee below the threshold.
                 </p>
 
                 {selectedFreeProducts.length > 0 && (
@@ -609,37 +819,50 @@ export default function StoreShippingSettings() {
                   )}
                 </div>
                 <p className='text-xs text-slate-500 mt-3'>
-                  {selectedFreeProducts.length} product(s) selected — customers pay no delivery fee when these are in the cart.
+                  {selectedFreeProducts.length} product(s) selected — only these products get free delivery. Other products use the standard delivery fee below the free-shipping threshold.
                 </p>
-              </div>
+            </ShippingSection>
 
             {/* Free Shipping Threshold */}
-            <div className='bg-white p-6 rounded-xl border border-slate-200'>
-                <h2 className='text-xl font-semibold text-slate-800 mb-4 flex items-center gap-2'>
-                  <DollarSignIcon size={20} /> Free Shipping Threshold
-                </h2>
+            <ShippingSection
+              title='Free Shipping Threshold'
+              iconLabel={currency}
+              description={`${currency} ${form.freeShippingMin} minimum for free shipping`}
+              isOpen={isSectionOpen('free-shipping-threshold')}
+              onToggle={() => toggleSection('free-shipping-threshold')}
+            >
                 <div>
                   <label className='block text-sm font-medium text-slate-700 mb-2'>Minimum Order Amount for Free Shipping</label>
                   <div className='flex items-center gap-2'>
                     <span className='text-slate-600'>{currency}</span>
                     <input type='number' step='0.01' value={form.freeShippingMin}
-                      onChange={(e) => setForm(s => ({ ...s, freeShippingMin: Number(e.target.value) }))}
+                      onChange={(e) => {
+                        markDirty()
+                        setForm((s) => ({ ...s, freeShippingMin: parseOptionalFeeInput(e.target.value) }))
+                      }}
                       className='w-48 border border-slate-300 rounded px-3 py-2' />
                   </div>
-                  <p className='text-xs text-slate-500 mt-2'>Orders at or above this amount get free shipping (applies to flat-rate options)</p>
+                  <p className='text-xs text-slate-500 mt-2'>Orders at or above this amount get free shipping on non-selected products (flat-rate delivery)</p>
                 </div>
-              </div>
+            </ShippingSection>
 
             {/* Regional Settings */}
-            <div className='bg-white p-6 rounded-xl border border-slate-200'>
-              <h2 className='text-xl font-semibold text-slate-800 mb-4'>Regional Delivery Fees (Optional)</h2>
+            <ShippingSection
+              title='Regional Delivery Fees (Optional)'
+              description='Local and regional delivery overrides'
+              isOpen={isSectionOpen('regional-fees')}
+              onToggle={() => toggleSection('regional-fees')}
+            >
               <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
                 <div>
                   <label className='block text-sm font-medium text-slate-700 mb-2'>Local Delivery Fee</label>
                   <div className='flex items-center gap-2'>
                     <span className='text-slate-600'>{currency}</span>
                     <input type='number' step='0.01' value={form.localDeliveryFee}
-                      onChange={(e) => setForm(s => ({ ...s, localDeliveryFee: e.target.value }))}
+                      onChange={(e) => {
+                        markDirty()
+                        setForm((s) => ({ ...s, localDeliveryFee: e.target.value }))
+                      }}
                       placeholder='Leave empty to use default'
                       className='w-48 border border-slate-300 rounded px-3 py-2' />
                   </div>
@@ -650,18 +873,25 @@ export default function StoreShippingSettings() {
                   <div className='flex items-center gap-2'>
                     <span className='text-slate-600'>{currency}</span>
                     <input type='number' step='0.01' value={form.regionalDeliveryFee}
-                      onChange={(e) => setForm(s => ({ ...s, regionalDeliveryFee: e.target.value }))}
+                      onChange={(e) => {
+                        markDirty()
+                        setForm((s) => ({ ...s, regionalDeliveryFee: e.target.value }))
+                      }}
                       placeholder='Leave empty to use default'
                       className='w-48 border border-slate-300 rounded px-3 py-2' />
                   </div>
                   <p className='text-xs text-slate-500 mt-1'>Special fee for regional deliveries</p>
                 </div>
               </div>
-            </div>
+            </ShippingSection>
 
             {/* Express Shipping */}
-            <div className='bg-white p-6 rounded-xl border border-slate-200'>
-              <h2 className='text-xl font-semibold text-slate-800 mb-4'>Express Shipping</h2>
+            <ShippingSection
+              title='Express Shipping'
+              description={expressEnabled ? `Enabled · ${currency} ${expressExtraFee} extra` : 'Disabled'}
+              isOpen={isSectionOpen('express-shipping')}
+              onToggle={() => toggleSection('express-shipping')}
+            >
               <label className='flex items-center gap-3 mb-4 cursor-pointer'>
                 <input
                   type='checkbox'
@@ -681,7 +911,7 @@ export default function StoreShippingSettings() {
                         type='number'
                         step='0.01'
                         value={expressExtraFee}
-                        onChange={(e) => setExpressExtraFee(e.target.value)}
+                        onChange={(e) => setExpressExtraFee(parseOptionalFeeInput(e.target.value))}
                         className='w-40 border border-slate-300 rounded px-3 py-2'
                       />
                     </div>
@@ -701,14 +931,21 @@ export default function StoreShippingSettings() {
                   </div>
                 </div>
               ) : null}
-            </div>
+            </ShippingSection>
 
             {/* COD Settings */}
-            <div className='bg-white p-6 rounded-xl border border-slate-200'>
-              <h2 className='text-xl font-semibold text-slate-800 mb-4'>Cash on Delivery (COD)</h2>
+            <ShippingSection
+              title='Cash on Delivery (COD)'
+              description={form.enableCOD ? `Enabled · max ${currency} ${form.maxCODAmount || 'unlimited'}` : 'Disabled'}
+              isOpen={isSectionOpen('cod-settings')}
+              onToggle={() => toggleSection('cod-settings')}
+            >
               <label className='flex items-center gap-3 mb-4 cursor-pointer'>
                 <input type='checkbox' checked={form.enableCOD}
-                  onChange={(e) => setForm(s => ({ ...s, enableCOD: e.target.checked }))}
+                  onChange={(e) => {
+                    markDirty()
+                    setForm((s) => ({ ...s, enableCOD: e.target.checked }))
+                  }}
                   className='w-5 h-5 accent-slate-700' />
                 <span className='text-slate-700'>Enable COD payment method</span>
               </label>
@@ -719,7 +956,10 @@ export default function StoreShippingSettings() {
                     <div className='flex items-center gap-2'>
                       <span className='text-slate-600'>{currency}</span>
                       <input type='number' step='0.01' value={form.codFee}
-                        onChange={(e) => setForm(s => ({ ...s, codFee: Number(e.target.value) }))}
+                        onChange={(e) => {
+                          markDirty()
+                          setForm((s) => ({ ...s, codFee: parseOptionalFeeInput(e.target.value) }))
+                        }}
                         className='w-40 border border-slate-300 rounded px-3 py-2' />
                     </div>
                     <p className='text-xs text-slate-500 mt-2'>Additional fee for COD orders (use 0 for no fee)</p>
@@ -730,13 +970,8 @@ export default function StoreShippingSettings() {
                       <span className='text-slate-600'>{currency}</span>
                       <input type='number' step='0.01' value={form.maxCODAmount || ''}
                         onChange={(e) => {
-                          const value = Number(e.target.value) || 0;
-                          console.log('MaxCODAmount input changed:', e.target.value, '-> Number:', value);
-                          setForm(s => {
-                            const newState = { ...s, maxCODAmount: value };
-                            console.log('New form state:', newState);
-                            return newState;
-                          });
+                          markDirty()
+                          setForm((s) => ({ ...s, maxCODAmount: parseOptionalFeeInput(e.target.value) }))
                         }}
                         className='w-40 border border-slate-300 rounded px-3 py-2' />
                     </div>
@@ -744,7 +979,72 @@ export default function StoreShippingSettings() {
                   </div>
                 </div>
               )}
-            </div>
+            </ShippingSection>
+
+            {/* Online payment limits */}
+            <ShippingSection
+              title='Online Payment Limits'
+              description='Card, Tabby, and Tamara checkout limits'
+              isOpen={isSectionOpen('payment-limits')}
+              onToggle={() => toggleSection('payment-limits')}
+            >
+              <p className='text-sm text-slate-500 mb-4'>
+                Hide payment methods at checkout when the order total is above the limit. Use 0 for unlimited.
+              </p>
+              <div className='grid grid-cols-1 gap-4 md:grid-cols-3'>
+                <div>
+                  <label className='block text-sm font-medium text-slate-700 mb-2'>Maximum Card Amount</label>
+                  <div className='flex items-center gap-2'>
+                    <span className='text-slate-600'>{currency}</span>
+                    <input
+                      type='number'
+                      step='0.01'
+                      value={form.maxCardAmount || ''}
+                      onChange={(e) => {
+                        markDirty()
+                        setForm((s) => ({ ...s, maxCardAmount: parseOptionalFeeInput(e.target.value) }))
+                      }}
+                      className='w-full border border-slate-300 rounded px-3 py-2'
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className='block text-sm font-medium text-slate-700 mb-2'>Maximum Tabby Amount</label>
+                  <div className='flex items-center gap-2'>
+                    <span className='text-slate-600'>{currency}</span>
+                    <input
+                      type='number'
+                      step='0.01'
+                      value={form.maxTabbyAmount || ''}
+                      onChange={(e) => {
+                        markDirty()
+                        setForm((s) => ({ ...s, maxTabbyAmount: parseOptionalFeeInput(e.target.value) }))
+                      }}
+                      className='w-full border border-slate-300 rounded px-3 py-2'
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className='block text-sm font-medium text-slate-700 mb-2'>Maximum Tamara Amount</label>
+                  <div className='flex items-center gap-2'>
+                    <span className='text-slate-600'>{currency}</span>
+                    <input
+                      type='number'
+                      step='0.01'
+                      value={form.maxTamaraAmount || ''}
+                      onChange={(e) => {
+                        markDirty()
+                        setForm((s) => ({ ...s, maxTamaraAmount: parseOptionalFeeInput(e.target.value) }))
+                      }}
+                      className='w-full border border-slate-300 rounded px-3 py-2'
+                    />
+                  </div>
+                </div>
+              </div>
+              <p className='text-xs text-slate-500 mt-3'>
+                Example: set Tabby to 3000 — orders above AED 3000 will not show Tabby at checkout.
+              </p>
+            </ShippingSection>
           </>
         )}
 

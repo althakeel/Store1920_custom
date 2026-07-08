@@ -16,7 +16,7 @@ export async function PATCH(request, { params }) {
     const idToken = authHeader.split('Bearer ')[1];
     await getAuth().verifyIdToken(idToken);
 
-    const { ticketId } = params;
+    const { ticketId } = await params;
     const { status } = await request.json();
 
     if (!status) {
@@ -28,7 +28,7 @@ export async function PATCH(request, { params }) {
       return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
     }
 
-    const ticket = await Ticket.findById(ticketId).lean();
+    const ticket = await Ticket.findById(ticketId);
 
     if (!ticket) {
       return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });

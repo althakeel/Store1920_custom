@@ -6,6 +6,7 @@ import {
   getPhonePlaceholder,
   getPhoneValidationMessage,
 } from '@/lib/phoneValidation';
+import { UAE_PHONE_CODE, UAE_PHONE_CODE_OPTIONS } from '@/assets/countryCodes';
 import { usePhoneCountryCodeGuard } from '@/lib/usePhoneCountryCodeGuard';
 
 export default function PhoneNumberField({
@@ -13,7 +14,7 @@ export default function PhoneNumberField({
   phoneCode,
   onPhoneChange,
   onPhoneCodeChange,
-  countryOptions = [],
+  countryOptions = UAE_PHONE_CODE_OPTIONS,
   id,
   label,
   labelClassName = 'mb-1.5 block text-sm font-semibold text-slate-700',
@@ -27,10 +28,16 @@ export default function PhoneNumberField({
   showLabel = true,
   inputKey,
 }) {
+  const resolvedOptions = countryOptions.length > 0 ? countryOptions : UAE_PHONE_CODE_OPTIONS;
+  const resolvedPhoneCode = resolvedOptions.some((c) => c.code === phoneCode)
+    ? phoneCode
+    : (resolvedOptions[0]?.code || UAE_PHONE_CODE);
+  const singleCode = resolvedOptions.length === 1;
+
   const { handlePhoneChange, displayError } = usePhoneCountryCodeGuard({
     phone,
     setPhone: onPhoneChange,
-    countryCode: phoneCode,
+    countryCode: resolvedPhoneCode,
   });
 
   return (
@@ -39,18 +46,27 @@ export default function PhoneNumberField({
         <label htmlFor={id} className={labelClassName}>{label}</label>
       ) : null}
       <div className={wrapperClassName}>
-        <select
-          name="phoneCode"
-          onChange={onPhoneCodeChange}
-          value={phoneCode}
-          className={selectClassName}
-          required={required}
-          aria-label="Phone country code"
-        >
-          {countryOptions.map((country) => (
-            <option key={country.code} value={country.code}>{country.code}</option>
-          ))}
-        </select>
+        {singleCode ? (
+          <span
+            className={selectClassName}
+            aria-label="Phone country code"
+          >
+            {resolvedPhoneCode}
+          </span>
+        ) : (
+          <select
+            name="phoneCode"
+            onChange={onPhoneCodeChange}
+            value={resolvedPhoneCode}
+            className={selectClassName}
+            required={required}
+            aria-label="Phone country code"
+          >
+            {resolvedOptions.map((country) => (
+              <option key={country.code} value={country.code}>{country.code}</option>
+            ))}
+          </select>
+        )}
         <input
           key={inputKey}
           id={id}
@@ -60,16 +76,16 @@ export default function PhoneNumberField({
           className={inputClassName}
           type="text"
           inputMode="numeric"
-          placeholder={getPhonePlaceholder(phoneCode)}
-          maxLength={getPhoneMaxLength(phoneCode)}
-          pattern={phoneCode === '+91' || phoneCode === '+92' ? '[0-9]{10}' : '[0-9]{9,10}'}
-          title={getPhoneValidationMessage(phoneCode)}
+          placeholder={getPhonePlaceholder(resolvedPhoneCode)}
+          maxLength={getPhoneMaxLength(resolvedPhoneCode)}
+          pattern={resolvedPhoneCode === '+91' || resolvedPhoneCode === '+92' ? '[0-9]{10}' : '[0-9]{9,10}'}
+          title={getPhoneValidationMessage(resolvedPhoneCode)}
           required={required}
           autoComplete="tel"
         />
       </div>
       {showHint ? (
-        <p className={hintClassName}>{getPhoneInputHint(phoneCode)}</p>
+        <p className={hintClassName}>{getPhoneInputHint(resolvedPhoneCode)}</p>
       ) : null}
       {displayError ? (
         <p className={errorClassName}>{displayError}</p>

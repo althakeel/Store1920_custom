@@ -20,5 +20,8 @@ export const countryCodes = [
   { code: '+90', label: 'Turkey' },
   { code: '+62', label: 'Indonesia' },
   { code: '+63', label: 'Philippines' },
-  // ...add more countries as needed
 ];
+
+/** UAE-only phone code for storefront checkout and address forms. */
+export const UAE_PHONE_CODE = '+971';
+export const UAE_PHONE_CODE_OPTIONS = [{ code: UAE_PHONE_CODE }];

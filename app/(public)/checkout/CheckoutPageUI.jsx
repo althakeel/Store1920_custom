@@ -3,12 +3,16 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Check, Tag, Truck, Zap } from "lucide-react";
 import axios from "axios";
-import { countryCodes } from "@/assets/countryCodes";
+import { countryCodes, UAE_PHONE_CODE, UAE_PHONE_CODE_OPTIONS } from "@/assets/countryCodes";
 import { indiaStatesAndDistricts } from "@/assets/indiaStatesAndDistricts";
 import { useSelector, useDispatch } from "react-redux";
 import { fetchAddress } from "@/lib/features/address/addressSlice";
-import { clearCart, deleteItemFromCart } from "@/lib/features/cart/cartSlice";
-import { fetchShippingSettings, calculateShipping } from "@/lib/shipping";
+import { clearCart, deleteItemFromCart, setCartEntry } from "@/lib/features/cart/cartSlice";
+import { fetchShippingSettings, calculateShipping, cartHasOnlyFreeShippingProducts } from "@/lib/shipping";
+import {
+  getPaymentMethodLimitError,
+  isPaymentMethodOverLimit,
+} from '@/lib/paymentMethodLimits';
 import {
   getAvailableShippingOptions,
   getDefaultShippingOption,
@@ -31,9 +35,9 @@ import { cartLinesToGtmItems, cartLinesToMetaItems } from '@/lib/gtmEcommerceHel
 import { runTrackedOnce } from '@/lib/trackingDedupe';
 import { GTM_EVENTS, gtmDedupeKey } from '@/lib/gtmEvents';
 import { getCartEntryProductId, getCartEntryQuantity, isFreeGiftEntry } from "@/lib/freeGiftUtils";
-import { resolveCartLinePricing } from "@/lib/bulkBundleCart";
+import { getCartProductIdsNeedingVariants, mergeFetchedProducts } from '@/lib/cartProductFetch';
+import { resolveCartLinePricing, resolveMatrixCartMaxPacks, isBulkBundleProduct, isMatrixStyleProduct, findBulkBundleVariant, getBulkBundleTiers } from "@/lib/bulkBundleCart";
 import { decrementCartItem, incrementCartItem } from "@/lib/bundleCartActions";
-import { adjustBundleCartTier, isBulkBundleProduct } from '@/lib/bulkBundleCart';
 import { STORE1920_LOGO_PATH } from "@/lib/brandLogo";
 import {
   rememberPendingCheckoutOrder,
@@ -53,19 +57,6 @@ import Creditimage2 from '../../../assets/creditcards/16 - Copy.webp';
 import Creditimage3 from '../../../assets/creditcards/20.webp';
 import Creditimage4 from '../../../assets/creditcards/11.webp';
 import { STORE_CURRENCY } from '@/lib/storeCurrency';
-
-function hasCheckoutDetailsForMeta(form = {}, addressList = []) {
-  if (form.addressId && addressList.some((address) => address._id === form.addressId)) {
-    return true;
-  }
-
-  const name = String(form.name || '').trim();
-  const phoneOk = isValidPhoneNumber(form.phone, form.phoneCode || '+971');
-  const street = String(form.street || '').trim();
-  const state = String(form.state || '').trim();
-
-  return name.length >= 2 && phoneOk && street.length >= 3 && state.length >= 1;
-}
 import { getProductSubtitle } from '@/lib/productDisplay';
 import { getProductPath } from '@/lib/productUrl';
 import { collectCheckoutValidationIssues, scrollToCheckoutField } from '@/lib/checkoutValidation';
@@ -335,9 +326,7 @@ export default function CheckoutPage() {
       return undefined;
     }
 
-    const missingIds = cartKeys.filter(
-      (id) => !products?.some((p) => String(p._id) === String(id))
-    );
+    const missingIds = getCartProductIdsNeedingVariants(cartItems, products);
     if (missingIds.length === 0) {
       setCheckoutProductsLoaded(true);
       return undefined;
@@ -349,12 +338,10 @@ export default function CheckoutPage() {
       try {
         const { data } = await axios.post('/api/products/batch', { productIds: missingIds });
         if (ignore || !data?.products?.length) return;
-        const existing = new Set((products || []).map((p) => String(p._id)));
-        const merged = [...(products || [])];
-        data.products.forEach((p) => {
-          if (!existing.has(String(p._id))) merged.push(p);
+        dispatch({
+          type: 'product/setProduct',
+          payload: mergeFetchedProducts(products, data.products),
         });
-        dispatch({ type: 'product/setProduct', payload: merged });
       } catch (e) {
         console.warn('Cart product fetch failed:', e.message);
       } finally {
@@ -401,7 +388,7 @@ export default function CheckoutPage() {
           const pricing = resolveCartLinePricing(product, value, quantity);
           return {
             productId,
-            quantity: pricing.isBulkBundle ? 1 : quantity,
+            quantity,
             price: pricing.unitPrice,
             lineTotal: pricing.lineTotal,
             name: product?.name || 'Product',
@@ -649,9 +636,9 @@ export default function CheckoutPage() {
           name: firstAddr.name || f.name,
           email: firstAddr.email || f.email,
           phone: finalPhone,
-          phoneCode: firstAddr.phoneCode || '+91',
+          phoneCode: firstAddr.phoneCode || UAE_PHONE_CODE,
           alternatePhone: cleanDigits(firstAddr.alternatePhone),
-          alternatePhoneCode: firstAddr.alternatePhoneCode || '+91',
+          alternatePhoneCode: firstAddr.alternatePhoneCode || UAE_PHONE_CODE,
           street: firstAddr.street || f.street,
           city: firstAddr.city || f.city,
           state: firstAddr.state || f.state,
@@ -715,6 +702,7 @@ export default function CheckoutPage() {
           _lineTotal: pricing.lineTotal,
           _displayQuantity: pricing.displayQuantity,
           _isBulkBundle: pricing.isBulkBundle,
+          _isMatrix: Boolean(pricing.isMatrix),
           _bundleTier: pricing.bundleTier,
           _cartKey: key,
           _productId: actualProductId,
@@ -743,7 +731,7 @@ export default function CheckoutPage() {
     (sum, item) => sum + Number(item._displayQuantity ?? item.quantity ?? 0),
     0,
   );
-  const hasFreeShippingProduct = cartArray.some((item) => Boolean(item?.freeShippingEligible));
+  const hasFreeShippingProduct = cartHasOnlyFreeShippingProducts(cartArray);
   const availableShippingOptions = getAvailableShippingOptions(shippingSetting, form.state);
   const selectedShippingOption =
     getShippingOptionById(shippingSetting, shippingMethod)
@@ -774,7 +762,7 @@ export default function CheckoutPage() {
     const bundleTier = item._bundleTier ?? variantOptions?.bundleQty;
     return {
       id: item._productId || item._id,
-      quantity: item._isBulkBundle ? 1 : qty,
+      quantity: qty,
       ...(variantOptions || bundleTier ? {
         variantOptions: {
           ...(variantOptions || {}),
@@ -789,8 +777,15 @@ export default function CheckoutPage() {
     hasPersonalizedOfferItem ||
     shippingSetting?.enableCOD === false ||
     (maxCODAmount > 0 && totalAfterWallet > maxCODAmount);
+  const isCardOverLimit = isPaymentMethodOverLimit(shippingSetting, 'card', totalAfterWallet);
+  const isTabbyOverLimit = isPaymentMethodOverLimit(shippingSetting, 'tabby', totalAfterWallet);
+  const isTamaraOverLimit = isPaymentMethodOverLimit(shippingSetting, 'tamara', totalAfterWallet);
   const isPaymentMissing = needsPaymentSelection && !form.payment;
-  const isInvalidPaymentSelection = form.payment === 'cod' && isCODDisabledForOrder;
+  const isInvalidPaymentSelection =
+    (form.payment === 'cod' && isCODDisabledForOrder)
+    || (form.payment === 'card' && isCardOverLimit)
+    || (form.payment === 'tabby' && isTabbyOverLimit)
+    || (form.payment === 'tamara' && isTamaraOverLimit);
   const isPlaceOrderDisabled = placingOrder || payingNow;
   const hasCheckoutFormBlockers = isPaymentMissing || isInvalidPaymentSelection;
   const isCheckoutSubmitDisabled = isPlaceOrderDisabled;
@@ -851,8 +846,6 @@ export default function CheckoutPage() {
     const gtmItems = cartLinesToGtmItems(cartArray);
     if (gtmItems.length === 0) return;
 
-    if (!hasCheckoutDetailsForMeta(form, addressList)) return;
-
     beginCheckoutTrackedRef.current = true;
 
     const itemsValue = gtmItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
@@ -883,17 +876,9 @@ export default function CheckoutPage() {
   }, [
     checkoutProductsLoaded,
     cartArray,
-    form.name,
-    form.phone,
-    form.phoneCode,
-    form.street,
-    form.state,
-    form.addressId,
-    addressList,
     totalAfterWallet,
     subtotal,
     effectiveShipping,
-    user?.uid,
     market.currency,
   ]);
 
@@ -902,6 +887,24 @@ export default function CheckoutPage() {
       setForm((f) => ({ ...f, payment: 'card' }));
     }
   }, [hasPersonalizedOfferItem, form.payment]);
+
+  useEffect(() => {
+    if (!form.payment) return;
+    const paymentOverLimit =
+      (form.payment === 'card' && isCardOverLimit)
+      || (form.payment === 'tabby' && isTabbyOverLimit)
+      || (form.payment === 'tamara' && isTamaraOverLimit)
+      || (form.payment === 'cod' && isCODDisabledForOrder);
+    if (paymentOverLimit) {
+      setForm((f) => ({ ...f, payment: '' }));
+    }
+  }, [
+    form.payment,
+    isCardOverLimit,
+    isTabbyOverLimit,
+    isTamaraOverLimit,
+    isCODDisabledForOrder,
+  ]);
 
   useEffect(() => {
     if (appliedCoupon && form.payment !== 'card') {
@@ -1521,6 +1524,10 @@ export default function CheckoutPage() {
 
     const paymentMissing = needsPaymentSelection && !payment;
     const invalidCodSelection = payment === 'cod' && isCODDisabledForOrder;
+    const invalidOnlinePaymentSelection =
+      (payment === 'card' && isCardOverLimit)
+      || (payment === 'tabby' && isTabbyOverLimit)
+      || (payment === 'tamara' && isTamaraOverLimit);
 
     if (paymentMissing) {
       setInvalidFieldIds(new Set(['checkout-payment']));
@@ -1529,14 +1536,21 @@ export default function CheckoutPage() {
       return;
     }
 
-    if (invalidCodSelection) {
-      const codMessage = hasPersonalizedOfferItem
-        ? 'COD is not available for personalized offer products. Please use online payment.'
-        : shippingSetting?.enableCOD === false
-          ? 'Cash on Delivery is not available.'
-          : `COD is not available for orders above ${formatMoney(maxCODAmount)}.`;
-      setFormError(codMessage);
-      toast.error(codMessage, { id: 'checkout-validation' });
+    if (invalidCodSelection || invalidOnlinePaymentSelection) {
+      const limitMessage = getPaymentMethodLimitError(
+        shippingSetting,
+        payment,
+        totalAfterWallet,
+        { hasPersonalizedOfferItem },
+      );
+      const paymentMessage = limitMessage
+        || (hasPersonalizedOfferItem
+          ? 'COD is not available for personalized offer products. Please use online payment.'
+          : shippingSetting?.enableCOD === false
+            ? 'Cash on Delivery is not available.'
+            : `COD is not available for orders above ${formatMoney(maxCODAmount)}.`);
+      setFormError(paymentMessage);
+      toast.error(paymentMessage, { id: 'checkout-validation' });
       return;
     }
 
@@ -1787,6 +1801,19 @@ export default function CheckoutPage() {
       // Validate payment method for remaining balance
       if (!payment) {
         setFormError("Please select a payment method.");
+        setPlacingOrder(false);
+        return;
+      }
+
+      // Validate payment method limits
+      const paymentLimitError = getPaymentMethodLimitError(
+        shippingSetting,
+        payment,
+        totalAfterWallet,
+        { hasPersonalizedOfferItem },
+      );
+      if (paymentLimitError) {
+        setFormError(paymentLimitError);
         setPlacingOrder(false);
         return;
       }
@@ -2114,12 +2141,51 @@ export default function CheckoutPage() {
   const getRemovableCartItems = () => cartArray.filter((i) => !i._isFreeGift);
 
   const wouldDecrementRemoveItem = (item) => {
+    if (item._isBulkBundle) {
+      const tiers = getBulkBundleTiers(item);
+      const currentTier = Number(item._bundleTier) || tiers[0] || 1;
+      return tiers.indexOf(currentTier) <= 0;
+    }
     const cartKey = item._cartKey || item._id;
     const entry = cartItems?.[cartKey];
-    if (item && isBulkBundleProduct(item)) {
-      return adjustBundleCartTier(entry, item, 'down') === 'remove';
-    }
     return getCartEntryQuantity(entry) <= 1;
+  };
+
+  const stepCheckoutBulkTier = (item, delta) => {
+    const cartKey = item._cartKey || item._id;
+    const entry = cartItems?.[cartKey];
+    if (!entry || typeof entry !== 'object') return;
+
+    const tiers = getBulkBundleTiers(item);
+    if (!tiers.length) return;
+
+    const currentTier = Number(item._bundleTier) || tiers[0];
+    const currentIndex = Math.max(0, tiers.indexOf(currentTier));
+    const nextIndex = currentIndex + delta;
+
+    if (nextIndex < 0) {
+      if (getRemovableCartItems().length <= 1) {
+        setRemoveLastItemConfirm({ cartKey, product: item });
+        return;
+      }
+      dispatch(deleteItemFromCart({ productId: cartKey }));
+      return;
+    }
+
+    const nextTier = tiers[Math.min(tiers.length - 1, nextIndex)];
+    const variant = findBulkBundleVariant(item, nextTier);
+    dispatch(setCartEntry({
+      productId: cartKey,
+      entry: {
+        ...entry,
+        quantity: 1,
+        price: Number(variant?.price ?? entry.price ?? item.price ?? 0),
+        variantOptions: {
+          ...(entry.variantOptions || {}),
+          bundleQty: nextTier,
+        },
+      },
+    }));
   };
 
   const navigateAwayFromCheckout = (product) => {
@@ -2159,6 +2225,15 @@ export default function CheckoutPage() {
   };
 
   const handleCheckoutDecrementItem = (item) => {
+    if (item._isBulkBundle) {
+      if (getRemovableCartItems().length <= 1 && wouldDecrementRemoveItem(item)) {
+        setRemoveLastItemConfirm({ cartKey: item._cartKey || item._id, product: item });
+        return;
+      }
+      stepCheckoutBulkTier(item, -1);
+      return;
+    }
+
     const cartKey = item._cartKey || item._id;
     const entry = cartItems?.[cartKey];
     if (getRemovableCartItems().length <= 1 && wouldDecrementRemoveItem(item)) {
@@ -2187,11 +2262,16 @@ export default function CheckoutPage() {
       <img src={item.image || item.images?.[0] || '/placeholder.png'} alt={item.name} className="w-14 h-14 object-cover rounded-md border shrink-0" />
       <div className="flex-1 min-w-0">
         <div className="font-semibold text-gray-900 truncate">{item.name}</div>
-        <div className="text-xs text-gray-500 truncate">{getProductSubtitle(item) || ''}</div>
+        <div className="text-xs text-gray-500 truncate">
+          {getProductSubtitle(item, {
+            variantOptions: item.variantOptions || item._variantOptions,
+            quantity: item._isMatrix ? item.quantity : undefined,
+          }) || ''}
+        </div>
         {item._isFreeGift ? (
           <div className="text-xs font-semibold text-green-600">Free gift</div>
         ) : null}
-        <div className="text-xs text-gray-400">{item._isFreeGift ? 'FREE' : formatMoney(item._cartPrice ?? item.price ?? 0)}</div>
+        <div className="text-xs text-gray-400">{item._isFreeGift ? 'FREE' : formatMoney(item._lineTotal ?? item._cartPrice ?? item.price ?? 0)}</div>
       </div>
       <div className="flex flex-col items-center gap-1 shrink-0">
         {item._isFreeGift ? (
@@ -2210,13 +2290,28 @@ export default function CheckoutPage() {
               >
                 -
               </button>
-              <span className="px-2 text-sm">{item._displayQuantity ?? item.quantity}</span>
+              <span className="px-2 text-sm">
+                {item._displayQuantity ?? item.quantity}
+              </span>
               <button
                 type="button"
-                className="px-2 py-0.5 rounded bg-gray-200 text-gray-700 hover:bg-gray-300 active:bg-gray-400"
+                className="px-2 py-0.5 rounded bg-gray-200 text-gray-700 hover:bg-gray-300 active:bg-gray-400 disabled:cursor-not-allowed disabled:opacity-40"
+                disabled={item._isBulkBundle
+                  ? (() => {
+                    const tiers = getBulkBundleTiers(item);
+                    const currentTier = Number(item._bundleTier) || tiers[tiers.length - 1];
+                    return tiers.indexOf(currentTier) >= tiers.length - 1;
+                  })()
+                  : (item._isMatrix
+                    ? item.quantity >= (resolveMatrixCartMaxPacks(item, cartItems?.[item._cartKey || item._id]) ?? Infinity)
+                    : false)}
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
+                  if (item._isBulkBundle) {
+                    stepCheckoutBulkTier(item, 1);
+                    return;
+                  }
                   const cartKey = item._cartKey || item._id;
                   const entry = cartItems?.[cartKey];
                   incrementCartItem(dispatch, {
@@ -2224,6 +2319,9 @@ export default function CheckoutPage() {
                     entry,
                     product: item,
                     price: item._cartPrice ?? item.price,
+                    maxQty: item._isMatrix
+                      ? resolveMatrixCartMaxPacks(item, entry)
+                      : undefined,
                   });
                 }}
               >
@@ -2529,7 +2627,7 @@ export default function CheckoutPage() {
                       phoneCode={form.phoneCode}
                       onPhoneChange={(value) => setForm((f) => ({ ...f, phone: value }))}
                       onPhoneCodeChange={handleChange}
-                      countryOptions={countryCodes.map((c) => ({ code: c.code }))}
+                      countryOptions={UAE_PHONE_CODE_OPTIONS}
                       selectClassName="border border-yellow-300 bg-white rounded px-2 py-2 focus:border-yellow-400"
                       inputClassName="border border-yellow-300 bg-white rounded px-4 py-2 flex-1 focus:border-yellow-400 focus:ring-2 focus:ring-yellow-200"
                       errorClassName="text-red-500 text-xs mt-2"
@@ -2603,7 +2701,7 @@ export default function CheckoutPage() {
                           setForm((f) => ({ ...f, phone: value }));
                         }}
                         onPhoneCodeChange={handleChange}
-                        countryOptions={countryCodes.map((c) => ({ code: c.code }))}
+                        countryOptions={UAE_PHONE_CODE_OPTIONS}
                         inputClassName={`flex-1 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#f59e0b] focus:bg-white focus:ring-4 focus:ring-[#fde7c2] ${fieldErrorClass('guest-phone')}`}
                       />
                       {fieldRequiredHint('guest-phone')}
@@ -2786,6 +2884,7 @@ export default function CheckoutPage() {
 
               <div id="checkout-payment" className={`flex flex-col gap-2 mb-4 ${fieldHasError('checkout-payment') ? 'rounded-2xl ring-2 ring-red-100' : ''}`}>
                 {/* Credit Card Option */}
+                {!isCardOverLimit ? (
                 <label className="flex items-center gap-3 p-4 border-2 rounded-lg transition-all cursor-pointer border-gray-200 hover:border-blue-400 hover:bg-blue-50/30 has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50">
                   <input
                     type="radio"
@@ -2814,6 +2913,7 @@ export default function CheckoutPage() {
                     </div>
                   </div>
                 </label>
+                ) : null}
 
                 {/* Cash on Delivery Option */}
                 {!hasPersonalizedOfferItem && (() => {
@@ -2856,7 +2956,7 @@ export default function CheckoutPage() {
                 })()}
 
                 {/* Tamara BNPL Option */}
-                {(() => {
+                {!isTamaraOverLimit ? (() => {
                   const tamaraInstalment = totalAfterWallet > 0 ? Number((totalAfterWallet / 4).toFixed(2)) : 0;
                   return (
                     <label className="flex flex-col gap-0 p-4 border-2 rounded-lg transition-all cursor-pointer border-gray-200 hover:border-[#f075a3] has-[:checked]:border-[#f075a3] has-[:checked]:bg-[#fff5f9]">
@@ -2893,10 +2993,10 @@ export default function CheckoutPage() {
                       )}
                     </label>
                   );
-                })()}
+                })() : null}
 
                 {/* Tabby BNPL Option */}
-                {(() => {
+                {!isTabbyOverLimit ? (() => {
                   const tabbyInstalment = totalAfterWallet > 0 ? Number((totalAfterWallet / 4).toFixed(2)) : 0;
                   return (
                     <label className="flex flex-col gap-0 p-4 border-2 rounded-lg transition-all cursor-pointer border-gray-200 hover:border-[#3DBEA3] has-[:checked]:border-[#3DBEA3] has-[:checked]:bg-[#f0faf8]">
@@ -2936,7 +3036,7 @@ export default function CheckoutPage() {
                       )}
                     </label>
                   );
-                })()}
+                })() : null}
               </div>
 
               {hasPersonalizedOfferItem && (
@@ -3352,9 +3452,9 @@ export default function CheckoutPage() {
             name: addr.name || f.name,
             email: addr.email || f.email,
             phone: cleanDigits(addr.phone) || cleanDigits(user?.phoneNumber || user?.phone) || f.phone,
-            phoneCode: addr.phoneCode || '+91',
+            phoneCode: addr.phoneCode || UAE_PHONE_CODE,
             alternatePhone: cleanDigits(addr.alternatePhone),
-            alternatePhoneCode: addr.alternatePhoneCode || '+91',
+            alternatePhoneCode: addr.alternatePhoneCode || UAE_PHONE_CODE,
             street: addr.street || f.street,
             city: addr.city || f.city,
             state: addr.state || f.state,
@@ -3404,9 +3504,9 @@ export default function CheckoutPage() {
                 name: selectedAddr.name || f.name,
                 email: selectedAddr.email || f.email,
                 phone: finalPhone,
-                phoneCode: selectedAddr.phoneCode || '+91',
+                phoneCode: selectedAddr.phoneCode || UAE_PHONE_CODE,
                 alternatePhone: cleanDigits(selectedAddr.alternatePhone),
-                alternatePhoneCode: selectedAddr.alternatePhoneCode || '+91',
+                alternatePhoneCode: selectedAddr.alternatePhoneCode || UAE_PHONE_CODE,
                 street: selectedAddr.street || f.street,
                 city: selectedAddr.city || f.city,
                 state: selectedAddr.state || f.state,

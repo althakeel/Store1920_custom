@@ -28,6 +28,7 @@ const ProductSchema = new mongoose.Schema({
   published: { type: Boolean, default: true },
   inStock: { type: Boolean, default: true },
   stockQuantity: { type: Number, default: 0 },
+  soldCount: { type: Number, default: 0 },
   stockUpdatedAt: { type: Date, default: null },
   hasVariants: { type: Boolean, default: false },
   variants: { type: Array, default: [] },
@@ -53,6 +54,15 @@ const ProductSchema = new mongoose.Schema({
   fbtBundlePrice: { type: Number, default: null },
   fbtBundleDiscount: { type: Number, default: null },
   wooImport: { type: Object, default: {} },
+  zoho: {
+    itemId: { type: String, default: null, index: true },
+    sku: { type: String, default: null },
+    synced: { type: Boolean, default: false },
+    syncedAt: { type: Date, default: null },
+    lastError: { type: String, default: null },
+    locationId: { type: String, default: null },
+    locationName: { type: String, default: null },
+  },
 }, { timestamps: true });
 
 // Add indexes for better query performance

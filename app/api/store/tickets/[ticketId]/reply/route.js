@@ -18,14 +18,14 @@ export async function POST(request, { params }) {
     const decodedToken = await getAuth().verifyIdToken(idToken);
     const adminName = decodedToken.name || decodedToken.email || 'Support Team';
 
-    const { ticketId } = params;
+    const { ticketId } = await params;
     const { message } = await request.json();
 
     if (!message) {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 });
     }
 
-    const ticket = await Ticket.findById(ticketId).lean();
+    const ticket = await Ticket.findById(ticketId);
 
     if (!ticket) {
       return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });

@@ -2,10 +2,11 @@
 import { Minus, Plus, Trash2 } from 'lucide-react';
 import { useDispatch, useSelector } from "react-redux";
 import {
-  adjustBundleCartTier,
-  getBundleTierFromEntry,
   isBulkBundleProduct,
+  isMatrixStyleProduct,
   resolveCartLinePricing,
+  resolveBulkCartMaxPacks,
+  resolveMatrixCartMaxPacks,
 } from '@/lib/bulkBundleCart';
 import { decrementCartItem, incrementCartItem } from '@/lib/bundleCartActions';
 
@@ -18,15 +19,16 @@ const Counter = ({ productId, maxQty, product, variant = 'default', onDecrease }
     const entry = cartItems[productId];
     const quantity = typeof entry === 'number' ? entry : entry?.quantity || 0;
     const pricing = product ? resolveCartLinePricing(product, entry, quantity) : null;
-    const isBundle = Boolean(product && isBulkBundleProduct(product));
-    const displayQuantity = isBundle
-      ? (getBundleTierFromEntry(entry, product) || pricing?.displayQuantity || quantity)
-      : quantity;
-    const normalizedMaxQty = typeof maxQty === 'number' ? Math.max(0, maxQty) : null;
-    const canIncrement = isBundle
-      ? Boolean(adjustBundleCartTier(entry, product, 'up'))
-      : (normalizedMaxQty === null ? true : quantity < normalizedMaxQty);
-    const showTrashOnDecrease = !isBundle && quantity <= 1;
+    const isMatrix = Boolean(product && isMatrixStyleProduct(product));
+    const isBundle = Boolean(product && !isMatrix && isBulkBundleProduct(product));
+    const displayQuantity = quantity;
+    const matrixMaxPacks = isMatrix ? resolveMatrixCartMaxPacks(product, entry) : null;
+    const bulkMaxPacks = isBundle ? resolveBulkCartMaxPacks(product, entry) : null;
+    const normalizedMaxQty = typeof maxQty === 'number'
+      ? Math.max(0, maxQty)
+      : (matrixMaxPacks != null ? matrixMaxPacks : (bulkMaxPacks != null ? bulkMaxPacks : null));
+    const canIncrement = normalizedMaxQty === null ? true : quantity < normalizedMaxQty;
+    const showTrashOnDecrease = quantity <= 1;
 
     const addToCartHandler = () => {
         incrementCartItem(dispatch, {

@@ -15,9 +15,16 @@ export default function MetaPixel() {
     const pathOnly = pathname.split('?')[0];
     if (pathOnly === '/order-success') return;
 
-    if (window.fbq) {
-      window.fbq('set', 'autoConfig', false, META_PIXEL_ID);
-    }
+    import('@/lib/metaBrowserAttribution').then(({ ensureMetaClickId }) => {
+      ensureMetaClickId();
+    });
+
+    const applyAutoConfig = () => {
+      if (window.fbq) {
+        window.fbq('set', 'autoConfig', false, META_PIXEL_ID);
+      }
+    };
+    applyAutoConfig();
 
     const query = searchParams?.toString();
     const routeKey = query ? `${pathname}?${query}` : pathname;

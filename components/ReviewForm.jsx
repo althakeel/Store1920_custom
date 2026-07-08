@@ -8,7 +8,15 @@ import { toast } from "react-hot-toast"
 import { useRouter } from "next/navigation"
 
 import { auth } from '../lib/firebase';
-export default function ReviewForm({ productId, onReviewAdded }) {
+export default function ReviewForm({
+  productId,
+  onReviewAdded,
+  onCancel,
+  startOpen = false,
+  submitDisabled = false,
+  statusMessage = '',
+  hideCancel = false,
+}) {
     const [user, setUser] = useState(null);
     const [isSignedIn, setIsSignedIn] = useState(false);
     const [getToken, setGetToken] = useState(() => async () => null);
@@ -22,12 +30,16 @@ export default function ReviewForm({ productId, onReviewAdded }) {
         return () => unsubscribe();
     }, []);
 
-    const [showForm, setShowForm] = useState(false)
+    const [showForm, setShowForm] = useState(startOpen)
     const [rating, setRating] = useState(5)
     const [review, setReview] = useState('')
     const [images, setImages] = useState([])
     const [imagePreviews, setImagePreviews] = useState([])
     const [submitting, setSubmitting] = useState(false)
+
+    useEffect(() => {
+        setShowForm(startOpen)
+    }, [startOpen, productId])
 
     const handleImageChange = (e) => {
         const files = Array.from(e.target.files)
@@ -55,6 +67,11 @@ export default function ReviewForm({ productId, onReviewAdded }) {
 
     const handleSubmit = async (e) => {
         e.preventDefault()
+
+        if (submitDisabled) {
+            if (statusMessage) toast.error(statusMessage)
+            return
+        }
 
         if (!isSignedIn) {
             toast.error('Please sign in to write a review')
@@ -98,6 +115,7 @@ export default function ReviewForm({ productId, onReviewAdded }) {
             if (onReviewAdded) {
                 onReviewAdded(data.review)
             }
+            onCancel?.()
         } catch (error) {
             toast.error(error?.response?.data?.error || 'Failed to submit review')
         } finally {
@@ -133,7 +151,12 @@ export default function ReviewForm({ productId, onReviewAdded }) {
     }
 
     return (
-        <div className="border-t border-gray-200 pt-4 mt-2">
+        <div className="pt-1">
+            {statusMessage ? (
+              <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] leading-5 text-amber-900">
+                {statusMessage}
+              </p>
+            ) : null}
             <form onSubmit={handleSubmit} className="space-y-4">
                 {/* Rating */}
                 <div>
@@ -218,11 +241,12 @@ export default function ReviewForm({ productId, onReviewAdded }) {
                 <div className="flex gap-3 pt-2">
                     <button
                         type="submit"
-                        disabled={submitting}
-                        className="px-6 py-2.5 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 transition disabled:bg-gray-400"
+                        disabled={submitting || submitDisabled}
+                        className="px-6 py-2.5 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 transition disabled:cursor-not-allowed disabled:bg-gray-400"
                     >
                         {submitting ? 'Submitting...' : 'Submit Review'}
                     </button>
+                    {!hideCancel ? (
                     <button
                         type="button"
                         onClick={() => {
@@ -231,11 +255,13 @@ export default function ReviewForm({ productId, onReviewAdded }) {
                             setReview('')
                             setImages([])
                             setImagePreviews([])
+                            onCancel?.()
                         }}
                         className="px-6 py-2.5 bg-gray-200 text-gray-700 text-sm font-medium rounded hover:bg-gray-300 transition"
                     >
                         Cancel
                     </button>
+                    ) : null}
                 </div>
             </form>
         </div>

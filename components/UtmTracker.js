@@ -1,61 +1,77 @@
 "use client";
 import { useEffect } from "react";
 import { useSearchParams } from "next/navigation";
+import { ensureMetaClickId, whenFbqReady } from "@/lib/metaBrowserAttribution";
+import { META_PIXEL_ID } from "@/lib/metaPixelConfig";
 
 export default function UtmTracker() {
   const searchParams = useSearchParams();
 
   useEffect(() => {
-    // Track UTM parameters from URL
+    const search = searchParams?.toString() ? `?${searchParams.toString()}` : window.location.search;
+    ensureMetaClickId(search);
+
     const utm_source = searchParams.get('utm_source');
     const utm_medium = searchParams.get('utm_medium');
     const utm_campaign = searchParams.get('utm_campaign');
     const utm_content = searchParams.get('utm_content');
     const utm_id = searchParams.get('utm_id');
     const utm_term = searchParams.get('utm_term');
+    const fbclid = searchParams.get('fbclid');
 
-    // Only proceed if at least one UTM parameter exists
-    if (!utm_source && !utm_medium && !utm_campaign) return;
+    const hasUtm = Boolean(utm_source || utm_medium || utm_campaign);
+    const hasFbclid = Boolean(fbclid);
+
+    if (!hasUtm && !hasFbclid) return;
 
     const utmData = {
-      source: utm_source || 'direct',
-      medium: utm_medium || 'none',
-      campaign: utm_campaign || 'none',
+      source: utm_source || (hasFbclid ? 'facebook' : 'direct'),
+      medium: utm_medium || (hasFbclid ? 'paid' : 'none'),
+      campaign: utm_campaign || (hasFbclid ? 'fbclid' : 'none'),
       content: utm_content || null,
       id: utm_id || null,
       term: utm_term || null,
+      fbclid: fbclid || null,
       timestamp: new Date().toISOString(),
-      referrer: document.referrer || 'direct'
+      referrer: document.referrer || 'direct',
     };
 
-    // Store in localStorage for entire session
     localStorage.setItem('utm_data', JSON.stringify(utmData));
+
+    window.attributionData = {
+      utm_source: utmData.source,
+      utm_medium: utmData.medium,
+      utm_campaign: utmData.campaign,
+      utm_content: utmData.content,
+      utm_id: utmData.id,
+      utm_term: utmData.term,
+      referrer: utmData.referrer,
+      entry_page_url: window.location.href,
+    };
 
     const pageKey = `${window.location.pathname}${window.location.search}`;
     const utmEventKey = `meta_utm_sent_${pageKey}`;
 
-    // Prevent duplicate firing from re-renders / StrictMode
     if (sessionStorage.getItem(utmEventKey)) return;
 
-    // Send UTM attribution as a custom event (avoid duplicate standard PageView)
-    if (window.fbq) {
-      window.fbq('trackCustom', 'UTMAttribution', {
-        utm_source: utm_source,
-        utm_campaign: utm_campaign,
-        utm_medium: utm_medium
+    whenFbqReady((fbq) => {
+      fbq('trackSingleCustom', META_PIXEL_ID, 'UTMAttribution', {
+        utm_source: utmData.source,
+        utm_campaign: utmData.campaign,
+        utm_medium: utmData.medium,
+        fbclid: fbclid || undefined,
       });
-    }
+    });
 
     sessionStorage.setItem(utmEventKey, '1');
 
-    // Send to Google Analytics if available
     if (window.gtag) {
       window.gtag('event', 'page_view', {
-        'utm_source': utm_source,
-        'utm_medium': utm_medium,
-        'utm_campaign': utm_campaign,
-        'utm_content': utm_content,
-        'utm_id': utm_id
+        utm_source: utmData.source,
+        utm_medium: utmData.medium,
+        utm_campaign: utmData.campaign,
+        utm_content: utmData.content,
+        utm_id: utmData.id,
       });
     }
   }, [searchParams]);

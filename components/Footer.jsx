@@ -138,6 +138,7 @@ const Footer = () => {
                 { text: t('footer.privacyPolicy'), path: '/privacy-policy', icon: null },
                 { text: t('footer.returnRefund'), path: '/return-policy', icon: null },
                 { text: t('footer.cancellationRefunds'), path: '/cancellation-and-refunds', icon: null },
+                { text: t('footer.businessInformation'), path: '/business-information', icon: null },
                 { text: t('footer.contactUs'), path: '/contact-us', icon: null },
                 { text: t('footer.sitemap'), path: '/sitemap', icon: null },
             ]
@@ -146,6 +147,7 @@ const Footer = () => {
             title: t('footer.aboutStore'),
             links: [
                 { text: t('footer.aboutUs'), path: '/about-us', icon: null },
+                { text: t('footer.businessInformation'), path: '/business-information', icon: null },
                 { text: t('footer.createYourStore'), path: '/create-store', icon: null },
                 { text: t('footer.becomeSeller'), path: '/create-store', icon: null },
                 { text: t('footer.careers'), path: '/careers', icon: null },

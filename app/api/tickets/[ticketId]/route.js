@@ -18,7 +18,7 @@ export async function GET(request, { params }) {
     const decodedToken = await getAuth().verifyIdToken(idToken);
     const userId = decodedToken.uid;
 
-    const { ticketId } = params;
+    const { ticketId } = await params;
     const ticket = await Ticket.findOne({ _id: ticketId, userId }).lean();
 
     if (!ticket) {
@@ -52,7 +52,7 @@ export async function POST(request, { params }) {
     const userId = decodedToken.uid;
     const userName = decodedToken.name || decodedToken.email;
 
-    const { ticketId } = params;
+    const { ticketId } = await params;
     const { message } = await request.json();
 
     if (!message) {
@@ -119,7 +119,7 @@ export async function PATCH(request, { params }) {
     const decodedToken = await getAuth().verifyIdToken(idToken);
     const userId = decodedToken.uid;
 
-    const { ticketId } = params;
+    const { ticketId } = await params;
     const { status } = await request.json();
 
     if (!status) {

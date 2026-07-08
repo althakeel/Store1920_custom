@@ -187,6 +187,7 @@ export async function POST(request) {
         const specTableRowsRaw = formData.get("specTableRows");
         const images = formData.getAll("images");
         const stockQuantity = formData.get("stockQuantity") ? Number(formData.get("stockQuantity")) : 0;
+        const soldCount = Math.max(0, Number(formData.get("soldCount") || 0) || 0);
         // New: variants support
         const hasVariants = String(formData.get("hasVariants") || "false").toLowerCase() === "true";
         const variantsRaw = formData.get("variants"); // expected JSON string if hasVariants
@@ -366,6 +367,7 @@ export async function POST(request) {
             seoDescription,
             seoKeywords,
             stockQuantity,
+            soldCount,
             storeId,
         });
 
@@ -474,10 +476,11 @@ export async function GET(request) {
 
         if (isPaginated) {
             const page = Math.max(1, Number.parseInt(pageParam || '1', 10) || 1);
-            const limit = Math.min(48, Math.max(1, Number.parseInt(searchParams.get('limit') || '24', 10) || 24));
+            const manage = searchParams.get('manage') === 'true';
+            const maxLimit = manage ? 500 : 48;
+            const limit = Math.min(maxLimit, Math.max(1, Number.parseInt(searchParams.get('limit') || '24', 10) || 24));
             const sort = searchParams.get('sort') || 'newest';
             const category = String(searchParams.get('category') || '').trim();
-            const manage = searchParams.get('manage') === 'true';
             const media = searchParams.get('media') === 'true';
             const pickerResult = await fetchPickerPage(Product, {
                 storeId,
@@ -660,6 +663,10 @@ export async function PUT(request) {
         const specTableRowsRaw = formData.get("specTableRows");
         const images = formData.getAll("images");
         const stockQuantity = formData.get("stockQuantity") ? Number(formData.get("stockQuantity")) : undefined;
+        const soldCountRaw = formData.get("soldCount");
+        const soldCount = soldCountRaw === null || soldCountRaw === undefined || soldCountRaw === ''
+            ? undefined
+            : Math.max(0, Number(soldCountRaw) || 0);
         // Variants support
         const hasVariants = String(formData.get("hasVariants") || "").toLowerCase() === "true";
         const variantsRaw = formData.get("variants");
@@ -834,6 +841,9 @@ export async function PUT(request) {
         // Add stockQuantity if provided
         if (stockQuantity !== undefined) {
             updateData.stockQuantity = stockQuantity;
+        }
+        if (soldCount !== undefined) {
+            updateData.soldCount = soldCount;
         }
         if (slug && slug !== product.slug) {
             const existing = await Product.findOne({ slug })

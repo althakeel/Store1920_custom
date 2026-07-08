@@ -13,7 +13,7 @@ import axios from 'axios';
 import { countryCodes } from '../assets/countryCodes';
 import { linkGuestOrdersForCurrentUser } from '@/lib/linkGuestOrdersClient';
 
-const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '' }) => {
+const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '', variant = 'modal' }) => {
   const [isRegister, setIsRegister] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -87,7 +87,9 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '' }
     });
   }, [isRegister]);
 
-  if (!open) return null;
+  if (!open && variant === 'modal') return null;
+
+  const isPage = variant === 'page';
 
   const validateEmail = (email) => {
     // Simple email regex
@@ -307,11 +309,15 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '' }
   };
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4">
+    <div className={isPage
+      ? 'min-h-screen flex items-center justify-center bg-gray-50 p-4'
+      : 'fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4'
+    }>
       <div
         className="bg-white w-full max-h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex relative"
         style={{ maxWidth: modalSettings.sideImage ? '800px' : '448px' }}
       >
+        {!isPage ? (
         <button
           type="button"
           className="absolute top-3 right-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-gray-700 shadow-md ring-1 ring-black/10 transition hover:bg-white hover:text-black"
@@ -320,6 +326,7 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '' }
         >
           <X size={20} />
         </button>
+        ) : null}
 
         {/* Left Column - Side Image (only when image is set) */}
         {modalSettings.sideImage && (
@@ -680,6 +687,16 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '' }
               Privacy Policy
             </a>
           </p>
+
+          {isPage ? (
+            <button
+              type="button"
+              onClick={onClose}
+              className="mt-4 w-full text-center text-sm text-gray-600 hover:text-gray-900 transition"
+            >
+              Continue shopping
+            </button>
+          ) : null}
         </div>
       </div>
     </div>

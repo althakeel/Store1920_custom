@@ -16,6 +16,7 @@ import PersonalizedOffer from '@/models/PersonalizedOffer';
 import StorePreference from '@/models/StorePreference';
 import FreeGiftCampaign from '@/models/FreeGiftCampaign';
 import AbandonedCart from '@/models/AbandonedCart';
+import ShippingSetting from '@/models/ShippingSetting';
 import { cartItemsMatchAbandoned, findActiveRecoveryCart } from '@/lib/abandonedCartRecoveryOffer';
 import { sendOrderCreatedConfirmationNotifications } from '@/lib/orderConfirmationNotifications';
 import { markAbandonedCartsConvertedForOrder } from '@/lib/markAbandonedCartsConverted';
@@ -44,6 +45,7 @@ import {
   findBulkBundleVariant,
   isBulkBundleProduct,
 } from '@/lib/bulkBundleCart';
+import { getPaymentMethodLimitError } from '@/lib/paymentMethodLimits';
 import {
   buildVariantStockDecrementQuery,
   matchVariantByOptions,
@@ -496,6 +498,48 @@ export async function POST(request) {
             redeemableCoins = Math.max(0, Math.min(Math.floor(Number(coinsToRedeem)), availableCoins));
         }
 
+        const freeShippingCoupon = Boolean(coupon?.freeShipping);
+        let projectedCheckoutTotal = 0;
+        let projectedShippingAdded = false;
+        let projectedWalletApplied = false;
+        for (const [, sellerItems] of ordersByStore.entries()) {
+            let storeTotal = sellerItems.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+            if (normalizedCouponCode && coupon) {
+                const normalizedDiscountValue = Number(coupon.discountValue ?? coupon.discount ?? 0);
+                if (coupon.discountType === 'percentage') {
+                    storeTotal -= (storeTotal * normalizedDiscountValue) / 100;
+                } else {
+                    storeTotal -= Math.min(normalizedDiscountValue, storeTotal);
+                }
+            }
+            if (!isPlusMember && !projectedShippingAdded && !freeShippingCoupon) {
+                storeTotal += shippingFee;
+                projectedShippingAdded = true;
+            }
+            if (!projectedWalletApplied && redeemableCoins > 0) {
+                const maxCoinsByTotal = Math.floor(storeTotal / 1);
+                const coinsRedeemed = Math.min(redeemableCoins, maxCoinsByTotal);
+                const walletDiscount = Number((coinsRedeemed * 1).toFixed(2));
+                storeTotal = Math.max(0, Number((storeTotal - walletDiscount).toFixed(2)));
+                projectedWalletApplied = true;
+            }
+            projectedCheckoutTotal += parseFloat(storeTotal.toFixed(2));
+        }
+
+        const primaryStoreId = [...ordersByStore.keys()][0];
+        const shippingSettingForLimits = primaryStoreId
+            ? await ShippingSetting.findOne({ storeId: primaryStoreId }).lean()
+            : null;
+        const paymentLimitError = getPaymentMethodLimitError(
+            shippingSettingForLimits,
+            paymentMethod,
+            projectedCheckoutTotal,
+            { hasPersonalizedOfferItem },
+        );
+        if (paymentLimitError) {
+            return NextResponse.json({ error: paymentLimitError }, { status: 400 });
+        }
+
         // Order creation
         let orderIds = [];
         const createdOrderTotals = new Map();
@@ -623,11 +667,21 @@ export async function POST(request) {
             if (razorpayOrderId) orderData.razorpayOrderId = razorpayOrderId;
             if (razorpaySignature) orderData.razorpaySignature = razorpaySignature;
 
-            if (trackingContext && (trackingContext.anonymousId || trackingContext.sessionId)) {
-                orderData.trackingContext = {
-                    anonymousId: trackingContext.anonymousId ? String(trackingContext.anonymousId) : null,
-                    sessionId: trackingContext.sessionId ? String(trackingContext.sessionId) : null,
-                };
+            if (trackingContext && typeof trackingContext === 'object') {
+                const hasTracking = trackingContext.anonymousId
+                    || trackingContext.sessionId
+                    || trackingContext.fbp
+                    || trackingContext.fbc
+                    || trackingContext.eventSourceUrl;
+                if (hasTracking) {
+                    orderData.trackingContext = {
+                        anonymousId: trackingContext.anonymousId ? String(trackingContext.anonymousId) : null,
+                        sessionId: trackingContext.sessionId ? String(trackingContext.sessionId) : null,
+                        fbp: trackingContext.fbp ? String(trackingContext.fbp) : null,
+                        fbc: trackingContext.fbc ? String(trackingContext.fbc) : null,
+                        eventSourceUrl: trackingContext.eventSourceUrl ? String(trackingContext.eventSourceUrl) : null,
+                    };
+                }
             }
 
             if (attribution && typeof attribution === 'object') {

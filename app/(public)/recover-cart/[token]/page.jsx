@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import axios from 'axios';
 import Image from 'next/image';
 import { useDispatch } from 'react-redux';
@@ -36,6 +37,9 @@ export default function RecoverCartPage() {
       try {
         const { data } = await axios.get(`/api/abandoned-cart-recovery/${encodeURIComponent(recoveryToken)}`);
         setOffer(data);
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('abandonedCartRecoveryToken', recoveryToken);
+        }
       } catch (err) {
         setError(err?.response?.data?.error || 'This recovery link is invalid or expired');
       } finally {
@@ -174,7 +178,16 @@ export default function RecoverCartPage() {
                     </div>
 
                     <div className="min-w-0 flex-1">
-                      <p className="line-clamp-2 font-semibold text-slate-900">{item.name || 'Product'}</p>
+                      {item.slug ? (
+                        <Link
+                          href={`/product/${item.slug}`}
+                          className="line-clamp-2 font-semibold text-slate-900 hover:text-emerald-700"
+                        >
+                          {item.name || 'Product'}
+                        </Link>
+                      ) : (
+                        <p className="line-clamp-2 font-semibold text-slate-900">{item.name || 'Product'}</p>
+                      )}
                       {formatVariantOptionsLabel(item.variantOptions) ? (
                         <p className="mt-0.5 text-xs text-slate-500">{formatVariantOptionsLabel(item.variantOptions)}</p>
                       ) : null}
@@ -215,15 +228,23 @@ export default function RecoverCartPage() {
               These discounted prices are only visible through this private link.
             </p>
 
-            <button
-              type="button"
-              onClick={handleContinue}
-              disabled={applying}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
-            >
-              <ShoppingCart size={18} />
-              {applying ? 'Loading checkout...' : 'Continue to checkout'}
-            </button>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <button
+                type="button"
+                onClick={handleContinue}
+                disabled={applying}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+              >
+                <ShoppingCart size={18} />
+                {applying ? 'Loading checkout...' : 'Continue to checkout'}
+              </button>
+              <Link
+                href="/shop"
+                className="flex flex-1 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Browse more products
+              </Link>
+            </div>
           </div>
         </div>
       </div>

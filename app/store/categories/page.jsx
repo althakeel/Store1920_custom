@@ -134,13 +134,6 @@ function buildCategoryTree(categories = [], parentId = null) {
     }));
 }
 
-function flattenCategoryIds(categories = []) {
-  return categories.flatMap((category) => [
-    String(category._id),
-    ...flattenCategoryIds(category.children || []),
-  ]);
-}
-
 function flattenCategoryOptions(categories = [], depth = 0) {
   return categories.flatMap((category) => [
     {
@@ -151,6 +144,22 @@ function flattenCategoryOptions(categories = [], depth = 0) {
     },
     ...flattenCategoryOptions(category.children || [], depth + 1),
   ]);
+}
+
+function flattenHierarchicalCategories(categories = [], depth = 0) {
+  return categories.flatMap((category) => {
+    const children = Array.isArray(category.children) ? category.children : [];
+    const { children: _children, ...rest } = category;
+
+    return [
+      {
+        ...rest,
+        depth,
+        childCount: children.length,
+      },
+      ...flattenHierarchicalCategories(children, depth + 1),
+    ];
+  });
 }
 
 function getCategoryLevelMeta(depth = 0) {
@@ -230,6 +239,16 @@ export default function StoreCategoryMenu() {
   const [backfillingArabic, setBackfillingArabic] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [categoryProductCounts, setCategoryProductCounts] = useState({});
+  const [totalStoreProducts, setTotalStoreProducts] = useState(0);
+
+  const fetchCategoryProductCounts = async (token) => {
+    const { data } = await axios.get('/api/store/categories/product-stats', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    setCategoryProductCounts(data?.counts || {});
+    setTotalStoreProducts(Number(data?.totalProducts) || 0);
+  };
 
   const fetchCategories = async () => {
     try {
@@ -242,6 +261,12 @@ export default function StoreCategoryMenu() {
       });
       const nextCategories = data.categories || [];
       setCategories(nextCategories);
+
+      try {
+        await fetchCategoryProductCounts(token);
+      } catch (error) {
+        console.log('Failed to load category product counts', error);
+      }
 
       try {
         const menuRes = await axios.get('/api/store/category-menu', {
@@ -613,29 +638,57 @@ export default function StoreCategoryMenu() {
   };
 
   const flatCategories = useMemo(() => flattenSystemCategories(categories), [categories]);
-  const filteredCategories = flatCategories.filter((cat) =>
-    cat.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    String(cat.nameAr || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    cat.slug?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredCategories = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return flatCategories;
 
-  const hierarchicalCategories = buildCategoryTree(filteredCategories);
+    const byId = new Map(flatCategories.map((category) => [String(category._id), category]));
+    const matchedIds = new Set();
+
+    flatCategories.forEach((category) => {
+      const matches = category.name.toLowerCase().includes(query)
+        || String(category.nameAr || '').toLowerCase().includes(query)
+        || category.slug?.toLowerCase().includes(query);
+
+      if (!matches) return;
+
+      matchedIds.add(String(category._id));
+
+      let parentId = category.parentId;
+      while (parentId) {
+        const parentKey = String(parentId);
+        matchedIds.add(parentKey);
+        parentId = byId.get(parentKey)?.parentId;
+      }
+    });
+
+    return flatCategories.filter((category) => matchedIds.has(String(category._id)));
+  }, [flatCategories, searchQuery]);
+
+  const hierarchicalCategories = useMemo(
+    () => buildCategoryTree(filteredCategories),
+    [filteredCategories],
+  );
+  const displayCategories = useMemo(
+    () => flattenHierarchicalCategories(hierarchicalCategories),
+    [hierarchicalCategories],
+  );
   const categoryOptions = flattenCategoryOptions(buildCategoryTree(flatCategories));
   const selectableParentOptions = categoryOptions.filter((category) => category.id !== String(editingCategoryId || ''));
-  const visibleCategoryIds = flattenCategoryIds(hierarchicalCategories);
+  const totalPages = Math.max(1, Math.ceil(displayCategories.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedCategories = useMemo(() => {
+    const startIndex = (safeCurrentPage - 1) * pageSize;
+    return displayCategories.slice(startIndex, startIndex + pageSize);
+  }, [displayCategories, pageSize, safeCurrentPage]);
+  const visibleCategoryIds = paginatedCategories.map((category) => String(category._id));
   const selectedCategorySet = new Set(selectedCategoryIds);
   const allVisibleSelected = visibleCategoryIds.length > 0 && visibleCategoryIds.every((id) => selectedCategorySet.has(id));
   const categoriesWithImages = flatCategories.filter((category) => category.image).length;
 
-  const totalPages = Math.max(1, Math.ceil(hierarchicalCategories.length / pageSize));
-  const safeCurrentPage = Math.min(currentPage, totalPages);
-  const paginatedHierarchicalCategories = useMemo(() => {
-    const startIndex = (safeCurrentPage - 1) * pageSize;
-    return hierarchicalCategories.slice(startIndex, startIndex + pageSize);
-  }, [hierarchicalCategories, pageSize, safeCurrentPage]);
-  const paginationStart = hierarchicalCategories.length ? ((safeCurrentPage - 1) * pageSize) + 1 : 0;
-  const paginationEnd = hierarchicalCategories.length
-    ? Math.min(safeCurrentPage * pageSize, hierarchicalCategories.length)
+  const paginationStart = displayCategories.length ? ((safeCurrentPage - 1) * pageSize) + 1 : 0;
+  const paginationEnd = displayCategories.length
+    ? Math.min(safeCurrentPage * pageSize, displayCategories.length)
     : 0;
 
   useEffect(() => {
@@ -729,16 +782,21 @@ export default function StoreCategoryMenu() {
     setCurrentPage,
     pageSize,
     setPageSize,
-    totalItems: hierarchicalCategories.length,
+    totalItems: displayCategories.length,
     paginationStart,
     paginationEnd,
-    itemLabel: 'top-level categories',
+    itemLabel: 'categories',
   };
 
-  const renderSystemCategoryNode = (category, depth = 0) => {
+  const renderSystemCategoryNode = (category, depth = 0, { showNestedChildren = true } = {}) => {
     const meta = getCategoryLevelMeta(depth);
-    const isSelected = selectedCategorySet.has(String(category._id));
-    const hasChildren = Array.isArray(category.children) && category.children.length > 0;
+    const categoryId = String(category._id);
+    const isSelected = selectedCategorySet.has(categoryId);
+    const childCount = Number.isFinite(category.childCount)
+      ? category.childCount
+      : (Array.isArray(category.children) ? category.children.length : 0);
+    const hasChildren = childCount > 0;
+    const productCount = categoryProductCounts[categoryId] || 0;
 
     return (
       <div key={String(category._id)} className={`rounded-xl border shadow-md ${meta.cardClassName} ${isSelected ? 'border-blue-500 ring-2 ring-blue-100' : ''}`}>
@@ -792,8 +850,11 @@ export default function StoreCategoryMenu() {
                   )}
                   <p className="mt-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500 sm:text-xs">
                     {hasChildren
-                      ? `${meta.label} with ${category.children.length} nested ${category.children.length === 1 ? 'category' : 'categories'}`
+                      ? `${meta.label} with ${childCount} nested ${childCount === 1 ? 'category' : 'categories'}`
                       : `${meta.label} with no nested categories`}
+                  </p>
+                  <p className="mt-1 inline-flex items-center rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-blue-700 sm:text-xs">
+                    {productCount} {productCount === 1 ? 'product' : 'products'}
                   </p>
                 </div>
 
@@ -850,17 +911,17 @@ export default function StoreCategoryMenu() {
           </div>
         </div>
 
-        {hasChildren ? (
+        {showNestedChildren && hasChildren ? (
           <div className="border-t border-white/70 bg-white/70 p-3">
             <div className="space-y-3 pl-1 md:pl-4">
-              {category.children.map((child) => renderSystemCategoryNode(child, depth + 1))}
+              {category.children.map((child) => renderSystemCategoryNode(child, depth + 1, { showNestedChildren: true }))}
             </div>
           </div>
-        ) : (
+        ) : showNestedChildren ? (
           <div className="border-t border-white/70 bg-white/70 px-3 py-3 text-center text-xs italic text-slate-500 sm:text-sm">
             No nested categories
           </div>
-        )}
+        ) : null}
       </div>
     );
   };
@@ -884,7 +945,7 @@ export default function StoreCategoryMenu() {
           </div>
 
           {/* Stats Grid */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <div className="rounded-xl border border-slate-100 bg-white p-3.5 shadow-md transition-shadow hover:shadow-lg sm:p-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
@@ -894,6 +955,19 @@ export default function StoreCategoryMenu() {
                 </div>
                 <div className="rounded-lg bg-blue-100 p-2.5 sm:p-3">
                   <MdCategory className="text-xl text-blue-600 sm:text-2xl" />
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-100 bg-white p-3.5 shadow-md transition-shadow hover:shadow-lg sm:p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-600 sm:text-xs">Store Products</p>
+                  <p className="mt-1 text-2xl font-bold text-emerald-600 sm:text-3xl">{totalStoreProducts}</p>
+                  <p className="mt-0.5 text-xs text-slate-500">assigned across categories</p>
+                </div>
+                <div className="rounded-lg bg-emerald-100 p-2.5 sm:p-3">
+                  <FiCheckCircle className="text-xl text-emerald-600 sm:text-2xl" />
                 </div>
               </div>
             </div>
@@ -928,7 +1002,7 @@ export default function StoreCategoryMenu() {
               disabled={!visibleCategoryIds.length}
               className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 sm:px-3.5 sm:py-2 sm:text-sm"
             >
-              {allVisibleSelected ? 'Unselect All' : 'Select All'}
+              {allVisibleSelected ? 'Unselect Page' : 'Select Page'}
             </button>
             <button
               type="button"
@@ -1184,7 +1258,7 @@ export default function StoreCategoryMenu() {
               <FiPlus size={16} /> Create First Category
             </button>
           </div>
-        ) : hierarchicalCategories.length === 0 ? (
+        ) : displayCategories.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center shadow-sm sm:p-8">
             <p className="text-base font-bold text-slate-700 sm:text-lg">No Categories Found</p>
             <p className="mt-1 text-sm text-slate-600">Try adjusting your search terms</p>
@@ -1193,7 +1267,7 @@ export default function StoreCategoryMenu() {
           <>
             {renderPaginationControls({ ...paginationProps, className: 'mb-4' })}
             <div className="space-y-4 sm:space-y-5">
-              {paginatedHierarchicalCategories.map((category) => renderSystemCategoryNode(category))}
+              {paginatedCategories.map((category) => renderSystemCategoryNode(category, category.depth, { showNestedChildren: false }))}
             </div>
             {renderPaginationControls({ ...paginationProps, className: 'mt-4 sm:mt-5' })}
           </>

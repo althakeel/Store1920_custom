@@ -13,11 +13,10 @@ function getItemSubtitle(item) {
   if (item._isFreeGift) {
     return item._freeGiftTitle ? `Free gift • ${item._freeGiftTitle}` : 'Free gift';
   }
-  if (item._isBulkBundle) {
-    const base = getProductSubtitle(item);
-    return base ? `Bundle offer • ${base}` : 'Bundle offer';
-  }
-  return getProductSubtitle(item);
+  return getProductSubtitle(item, {
+    variantOptions: item.variantOptions || item._variantOptions,
+    quantity: item.quantity,
+  });
 }
 
 function formatMoney(currency, amount) {

@@ -6,12 +6,14 @@ import { useEffect, useMemo, useState, useRef, useCallback } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { useDispatch } from "react-redux"
+import { useSearchParams } from "next/navigation"
 import { fetchProducts as fetchProductsAction, STOREFRONT_CATALOG_FETCH } from "@/lib/features/product/productSlice"
 import { toast } from "react-hot-toast"
 import Loading from "@/components/Loading"
 
 import axios from "axios"
 import nextDynamic from "next/dynamic"
+import { ChevronDown } from 'lucide-react'
 import ProductBulkImportPanel from '@/components/store/ProductBulkImportPanel'
 import {
     buildCategoryLookup,
@@ -21,6 +23,26 @@ import {
 import { getProductThumbnailUrl } from '@/lib/productMedia'
 
 const FBT_PICKER_LIMIT = 48
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100, 500]
+
+const MANAGE_PRODUCT_SELECT_CLASS =
+    'h-10 w-full appearance-none rounded-lg border border-gray-300 bg-white pl-3 pr-9 text-sm leading-none text-slate-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500'
+
+function ManageProductSelect({ wrapperClassName = '', className = '', ...props }) {
+    return (
+        <div className={`relative ${wrapperClassName}`}>
+            <select
+                {...props}
+                className={`${MANAGE_PRODUCT_SELECT_CLASS} ${className}`.trim()}
+            />
+            <ChevronDown
+                size={16}
+                className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500"
+                aria-hidden
+            />
+        </div>
+    )
+}
 
 const ProductForm = nextDynamic(() => import('../add-product/page'), {
     ssr: false,
@@ -65,6 +87,7 @@ export default function StoreManageProducts() {
     const dispatch = useDispatch();
 
     const { user, getToken } = useAuth();
+    const searchParams = useSearchParams();
 
     const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || 'AED'
     const formatAmount = (value) => {
@@ -107,6 +130,14 @@ export default function StoreManageProducts() {
     const [selectedCategory, setSelectedCategory] = useState('') // Category filter
     const [currentPage, setCurrentPage] = useState(1)
     const [pageSize, setPageSize] = useState(20)
+
+    useEffect(() => {
+        const categoryFromUrl = searchParams.get('category');
+        if (categoryFromUrl) {
+            setSelectedCategory(categoryFromUrl);
+            setCurrentPage(1);
+        }
+    }, [searchParams]);
     const [showFbtModal, setShowFbtModal] = useState(false)
     const [fbtTargetProduct, setFbtTargetProduct] = useState(null)
     const [fbtConfigLoading, setFbtConfigLoading] = useState(false)
@@ -921,7 +952,7 @@ export default function StoreManageProducts() {
             ) : (
             <>
             {/* Search Bar and Category Filter */}
-            <div className="mb-6 flex w-full gap-4 flex-wrap">
+            <div className="mb-6 flex w-full flex-wrap items-center gap-3">
                 <div className="flex-1 min-w-xs">
                     <input
                         type="search"
@@ -929,7 +960,7 @@ export default function StoreManageProducts() {
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         autoComplete="off"
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full h-10 px-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
                     {searchQuery ? (
                         <p className="text-sm text-slate-600 mt-2">
@@ -939,29 +970,34 @@ export default function StoreManageProducts() {
                 </div>
                 
                 {/* Category Filter */}
-                <select
+                <ManageProductSelect
+                    wrapperClassName="min-w-[11rem] shrink-0"
                     value={selectedCategory}
                     onChange={(e) => setSelectedCategory(e.target.value)}
-                    className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                 >
                     <option value="">All Categories</option>
                     {Object.entries(categoryMap).map(([id, name]) => (
                         <option key={id} value={id}>{name}</option>
                     ))}
-                </select>
-                <select
-                    value={pageSize}
-                    onChange={(e) => setPageSize(Number(e.target.value) || 20)}
-                    className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                >
-                    {[10, 20, 50, 100].map((size) => (
-                        <option key={size} value={size}>{size} / page</option>
-                    ))}
-                </select>
+                </ManageProductSelect>
+
+                <div className="flex shrink-0 items-center gap-2">
+                    <span className="text-sm font-medium text-slate-600 whitespace-nowrap">Per page</span>
+                    <ManageProductSelect
+                        wrapperClassName="w-[5.5rem]"
+                        value={pageSize}
+                        onChange={(e) => setPageSize(Number(e.target.value) || 20)}
+                        aria-label="Products per page"
+                    >
+                        {PAGE_SIZE_OPTIONS.map((size) => (
+                            <option key={size} value={size}>{size}</option>
+                        ))}
+                    </ManageProductSelect>
+                </div>
                 <button
                     type="button"
                     onClick={() => setShowDetailColumns((current) => !current)}
-                    className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 transition"
+                    className="h-10 px-4 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 transition"
                 >
                     {showDetailColumns ? 'Hide extra columns' : 'Show categories & description'}
                 </button>

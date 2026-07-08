@@ -3,6 +3,8 @@ import connectDB from '@/lib/mongodb';
 import Rating from '@/models/Rating';
 import Order from '@/models/Order';
 import User from '@/models/User';
+import { getAuth } from '@/lib/firebase-admin';
+import { findDeliveredOrderForProduct } from '@/lib/reviewEligibility';
 
 
 // POST: Customer adds a review with images
@@ -10,20 +12,15 @@ export async function POST(request) {
     try {
         await connectDB();
         
-        // Firebase Auth
         const authHeader = request.headers.get('authorization');
         let userId = null;
+        let userEmail = '';
         if (authHeader && authHeader.startsWith('Bearer ')) {
-            const idToken = authHeader.split('Bearer ')[1];
-            const { getAuth } = await import('firebase-admin/auth');
-            const { initializeApp, applicationDefault, getApps } = await import('firebase-admin/app');
-            if (getApps().length === 0) {
-                initializeApp({ credential: applicationDefault() });
-            }
             try {
-                const decodedToken = await getAuth().verifyIdToken(idToken);
+                const decodedToken = await getAuth().verifyIdToken(authHeader.split('Bearer ')[1]);
                 userId = decodedToken.uid;
-            } catch (e) {
+                userEmail = decodedToken.email || '';
+            } catch {
                 userId = null;
             }
         }
@@ -33,27 +30,30 @@ export async function POST(request) {
         }
 
         const formData = await request.formData();
-        const productId = formData.get('productId');
+        const productId = String(formData.get('productId') || '').trim();
         const rating = Number(formData.get('rating'));
         const review = formData.get('review');
         const images = formData.getAll('images');
-        const videos = formData.getAll('videos');
 
         if (!productId || !rating || !review) {
             return Response.json({ error: "Missing required fields" }, { status: 400 });
         }
 
-        // Check if customer has purchased this product
-        const purchasedOrder = await Order.findOne({
-            userId,
-            'orderItems.productId': productId,
-            status: { $in: ['DELIVERED', 'SHIPPED', 'ORDER_PLACED'] }
-        }).select('_id').lean();
+        const deliveredOrder = await findDeliveredOrderForProduct(Order, userId, productId, userEmail);
 
-        if (!purchasedOrder) {
+        if (!deliveredOrder) {
             return Response.json({ 
-                error: "You can only review products you have purchased" 
+                error: "You can review this product after your order is delivered" 
             }, { status: 403 });
+        }
+
+        const existingReview = await Rating.findOne({ userId, productId }).select('_id approved').lean();
+        if (existingReview) {
+            return Response.json({
+                error: existingReview.approved
+                    ? 'You already reviewed this product'
+                    : 'Your review is already pending approval',
+            }, { status: 409 });
         }
 
         // Upload images to S3
@@ -80,7 +80,7 @@ export async function POST(request) {
                 rating,
                 review,
                 images: imageUrls,
-                orderId: purchasedOrder._id.toString(),
+                orderId: deliveredOrder._id.toString(),
                 approved: false
             },
             { upsert: true, new: true }

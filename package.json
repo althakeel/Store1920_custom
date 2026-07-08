@@ -14,7 +14,11 @@
     "lint": "next lint",
     "migrate:product-images-s3": "node scripts/migrateProductImagesToS3.js",
     "migrate:product-images-s3:dry-run": "node scripts/migrateProductImagesToS3.js --dry-run",
-    "migrate:categories": "node scripts/migrateCategories.mjs --no-backup"
+    "migrate:categories": "node scripts/migrateCategories.mjs --no-backup",
+    "test:zoho-inventory": "node --env-file=.env scripts/testZohoInventory.js",
+    "sync:zoho-products": "node scripts/syncZohoProducts.js",
+    "sync:zoho-products:dry-run": "node scripts/syncZohoProducts.js --dry-run --limit=10",
+    "sync:zoho-products:test": "node scripts/syncZohoProducts.js --dry-run --limit=3 --skip-images"
   },
   "engines": {
     "node": "22.x"

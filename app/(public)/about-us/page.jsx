@@ -1,10 +1,14 @@
 'use client';
 
+import Link from 'next/link';
 import PolicyPageLayout from '@/components/PolicyPageLayout';
+import { useStorefrontI18n } from '@/lib/useStorefrontI18n';
 
 export default function AboutUsPage() {
+  const { isArabic } = useStorefrontI18n();
+
   return (
-    <PolicyPageLayout>
+    <PolicyPageLayout dir={isArabic ? 'rtl' : undefined}>
       <h1 className="text-3xl font-bold text-gray-900 mb-2">ABOUT store1920</h1>
       <p className="text-lg text-gray-700 font-medium mb-8">Smart Living. Smarter Prices.</p>
 
@@ -18,10 +22,23 @@ export default function AboutUsPage() {
         <section>
           <h2 className="font-semibold text-gray-900 mb-2">Who We Are</h2>
           <p className="text-gray-700 mb-3">
+            store1920 is owned and operated by <strong>ALTHAKEEL GENERAL TRADING L.L.C</strong>
+            {' '}
+            (<span dir="rtl">الثقيل للتجارة العامة ش.ذ.م.م</span>), a UAE Limited Liability Company licensed by the Department of Economic Development (License No. <strong>641210</strong>).
+          </p>
+          <p className="text-gray-700 mb-3">
             store1920 was founded with a straightforward belief: everyone deserves access to great products without overpaying. We are a UAE-based e-commerce store offering a carefully selected range of electronics, gadgets, and home living products that genuinely improve your everyday life.
           </p>
           <p className="text-gray-700">
             Whether you're upgrading your home setup, finding the perfect gift, or just looking for something that works — we've handpicked it, priced it fairly, and made it easy to get to your door.
+          </p>
+          <p className="text-gray-700 mt-3">
+            Full trade license and company registration details are published on our{' '}
+            <Link href="/business-information" className="text-[#E52721] font-semibold hover:underline">
+              Business Information
+            </Link>
+            {' '}
+            page.
           </p>
         </section>
 

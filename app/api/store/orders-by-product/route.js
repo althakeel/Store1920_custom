@@ -81,7 +81,9 @@ export async function GET(request) {
     }
 
     const aggregated = aggregateOrdersByProduct(successOrders);
-    const productIds = aggregated.map((row) => row.productId).filter(Boolean);
+    const productIds = aggregated
+      .map((row) => row.productId)
+      .filter((id) => id && !String(id).startsWith('line:'));
 
     const products = productIds.length
       ? await Product.find({ _id: { $in: productIds }, storeId })

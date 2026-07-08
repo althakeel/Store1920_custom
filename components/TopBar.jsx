@@ -46,8 +46,17 @@ export default function TopBar({ initialLanguage = 'en' }) {
   const [bnplLogoError, setBnplLogoError] = useState({ tamara: false, tabby: false });
   const dropdownRef = useRef(null);
   const suppressToggleRef = useRef(false);
+  const dropdownLeaveTimerRef = useRef(null);
+
+  const clearDropdownLeaveTimer = () => {
+    if (dropdownLeaveTimerRef.current) {
+      window.clearTimeout(dropdownLeaveTimerRef.current);
+      dropdownLeaveTimerRef.current = null;
+    }
+  };
 
   const closeDropdown = () => {
+    clearDropdownLeaveTimer();
     suppressToggleRef.current = true;
     setDropdownOpen(false);
     window.setTimeout(() => {
@@ -87,8 +96,23 @@ export default function TopBar({ initialLanguage = 'en' }) {
       }
     }
     if (dropdownOpen) document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      clearDropdownLeaveTimer();
+    };
   }, [dropdownOpen]);
+
+  const handleDropdownMouseEnter = () => {
+    clearDropdownLeaveTimer();
+  };
+
+  const handleDropdownMouseLeave = () => {
+    if (!dropdownOpen) return;
+    clearDropdownLeaveTimer();
+    dropdownLeaveTimerRef.current = window.setTimeout(() => {
+      closeDropdown();
+    }, 120);
+  };
 
   useEffect(() => {
     if (!showBnplBanner || hideBnplBanner) return undefined;
@@ -181,7 +205,12 @@ export default function TopBar({ initialLanguage = 'en' }) {
         </a>
 
         <div className="flex shrink-0 flex-nowrap items-center gap-1 sm:gap-2.5">
-          <div className="relative" ref={dropdownRef}>
+          <div
+            className="relative"
+            ref={dropdownRef}
+            onMouseEnter={handleDropdownMouseEnter}
+            onMouseLeave={handleDropdownMouseLeave}
+          >
             <button
               type="button"
               onClick={toggleDropdown}
@@ -202,11 +231,12 @@ export default function TopBar({ initialLanguage = 'en' }) {
             </button>
 
             {dropdownOpen && (
-              <div
-                dir={isArabic ? 'rtl' : 'ltr'}
-                className="absolute top-[calc(100%+8px)] end-0 z-[1001] w-[min(320px,calc(100vw-24px))] max-h-[min(72vh,520px)] overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.14)] sm:start-0 sm:end-auto sm:w-[320px]"
-                onMouseDown={(event) => event.stopPropagation()}
-              >
+              <div className="absolute top-full end-0 z-[1001] w-[min(320px,calc(100vw-24px))] pt-2 sm:start-0 sm:end-auto sm:w-[320px]">
+                <div
+                  dir={isArabic ? 'rtl' : 'ltr'}
+                  className="max-h-[min(72vh,520px)] overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.14)]"
+                  onMouseDown={(event) => event.stopPropagation()}
+                >
                   <div className="border-b border-gray-100 px-4 py-4">
                     <div className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-500">
                       {copy.language}
@@ -293,6 +323,7 @@ export default function TopBar({ initialLanguage = 'en' }) {
                     </div>
                     <div className="mt-1 leading-snug">{copy.shoppingIn}</div>
                   </div>
+                </div>
               </div>
             )}
           </div>

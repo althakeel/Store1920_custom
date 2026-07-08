@@ -21,6 +21,7 @@ import { trackPurchase } from '@/lib/tracking';
 import { trackOrderSuccessPurchaseOnce } from '@/lib/orderSuccessMetaPurchase';
 import { canTrackMetaPurchaseOnOrderSuccess } from '@/lib/orderConfirmationPolicy';
 import { hasTrackedPersistently, markTrackedPersistently } from '@/lib/trackingDedupe';
+import { getMetaPurchaseDedupeKey } from '@/lib/metaPurchase';
 import { getDisplayOrderNumber } from '@/lib/orderDisplay';
 import { resolveOrderLineLineTotal, resolveOrderLinePackQuantity, resolveOrderLineQuantity } from '@/lib/gtmEcommerceHelpers';
 import { clearPendingCheckoutOrder } from '@/lib/pendingCheckoutOrder';
@@ -181,6 +182,7 @@ function OrderSuccessContent() {
     if (!canTrackMetaPurchaseOnOrderSuccess(order)) return;
 
     const orderTrackingKey = `order-success:tracked:${String(order._id)}`;
+    const purchaseKey = getMetaPurchaseDedupeKey(String(order._id));
     if (hasTrackedPersistently(orderTrackingKey)) {
       purchaseTrackedRef.current = true;
       return;
@@ -190,18 +192,18 @@ function OrderSuccessContent() {
     let attempts = 0;
 
     const run = async () => {
-      while (!cancelled && !purchaseTrackedRef.current && attempts < 40) {
+      while (!cancelled && !purchaseTrackedRef.current && attempts < 60) {
         attempts += 1;
         const ok = await trackOrderSuccessPurchaseOnce(order, {
           onAnalytics: () => trackPurchase(order, { user, metaSkip: true }),
         });
         if (cancelled) return;
-        if (ok) {
+        if (ok || hasTrackedPersistently(purchaseKey)) {
           purchaseTrackedRef.current = true;
           markTrackedPersistently(orderTrackingKey);
           return;
         }
-        await new Promise((resolve) => window.setTimeout(resolve, 200));
+        await new Promise((resolve) => window.setTimeout(resolve, 250));
       }
     };
 

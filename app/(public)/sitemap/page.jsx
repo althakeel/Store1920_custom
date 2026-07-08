@@ -128,6 +128,7 @@ export default function SitemapPage() {
       title: 'ℹ️ About & Partnership',
       links: [
         { text: 'About Us', path: '/about-us', description: 'Company information' },
+        { text: 'Business Information', path: '/business-information', description: 'Trade license & company details' },
         { text: 'Create Your Store', path: '/create-store', description: 'Start selling' },
         { text: 'Careers', path: '/careers', description: 'Join our team' },
         { text: 'Pricing', path: '/pricing', description: 'Seller pricing' },

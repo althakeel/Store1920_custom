@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import axios from 'axios';
-import { StarIcon, ChevronLeft, ChevronRight, ThumbsUp, BadgeCheck } from 'lucide-react';
+import { StarIcon, ChevronLeft, ChevronRight, ThumbsUp, BadgeCheck, X } from 'lucide-react';
 import { useStorefrontI18n } from '@/lib/useStorefrontI18n';
 import { useAuth } from '@/lib/useAuth';
 import { getProductPath } from '@/lib/productUrl';
@@ -114,18 +115,21 @@ function FaqItem({ title, body }) {
   );
 }
 
-function WriteReviewPanel({ productId, t, onReviewSubmitted }) {
+function WriteReviewModal({ open, onClose, productId, t, onReviewSubmitted }) {
   const { user, getToken } = useAuth();
+  const pathname = usePathname();
   const [access, setAccess] = useState({
     loading: true,
     signedIn: false,
     canReview: false,
     alreadyReviewed: false,
     reviewPending: false,
+    awaitingDelivery: false,
+    hasPurchased: false,
   });
 
   useEffect(() => {
-    if (!productId) return undefined;
+    if (!open || !productId) return undefined;
 
     let cancelled = false;
     (async () => {
@@ -144,6 +148,8 @@ function WriteReviewPanel({ productId, t, onReviewSubmitted }) {
           canReview: Boolean(data?.canReview),
           alreadyReviewed: Boolean(data?.alreadyReviewed),
           reviewPending: Boolean(data?.reviewPending),
+          awaitingDelivery: Boolean(data?.awaitingDelivery),
+          hasPurchased: Boolean(data?.hasPurchased),
         });
       } catch {
         if (!cancelled) {
@@ -153,6 +159,8 @@ function WriteReviewPanel({ productId, t, onReviewSubmitted }) {
             canReview: false,
             alreadyReviewed: false,
             reviewPending: false,
+            awaitingDelivery: false,
+            hasPurchased: false,
           });
         }
       }
@@ -161,52 +169,94 @@ function WriteReviewPanel({ productId, t, onReviewSubmitted }) {
     return () => {
       cancelled = true;
     };
-  }, [productId, user?.uid, getToken]);
+  }, [open, productId, user?.uid, getToken]);
 
   const handleReviewAdded = () => {
     onReviewSubmitted?.();
     setAccess((prev) => ({
       ...prev,
-      alreadyReviewed: true,
+      canReview: false,
+      alreadyReviewed: false,
       reviewPending: true,
     }));
+    onClose?.();
   };
 
+  if (!open) return null;
+
+  const showReviewForm = access.signedIn && !access.alreadyReviewed && !access.reviewPending;
+  const statusMessage = access.canReview
+    ? ''
+    : access.awaitingDelivery
+      ? t('reviews.awaitingDelivery')
+      : t('reviews.purchaseRequired');
+
   return (
-    <div>
-      <div className="flex items-start gap-2.5 text-[14px] font-semibold text-gray-900">
-        <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-400">
-          <StarIcon size={11} fill="#fff" className="text-white" />
-        </span>
-        <span>{t('reviews.writeReview')}</span>
-      </div>
-      <div className="mt-2 ps-8">
-        {access.loading ? (
-          <div className="h-8 animate-pulse rounded bg-gray-100" />
-        ) : !access.signedIn ? (
-          <p className="text-[13px] leading-6 text-gray-600">
-            {t('reviews.signInToReview')}{' '}
-            <Link href="/sign-in" className="font-medium text-blue-600 hover:underline">
-              {t('navbar.signInRegister')}
-            </Link>
-          </p>
-        ) : access.reviewPending ? (
-          <p className="text-[13px] leading-6 text-amber-800">{t('reviews.reviewPending')}</p>
-        ) : access.alreadyReviewed ? (
-          <p className="text-[13px] leading-6 text-gray-600">{t('reviews.alreadyReviewed')}</p>
-        ) : access.canReview ? (
-          <ReviewForm productId={productId} onReviewAdded={handleReviewAdded} />
-        ) : (
-          <>
-            <p className="text-[13px] leading-6 text-gray-600">{t('reviews.howToReviewBody')}</p>
-            <Link
-              href="/dashboard/orders"
-              className="mt-2 inline-block text-[13px] font-medium text-blue-600 hover:underline"
-            >
-              {t('reviews.goToOrders')}
-            </Link>
-          </>
-        )}
+    <div
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 p-4"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className="relative max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl sm:p-6"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="write-review-modal-title"
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute end-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-full text-gray-500 transition hover:bg-gray-100 hover:text-gray-900"
+          aria-label="Close"
+        >
+          <X size={18} />
+        </button>
+
+        <div className="flex items-start gap-2.5 pe-10 text-[16px] font-semibold text-gray-900">
+          <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-400">
+            <StarIcon size={11} fill="#fff" className="text-white" />
+          </span>
+          <div>
+            <h3 id="write-review-modal-title">{t('reviews.writeReview')}</h3>
+            <p className="mt-1 text-[13px] font-normal leading-5 text-gray-600">
+              {t('reviews.howToReviewBody')}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-5">
+          {access.loading ? (
+            <div className="h-24 animate-pulse rounded-lg bg-gray-100" />
+          ) : !access.signedIn ? (
+            <div className="space-y-3">
+              <p className="text-[13px] leading-6 text-gray-600">
+                {t('reviews.signInToReview')}
+              </p>
+              <Link
+                href={`/sign-in?redirect_to=${encodeURIComponent(pathname || '/')}`}
+                className="inline-flex items-center justify-center rounded-lg bg-orange-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-600"
+              >
+                {t('navbar.signInRegister')}
+              </Link>
+            </div>
+          ) : access.reviewPending ? (
+            <p className="text-[13px] leading-6 text-amber-800">{t('reviews.reviewPending')}</p>
+          ) : access.alreadyReviewed ? (
+            <p className="text-[13px] leading-6 text-gray-600">{t('reviews.alreadyReviewed')}</p>
+          ) : showReviewForm ? (
+            <ReviewForm
+              productId={productId}
+              onReviewAdded={handleReviewAdded}
+              onCancel={onClose}
+              startOpen
+              submitDisabled={!access.canReview}
+              statusMessage={access.canReview ? '' : statusMessage}
+            />
+          ) : (
+            <p className="text-[13px] leading-6 text-gray-600">{t('reviews.purchaseRequired')}</p>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -400,6 +450,7 @@ export default function ProductReviewsSection({
   const [sortBy, setSortBy] = useState('top');
   const [showAllReviews, setShowAllReviews] = useState(false);
   const [lightboxImage, setLightboxImage] = useState(null);
+  const [reviewModalOpen, setReviewModalOpen] = useState(false);
   const [photoScrollRef, setPhotoScrollRef] = useState(null);
   const [reviewItems, setReviewItems] = useState(reviews);
 
@@ -516,6 +567,8 @@ export default function ProductReviewsSection({
     return t('reviews.starsCount', { count: value });
   };
 
+  const productId = String(product?._id || product?.id || '').trim();
+
   const sidebar = (
     <aside className="space-y-6 lg:sticky lg:top-24 lg:self-start">
       <div>
@@ -539,13 +592,7 @@ export default function ProductReviewsSection({
       </div>
 
       <div className="space-y-5 border-t border-gray-200 pt-5">
-        <FaqItem title={t('reviews.howToReviewTitle')} body={t('reviews.howToReviewBody')} />
         <FaqItem title={t('reviews.whereFromTitle')} body={t('reviews.whereFromBody')} />
-        <WriteReviewPanel
-          productId={String(product?._id || product?.id || '').trim()}
-          t={t}
-          onReviewSubmitted={handleReviewSubmitted}
-        />
       </div>
     </aside>
   );
@@ -556,9 +603,19 @@ export default function ProductReviewsSection({
       className={compactMobile ? 'border-t border-gray-100 bg-white pt-4' : 'border-t border-gray-200 bg-white pt-8'}
       dir={isArabic ? 'rtl' : 'ltr'}
     >
-      <h2 className={`font-semibold text-gray-900 ${compactMobile ? 'mb-4 text-[18px]' : 'mb-6 text-[22px] sm:text-[24px]'}`}>
-        {t('reviews.title')}
-      </h2>
+      <div className={`mb-6 flex flex-wrap items-center justify-between gap-3 ${compactMobile ? '' : ''}`}>
+        <h2 className={`font-semibold text-gray-900 ${compactMobile ? 'text-[18px]' : 'text-[22px] sm:text-[24px]'}`}>
+          {t('reviews.title')}
+        </h2>
+        <button
+          type="button"
+          onClick={() => setReviewModalOpen(true)}
+          className="inline-flex items-center gap-2 rounded-lg border border-orange-300 bg-orange-50 px-4 py-2 text-sm font-semibold text-orange-700 transition hover:bg-orange-100"
+        >
+          <StarIcon size={15} className="text-orange-500" fill="currentColor" />
+          {t('reviews.writeReview')}
+        </button>
+      </div>
 
       {loading ? (
         <div className="animate-pulse space-y-4">
@@ -715,6 +772,14 @@ export default function ProductReviewsSection({
           </div>
         </div>
       ) : null}
+
+      <WriteReviewModal
+        open={reviewModalOpen}
+        onClose={() => setReviewModalOpen(false)}
+        productId={productId}
+        t={t}
+        onReviewSubmitted={handleReviewSubmitted}
+      />
     </section>
   );
 }

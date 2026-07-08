@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { Loader2, Minus, Plus, Search, ShoppingBag, X } from 'lucide-react';
 import StoreOrderAddressForm from '@/components/store/StoreOrderAddressForm';
+import ProductVariantPicker from '@/components/ProductVariantPicker';
 import { collectCheckoutValidationIssues } from '@/lib/checkoutValidation';
 import {
   DEFAULT_STORE_ORDER_FORM,
@@ -14,16 +15,36 @@ import {
   storeOrderPaymentNeedsReference,
 } from '@/lib/storeCreateOrder';
 import { calculateShipping, fetchShippingSettings } from '@/lib/shipping';
+import {
+  buildStoreOrderLineFromProduct,
+  getStoreOrderLineSubmitPayload,
+  resolveStoreOrderLinePricing,
+} from '@/lib/storeOrderLineItemConfig';
+import { formatBundleTierLabel, formatMatrixPackSizeLabel, matchMatrixVariant } from '@/lib/productVariantOptions';
 
 function emptyLineItem() {
   return {
     key: `${Date.now()}-${Math.random()}`,
     productId: '',
+    product: null,
     name: '',
     price: 0,
     quantity: 1,
     image: '',
     sku: '',
+    variants: [],
+    variantOptionGroups: [],
+    selectedOptions: {},
+    bundleMode: 'none',
+    bundleTier: null,
+    bulkBundleTiers: [],
+    matrixBundleTiers: [],
+    bulkVariants: [],
+    variantOptions: null,
+    maxQuantity: 20,
+    quantityOptions: null,
+    selectionSummary: '',
+    loadingProduct: false,
   };
 }
 
@@ -40,6 +61,7 @@ export default function StoreCreateOrderModal({ open, onClose, getToken, onCreat
   const [discountType, setDiscountType] = useState('fixed');
   const [discountValue, setDiscountValue] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [addingProductId, setAddingProductId] = useState('');
   const [invalidFieldIds, setInvalidFieldIds] = useState(new Set());
   const [validationMessage, setValidationMessage] = useState('');
 
@@ -75,7 +97,10 @@ export default function StoreCreateOrderModal({ open, onClose, getToken, onCreat
   );
 
   const subtotal = useMemo(
-    () => validLineItems.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0), 0),
+    () => validLineItems.reduce((sum, item) => {
+      const { quantity } = getStoreOrderLineSubmitPayload(item);
+      return sum + Number(item.price || 0) * Number(quantity || 0);
+    }, 0),
     [validLineItems],
   );
 
@@ -85,11 +110,14 @@ export default function StoreCreateOrderModal({ open, onClose, getToken, onCreat
       return;
     }
 
-    const cartLikeItems = validLineItems.map((item) => ({
-      quantity: item.quantity,
-      price: item.price,
-      _lineTotal: Number(item.price || 0) * Number(item.quantity || 0),
-    }));
+    const cartLikeItems = validLineItems.map((item) => {
+      const { quantity } = getStoreOrderLineSubmitPayload(item);
+      return {
+        quantity,
+        price: item.price,
+        _lineTotal: Number(item.price || 0) * Number(quantity || 0),
+      };
+    });
 
     const fee = calculateShipping({
       cartItems: cartLikeItems,
@@ -140,37 +168,140 @@ export default function StoreCreateOrderModal({ open, onClose, getToken, onCreat
     return () => clearTimeout(timer);
   }, [open, productSearch, getToken]);
 
-  if (!open) return null;
+  const applyLinePricing = useCallback((item, product, patch = {}) => {
+    const selectedOptions = patch.selectedOptions ?? item.selectedOptions ?? {};
+    const bundleTier = patch.bundleTier !== undefined ? patch.bundleTier : item.bundleTier;
+    const resolved = resolveStoreOrderLinePricing(product, { selectedOptions, bundleTier });
 
-  const addProductToLine = (product) => {
-    const nextItem = {
-      key: `${product._id}-${Date.now()}`,
-      productId: product._id,
-      name: product.name,
-      price: Number(product.price ?? product.AED ?? 0),
-      quantity: 1,
-      image: product.images?.[0] || product.externalImages?.[0] || '',
-      sku: product.sku || '',
+    return {
+      ...item,
+      ...patch,
+      selectedOptions,
+      bundleTier: resolved.bundleTier,
+      bundleMode: resolved.bundleMode,
+      price: resolved.price,
+      sku: resolved.sku,
+      variantOptions: resolved.variantOptions,
+      quantity: patch.quantity ?? resolved.quantity,
+      maxQuantity: resolved.maxQuantity,
+      quantityOptions: resolved.quantityOptions,
+      selectionSummary: resolved.selectionSummary,
     };
+  }, []);
 
-    setLineItems((current) => {
-      const emptyIndex = current.findIndex((item) => !item.productId);
-      if (emptyIndex >= 0) {
-        const copy = [...current];
-        copy[emptyIndex] = nextItem;
-        return copy;
+  const addProductToLine = async (productSummary) => {
+    const productId = String(productSummary?._id || '');
+    if (!productId) return;
+
+    setAddingProductId(productId);
+    try {
+      const token = await getToken();
+      const { data } = await axios.get('/api/store/product', {
+        params: { productId },
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const product = data?.product;
+      if (!product) {
+        toast.error('Could not load product details');
+        return;
       }
-      return [...current, nextItem];
-    });
-    setProductSearch('');
-    setProductResults([]);
+
+      const setup = buildStoreOrderLineFromProduct(product);
+      const nextItem = {
+        key: `${product._id}-${Date.now()}`,
+        productId: product._id,
+        product,
+        name: product.name,
+        image: product.images?.[0] || product.externalImages?.[0] || '',
+        variants: setup.variants,
+        variantOptionGroups: setup.variantOptionGroups,
+        selectedOptions: setup.selectedOptions,
+        bundleMode: setup.bundleMode,
+        bundleTier: setup.bundleTier,
+        bulkBundleTiers: setup.bulkBundleTiers,
+        matrixBundleTiers: setup.matrixBundleTiers,
+        bulkVariants: setup.bulkVariants,
+        price: setup.price,
+        sku: setup.sku,
+        quantity: setup.quantity,
+        variantOptions: setup.variantOptions,
+        maxQuantity: setup.maxQuantity,
+        quantityOptions: setup.quantityOptions,
+        selectionSummary: setup.selectionSummary,
+        loadingProduct: false,
+      };
+
+      setLineItems((current) => {
+        const emptyIndex = current.findIndex((item) => !item.productId);
+        if (emptyIndex >= 0) {
+          const copy = [...current];
+          copy[emptyIndex] = nextItem;
+          return copy;
+        }
+        return [...current, nextItem];
+      });
+      setProductSearch('');
+      setProductResults([]);
+    } catch (error) {
+      toast.error(error?.response?.data?.error || 'Failed to load product');
+    } finally {
+      setAddingProductId('');
+    }
+  };
+
+  const updateLineVariantOption = (key, optionKey, value) => {
+    setLineItems((current) => current.map((item) => {
+      if (item.key !== key || !item.product) return item;
+      const selectedOptions = { ...item.selectedOptions, [optionKey]: value };
+      return applyLinePricing(item, item.product, { selectedOptions });
+    }));
+  };
+
+  const updateLineBundleTier = (key, tier) => {
+    setLineItems((current) => current.map((item) => {
+      if (item.key !== key || !item.product) return item;
+      const bundleTier = Number(tier) || 1;
+      const patch = { bundleTier };
+      if (item.bundleMode === 'bulk') {
+        patch.quantity = bundleTier;
+      }
+      return applyLinePricing(item, item.product, patch);
+    }));
   };
 
   const updateLineQuantity = (key, delta) => {
     setLineItems((current) => current.map((item) => {
       if (item.key !== key) return item;
-      const nextQty = Math.min(20, Math.max(1, Number(item.quantity || 1) + delta));
+      const maxQty = Math.max(1, Number(item.maxQuantity) || 20);
+
+      if (item.bundleMode === 'bulk' && Array.isArray(item.quantityOptions) && item.quantityOptions.length) {
+        const tiers = item.quantityOptions;
+        const currentTier = tiers.includes(Number(item.quantity))
+          ? Number(item.quantity)
+          : (Number(item.bundleTier) || tiers[0]);
+        const currentIndex = tiers.indexOf(currentTier);
+        const nextIndex = Math.min(tiers.length - 1, Math.max(0, currentIndex + delta));
+        const nextTier = tiers[nextIndex];
+        return applyLinePricing(item, item.product, { bundleTier: nextTier, quantity: nextTier });
+      }
+
+      const nextQty = Math.min(maxQty, Math.max(1, Number(item.quantity || 1) + delta));
       return { ...item, quantity: nextQty };
+    }));
+  };
+
+  const setLineQuantityValue = (key, value) => {
+    setLineItems((current) => current.map((item) => {
+      if (item.key !== key) return item;
+      const next = Math.max(1, Number(value) || 1);
+
+      if (item.bundleMode === 'bulk' && Array.isArray(item.quantityOptions) && item.quantityOptions.length) {
+        const tier = item.quantityOptions.includes(next) ? next : item.quantityOptions[0];
+        return applyLinePricing(item, item.product, { bundleTier: tier, quantity: tier });
+      }
+
+      const maxQty = Math.max(1, Number(item.maxQuantity) || 20);
+      return { ...item, quantity: Math.min(maxQty, next) };
     }));
   };
 
@@ -229,10 +360,14 @@ export default function StoreCreateOrderModal({ open, onClose, getToken, onCreat
         '/api/store/orders/create',
         {
           form,
-          items: validLineItems.map((item) => ({
-            id: item.productId,
-            quantity: item.quantity,
-          })),
+          items: validLineItems.map((item) => {
+            const payload = getStoreOrderLineSubmitPayload(item);
+            return {
+              id: item.productId,
+              quantity: payload.quantity,
+              ...(payload.variantOptions ? { variantOptions: payload.variantOptions } : {}),
+            };
+          }),
           paymentMethod: form.payment,
           paymentReferenceId: storeOrderPaymentNeedsReference(form.payment)
             ? form.paymentReferenceId?.trim() || undefined
@@ -260,6 +395,8 @@ export default function StoreCreateOrderModal({ open, onClose, getToken, onCreat
       setSubmitting(false);
     }
   };
+
+  if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4">
@@ -313,7 +450,8 @@ export default function StoreCreateOrderModal({ open, onClose, getToken, onCreat
                       key={product._id}
                       type="button"
                       onClick={() => addProductToLine(product)}
-                      className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-slate-50"
+                      disabled={addingProductId === String(product._id)}
+                      className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-slate-50 disabled:opacity-60"
                     >
                       {product.images?.[0] ? (
                         <img src={product.images[0]} alt="" className="h-10 w-10 rounded object-cover" />
@@ -324,50 +462,140 @@ export default function StoreCreateOrderModal({ open, onClose, getToken, onCreat
                         <p className="truncate text-sm font-medium text-slate-900">{product.name}</p>
                         <p className="text-xs text-slate-500">{product.sku || product.slug}</p>
                       </div>
-                      <p className="text-sm font-semibold text-slate-900">
-                        {currency} {Number(product.price ?? product.AED ?? 0).toLocaleString()}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        {addingProductId === String(product._id) ? (
+                          <Loader2 size={14} className="animate-spin text-slate-400" />
+                        ) : null}
+                        <p className="text-sm font-semibold text-slate-900">
+                          {currency} {Number(product.price ?? product.AED ?? 0).toLocaleString()}
+                        </p>
+                      </div>
                     </button>
                   ))}
                 </div>
               ) : null}
 
-              <div className="space-y-2">
-                {lineItems.map((item) => (
+              <div className="space-y-3">
+                {lineItems.map((item) => {
+                  const submitPayload = item.productId ? getStoreOrderLineSubmitPayload(item) : null;
+                  const lineTotal = submitPayload
+                    ? Number(item.price || 0) * Number(submitPayload.quantity || 0)
+                    : 0;
+                  const bundleTiers = item.bundleMode === 'bulk'
+                    ? item.bulkBundleTiers
+                    : (item.bundleMode === 'matrix' ? item.matrixBundleTiers : []);
+                  const productImages = Array.isArray(item.product?.images) ? item.product.images : [];
+
+                  return (
                   <div
                     key={item.key}
-                    className={`flex flex-wrap items-center gap-3 rounded-lg border px-3 py-3 ${invalidFieldIds.has('store-order-items') && !item.productId ? 'border-red-300 bg-red-50/40' : 'border-slate-200'}`}
+                    className={`rounded-lg border px-3 py-3 ${invalidFieldIds.has('store-order-items') && !item.productId ? 'border-red-300 bg-red-50/40' : 'border-slate-200'}`}
                   >
-                    {item.image ? (
-                      <img src={item.image} alt="" className="h-12 w-12 rounded object-cover" />
-                    ) : (
-                      <div className="flex h-12 w-12 items-center justify-center rounded bg-slate-100 text-xs text-slate-400">Item</div>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-slate-900">{item.name || 'Select a product above'}</p>
-                      {item.sku ? <p className="text-xs text-slate-500">{item.sku}</p> : null}
+                    <div className="flex flex-wrap items-start gap-3">
+                      {item.image ? (
+                        <img src={item.image} alt="" className="h-12 w-12 rounded object-cover" />
+                      ) : (
+                        <div className="flex h-12 w-12 items-center justify-center rounded bg-slate-100 text-xs text-slate-400">Item</div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-slate-900">{item.name || 'Select a product above'}</p>
+                        {item.selectionSummary ? (
+                          <p className="mt-0.5 text-xs text-slate-500">{item.selectionSummary}</p>
+                        ) : (item.sku ? <p className="text-xs text-slate-500">{item.sku}</p> : null)}
+                      </div>
+                      {item.productId ? (
+                        <>
+                          <div className="flex items-center gap-2 rounded-lg border border-slate-200 px-2 py-1">
+                            <button type="button" onClick={() => updateLineQuantity(item.key, -1)} className="rounded p-1 hover:bg-slate-100">
+                              <Minus size={14} />
+                            </button>
+                            {item.bundleMode === 'bulk' && item.quantityOptions?.length ? (
+                              <select
+                                value={item.quantity}
+                                onChange={(e) => setLineQuantityValue(item.key, e.target.value)}
+                                className="min-w-[3rem] bg-transparent text-center text-sm font-medium outline-none"
+                              >
+                                {item.quantityOptions.map((tier) => (
+                                  <option key={tier} value={tier}>{tier}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <span className="min-w-[1.5rem] text-center text-sm font-medium">{item.quantity}</span>
+                            )}
+                            <button type="button" onClick={() => updateLineQuantity(item.key, 1)} className="rounded p-1 hover:bg-slate-100">
+                              <Plus size={14} />
+                            </button>
+                          </div>
+                          <p className="text-sm font-semibold text-slate-900">
+                            {currency} {lineTotal.toLocaleString()}
+                          </p>
+                          <button type="button" onClick={() => removeLine(item.key)} className="text-slate-400 hover:text-red-600">
+                            <X size={16} />
+                          </button>
+                        </>
+                      ) : null}
                     </div>
-                    {item.productId ? (
-                      <>
-                        <div className="flex items-center gap-2 rounded-lg border border-slate-200 px-2 py-1">
-                          <button type="button" onClick={() => updateLineQuantity(item.key, -1)} className="rounded p-1 hover:bg-slate-100">
-                            <Minus size={14} />
-                          </button>
-                          <span className="min-w-[1.5rem] text-center text-sm font-medium">{item.quantity}</span>
-                          <button type="button" onClick={() => updateLineQuantity(item.key, 1)} className="rounded p-1 hover:bg-slate-100">
-                            <Plus size={14} />
-                          </button>
-                        </div>
-                        <p className="text-sm font-semibold text-slate-900">
-                          {currency} {(Number(item.price || 0) * Number(item.quantity || 0)).toLocaleString()}
+
+                    {item.productId && item.variantOptionGroups?.length > 0 ? (
+                      <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50/80 p-3">
+                        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Variant</p>
+                        <ProductVariantPicker
+                          groups={item.variantOptionGroups}
+                          variants={item.variants}
+                          selectedOptions={item.selectedOptions}
+                          onSelect={(optionKey, value) => updateLineVariantOption(item.key, optionKey, value)}
+                          productImages={productImages}
+                          className="space-y-3"
+                        />
+                      </div>
+                    ) : null}
+
+                    {item.productId && bundleTiers.length > 0 ? (
+                      <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50/80 p-3">
+                        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          {item.bundleMode === 'matrix' ? 'Pack size' : 'Bundle'}
                         </p>
-                        <button type="button" onClick={() => removeLine(item.key)} className="text-slate-400 hover:text-red-600">
-                          <X size={16} />
-                        </button>
-                      </>
+                        <div className="flex flex-wrap gap-2">
+                          {bundleTiers.map((tier) => {
+                            const variant = item.bundleMode === 'bulk'
+                              ? item.bulkVariants?.find((entry) => Number(entry.options?.bundleQty) === tier)
+                              : matchMatrixVariant(item.variants, item.selectedOptions, tier);
+                            const label = variant?.options?.title?.trim()
+                              || (item.bundleMode === 'matrix'
+                                ? formatMatrixPackSizeLabel(tier)
+                                : formatBundleTierLabel(tier));
+                            const selected = Number(item.bundleTier) === tier;
+                            const outOfStock = variant ? Number(variant.stock) <= 0 : false;
+
+                            return (
+                              <button
+                                key={tier}
+                                type="button"
+                                disabled={outOfStock}
+                                onClick={() => updateLineBundleTier(item.key, tier)}
+                                className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
+                                  outOfStock
+                                    ? 'cursor-not-allowed border-dashed border-slate-200 text-slate-400'
+                                    : selected
+                                      ? 'border-blue-600 bg-blue-50 font-semibold text-blue-900'
+                                      : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400'
+                                }`}
+                              >
+                                <span className="block">{label}</span>
+                                {variant ? (
+                                  <span className="mt-0.5 block text-xs text-slate-500">
+                                    {currency} {Number(variant.price || 0).toLocaleString()}
+                                  </span>
+                                ) : null}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     ) : null}
                   </div>
-                ))}
+                  );
+                })}
               </div>
 
               <button

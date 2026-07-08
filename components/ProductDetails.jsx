@@ -13,11 +13,12 @@ import { useDispatch, useSelector } from "react-redux";
 
 import { addToCart, removeFromCart, deleteItemFromCart, setCartItemQuantity, setCartEntry, uploadCart } from "@/lib/features/cart/cartSlice";
 import {
-  buildBundleCartEntry,
   findBulkBundleVariant,
   resolveCartLinePricing,
-  adjustBundleCartTier,
+  resolveCartDisplayQuantity,
+  resolveBulkBundleCartFromUiQty,
   bundleCartSelectionMatches,
+  adjustBundleCartTier,
 } from "@/lib/bulkBundleCart";
 import { decrementCartItem, incrementCartItem } from "@/lib/bundleCartActions";
 import MobileProductActions from "./MobileProductActions";
@@ -42,6 +43,8 @@ import {
 } from '@/lib/productMedia';
 import { useHorizontalCarouselDrag } from '@/lib/useHorizontalCarouselDrag';
 import { getAdjustedDeliveryDate } from '@/lib/deliveryEstimate';
+import { fetchShippingSettings } from '@/lib/shipping';
+import { getDefaultShippingOption } from '@/lib/shippingOptions';
 import ProductVariantPicker from './ProductVariantPicker';
 import {
   buildVariantOptionGroups,
@@ -56,6 +59,8 @@ import {
   sanitizeVariantOptionsForCart,
   variantOptionKeyInUse,
   isMatrixVariant,
+  getProductBundleMode,
+  formatMatrixPackSizeLabel,
   isMatrixVariantProduct,
   getMatrixBundleTiers,
   matchMatrixVariant,
@@ -397,6 +402,11 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     }
   });
   const [timeNow, setTimeNow] = useState(() => new Date());
+  const [cartUiReady, setCartUiReady] = useState(false);
+  const [shippingPreview, setShippingPreview] = useState({
+    freeShippingMin: 100,
+    flatRate: 15,
+  });
   const mediaGallery = useMemo(() => buildProductMediaGallery(product?.images), [product?.images]);
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
   const activeMedia = mediaGallery[activeMediaIndex] || mediaGallery[0] || null;
@@ -408,6 +418,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const [desktopGalleryHeight, setDesktopGalleryHeight] = useState(null);
   const mobileCarouselScrollRaf = useRef(null);
   const [quantity, setQuantity] = useState(1);
+  const prevSelectedOptionsKeyRef = useRef(null);
   const [isInWishlist, setIsInWishlist] = useState(false);
   const [wishlistLoading, setWishlistLoading] = useState(false);
   const [actionToast, setActionToast] = useState(null);
@@ -482,9 +493,39 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     return () => clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    setCartUiReady(true);
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const storeId = product?.storeId;
+
+    fetchShippingSettings(storeId).then((setting) => {
+      if (!mounted || !setting) return;
+
+      const option = getDefaultShippingOption(setting);
+      const freeShippingMin = Number(setting.freeShippingMin);
+      const flatRate = option?.shippingType === 'FLAT_RATE'
+        ? Number(option.flatRate)
+        : Number(setting.flatRate ?? 15);
+
+      setShippingPreview({
+        freeShippingMin: Number.isFinite(freeShippingMin) && freeShippingMin > 0 ? freeShippingMin : 100,
+        flatRate: Number.isFinite(flatRate) && flatRate >= 0 ? flatRate : 15,
+      });
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, [product?.storeId]);
+
   const deliveryWindow = useMemo(() => {
-    const baseMinDays = Math.max(1, Number(productPageInfo.deliveryMinDays ?? 2));
-    const baseMaxDays = Math.max(baseMinDays, Number(productPageInfo.deliveryMaxDays ?? 3));
+    // Fast Delivery products: 2-5 days. Standard products: 3-6 days.
+    const isFastDelivery = Boolean(product?.fastDelivery);
+    const baseMinDays = isFastDelivery ? 2 : 3;
+    const baseMaxDays = isFastDelivery ? 5 : 6;
 
     const today = new Date(timeNow);
     today.setHours(0, 0, 0, 0);
@@ -493,8 +534,6 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     const maxDelivery = getAdjustedDeliveryDate(today, baseMaxDays);
     const startDate = minDelivery.arrival;
     const endDate = maxDelivery.arrival;
-    const minDays = minDelivery.displayDays;
-    const maxDays = maxDelivery.displayDays;
 
     const locale = getStorefrontLocale(market.code, language);
     const startDay = formatLocalizedNumber(startDate.getDate(), market.code, language, { maximumFractionDigits: 0 });
@@ -512,14 +551,16 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     }
 
     return {
-      minDays,
-      maxDays,
+      // Keep promised window as marketing copy (2-5 / 3-6), not Sunday-shifted days.
+      minDays: baseMinDays,
+      maxDays: baseMaxDays,
       rangeText,
       primaryArrivalText: `${startDay} ${startMonth}`,
       baseMinDays,
       baseMaxDays,
+      isFastDelivery,
     };
-  }, [productPageInfo.deliveryMinDays, productPageInfo.deliveryMaxDays, timeNow, language, market.code]);
+  }, [product?.fastDelivery, timeNow, language, market.code]);
 
   const deliverySummary = useMemo(() => {
     const { minDays, maxDays, rangeText } = deliveryWindow;
@@ -861,39 +902,40 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     [product?._id, product?.variants]
   );
   const isBulkBundleVariant = isBulkBundleVariantOption;
-  const bulkVariants = useMemo(
-    () => variants.filter(isBulkBundleVariant),
-    [variants]
-  );
-  const bulkBundleTiers = useMemo(
-    () => bulkVariants
+  const isMatrixProduct = useMemo(() => getProductBundleMode(product) === 'matrix', [product]);
+  const isBulkBundleProduct = useMemo(() => getProductBundleMode(product) === 'bulk', [product]);
+  const bulkVariants = useMemo(() => {
+    if (isBulkBundleProduct) {
+      return variants.filter((v) => {
+        const qty = Number(v?.options?.bundleQty);
+        return Number.isFinite(qty) && qty > 0;
+      });
+    }
+    return variants.filter(isBulkBundleVariant);
+  }, [variants, isBulkBundleProduct, isBulkBundleVariant]);
+  const bulkBundleTiers = useMemo(() => {
+    const all = bulkVariants
+      .map((v) => Number(v.options?.bundleQty) || 1)
+      .sort((a, b) => a - b);
+    const inStock = bulkVariants
       .filter((v) => Number(v.stock) > 0)
       .map((v) => Number(v.options?.bundleQty) || 1)
-      .sort((a, b) => a - b),
-    [bulkVariants]
-  );
-  const isBulkBundleProduct = bulkBundleTiers.length > 0;
-  // Matrix products combine color/size variants with bundle tiers.
-  const isMatrixProduct = useMemo(() => isMatrixVariantProduct(variants), [variants]);
+      .sort((a, b) => a - b);
+    return inStock.length ? inStock : [...new Set(all)];
+  }, [bulkVariants]);
   const matrixBundleTiers = useMemo(() => {
-    const all = getMatrixBundleTiers(variants);
-    const inStock = getMatrixBundleTiers(variants, { inStockOnly: true });
+    const all = getMatrixBundleTiers(variants, { product });
+    const inStock = getMatrixBundleTiers(variants, { inStockOnly: true, product });
     return inStock.length ? inStock : all;
-  }, [variants]);
-  const isBundleTierQty = (qty) =>
-    (isBulkBundleProduct && bulkBundleTiers.includes(Number(qty)))
-    || (isMatrixProduct && matrixBundleTiers.includes(Number(qty)));
+  }, [variants, product]);
   const isBundleModeActive = isBulkBundleProduct || isMatrixProduct;
-  const showBundleOptions = isBundleModeActive;
   const variantOptionGroups = useMemo(() => {
+    if (isBulkBundleProduct) return [];
     const groups = buildVariantOptionGroups(variants, { isBulkBundleVariant });
     if (!isMatrixProduct) return groups;
-    // In matrix mode the bundle tier is chosen separately, so the "title" and
-    // "tag" columns (which hold bundle labels like "Buy 1" / "MOST_POPULAR")
-    // must never appear as variant selectors. Keep the real dimensions only.
-    const realGroups = groups.filter((g) => g.key !== 'tag' && g.key !== 'title');
-    return realGroups.length ? realGroups : groups.filter((g) => g.key !== 'tag');
-  }, [variants, isMatrixProduct]);
+    // Hide promo tags only; keep title/color/size — they are real product options in matrix mode.
+    return groups.filter((g) => g.key !== 'tag');
+  }, [variants, isMatrixProduct, isBulkBundleProduct]);
   const showVariantPicker = !isBulkBundleProduct && variantOptionGroups.length > 0;
   const productImagesArray = useMemo(() => normalizeImages(product.images), [product.images]);
   const [selectedOptions, setSelectedOptions] = useState(() => {
@@ -916,12 +958,10 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const activeBundleTier = useMemo(() => {
     if (!isBulkBundleProduct && !isMatrixProduct) return null;
     if (isMatrixProduct) {
-      // Matrix keeps the stepper at 1; the tier is chosen via the bundle selector.
       return Number(selectedBundleQty) || matrixBundleTiers[0] || 1;
     }
-    if (isBundleTierQty(quantity)) return Number(quantity);
     return Number(selectedBundleQty) || bulkBundleTiers[0] || 1;
-  }, [isBulkBundleProduct, isMatrixProduct, quantity, selectedBundleQty, bulkBundleTiers, matrixBundleTiers]);
+  }, [isBulkBundleProduct, isMatrixProduct, selectedBundleQty, bulkBundleTiers, matrixBundleTiers]);
   const handleSelectVariantOption = useCallback((key, value) => {
     setSelectedOptions((prev) => ({ ...prev, [key]: value }));
   }, []);
@@ -935,29 +975,45 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     const tiers = isMatrixProduct ? matrixBundleTiers : bulkBundleTiers;
     if (!tiers.includes(qty)) return;
     setSelectedBundleQty(qty);
-    if (!isMatrixProduct) {
-      // Pure bundles use quantity as the tier; matrix keeps quantity at 1.
+    if (isMatrixProduct) {
+      setQuantity(1);
+    } else if (isBulkBundleProduct) {
       setQuantity(qty);
     }
-  }, [bulkBundleTiers, matrixBundleTiers, isMatrixProduct]);
+  }, [bulkBundleTiers, matrixBundleTiers, isMatrixProduct, isBulkBundleProduct]);
 
   const handleBundleTierSelect = useCallback((tier) => {
     selectBulkBundleTier(tier);
   }, [selectBulkBundleTier]);
 
   const cartLinePricing = useMemo(() => {
-    if (!cartEntry || cartQty <= 0) {
-      return { displayQuantity: cartQty, isBulkBundle: false, bundleTier: null };
+    if (!cartEntry || !Number.isFinite(cartQty) || cartQty <= 0) {
+      return { displayQuantity: 0, isBulkBundle: false, bundleTier: null };
     }
     return resolveCartLinePricing(product, cartEntry, cartQty);
   }, [cartEntry, cartQty, product]);
 
-  const cartDisplayQty = cartLinePricing.displayQuantity ?? cartQty;
-  const isCartBundleLine = Boolean(cartLinePricing.isBulkBundle);
-  const cartBundleTier = Number(cartLinePricing.bundleTier) || null;
-  const minBundleTier = bulkBundleTiers.length ? Math.min(...bulkBundleTiers) : 1;
-  const canIncreaseCartBundle = isCartBundleLine && Boolean(adjustBundleCartTier(cartEntry, product, 'up'));
-  const canDecreaseCartBundle = isCartBundleLine && cartBundleTier > minBundleTier;
+  const isCartMatrixLine = Boolean(cartLinePricing.isMatrix);
+  const isCartBundleLine = Boolean(cartLinePricing.isBulkBundle) && !isCartMatrixLine;
+  const cartDisplayQty = useMemo(() => {
+    if (!Number.isFinite(cartQty) || cartQty <= 0) return 0;
+    if (isBulkBundleProduct || isMatrixProduct) {
+      return resolveCartDisplayQuantity(product, cartEntry, cartQty, activeBundleTier);
+    }
+    const display = Number(cartLinePricing.displayQuantity);
+    return Number.isFinite(display) && display > 0 ? display : cartQty;
+  }, [
+    cartQty,
+    cartEntry,
+    product,
+    isBulkBundleProduct,
+    isMatrixProduct,
+    activeBundleTier,
+    cartLinePricing.displayQuantity,
+  ]);
+  const cartBundleTier = Number(cartLinePricing.bundleTier)
+    || Number(cartEntry?.variantOptions?.bundleQty)
+    || null;
 
   const selectedVariant = (isBulkBundleProduct
     ? bulkVariants.find((v) => Number(v.options?.bundleQty) === Number(activeBundleTier))
@@ -1016,11 +1072,16 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       return 0;
     }
 
-    if (isBundleTierQty(quantity)) {
-      const bundleVariant = bulkVariants.find((v) => Number(v.options?.bundleQty) === Number(quantity));
+    if (isBulkBundleProduct) {
+      const uiQty = Number(quantity) || 1;
+      const stockTier = bulkBundleTiers.includes(uiQty) ? uiQty : bulkBundleTiers[0];
+      const bundleVariant = bulkVariants.find(
+        (v) => Number(v.options?.bundleQty) === Number(stockTier),
+      ) || findBulkBundleVariant(product, stockTier);
       if (typeof bundleVariant?.stock === 'number') {
         return Math.max(0, bundleVariant.stock);
       }
+      return 0;
     }
 
     if (!isBulkBundleProduct && variants.length > 0) {
@@ -1055,7 +1116,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     if (isMatrixProduct) {
       const tier = matrixBundleTiers.includes(Number(selectedBundleQty))
         ? Number(selectedBundleQty)
-        : (matrixBundleTiers.includes(normalizedQty) ? normalizedQty : matrixBundleTiers[0]);
+        : matrixBundleTiers[0];
       const variant = matchMatrixVariant(variants, selectedOptions, tier);
       const safeMax = Math.max(0, Number(variant?.stock) || 0);
       if (!variant || safeMax <= 0) return 0;
@@ -1070,7 +1131,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       dispatch(setCartEntry({
         productId: cartProductId,
         entry: {
-          quantity: 1,
+          quantity: Math.min(safeMax, normalizedQty),
           price: Number(variant.price),
           productName: product.name || product.title || 'Product',
           variantOptions: {
@@ -1080,14 +1141,17 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
           ...offerFields,
         },
       }));
-      return tier;
+      return Math.min(safeMax, normalizedQty);
     }
 
     if (isBulkBundleProduct) {
-      const tier = bulkBundleTiers.includes(normalizedQty)
-        ? normalizedQty
-        : (bulkBundleTiers.includes(Number(selectedBundleQty)) ? Number(selectedBundleQty) : bulkBundleTiers[0]);
-      const variant = findBulkBundleVariant(product, tier);
+      const { bundleTier, packQty } = resolveBulkBundleCartFromUiQty(
+        normalizedQty,
+        product,
+        bulkBundleTiers,
+      );
+      const variant = bulkVariants.find((v) => Number(v.options?.bundleQty) === bundleTier)
+        || findBulkBundleVariant(product, bundleTier);
       const safeMax = Math.max(0, Number(variant?.stock) || 0);
       if (!variant || safeMax <= 0) return 0;
 
@@ -1098,18 +1162,22 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
           }
         : {};
 
-      const entry = buildBundleCartEntry({
-        price: Number(variant.price),
-        productName: product.name || product.title || 'Product',
-        variantOptions: {
-          ...cartVariantOptions,
-          bundleQty: tier,
-        },
-        ...offerFields,
-      }, product, tier);
+      const packs = Math.min(safeMax, packQty);
 
-      dispatch(setCartEntry({ productId: cartProductId, entry }));
-      return tier;
+      dispatch(setCartEntry({
+        productId: cartProductId,
+        entry: {
+          quantity: packs,
+          price: Number(variant.price),
+          productName: product.name || product.title || 'Product',
+          variantOptions: {
+            ...cartVariantOptions,
+            bundleQty: bundleTier,
+          },
+          ...offerFields,
+        },
+      }));
+      return packs;
     }
 
     const safeMax = Math.max(0, maxOrderQty);
@@ -1154,24 +1222,17 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const handleProductQuantityChange = useCallback((value) => {
     const next = Math.max(1, Number(value) || 1);
     if (isBulkBundleProduct) {
-      if (!bulkBundleTiers.includes(next)) return;
-      setQuantity(next);
-      setSelectedBundleQty(next);
+      const capped = Math.max(1, Math.min(maxOrderQty || 1, next));
+      if (bulkBundleTiers.includes(capped)) {
+        setSelectedBundleQty(capped);
+      } else {
+        setSelectedBundleQty(bulkBundleTiers[0] || 1);
+      }
+      setQuantity(capped);
       return;
     }
     setQuantity(Math.max(1, Math.min(maxOrderQty || 1, next)));
   }, [maxOrderQty, isBulkBundleProduct, bulkBundleTiers]);
-
-  const getBundleQuantityOptionLabel = useCallback((qty) => {
-    const val = Number(qty) || 1;
-    if (!isBulkBundleProduct || !bulkBundleTiers.includes(val)) {
-      return formatCount(val);
-    }
-    const variant = bulkVariants.find((v) => Number(v.options?.bundleQty) === val);
-    const bundleName = variant?.options?.title?.trim()
-      || (val === 1 ? t('product.buy1') : t('product.bundleOf', { qty: formatCount(val) }));
-    return `${formatCount(val)} : ${bundleName}`;
-  }, [isBulkBundleProduct, bulkBundleTiers, bulkVariants, formatCount, t]);
 
   const hasAnyVariantStock = variants.length > 0
     ? variants.some(v => Number(v?.stock || 0) > 0)
@@ -1186,7 +1247,9 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const convertedEffPrice = convertPrice(effPrice);
   const convertedEffAED = convertPrice(effAED);
   const savingsAmount = Math.max(0, Number(convertedEffAED || 0) - Number(convertedEffPrice || 0));
-  const pricingQuantity = (isBulkBundleProduct || isMatrixProduct) ? 1 : Math.max(1, Number(quantity) || 1);
+  const pricingQuantity = isBulkBundleProduct
+    ? (bulkBundleTiers.includes(Number(quantity)) ? 1 : Math.max(1, Number(quantity) || 1))
+    : Math.max(1, Number(quantity) || 1);
   const convertedLineTotal = Number(convertedEffPrice || 0) * pricingQuantity;
   const convertedLineRegularTotal = Number(convertedEffAED || 0) * pricingQuantity;
   const buyBoxSalePrice = pricingQuantity > 1 ? convertedLineTotal : convertedEffPrice;
@@ -1212,8 +1275,8 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     true,
   );
 
-  const renderBundleOptions = () => {
-    if (bulkVariants.length === 0 && !isMatrixProduct) return null;
+  const bundleOptionsPanel = useMemo(() => {
+    if (!isBundleModeActive) return null;
 
     const getBundleTagLabel = (tag) => {
       if (tag === 'MOST_POPULAR') return t('product.mostPopular');
@@ -1221,15 +1284,31 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       return '';
     };
 
-    // In matrix mode, each tier's price/stock come from the variant matching
-    // the currently selected color/size + that tier.
-    const bundleRowVariants = isMatrixProduct
-      ? matrixBundleTiers
-          .map((qty) => matchMatrixVariant(variants, selectedOptions, qty)
-            || { options: { bundleQty: qty }, price: product.price, stock: 0 })
-      : bulkVariants
-          .slice()
-          .filter((v) => bulkBundleTiers.includes(Number(v.options?.bundleQty)));
+    let bundleRowVariants = [];
+
+    if (isMatrixProduct) {
+      const tiers = matrixBundleTiers.length
+        ? matrixBundleTiers
+        : [...new Set(
+          variants
+            .map((v) => Number(v?.options?.bundleQty))
+            .filter((qty) => Number.isFinite(qty) && qty > 0),
+        )].sort((a, b) => a - b);
+
+      bundleRowVariants = tiers.map((qty) => matchMatrixVariant(variants, selectedOptions, qty)
+        || { options: { bundleQty: qty }, price: product.price, stock: 0 });
+    } else if (bulkVariants.length) {
+      bundleRowVariants = bulkVariants.slice();
+      if (bulkBundleTiers.length) {
+        bundleRowVariants = bundleRowVariants.filter(
+          (v) => bulkBundleTiers.includes(Number(v.options?.bundleQty)),
+        );
+      }
+    } else {
+      return null;
+    }
+
+    if (!bundleRowVariants.length) return null;
 
     return (
       <div className="space-y-2">
@@ -1247,7 +1326,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
             const tagLabel = getBundleTagLabel(tag);
             const bundleImage = getBundleOptionImage(v);
             const label = isMatrixProduct
-              ? (qty === 1 ? t('product.buy1') : t('product.bundleOf', { qty }))
+              ? formatMatrixPackSizeLabel(qty)
               : (v.options?.title?.trim() || (qty === 1 ? t('product.buy1') : t('product.bundleOf', { qty })));
             const rowOutOfStock = Number(v.stock) <= 0;
 
@@ -1314,7 +1393,24 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
           })}
       </div>
     );
-  };
+  }, [
+    isBundleModeActive,
+    isMatrixProduct,
+    matrixBundleTiers,
+    variants,
+    selectedOptions,
+    bulkVariants,
+    bulkBundleTiers,
+    activeBundleTier,
+    product.price,
+    t,
+    convertPrice,
+    currency,
+    formatDisplay,
+    language,
+    getBundleOptionImage,
+    handleBundleTierSelect,
+  ]);
 
   const STORE_SOLD_BY_NAME = 'store1920';
 
@@ -1350,17 +1446,70 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     </p>
   );
 
+  const displaySoldCount = Math.max(0, Number(product?.soldCount) || 0);
+
+  const soldProgressPercent = useMemo(() => {
+    // Always show a strong "selling fast" fill (80–90%).
+    const seed = String(product?._id || product?.slug || displaySoldCount || '0');
+    let hash = 0;
+    for (let i = 0; i < seed.length; i += 1) {
+      hash = ((hash << 5) - hash) + seed.charCodeAt(i);
+      hash |= 0;
+    }
+    return 80 + (Math.abs(hash) % 11);
+  }, [product?._id, product?.slug, displaySoldCount]);
+
+  const renderSoldCountLine = (className = '') => {
+    if (displaySoldCount <= 0) return null;
+
+    return (
+      <div
+        dir={isArabic ? 'rtl' : 'ltr'}
+        className={`w-full max-w-[280px] ${className}`.trim()}
+      >
+        <div className="mb-1.5 flex items-center justify-end">
+          <span
+            className="inline-flex items-baseline gap-1.5 text-[13px] font-extrabold leading-none tracking-tight"
+            style={{ color: '#E52721' }}
+          >
+            <span className="tabular-nums">{formatCount(displaySoldCount)}</span>
+            <span className="uppercase tracking-[0.12em]">
+              {isArabic ? 'مباعة' : 'SOLD'}
+            </span>
+          </span>
+        </div>
+
+        <div className="relative h-2 w-full overflow-hidden rounded-full bg-[#eceef2]">
+          <div
+            className="product-sold-progress-fill absolute inset-y-0 start-0 rounded-full bg-[#E52721]"
+            style={{ width: `${soldProgressPercent}%` }}
+            role="progressbar"
+            aria-valuenow={soldProgressPercent}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label={t('product.soldCount', { count: formatCount(displaySoldCount) })}
+          />
+        </div>
+      </div>
+    );
+  };
+
   const mobileProductBrand = sanitizeDisplayText(
     (isArabic && String(product?.brandAr || '').trim())
       ? product.brandAr
       : (product?.brand || '')
   );
   const mobileArrivalDate = deliveryWindow.primaryArrivalText;
-  const qualifiesForFreeMobileDelivery =
-    Boolean(product?.freeShippingEligible) || Number(effPrice || 0) >= 100;
+  const qualifiesForFreeMobileDelivery = Boolean(product?.freeShippingEligible)
+    || (
+      !product?.freeShippingEligible
+      && Number(effPrice || 0) >= shippingPreview.freeShippingMin
+    );
   const mobileDeliveryFeeLabel = qualifiesForFreeMobileDelivery
     ? t('product.mobile.freeDeliveryFee')
-    : t('product.mobile.deliveryFee', { amount: formatMoney(convertPrice(15), true) });
+    : t('product.mobile.deliveryFee', {
+      amount: formatMoney(convertPrice(shippingPreview.flatRate), true),
+    });
   const selectedVariantLabel = formatVariantOptionsLabel(cartVariantOptions)
     || (selectedBundleQty ? `Bundle ${selectedBundleQty}` : 'Default');
 
@@ -1489,7 +1638,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   };
 
   const renderZoomPanel = () => {
-    if (!showZoom || showFbtPopup || !mainImage || activeMedia?.type === 'video' || !zoomPortalReady || isRtlLayout()) return null;
+    if (!showZoom || showFbtPopup || !mainImage || activeMedia?.type === 'video' || !zoomPortalReady) return null;
 
     const panelSize = zoomPanelPos.panelSize || Math.min(Math.max(zoomPanelPos.height, 360), 520);
 
@@ -2100,7 +2249,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     if (isOrderingNow || !isSelectionInStock || maxOrderQty <= 0) return;
     setIsOrderingNow(true);
     try {
-      const qtyToAdd = (isBulkBundleProduct || isMatrixProduct) ? (activeBundleTier ?? quantity) : quantity;
+      const qtyToAdd = quantity;
       upsertProductCartLines(qtyToAdd);
       router.push('/checkout');
     } catch (error) {
@@ -2113,9 +2262,11 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const handleAddToCart = async () => {
     if (!isSelectionInStock || maxOrderQty <= 0) return;
 
-    const qtyToAdd = (isBulkBundleProduct || isMatrixProduct) ? (activeBundleTier ?? quantity) : quantity;
+    const qtyToAdd = quantity;
     upsertProductCartLines(qtyToAdd);
-    const gtmQty = (isBulkBundleProduct || isMatrixProduct) ? 1 : Math.min(Math.max(1, Number(quantity) || 1), maxOrderQty);
+    const gtmQty = isBulkBundleProduct
+      ? (Number(activeBundleTier) || 1)
+      : Math.min(Math.max(1, Number(quantity) || 1), maxOrderQty);
     const gtmLinePrice = isBulkBundleProduct
       ? Number(findBulkBundleVariant(product, activeBundleTier)?.price ?? effPrice ?? product.price ?? 0)
       : (isMatrixProduct
@@ -2142,9 +2293,18 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   };
 
   const cartMatchesSelection = useMemo(() => {
-    if (cartQty <= 0) return false;
-    if (isBulkBundleProduct && !bundleCartSelectionMatches(cartEntry, product, selectedBundleQty)) {
-      return false;
+    if (!Number.isFinite(cartQty) || cartQty <= 0) return false;
+    if (isBulkBundleProduct) {
+      if (!bundleCartSelectionMatches(cartEntry, product, selectedBundleQty)) {
+        return false;
+      }
+      const lineDisplay = resolveCartDisplayQuantity(
+        product,
+        cartEntry,
+        cartQty,
+        selectedBundleQty,
+      );
+      if (Number(quantity) !== lineDisplay) return false;
     }
     return cartVariantOptionsMatch(cartEntry?.variantOptions, cartVariantOptions);
   }, [
@@ -2154,35 +2314,117 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     isBulkBundleProduct,
     product,
     selectedBundleQty,
+    quantity,
   ]);
 
-  // Reset quantity/tier when the product or color/size changes — not when the user
-  // picks a different bundle tier than what is already in the cart.
+  const showCartMatchedUi = cartUiReady && cartMatchesSelection;
+
+  // Reset quantity/tier when switching products — not when the user picks a bundle tier.
   useEffect(() => {
-    if (bulkBundleTiers.length > 0) {
-      const firstTier = bulkBundleTiers[0] ?? 1;
-      setQuantity(firstTier);
-      setSelectedBundleQty(firstTier);
+    prevSelectedOptionsKeyRef.current = null;
+    if (isBulkBundleProduct && bulkBundleTiers.length > 0) {
+      const initialTier = bulkBundleTiers[0];
+      setSelectedBundleQty(initialTier);
+      setQuantity(initialTier);
+    } else if (isMatrixProduct && matrixBundleTiers.length > 0) {
+      setSelectedBundleQty(matrixBundleTiers[0]);
+      setQuantity(1);
     } else {
       setQuantity(1);
     }
-  }, [product?._id, selectedOptions, bulkBundleTiers]);
+  }, [product?._id]);
+
+  // Matrix only: reset bundle tier when color/size (or other option) changes.
+  const selectedOptionsKey = useMemo(
+    () => JSON.stringify(selectedOptions),
+    [selectedOptions],
+  );
+
+  useEffect(() => {
+    if (!isMatrixProduct || matrixBundleTiers.length === 0) return;
+    if (prevSelectedOptionsKeyRef.current === null) {
+      prevSelectedOptionsKeyRef.current = selectedOptionsKey;
+      return;
+    }
+    if (prevSelectedOptionsKeyRef.current === selectedOptionsKey) return;
+    prevSelectedOptionsKeyRef.current = selectedOptionsKey;
+    setSelectedBundleQty(matrixBundleTiers[0]);
+    setQuantity(1);
+  }, [isMatrixProduct, selectedOptionsKey, matrixBundleTiers]);
+
+  // Keep the selected pack tier when only stock/availability recalculates tiers.
+  useEffect(() => {
+    if (!isMatrixProduct || matrixBundleTiers.length === 0) return;
+    setSelectedBundleQty((prev) => {
+      const current = Number(prev);
+      if (current && matrixBundleTiers.includes(current)) return prev;
+      return matrixBundleTiers[0];
+    });
+  }, [isMatrixProduct, matrixBundleTiers]);
+
+  useEffect(() => {
+    if (!isBulkBundleProduct || bulkBundleTiers.length === 0) return;
+    setSelectedBundleQty((prev) => {
+      const current = Number(prev);
+      if (current && bulkBundleTiers.includes(current)) return prev;
+      return bulkBundleTiers[0];
+    });
+  }, [isBulkBundleProduct, bulkBundleTiers]);
 
   useEffect(() => {
     if (!cartMatchesSelection) return;
-    if (isCartBundleLine && cartBundleTier) {
-      if (isMatrixProduct) {
-        // Matrix keeps the stepper at 1; the tier lives in selectedBundleQty.
-        setSelectedBundleQty(cartBundleTier);
-        setQuantity(1);
-      } else {
-        setQuantity(cartBundleTier);
-        setSelectedBundleQty(cartBundleTier);
-      }
+    if (isBulkBundleProduct && cartBundleTier) {
+      setSelectedBundleQty(cartBundleTier);
+      setQuantity(cartDisplayQty);
+      return;
+    }
+    if (isCartMatrixLine && cartBundleTier) {
+      setSelectedBundleQty(cartBundleTier);
+      setQuantity(cartQty);
       return;
     }
     setQuantity(cartQty);
-  }, [cartMatchesSelection, product?._id, cartQty, isCartBundleLine, cartBundleTier, isMatrixProduct]);
+  }, [
+    cartMatchesSelection,
+    product?._id,
+    cartQty,
+    cartDisplayQty,
+    isCartMatrixLine,
+    isBulkBundleProduct,
+    cartBundleTier,
+  ]);
+
+  const isBulkSingleTierPack = isBulkBundleProduct
+    && cartQty === 1
+    && bulkBundleTiers.includes(Number(cartEntry?.variantOptions?.bundleQty));
+
+  const stepProductBulkTier = useCallback(async (direction) => {
+    if (!isBulkBundleProduct || !cartEntry || cartQty <= 0) return;
+
+    const result = adjustBundleCartTier(cartEntry, product, direction === 1 ? 'up' : 'down');
+    if (result === 'remove') {
+      dispatch(deleteItemFromCart({ productId: cartProductId }));
+    } else if (result) {
+      dispatch(setCartEntry({ productId: cartProductId, entry: result }));
+    }
+
+    if (isSignedIn) {
+      try { await dispatch(uploadCart()).unwrap(); } catch (_) {}
+    }
+  }, [
+    isBulkBundleProduct,
+    cartEntry,
+    cartQty,
+    product,
+    cartProductId,
+    dispatch,
+    isSignedIn,
+  ]);
+
+  const isAtMaxBulkTier = isBulkBundleProduct
+    && bulkBundleTiers.length > 0
+    && Number(activeBundleTier) >= bulkBundleTiers[bulkBundleTiers.length - 1]
+    && isBulkSingleTierPack;
 
   // Toggle FBT product selection
   const toggleFbtProduct = (productId) => {
@@ -2502,22 +2744,6 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                       priority
                     />
                   )}
-                  {showZoom && activeMedia?.type !== 'video' && isRtlLayout() && (
-                    <div
-                      className="absolute z-20 pointer-events-none border-2 border-orange-400 rounded-md shadow-lg overflow-hidden"
-                      style={{
-                        width: 148,
-                        height: 148,
-                        left: `calc(${zoomPos.x * 100}% - 74px)`,
-                        top: `calc(${zoomPos.y * 100}% - 74px)`,
-                        backgroundImage: `url(${mainImage})`,
-                        backgroundSize: '350% 350%',
-                        backgroundPosition: `${zoomPos.x * 100}% ${zoomPos.y * 100}%`,
-                        backgroundRepeat: 'no-repeat',
-                        backgroundColor: '#fff',
-                      }}
-                    />
-                  )}
                 </div>
 
                 {renderZoomPanel()}
@@ -2704,13 +2930,15 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 </div>
               ) : null}
 
-              {showBundleOptions ? (
+              {bundleOptionsPanel ? (
                 <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                  {renderBundleOptions()}
+                  {bundleOptionsPanel}
                 </div>
               ) : null}
 
-              {isSelectionInStock && !isBulkBundleProduct && !isMatrixProduct ? (
+              {renderSoldCountLine('mt-1')}
+
+              {isSelectionInStock ? (
                 <ProductQuantitySelector
                   quantity={quantity}
                   maxOrderQty={maxOrderQty}
@@ -2719,7 +2947,6 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   variant="card"
                   isArabic={isArabic}
                   formatCount={formatCount}
-                  formatOptionLabel={isBulkBundleProduct ? getBundleQuantityOptionLabel : undefined}
                 />
               ) : null}
 
@@ -2958,9 +3185,9 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 </div>
               ) : null}
 
-              {showBundleOptions ? (
+              {bundleOptionsPanel ? (
                 <div className="mt-3 rounded-lg border border-gray-200 bg-white p-4">
-                  {renderBundleOptions()}
+                  {bundleOptionsPanel}
                 </div>
               ) : null}
 
@@ -3120,6 +3347,8 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 </div>
               )}
 
+            {renderSoldCountLine('mb-2')}
+
             {/* Price Section */}
             <div className="space-y-3">
               {!isSelectionInStock && !isGloballyOutOfStock && (
@@ -3180,7 +3409,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
             </div>
 
             {/* Quantity */}
-            {isSelectionInStock && !cartMatchesSelection && !isMatrixProduct ? (
+            {isSelectionInStock && !showCartMatchedUi ? (
               <ProductQuantitySelector
                 quantity={quantity}
                 maxOrderQty={maxOrderQty}
@@ -3189,14 +3418,12 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 variant="buybox"
                 isArabic={isArabic}
                 formatCount={formatCount}
-                formatOptionLabel={isBulkBundleProduct ? getBundleQuantityOptionLabel : undefined}
-                options={isBulkBundleProduct ? bulkBundleTiers : undefined}
               />
             ) : null}
 
             {/* Action Buttons */}
             <div className="mt-5" dir={isArabic ? 'rtl' : 'ltr'}>
-              {!cartMatchesSelection ? (
+              {!showCartMatchedUi ? (
                 <div className="space-y-3">
                   <button
                     onClick={handleAddToCart}
@@ -3244,31 +3471,40 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                         type="button"
                         onClick={async () => {
                           if (cartQty <= 0) return;
-                          const pid = cartProductId;
-                          if (isCartBundleLine) {
-                            if (canDecreaseCartBundle) {
-                              decrementCartItem(dispatch, { productId: pid, entry: cartEntry, product });
+                          if (isBulkBundleProduct) {
+                            if (isBulkSingleTierPack) {
+                              await stepProductBulkTier(-1);
+                            } else if (cartQty > 1) {
+                              dispatch(setCartEntry({
+                                productId: cartProductId,
+                                entry: { ...cartEntry, quantity: cartQty - 1 },
+                              }));
                             } else {
-                              dispatch(deleteItemFromCart({ productId: pid }));
+                              dispatch(deleteItemFromCart({ productId: cartProductId }));
                             }
-                          } else if (cartQty <= 1) {
+                            if (isSignedIn) { try { await dispatch(uploadCart()).unwrap(); } catch (_) {} }
+                            return;
+                          }
+                          const pid = cartProductId;
+                          if (cartQty <= 1) {
                             dispatch(deleteItemFromCart({ productId: pid }));
                           } else {
-                            dispatch(removeFromCart({ productId: pid }));
+                            decrementCartItem(dispatch, { productId: pid, entry: cartEntry, product });
                           }
                           if (isSignedIn) { try { await dispatch(uploadCart()).unwrap(); } catch (_) {} }
                         }}
                         className="flex h-11 items-center justify-center border-r border-gray-200 text-gray-700 transition hover:bg-gray-50"
-                        aria-label={(isCartBundleLine ? !canDecreaseCartBundle : cartQty <= 1) ? 'Remove from cart' : 'Decrease quantity'}
+                        aria-label={cartQty <= 1 && !isBulkBundleProduct ? 'Remove from cart' : 'Decrease quantity'}
                       >
-                        {(isCartBundleLine ? !canDecreaseCartBundle : cartQty <= 1)
+                        {(cartQty <= 1 && !isBulkBundleProduct)
+                          || (isBulkBundleProduct && isBulkSingleTierPack && bulkBundleTiers[0] === Number(activeBundleTier))
                           ? <Trash2 size={16} className="text-red-500" />
                           : <MinusIcon size={16} />}
                       </button>
 
                       <div className="flex min-w-[88px] flex-col items-center justify-center border-r border-gray-200 bg-gray-50 px-4">
                         <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
-                          {isCartBundleLine ? t('product.bundleAndSave') : t('product.qty')}
+                          {t('product.qty')}
                         </span>
                         <span className="text-lg font-bold leading-none text-gray-900">
                           {formatCount(cartDisplayQty)}
@@ -3279,15 +3515,19 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                         type="button"
                         onClick={async () => {
                           if (cartQty <= 0) return;
-                          if (isCartBundleLine) {
-                            if (!canIncreaseCartBundle) return;
-                            incrementCartItem(dispatch, {
-                              productId: cartProductId,
-                              entry: cartEntry,
-                              product,
-                              price: effPrice,
-                            });
-                          } else if (cartQty < Math.max(1, maxOrderQty)) {
+                          if (isBulkBundleProduct) {
+                            if (isBulkSingleTierPack) {
+                              await stepProductBulkTier(1);
+                            } else if (cartQty < Math.max(1, maxOrderQty)) {
+                              dispatch(setCartEntry({
+                                productId: cartProductId,
+                                entry: { ...cartEntry, quantity: cartQty + 1 },
+                              }));
+                            }
+                            if (isSignedIn) { try { await dispatch(uploadCart()).unwrap(); } catch (_) {} }
+                            return;
+                          }
+                          if (cartQty < Math.max(1, maxOrderQty)) {
                             incrementCartItem(dispatch, {
                               productId: cartProductId,
                               entry: cartEntry,
@@ -3300,7 +3540,13 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                         }}
                         className="flex h-11 items-center justify-center text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
                         aria-label="Increase quantity"
-                        disabled={isCartBundleLine ? !canIncreaseCartBundle : cartQty >= Math.max(1, maxOrderQty)}
+                        disabled={
+                          isBulkBundleProduct
+                            ? (isBulkSingleTierPack
+                              ? isAtMaxBulkTier
+                              : cartQty >= Math.max(1, maxOrderQty))
+                            : cartQty >= Math.max(1, maxOrderQty)
+                        }
                       >
                         <PlusIcon size={16} />
                       </button>
@@ -3478,6 +3724,14 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
           );
           animation: added-cta-shine 720ms ease-out;
           pointer-events: none;
+        }
+        @keyframes sold-progress-grow {
+          from {
+            width: 0;
+          }
+        }
+        .product-sold-progress-fill {
+          animation: sold-progress-grow 1s cubic-bezier(0.22, 1, 0.36, 1) forwards;
         }
         .scrollbar-hide::-webkit-scrollbar {
           display: none;

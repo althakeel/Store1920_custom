@@ -9,65 +9,114 @@ import {
 
 import { NextResponse } from "next/server";
 
+function getPublicShippingFallback() {
+  return {
+    enabled: false,
+    shippingType: "FLAT_RATE",
+    flatRate: 0,
+    perItemFee: 0,
+    maxItemFee: null,
+    weightUnit: "kg",
+    baseWeight: 1,
+    baseWeightFee: 0,
+    additionalWeightFee: 0,
+    freeShippingMin: 0,
+    enableProductSpecificFreeShipping: false,
+    productSpecificFreeShippingMode: "ORDER_LEVEL",
+    localDeliveryFee: null,
+    regionalDeliveryFee: null,
+    estimatedDays: "2-5",
+    enableCOD: true,
+    codFee: 0,
+    maxCODAmount: 0,
+    maxCardAmount: 0,
+    maxTabbyAmount: 0,
+    maxTamaraAmount: 0,
+    enableExpressShipping: false,
+    expressShippingFee: 0,
+    expressEstimatedDays: "1-2",
+    stateCharges: [],
+    shippingOptions: resolveShippingOptions(null),
+  };
+}
+
+async function resolveShippingStoreContext(request) {
+  const { searchParams } = new URL(request.url);
+  let storeId = searchParams.get("storeId");
+  let isSeller = false;
+
+  const authHeader = request.headers.get("authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    try {
+      const idToken = authHeader.split(" ")[1];
+      const { getAuth } = await import("firebase-admin/auth");
+      const { initializeApp, applicationDefault, getApps } = await import("firebase-admin/app");
+      if (getApps().length === 0) {
+        initializeApp({ credential: applicationDefault() });
+      }
+      const decodedToken = await getAuth().verifyIdToken(idToken);
+      const sellerStoreId = await authSeller(decodedToken.uid);
+      if (sellerStoreId) {
+        storeId = String(sellerStoreId);
+        isSeller = true;
+      }
+    } catch {
+      // Invalid token — continue as public request.
+    }
+  }
+
+  return { storeId, isSeller };
+}
+
 // GET: Public - return shipping settings for a specific store
 // Pass ?storeId=xxx in query params
+// Authenticated sellers always receive their own store settings.
 export async function GET(request) {
   try {
     await dbConnect();
-    
-    const { searchParams } = new URL(request.url);
-    const storeId = searchParams.get('storeId');
-    
-    console.log('=== SHIPPING API GET ===');
-    console.log('Requested storeId:', storeId);
-    
-    let setting;
+
+    const { storeId, isSeller } = await resolveShippingStoreContext(request);
+
+    console.log("=== SHIPPING API GET ===");
+    console.log("Resolved storeId:", storeId, "isSeller:", isSeller);
+
+    let setting = null;
     if (storeId) {
       setting = await ShippingSetting.findOne({ storeId }).lean();
-    } else {
-      // Fallback: get the first store's settings (for backward compatibility)
+    } else if (!isSeller) {
       setting = await ShippingSetting.findOne({}).lean();
     }
-    
-    console.log('Retrieved setting - maxCODAmount:', setting?.maxCODAmount, 'codFee:', setting?.codFee);
-    console.log('Full setting:', JSON.stringify(setting));
 
-    const normalizedSetting = setting
-      ? { ...setting, shippingOptions: resolveShippingOptions(setting) }
-      : null;
-    
-    return NextResponse.json({
-      setting: normalizedSetting || {
-        enabled: false,
-        shippingType: "FLAT_RATE",
-        flatRate: 0,
-        perItemFee: 0,
-        maxItemFee: null,
-        weightUnit: "kg",
-        baseWeight: 1,
-        baseWeightFee: 0,
-        additionalWeightFee: 0,
-        freeShippingMin: 0,
-        enableProductSpecificFreeShipping: false,
-        productSpecificFreeShippingMode: "ORDER_LEVEL",
-        localDeliveryFee: null,
-        regionalDeliveryFee: null,
-        estimatedDays: "2-5",
-        enableCOD: true,
-        codFee: 0,
-        maxCODAmount: 0,
-        enableExpressShipping: false,
-        expressShippingFee: 0,
-        expressEstimatedDays: "1-2",
-        stateCharges: [],
-        shippingOptions: resolveShippingOptions(null),
-      }
-    }, {
+    if (setting) {
+      const normalizedSetting = {
+        ...setting,
+        shippingOptions: resolveShippingOptions(setting),
+      };
+      return NextResponse.json({ setting: normalizedSetting }, {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+          Pragma: "no-cache",
+          Expires: "0",
+        },
+      });
+    }
+
+    if (isSeller) {
+      return NextResponse.json({ setting: null }, {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+          Pragma: "no-cache",
+          Expires: "0",
+        },
+      });
+    }
+
+    return NextResponse.json({ setting: getPublicShippingFallback() }, {
       headers: {
-        'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
-        'Pragma': 'no-cache',
-        'Expires': '0'
-      }
+        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        Pragma: "no-cache",
+        Expires: "0",
+      },
     });
   } catch (e) {
     console.error(e);
@@ -126,7 +175,7 @@ export async function PUT(request) {
       baseWeightFee: Number(legacyFromOptions.baseWeightFee ?? body.baseWeightFee ?? 5),
       additionalWeightFee: Number(legacyFromOptions.additionalWeightFee ?? body.additionalWeightFee ?? 2),
       // Free Shipping
-      freeShippingMin: Number(body.freeShippingMin ?? 499),
+      freeShippingMin: Number(body.freeShippingMin ?? 100),
       enableProductSpecificFreeShipping: Boolean(body.enableProductSpecificFreeShipping ?? false),
       productSpecificFreeShippingMode:
         body.productSpecificFreeShippingMode === 'MARKED_ITEMS_ONLY'
@@ -141,6 +190,9 @@ export async function PUT(request) {
       enableCOD: Boolean(body.enableCOD ?? true),
       codFee: Number(body.codFee ?? 0),
       maxCODAmount: Number(body.maxCODAmount ?? 0),
+      maxCardAmount: Number(body.maxCardAmount ?? 0),
+      maxTabbyAmount: Number(body.maxTabbyAmount ?? 0),
+      maxTamaraAmount: Number(body.maxTamaraAmount ?? 0),
       // Express (legacy sync from options)
       enableExpressShipping: Boolean(
         legacyFromOptions.enableExpressShipping ?? body.enableExpressShipping ?? false,

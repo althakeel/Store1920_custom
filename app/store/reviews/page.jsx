@@ -22,6 +22,7 @@ import {
   Video,
   CheckCircle2,
   XCircle,
+  Trash2,
 } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
@@ -109,7 +110,7 @@ function StarRow({ value, size = 14 }) {
   );
 }
 
-function ReviewCard({ review, onApprove, onReject }) {
+function ReviewCard({ review, onApprove, onReject, onDelete, deleting }) {
   const reviewId = getReviewId(review);
   const customerName = review.user?.name || review.customerName || 'Customer';
   const initials = customerName
@@ -209,6 +210,15 @@ function ReviewCard({ review, onApprove, onReject }) {
                 </button>
               </>
             ) : null}
+            <button
+              type="button"
+              onClick={() => onDelete(reviewId)}
+              disabled={deleting}
+              className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1 text-xs font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Trash2 size={12} />
+              {deleting ? 'Deleting...' : 'Delete'}
+            </button>
           </div>
         </div>
       </div>
@@ -225,6 +235,8 @@ function ProductReviewRow({
   onAddReview,
   onApprove,
   onReject,
+  onDelete,
+  deletingReviewId,
 }) {
   const summary = product.reviewSummary || { count: 0, pendingCount: 0, averageRating: 0 };
   const pendingCount = summary.pendingCount || 0;
@@ -333,6 +345,8 @@ function ProductReviewRow({
                   review={review}
                   onApprove={onApprove}
                   onReject={onReject}
+                  onDelete={onDelete}
+                  deleting={deletingReviewId === getReviewId(review)}
                 />
               ))}
             </div>
@@ -381,6 +395,7 @@ export default function StoreReviews() {
   const [formData, setFormData] = useState(getDefaultFormData);
   const [imagePreviews, setImagePreviews] = useState([]);
   const [videoPreviews, setVideoPreviews] = useState([]);
+  const [deletingReviewId, setDeletingReviewId] = useState(null);
   const hasLoadedRef = useRef(false);
 
   const fetchProductReviews = useCallback(async (productId) => {
@@ -467,6 +482,30 @@ export default function StoreReviews() {
       }
     } catch (error) {
       toast.error(error?.response?.data?.error || error.message);
+    }
+  };
+
+  const handleDeleteReview = async (reviewId) => {
+    if (!window.confirm('Delete this review permanently? This cannot be undone.')) {
+      return;
+    }
+
+    setDeletingReviewId(reviewId);
+    try {
+      const token = await getToken();
+      await axios.delete('/api/store/reviews', {
+        data: { reviewId },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      toast.success('Review deleted');
+      await fetchReviews(pagination.page);
+      if (expandedProductId) {
+        await refreshExpandedProduct(expandedProductId);
+      }
+    } catch (error) {
+      toast.error(error?.response?.data?.error || error.message);
+    } finally {
+      setDeletingReviewId(null);
     }
   };
 
@@ -678,6 +717,8 @@ export default function StoreReviews() {
               }}
               onApprove={(reviewId) => handleApproval(reviewId, true)}
               onReject={(reviewId) => handleApproval(reviewId, false)}
+              onDelete={handleDeleteReview}
+              deletingReviewId={deletingReviewId}
             />
           ))}
         </div>

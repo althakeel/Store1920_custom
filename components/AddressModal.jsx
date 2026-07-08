@@ -11,6 +11,7 @@ import { useAuth } from '@/lib/useAuth';
 import { UAE_EMIRATES, getUaeAreaOptionsForEmirate, isUaeCountry } from '@/lib/uaeEmirateAreas';
 import SearchableSelect from '@/components/SearchableSelect';
 import PhoneNumberField from '@/components/PhoneNumberField';
+import { UAE_PHONE_CODE_OPTIONS } from '@/assets/countryCodes';
 import {
     validateAddressPayload,
 } from '@/lib/addressValidation';
@@ -608,7 +609,7 @@ const AddressModal = ({ open, setShowAddressModal, onAddressAdded, initialAddres
                         phoneCode={address.phoneCode}
                         onPhoneChange={(value) => setAddress((prev) => ({ ...prev, phone: value }))}
                         onPhoneCodeChange={handleAddressChange}
-                        countryOptions={countries.map((country) => ({ code: country.code }))}
+                        countryOptions={UAE_PHONE_CODE_OPTIONS}
                         inputKey={address.id || 'new'}
                     />
                     </div>

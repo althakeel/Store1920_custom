@@ -64,8 +64,8 @@ console.log('Profile:', buildCustomerSitePath('/dashboard/profile'));
 console.log('\n=== Email flows (code audit) ===\n');
 const flows = [
   ['Order placed (COD / paid)', 'sendOrderPlacedEmail — after checkout'],
-  ['Admin new order', 'sendAdminNewOrderEmail — BCC to ADMIN_EMAIL'],
-  ['Order status updates', 'sendOrderStatusEmail — shipped, delivered, cancelled, etc.'],
+  ['Admin new order', 'sendAdminNewOrderEmail — sent to ADMIN_EMAIL on new order only'],
+  ['Order status updates', 'sendOrderStatusEmail — customer only, no admin copy'],
   ['Login alert', 'sendLoginAlertEmail — on sign-in'],
   ['Welcome', 'sendWelcomeEmail — on new account'],
   ['Sign-out', 'send-signout-email API — on logout'],

@@ -3,6 +3,7 @@ import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import Rating from '@/models/Rating';
 import { getAuth } from '@/lib/firebase-admin';
+import { getReviewEligibility } from '@/lib/reviewEligibility';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,33 +22,26 @@ export async function GET(request) {
     }
 
     let userId = null;
+    let userEmail = '';
     try {
       const decoded = await getAuth().verifyIdToken(authHeader.slice(7));
       userId = decoded.uid;
+      userEmail = decoded.email || '';
     } catch {
       return NextResponse.json({ canReview: false, signedIn: false });
     }
 
     await connectDB();
 
-    const deliveredOrder = await Order.findOne({
+    const eligibility = await getReviewEligibility({
+      Order,
+      Rating,
       userId,
-      status: 'DELIVERED',
-      'orderItems.productId': productId,
-    })
-      .select('_id')
-      .lean();
-
-    const existingReview = await Rating.findOne({ userId, productId: String(productId) })
-      .select('_id approved')
-      .lean();
-
-    return NextResponse.json({
-      signedIn: true,
-      canReview: Boolean(deliveredOrder),
-      alreadyReviewed: Boolean(existingReview),
-      reviewPending: Boolean(existingReview && existingReview.approved === false),
+      productId,
+      userEmail,
     });
+
+    return NextResponse.json(eligibility);
   } catch (error) {
     console.error('[review/can-review GET]', error);
     return NextResponse.json({ error: error?.message || 'Failed to check review eligibility' }, { status: 500 });

@@ -231,7 +231,7 @@ export default function OrdersByProductPage() {
                   : 'bg-red-50 text-red-700 hover:bg-red-100'
               }`}
             >
-              Failed
+              Failed orders
             </button>
           </div>
 

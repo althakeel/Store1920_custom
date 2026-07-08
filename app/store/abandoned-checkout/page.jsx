@@ -12,6 +12,7 @@ import {
   MapPin,
   MessageCircle,
   Phone,
+  Search,
   ShoppingCart,
   Trash2,
   X,
@@ -21,6 +22,8 @@ import Loading from '@/components/Loading';
 import { getAbandonedCartDisplayName, getAbandonedCartTotal, isAnonymousAbandonedCart } from '@/lib/abandonedCartUtils';
 import { getAbandonedCartDisplayItems } from '@/lib/abandonedCartLineItems';
 import { getConversionPaymentMethodLabel, isValidPaymentLink } from '@/lib/abandonedCartRecoveryPayment';
+import { buildRecoveryLink } from '@/lib/abandonedCartRecoveryOffer';
+import { getCustomerSiteUrl } from '@/lib/appUrl';
 import { formatWhatsAppErrorMessage } from '@/lib/whatsapp/formatWhatsAppError';
 
 const PAGE_SIZE = 10;
@@ -95,6 +98,53 @@ function normalizePhoneForWhatsApp(phone) {
   const digits = String(phone || '').replace(/\D/g, '');
   if (!digits) return null;
   return digits.startsWith('971') ? digits : `971${digits.replace(/^0+/, '')}`;
+}
+
+function normalizePhoneSearch(value) {
+  return String(value || '').replace(/\D/g, '');
+}
+
+function abandonedCartMatchesSearch(cart, rawQuery) {
+  const query = String(rawQuery || '').trim().toLowerCase();
+  if (!query) return true;
+
+  const phoneQuery = normalizePhoneSearch(rawQuery);
+
+  const textParts = [
+    cart.name,
+    cart.resolvedCustomerName,
+    cart.email,
+    cart.conversionCustomerEmail,
+    cart.recoveryLinkSentTo,
+    cart.phone,
+    cart.anonymousId,
+    cart.conversionNote,
+    cart.linkedOrderId,
+    getLocationLabel(cart.address),
+    cart.address?.street,
+    cart.address?.city,
+    cart.address?.district,
+    cart.address?.state,
+    cart.address?.country,
+    cart.address?.pincode,
+    cart.address?.zip,
+    ...(Array.isArray(cart.items)
+      ? cart.items.flatMap((item) => [item?.name, item?.productName, item?.sku])
+      : []),
+  ]
+    .filter(Boolean)
+    .map((value) => String(value).toLowerCase());
+
+  if (textParts.some((part) => part.includes(query))) return true;
+
+  if (phoneQuery.length >= 3) {
+    const phoneParts = [cart.phone, cart.address?.phone]
+      .filter(Boolean)
+      .map(normalizePhoneSearch);
+    if (phoneParts.some((part) => part.includes(phoneQuery))) return true;
+  }
+
+  return false;
 }
 
 function PaymentLinkShare({ cart, link, amount, currency = 'AED', title = 'Payment link for customer' }) {
@@ -252,7 +302,7 @@ function ConvertModal({
     setPaymentLinkError('');
     setSuccessCart(null);
     setRecoveryLink(cart.recoveryToken
-      ? `${typeof window !== 'undefined' ? window.location.origin : ''}/recover-cart/${cart.recoveryToken}`
+      ? buildRecoveryLink(getCustomerSiteUrl(), cart.recoveryToken)
       : '');
     setRecoveryEmailSent(false);
     setRecoveryEmailError('');
@@ -1153,6 +1203,7 @@ export default function AbandonedCheckoutPage() {
   const [error, setError] = useState('');
   const [whatsappSuccess, setWhatsappSuccess] = useState('');
   const [filter, setFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
   const [expandedId, setExpandedId] = useState(null);
   const [convertCart, setConvertCart] = useState(null);
@@ -1248,16 +1299,22 @@ export default function AbandonedCheckoutPage() {
   }, [activeCarts, identifiedActiveCarts, guestActiveCarts, pendingPaymentCarts, convertedCarts, emailSentCarts]);
 
   const filteredCarts = useMemo(() => {
-    if (filter === 'converted') return convertedCarts;
-    if (filter === 'email_sent') return emailSentCarts;
-    if (filter === 'guest') return guestActiveCarts;
-    if (filter === 'pending_payment') return pendingPaymentCarts;
-    if (filter === 'all') return activeCarts;
-    if (filter === 'cart') {
-      return activeCarts.filter((cart) => cart.source === 'cart' || cart.source === 'guest-cart');
+    let list;
+    if (filter === 'converted') list = convertedCarts;
+    else if (filter === 'email_sent') list = emailSentCarts;
+    else if (filter === 'guest') list = guestActiveCarts;
+    else if (filter === 'pending_payment') list = pendingPaymentCarts;
+    else if (filter === 'all') list = activeCarts;
+    else if (filter === 'cart') {
+      list = activeCarts.filter((cart) => cart.source === 'cart' || cart.source === 'guest-cart');
+    } else {
+      list = activeCarts.filter((cart) => cart.source === filter);
     }
-    return activeCarts.filter((cart) => cart.source === filter);
-  }, [activeCarts, guestActiveCarts, convertedCarts, emailSentCarts, pendingPaymentCarts, filter]);
+
+    const query = searchQuery.trim();
+    if (!query) return list;
+    return list.filter((cart) => abandonedCartMatchesSearch(cart, query));
+  }, [activeCarts, guestActiveCarts, convertedCarts, emailSentCarts, pendingPaymentCarts, filter, searchQuery]);
 
   const totalPages = Math.max(1, Math.ceil(filteredCarts.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -1266,7 +1323,7 @@ export default function AbandonedCheckoutPage() {
   useEffect(() => {
     setPage(1);
     setExpandedId(null);
-  }, [filter]);
+  }, [filter, searchQuery]);
 
   const handleSendRecoveryLink = async ({
     recoveryDiscountType,
@@ -1592,6 +1649,27 @@ export default function AbandonedCheckoutPage() {
         </div>
       </div>
 
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+        <input
+          type="search"
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+          placeholder="Search by name, email, phone, address, or product..."
+          className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-10 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+        />
+        {searchQuery ? (
+          <button
+            type="button"
+            onClick={() => setSearchQuery('')}
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+            aria-label="Clear search"
+          >
+            <X size={16} />
+          </button>
+        ) : null}
+      </div>
+
       <div className="flex flex-wrap gap-2">
         {filters.map((item) => (
           <button
@@ -1613,7 +1691,9 @@ export default function AbandonedCheckoutPage() {
         <div className="rounded-xl border border-dashed border-slate-300 bg-white px-6 py-10 text-center">
           <ShoppingCart className="mx-auto mb-2 text-slate-300" size={28} />
           <p className="text-sm font-semibold text-slate-700">
-            {filter === 'converted'
+            {searchQuery.trim()
+              ? `No results for "${searchQuery.trim()}"`
+              : filter === 'converted'
               ? 'No converted carts yet'
               : filter === 'guest'
                 ? 'No guest abandons yet'
@@ -1624,7 +1704,9 @@ export default function AbandonedCheckoutPage() {
                   : 'No abandoned carts found'}
           </p>
           <p className="mt-1 text-xs text-slate-500">
-            {filter === 'converted'
+            {searchQuery.trim()
+              ? 'Try another name, email, phone number, city, or product name.'
+              : filter === 'converted'
               ? 'When you convert a recovered cart, it will appear here.'
               : filter === 'guest'
                 ? 'Guests who reached checkout or cart without entering email or phone.'

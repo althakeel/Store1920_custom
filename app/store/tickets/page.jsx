@@ -33,13 +33,13 @@ export default function AdminTicketsPage() {
       })
       setTickets(data.tickets || [])
       
-      // Calculate stats
+      const ticketList = data.tickets || []
       const stats = {
-        total: data.tickets.length,
-        open: data.tickets.filter(t => t.status === 'open').length,
-        inProgress: data.tickets.filter(t => t.status === 'in-progress').length,
-        resolved: data.tickets.filter(t => t.status === 'resolved').length,
-        closed: data.tickets.filter(t => t.status === 'closed').length,
+        total: ticketList.length,
+        open: ticketList.filter(t => t.status === 'open').length,
+        inProgress: ticketList.filter(t => t.status === 'in-progress').length,
+        resolved: ticketList.filter(t => t.status === 'resolved').length,
+        closed: ticketList.filter(t => t.status === 'closed').length,
       }
       setStats(stats)
     } catch (error) {
@@ -90,7 +90,7 @@ export default function AdminTicketsPage() {
     }
     return (
       <span className={`px-2 py-1 text-xs font-semibold rounded-full ${colors[priority] || colors.normal}`}>
-        {priority.toUpperCase()}
+        {String(priority || 'normal').toUpperCase()}
       </span>
     )
   }

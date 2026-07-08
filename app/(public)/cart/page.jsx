@@ -26,7 +26,8 @@ import { pushGtmEcommerceEvent, toGtmItem } from "@/lib/pushGtmEcommerceEvent";
 import { GTM_EVENTS, gtmDedupeKey } from "@/lib/gtmEvents";
 import { STORE_CURRENCY } from "@/lib/storeCurrency";
 import { getCartEntryProductId, getCartEntryQuantity, isFreeGiftEntry } from "@/lib/freeGiftUtils";
-import { adjustBundleCartTier, isBulkBundleProduct, resolveCartLinePricing } from "@/lib/bulkBundleCart";
+import { resolveCartLinePricing } from "@/lib/bulkBundleCart";
+import { getCartProductIdsNeedingVariants, mergeFetchedProducts } from '@/lib/cartProductFetch';
 import { getOrCreateAnonymousId, getOrCreateSessionId } from '@/lib/trackingClient';
 
 export const dynamic = "force-dynamic";
@@ -146,9 +147,7 @@ function CartContent() {
             return undefined;
         }
 
-        const missingIds = normalizedIds.filter(
-            (id) => !products?.some((p) => String(p._id) === String(id))
-        );
+        const missingIds = getCartProductIdsNeedingVariants(cartItems, products);
 
         if (missingIds.length === 0) {
             setProductsLoaded(true);
@@ -163,14 +162,10 @@ function CartContent() {
                 });
                 if (ignore || !data?.products?.length) return;
 
-                const existing = new Set((products || []).map((p) => String(p._id)));
-                const merged = [...(products || [])];
-                data.products.forEach((p) => {
-                    if (!existing.has(String(p._id))) {
-                        merged.push(p);
-                    }
+                dispatch({
+                    type: "product/setProduct",
+                    payload: mergeFetchedProducts(products, data.products),
                 });
-                dispatch({ type: "product/setProduct", payload: merged });
             } catch (error) {
                 const details = error?.response?.data;
                 if (details || error?.message) {
@@ -207,6 +202,7 @@ function CartContent() {
                     _lineTotal: pricing.lineTotal,
                     _displayQuantity: pricing.displayQuantity,
                     _isBulkBundle: pricing.isBulkBundle,
+                    _isMatrix: Boolean(pricing.isMatrix),
                     _bundleTier: pricing.bundleTier,
                     _cartKey: key,
                     _productId: actualProductId,
@@ -341,7 +337,7 @@ function CartContent() {
                 const pricing = resolveCartLinePricing(product, value, quantity);
                 return {
                     productId,
-                    quantity: pricing.isBulkBundle ? 1 : quantity,
+                    quantity,
                     price: pricing.unitPrice,
                     lineTotal: pricing.lineTotal,
                     name: product?.name || 'Product',
@@ -446,9 +442,6 @@ function CartContent() {
     const wouldDecrementRemoveItem = (item) => {
         const cartKey = item._cartKey || item._id;
         const entry = cartItems?.[cartKey];
-        if (item?._isBulkBundle || isBulkBundleProduct(item)) {
-            return adjustBundleCartTier(entry, item, 'down') === 'remove';
-        }
         return getCartEntryQuantity(entry) <= 1;
     };
 

@@ -1,5 +1,7 @@
 "use client";
 import { useEffect } from "react";
+import { whenFbqReady } from "@/lib/metaBrowserAttribution";
+import { META_PIXEL_ID } from "@/lib/metaPixelConfig";
 
 /**
  * Ads Attribution Tracker
@@ -8,42 +10,44 @@ import { useEffect } from "react";
  */
 export default function AdsAttribution() {
   useEffect(() => {
-    // Get stored UTM data if available
-    const utmData = localStorage.getItem('utm_data');
-    const sessionData = utmData ? JSON.parse(utmData) : null;
+    let utmData = null;
+    try {
+      const raw = localStorage.getItem('utm_data');
+      utmData = raw ? JSON.parse(raw) : null;
+    } catch {
+      utmData = null;
+    }
 
-    if (!sessionData || !window.fbq) return;
+    if (!utmData) return;
 
-    // Store attribution data globally for use in events
     window.attributionData = {
-      utm_source: sessionData.source,
-      utm_medium: sessionData.medium,
-      utm_campaign: sessionData.campaign,
-      utm_id: sessionData.id,
-      referrer: sessionData.referrer,
-      entry_page_url: window.location.href
+      utm_source: utmData.source,
+      utm_medium: utmData.medium,
+      utm_campaign: utmData.campaign,
+      utm_id: utmData.id,
+      referrer: utmData.referrer,
+      entry_page_url: window.location.href,
     };
 
-    // Send initial attribution event for tracking visitors from ads
-    window.fbq('track', 'Lead', {
-      utm_source: sessionData.source,
-      utm_campaign: sessionData.campaign,
-      utm_medium: sessionData.medium
+    whenFbqReady((fbq) => {
+      fbq('trackSingleCustom', META_PIXEL_ID, 'AdsAttribution', {
+        utm_source: utmData.source,
+        utm_campaign: utmData.campaign,
+        utm_medium: utmData.medium,
+      });
     });
 
-    // Log custom event for dashboard analytics
     fetch('/api/analytics/track-attribution', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        source: sessionData.source,
-        medium: sessionData.medium,
-        campaign: sessionData.campaign,
-        referrer: sessionData.referrer,
-        timestamp: new Date().toISOString()
-      })
-    }).catch(err => console.error('Attribution tracking failed:', err));
-
+        source: utmData.source,
+        medium: utmData.medium,
+        campaign: utmData.campaign,
+        referrer: utmData.referrer,
+        timestamp: new Date().toISOString(),
+      }),
+    }).catch((err) => console.error('Attribution tracking failed:', err));
   }, []);
 
   return null;

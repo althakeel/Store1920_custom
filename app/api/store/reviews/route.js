@@ -384,3 +384,46 @@ export async function POST(request) {
     }, { status: 500 });
   }
 }
+
+export async function DELETE(request) {
+  try {
+    await connectDB();
+
+    const auth = await authenticateStore(request);
+    if (auth.error) return auth.error;
+
+    const { storeId } = auth;
+    const body = await request.json().catch(() => ({}));
+    const reviewId = String(body.reviewId || '').trim();
+
+    if (!reviewId || !/^[a-fA-F0-9]{24}$/.test(reviewId)) {
+      return Response.json({ error: 'Valid review ID is required' }, { status: 400 });
+    }
+
+    const review = await Rating.findById(reviewId).lean();
+    if (!review) {
+      return Response.json({ error: 'Review not found' }, { status: 404 });
+    }
+
+    const product = await Product.findOne({
+      _id: review.productId,
+      storeId,
+    }).select('_id').lean();
+
+    if (!product) {
+      return Response.json({ error: 'Unauthorized to delete this review' }, { status: 403 });
+    }
+
+    await Rating.findByIdAndDelete(reviewId);
+
+    return Response.json({
+      success: true,
+      message: 'Review deleted successfully',
+    });
+  } catch (error) {
+    console.error('Delete store review error:', error);
+    return Response.json({
+      error: error.message || 'Failed to delete review',
+    }, { status: 500 });
+  }
+}

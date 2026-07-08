@@ -33,8 +33,11 @@ export async function POST(req) {
             return NextResponse.json({ products: [] });
         }
 
-        const products = await Product.find({ _id: { $in: validProductIds } })
-            .select('name nameAr slug price mrp AED images externalImages brand brandAr category categories inStock fastDelivery freeShippingEligible useProductsPath imageAspectRatio shortDescription shortDescriptionAr shortDescription2 sku hasVariants variants allowReturn allowReplacement createdAt')
+        const products = await Product.find({
+            _id: { $in: validProductIds },
+            published: { $ne: false },
+        })
+            .select('name nameAr slug price mrp AED images externalImages brand brandAr category categories inStock fastDelivery freeShippingEligible useProductsPath imageAspectRatio shortDescription shortDescriptionAr shortDescription2 sku hasVariants variants allowReturn allowReplacement published createdAt')
             .lean();
 
         const productMap = new Map(products.map((product) => [String(product._id), product]));

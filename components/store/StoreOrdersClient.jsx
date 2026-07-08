@@ -309,6 +309,14 @@ export default function StoreOrders() {
         product: 'DOM',
         serviceType: 'NOR'
     });
+    const [waslahConfig, setWaslahConfig] = useState({ configured: false, createOrderUrl: '' });
+    const [shippingWithWaslah, setShippingWithWaslah] = useState(false);
+    const [testingWaslah, setTestingWaslah] = useState(false);
+    const [waslahPickupInfo, setWaslahPickupInfo] = useState({
+        pickup_date: '',
+        pickup_time: '09:00-21:00',
+        pickup_vehicle: 'motorcycle',
+    });
     const [refreshInterval, setRefreshInterval] = useState(30); // seconds
     const [liveOrderAlert, setLiveOrderAlert] = useState('');
     const [showRejectModal, setShowRejectModal] = useState(false);
@@ -1122,6 +1130,24 @@ export default function StoreOrders() {
         // eslint-disable-next-line
     }, [authLoading, user]);
 
+    const loadWaslahConfig = async () => {
+        try {
+            const token = await getToken();
+            const { data } = await axios.get('/api/store/waslah/status', {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            setWaslahConfig(data || { configured: false });
+        } catch {
+            setWaslahConfig({ configured: false });
+        }
+    };
+
+    useEffect(() => {
+        if (authLoading || !user) return;
+        loadWaslahConfig();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [authLoading, user]);
+
     useEffect(() => {
         if (authLoading || !user) return undefined;
 
@@ -1630,6 +1656,147 @@ export default function StoreOrders() {
             toast.error(error?.response?.data?.error || 'Failed to send order to C3Xpress');
         } finally {
             setSendingToC3xpress(false);
+        }
+    };
+
+    const applyWaslahShipResult = (data = {}) => {
+        const trackingNumber = data.trackingNumber || data.order?.trackingId || '';
+        const courierName = data.courier || 'EMX';
+        const labelUrl = data.labelUrl || data.order?.waslah?.labelUrl || '';
+
+        if (trackingNumber) {
+            setTrackingData((prev) => ({
+                ...prev,
+                trackingId: trackingNumber,
+                courier: courierName,
+            }));
+        }
+
+        if (data.order) {
+            setSelectedOrder((prev) => (prev ? { ...prev, ...data.order } : prev));
+            setOrders((current) => current.map((row) => (
+                String(row._id) === String(data.order._id) ? { ...row, ...data.order } : row
+            )));
+            return;
+        }
+
+        setSelectedOrder((prev) => {
+            if (!prev) return prev;
+            return {
+                ...prev,
+                trackingId: trackingNumber || prev.trackingId,
+                courier: courierName || prev.courier,
+                status: (prev.status === 'ORDER_PLACED' || prev.status === 'PROCESSING') ? 'SHIPPED' : prev.status,
+                waslah: {
+                    ...(prev.waslah || {}),
+                    orderId: data.waslahOrderId || prev.waslah?.orderId,
+                    cartId: data.cartId || prev.waslah?.cartId,
+                    trackingNumber: trackingNumber || prev.waslah?.trackingNumber,
+                    labelUrl: labelUrl || prev.waslah?.labelUrl,
+                },
+            };
+        });
+    };
+
+    const callWaslahShip = async ({ dryRun = false, testCreateOnly = false } = {}) => {
+        if (!selectedOrder) return null;
+
+        if (!selectedOrder.shippingAddress?.street && !selectedOrder.shippingAddress?.city) {
+            toast.error('Complete shipping address is required for Waslah');
+            return null;
+        }
+
+        const token = await getToken();
+        const pickupInfo = {
+            ...(waslahPickupInfo.pickup_date ? { pickup_date: waslahPickupInfo.pickup_date } : {}),
+            pickup_time: waslahPickupInfo.pickup_time || '09:00-21:00',
+            pickup_vehicle: waslahPickupInfo.pickup_vehicle || 'motorcycle',
+        };
+
+        const { data } = await axios.post('/api/store/waslah/ship', {
+            orderId: selectedOrder._id,
+            pickupInfo,
+            dryRun,
+            testCreateOnly,
+        }, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+
+        return data;
+    };
+
+    const testWaslahConnection = async () => {
+        if (!selectedOrder) return;
+        setTestingWaslah(true);
+        try {
+            const data = await callWaslahShip({ dryRun: true });
+            if (data?.success) {
+                toast.success(`Waslah preview OK — create URL: ${data.createOrderUrl || waslahConfig.createOrderUrl}`);
+                console.info('[Waslah dry-run payload]', data.payload);
+            } else {
+                toast.error(data?.error || 'Waslah preview failed');
+            }
+        } catch (error) {
+            console.error('Waslah test error:', error);
+            toast.error(error?.response?.data?.error || 'Waslah preview failed');
+        } finally {
+            setTestingWaslah(false);
+        }
+    };
+
+    const testWaslahCreateOrder = async () => {
+        if (!selectedOrder) return;
+        setTestingWaslah(true);
+        try {
+            const data = await callWaslahShip({ testCreateOnly: true });
+            if (data?.success) {
+                applyWaslahShipResult(data);
+                toast.success(`Waslah order created: ${data.waslahOrderId}`);
+                await fetchOrders();
+            } else {
+                toast.error(data?.error || 'Waslah create-order test failed');
+            }
+        } catch (error) {
+            console.error('Waslah create test error:', error);
+            toast.error(error?.response?.data?.error || 'Waslah create-order test failed');
+        } finally {
+            setTestingWaslah(false);
+        }
+    };
+
+    const shipOrderWithWaslah = async () => {
+        if (!selectedOrder) return;
+
+        if (!waslahConfig.configured) {
+            toast.error('Waslah is not configured. Add WASLAH_API_TOKEN to server .env');
+            return;
+        }
+
+        if (!selectedOrder.shippingAddress?.street && !selectedOrder.shippingAddress?.city) {
+            toast.error('Complete shipping address is required for Waslah');
+            return;
+        }
+
+        setShippingWithWaslah(true);
+        try {
+            const data = await callWaslahShip();
+            if (!data?.success) {
+                toast.error(data?.error || 'Failed to ship with Waslah');
+                return;
+            }
+
+            applyWaslahShipResult(data);
+            const parts = [
+                data.trackingNumber ? `AWB ${data.trackingNumber}` : null,
+                data.labelUrl ? 'label ready' : null,
+            ].filter(Boolean);
+            toast.success(`Shipped with Waslah${parts.length ? ` — ${parts.join(', ')}` : ''}`);
+            await fetchOrders();
+        } catch (error) {
+            console.error('Ship with Waslah error:', error);
+            toast.error(error?.response?.data?.error || 'Failed to ship with Waslah');
+        } finally {
+            setShippingWithWaslah(false);
         }
     };
 
@@ -2786,6 +2953,110 @@ export default function StoreOrders() {
                                     Auto Status from Tracking
                                 </button>
 
+                                {/* Waslah Shipping (UAE / EMX) */}
+                                <div className="mt-4 space-y-2 rounded-lg border border-violet-200 bg-violet-50 p-3">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-violet-800">Waslah shipping (UAE)</p>
+                                    {!waslahConfig.configured ? (
+                                        <p className="text-xs text-violet-700">
+                                            Add <code className="rounded bg-white px-1">WASLAH_API_TOKEN</code> and{' '}
+                                            <code className="rounded bg-white px-1">WASLAH_API_BASE_URL</code> to server .env, then restart.
+                                        </p>
+                                    ) : (
+                                        <>
+                                            <p className="text-[11px] text-violet-600 break-all">
+                                                Create order: {waslahConfig.createOrderUrl || `${waslahConfig.baseUrl || ''}/orders`}
+                                            </p>
+                                            {selectedOrder?.waslah?.orderId ? (
+                                                <p className="text-[11px] text-violet-700">
+                                                    Waslah order: <span className="font-mono">{selectedOrder.waslah.orderId}</span>
+                                                </p>
+                                            ) : null}
+                                            {selectedOrder?.waslah?.labelUrl ? (
+                                                <a
+                                                    href={selectedOrder.waslah.labelUrl}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="inline-flex text-sm font-medium text-violet-700 underline"
+                                                >
+                                                    Download shipping label (PDF)
+                                                </a>
+                                            ) : null}
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                                                <div>
+                                                    <label className="text-xs font-medium text-violet-800 block mb-1">Pickup date</label>
+                                                    <input
+                                                        type="date"
+                                                        value={waslahPickupInfo.pickup_date}
+                                                        onChange={(e) => setWaslahPickupInfo((prev) => ({ ...prev, pickup_date: e.target.value }))}
+                                                        className="w-full px-3 py-2 border border-violet-300 rounded-lg text-sm bg-white"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-medium text-violet-800 block mb-1">Pickup time</label>
+                                                    <input
+                                                        type="text"
+                                                        value={waslahPickupInfo.pickup_time}
+                                                        onChange={(e) => setWaslahPickupInfo((prev) => ({ ...prev, pickup_time: e.target.value }))}
+                                                        placeholder="09:00-21:00"
+                                                        className="w-full px-3 py-2 border border-violet-300 rounded-lg text-sm bg-white"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-medium text-violet-800 block mb-1">Vehicle</label>
+                                                    <select
+                                                        value={waslahPickupInfo.pickup_vehicle}
+                                                        onChange={(e) => setWaslahPickupInfo((prev) => ({ ...prev, pickup_vehicle: e.target.value }))}
+                                                        className="w-full px-3 py-2 border border-violet-300 rounded-lg text-sm bg-white"
+                                                    >
+                                                        <option value="motorcycle">Motorcycle</option>
+                                                        <option value="car">Car</option>
+                                                        <option value="van">Van</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={testWaslahConnection}
+                                                    disabled={testingWaslah || shippingWithWaslah}
+                                                    className="w-full bg-white hover:bg-violet-100 disabled:opacity-60 border border-violet-300 text-violet-800 font-medium py-2 rounded-lg text-sm transition-colors"
+                                                >
+                                                    {testingWaslah ? 'Testing…' : 'Test preview'}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={testWaslahCreateOrder}
+                                                    disabled={testingWaslah || shippingWithWaslah}
+                                                    className="w-full bg-violet-100 hover:bg-violet-200 disabled:opacity-60 border border-violet-300 text-violet-900 font-medium py-2 rounded-lg text-sm transition-colors"
+                                                >
+                                                    Test create order
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={shipOrderWithWaslah}
+                                                    disabled={shippingWithWaslah || testingWaslah}
+                                                    className="w-full bg-violet-600 hover:bg-violet-700 disabled:bg-slate-300 text-white font-medium py-2 rounded-lg text-sm transition-colors flex items-center justify-center gap-2"
+                                                >
+                                                    {shippingWithWaslah ? (
+                                                        <>
+                                                            <RefreshCw size={16} className="animate-spin" />
+                                                            Shipping…
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <Truck size={16} />
+                                                            Ship with Waslah
+                                                        </>
+                                                    )}
+                                                </button>
+                                            </div>
+                                            <p className="text-[11px] text-violet-600">
+                                                Full ship: create order → pickup cart → checkout → print label. Use &quot;Test preview&quot; first (no API charge).
+                                            </p>
+                                        </>
+                                    )}
+                                </div>
+
                                 {/* Delhivery Pickup & Auto-Refresh Controls */}
                                 {selectedOrder?.courier?.toLowerCase() === 'delhivery' && (
                                     <div className="mt-4 space-y-2">
@@ -3097,15 +3368,16 @@ export default function StoreOrders() {
                                                     <p className="text-xs text-orange-600">Imported item (not linked to catalog)</p>
                                                 ) : null}
                                                 <p className="text-sm text-slate-600">
-                                                    {item.isBulkBundle
-                                                        ? `Bundle of ${bundleUnits || quantity} (${packQuantity} pack${packQuantity > 1 ? 's' : ''})`
-                                                        : `Quantity: ${quantity}`}
+                                                    {item.quantityLabel
+                                                        || (item.isBulkBundle
+                                                            ? `Bundle of ${bundleUnits || quantity} (${packQuantity} pack${packQuantity > 1 ? 's' : ''})`
+                                                            : `Quantity: ${quantity}`)}
                                                 </p>
-                                                {item.variantLabel && !item.isBulkBundle ? (
+                                                {item.variantLabel && !item.isBulkBundle && !item.isMatrixLine ? (
                                                     <p className="text-xs text-slate-500">{item.variantLabel}</p>
                                                 ) : null}
                                                 <p className="text-sm font-semibold text-slate-900">
-                                                    {currency}{unitPrice.toFixed(2)} {item.isBulkBundle ? 'per bundle' : 'each'}
+                                                    {currency}{unitPrice.toFixed(2)} {(item.isBulkBundle || item.isMatrixLine) ? 'per pack' : 'each'}
                                                 </p>
                                             </div>
                                             <div className="text-right">

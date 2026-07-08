@@ -13,6 +13,7 @@ import { getAuth } from '@/lib/firebase-admin';
 import { enrichAbandonedCarts, getAbandonedCartTotal, isPlaceholderName } from '@/lib/abandonedCartUtils';
 import { getConversionPaymentMethodLabel, resolveConversionPaymentLink, conversionRequiresPaymentConfirmation, normalizeConversionPaymentMethod } from '@/lib/abandonedCartRecoveryPayment';
 import { sendAbandonedCartConversionEmail, sendAbandonedCartRecoveryLinkEmail } from '@/lib/email';
+import { getCustomerSiteUrl } from '@/lib/appUrl';
 import Store from '@/models/Store';
 import { resolveDashboardAccess } from '@/lib/storeAccessControl';
 import authAdmin from '@/middlewares/authAdmin';
@@ -307,10 +308,8 @@ export async function PATCH(request) {
       const resolvedCustomerPhone = String(customerPhoneInput || cart.phone || '').trim();
       const discountValue = Number(recoveryDiscountValue);
       const safeDiscountValue = Number.isFinite(discountValue) ? discountValue : null;
-      const origin = process.env.NEXT_PUBLIC_BASE_URL
-        || request.headers.get('origin')
-        || '';
-      const recoveryLink = buildRecoveryLink(origin, recoveryToken);
+      const customerSiteUrl = getCustomerSiteUrl();
+      const recoveryLink = buildRecoveryLink(customerSiteUrl, recoveryToken);
       const discountedItems = applyRecoveryPricingToItems(cart.items || [], offerTotal, cartTotalMax);
 
       const updated = await AbandonedCart.findOneAndUpdate(
@@ -487,7 +486,7 @@ export async function PATCH(request) {
         }
 
         if (!order) {
-          const created = await createOrderFromAbandonedCart(pendingCart, {
+      const created = await createOrderFromAbandonedCart(pendingCart, {
             storeId,
             finalTotal: pendingCart.convertedCartTotal,
             paymentMethod: pendingCart.conversionPaymentMethod,
@@ -501,6 +500,9 @@ export async function PATCH(request) {
             markPaid: true,
             awaitingPayment: false,
             paymentReferenceId: pendingCart.conversionPaymentLinkId,
+            discountType: pendingCart.conversionDiscountType,
+            discountValue: pendingCart.conversionDiscountValue,
+            cartTotalMax: getAbandonedCartTotal(pendingCart),
           });
           orderId = created.orderId;
           order = created.order;
@@ -637,6 +639,9 @@ export async function PATCH(request) {
         markPaid: recoveryMethod === 'card',
         awaitingPayment: requiresPaymentConfirmation,
         paymentReferenceId: paymentDetails.paymentLinkId,
+        discountType,
+        discountValue: safeDiscountValue,
+        cartTotalMax,
       });
       orderId = orderResult.orderId;
       order = orderResult.order;

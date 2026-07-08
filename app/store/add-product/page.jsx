@@ -3,7 +3,7 @@ import { assets } from "@/assets/assets"
 
 import axios from "axios"
 import Image from "next/image"
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import { toast } from "react-hot-toast"
 import { useRouter } from "next/navigation"
 import { useEditor, EditorContent } from '@tiptap/react'
@@ -28,7 +28,7 @@ import { getProductImageAspectRatioClass } from '@/lib/productMedia';
 import { compressImageForUpload, getUploadErrorMessage } from '@/lib/compressImageForUpload';
 import { uploadStoreImage } from '@/lib/uploadStoreImage';
 import { sanitizeRichTextMedia } from '@/lib/sanitizeRichTextMedia';
-import { getVariantCardLabel, isMatrixVariant } from '@/lib/productVariantOptions';
+import { getVariantCardLabel, formatMatrixPackSizeLabel } from '@/lib/productVariantOptions';
 
 const VARIANT_MATRIX_SELECTION_FIELDS = ['title', 'optionLabel', 'option', 'color', 'size'];
 const getVariantMatrixKey = (options = {}) =>
@@ -43,6 +43,99 @@ const pickMatrixNumber = (...vals) => {
         if (Number.isFinite(num)) return num;
     }
     return 0;
+};
+
+/** Keep price fields as strings while typing; avoid Number('') → 0 jumps. */
+const parseOptionalPriceInput = (value) => {
+    const trimmed = String(value ?? '').trim();
+    if (trimmed === '') return '';
+    const num = Number(trimmed);
+    return Number.isFinite(num) ? trimmed : value;
+};
+
+const migrateMatrixCellsForVariantOptions = (cells, oldOptions, newOptions, tiers = []) => {
+    if (!oldOptions || !newOptions) return cells;
+    const next = { ...cells };
+    tiers.forEach((tier) => {
+        const qty = Number(tier?.qty) || 0;
+        if (qty <= 0) return;
+        const oldKey = buildMatrixCellKey(oldOptions, qty);
+        const newKey = buildMatrixCellKey(newOptions, qty);
+        if (oldKey === newKey) return;
+        if (next[oldKey]) {
+            next[newKey] = { ...(next[newKey] || {}), ...next[oldKey] };
+            delete next[oldKey];
+        }
+    });
+    return next;
+};
+
+const VARIANT_BUNDLE_MODE_OPTIONS = [
+    {
+        id: 'none',
+        label: 'Simple product',
+        description: 'One price and stock for the whole product.',
+    },
+    {
+        id: 'variants',
+        label: 'Product variants only',
+        description: 'Size, color, or other options — each with its own price and stock.',
+    },
+    {
+        id: 'bundles',
+        label: 'Bulk bundles only',
+        description: 'Buy 1, Bundle of 2, etc. Customers pick a pack on the product page (like choosing a variant).',
+    },
+    {
+        id: 'matrix',
+        label: 'Variants + bundle packs',
+        description: 'Enables both variant options and pack sizes (Pack of 1, Pack of 2, …). Set combined prices in the matrix below.',
+    },
+];
+
+const inferBulkRowLabel = (opts = {}, qty = 1) => {
+    const n = Math.max(1, Number(qty) || 1);
+    const raw = String(opts?.title || '').trim();
+    if (raw && !/^Pack of /i.test(raw)) {
+        if (raw === 'Buy 1' && n > 1) return `Bundle of ${n}`;
+        return raw;
+    }
+    return n === 1 ? 'Buy 1' : `Bundle of ${n}`;
+};
+
+/** Bulk-only tiers: Buy 1 / Bundle of 2 rows — not a color/size × pack matrix. */
+const isBulkTierOnlyProduct = (pv = []) => {
+    const withBundle = (Array.isArray(pv) ? pv : []).filter(
+        (v) => v?.options?.bundleQty != null && v?.options?.bundleQty !== '',
+    );
+    if (!withBundle.length) return false;
+    if (withBundle.some(
+        (v) => String(v?.options?.color || '').trim() || String(v?.options?.size || '').trim(),
+    )) {
+        return false;
+    }
+    const baseKeys = new Set();
+    const tierSet = new Set();
+    for (const v of withBundle) {
+        const opts = { ...(v.options || {}) };
+        delete opts.bundleQty;
+        delete opts.tag;
+        delete opts.image;
+        delete opts.imageSlot;
+        baseKeys.add(getVariantMatrixKey(opts));
+        tierSet.add(Number(v.options?.bundleQty) || 0);
+    }
+    // One product option with multiple pack sizes → matrix, not bulk tiers.
+    if (baseKeys.size === 1 && tierSet.size > 1) return false;
+    return true;
+};
+
+const productUsesVariantEditor = (product, pv = []) => {
+    if (isBulkTierOnlyProduct(pv)) return false;
+    if (product?.attributes?.variantType === 'variant_bundles') return true;
+    return (Array.isArray(pv) ? pv : []).some(
+        (v) => String(v?.options?.color || '').trim() || String(v?.options?.size || '').trim(),
+    );
 };
 
 const toArabicPriceDisplay = (amount) => {
@@ -486,13 +579,15 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
         // MISSING STATE HOOKS (add these at the top of ProductForm)
         const [dbCategories, setDbCategories] = useState([]);
         const [selectedCategories, setSelectedCategories] = useState([]);
-        const [isFormInitialized, setIsFormInitialized] = useState(false);
+        const isDirtyRef = useRef(false);
+        const initializedProductIdRef = useRef(null);
+        const markDirty = () => { isDirtyRef.current = true; };
         const [bulkEnabled, setBulkEnabled] = useState(false);
         const [variants, setVariants] = useState([]);
         const [isSlugManuallyEdited, setIsSlugManuallyEdited] = useState(false);
         const [images, setImages] = useState({ "1": null, "2": null, "3": null, "4": null, "5": null, "6": null, "7": null, "8": null });
         const [productInfo, setProductInfo] = useState({
-            name: '', nameAr: '', slug: '', brand: '', brandAr: '', shortDescription: '', shortDescriptionAr: '', shortDescription2: '', shortDescription2Ar: '', specTableEnabled: false, specTableTitle: 'Product information', specTableTitleAr: 'مواصفات المنتج', specTableColumns: ['Property', 'Value'], specTableColumnsAr: ['الخاصية', 'القيمة'], specTableRows: [['', '']], specTableRowsAr: [['', '']], description: '', descriptionAr: '', AED: '', price: '', priceAr: '', AEDAr: '', category: '', sku: '', stockQuantity: 50, colors: [], sizes: [], fastDelivery: false, freeShippingEligible: false, useProductsPath: false, allowReturn: true, allowReplacement: true, reviews: [], badges: [], imageAspectRatio: '1:1', cardVideoPreviewEnabled: true, cardVideoPreviewDelaySec: 24, tags: [], seoTitle: '', seoDescription: '', seoKeywords: [], deliveredBy: '', soldBy: '', paymentInfo: ''
+            name: '', nameAr: '', slug: '', brand: '', brandAr: '', shortDescription: '', shortDescriptionAr: '', shortDescription2: '', shortDescription2Ar: '', specTableEnabled: false, specTableTitle: 'Product information', specTableTitleAr: 'مواصفات المنتج', specTableColumns: ['Property', 'Value'], specTableColumnsAr: ['الخاصية', 'القيمة'], specTableRows: [['', '']], specTableRowsAr: [['', '']], description: '', descriptionAr: '', AED: '', price: '', priceAr: '', AEDAr: '', category: '', sku: '', stockQuantity: 50, soldCount: 0, colors: [], sizes: [], fastDelivery: false, freeShippingEligible: false, useProductsPath: false, allowReturn: true, allowReplacement: true, reviews: [], badges: [], imageAspectRatio: '1:1', cardVideoPreviewEnabled: true, cardVideoPreviewDelaySec: 24, tags: [], seoTitle: '', seoDescription: '', seoKeywords: [], deliveredBy: '', soldBy: '', paymentInfo: ''
         });
         const [tagInput, setTagInput] = useState('');
         const [seoKeywordInput, setSeoKeywordInput] = useState('');
@@ -501,8 +596,24 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
         const [reviewInput, setReviewInput] = useState({ name: '', rating: 5, comment: '', image: null });
         const aspectRatioOptions = ['1:1', '4:5', '3:4', '16:9'];
         const [hasVariants, setHasVariants] = useState(false);
+        const [variantBundleMode, setVariantBundleMode] = useState('none');
         const [bulkOptions, setBulkOptions] = useState([]);
         const [matrixCells, setMatrixCells] = useState({});
+        const updateVariantOptionField = (idx, field, value) => {
+            const v = variants[idx];
+            if (!v) return;
+            const oldOpts = v.options || {};
+            const newOpts = { ...oldOpts, [field]: value };
+            markDirty();
+            setVariants((prev) => {
+                const nv = [...prev];
+                nv[idx] = { ...v, options: newOpts };
+                return nv;
+            });
+            if (hasVariants && bulkEnabled) {
+                setMatrixCells((prev) => migrateMatrixCellsForVariantOptions(prev, oldOpts, newOpts, bulkOptions));
+            }
+        };
         const [aiAdditionalDetails, setAiAdditionalDetails] = useState('');
         const [aiLoading, setAiLoading] = useState(false);
         const [aiProgress, setAiProgress] = useState(null);
@@ -723,15 +834,19 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
             fetchFbtConfig();
         }
     }, [product?._id]);
-    // Reset form when switching products
     useEffect(() => {
-        setIsFormInitialized(false)
-    }, [product?._id])
+        isDirtyRef.current = false;
+        initializedProductIdRef.current = null;
+    }, [product?._id]);
 
-    // Prefill form when editing
+    // Prefill form when editing (once per product unless user has edited)
     useEffect(() => {
-        if (!product?._id || isFormInitialized) {
-            return
+        if (!product?._id || isDirtyRef.current) {
+            return;
+        }
+        const productId = String(product._id);
+        if (initializedProductIdRef.current === productId) {
+            return;
         }
 
         console.log('Initializing form with product:', product._id)
@@ -773,6 +888,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 category: product.category?._id || product.category || "",
                 sku: product.sku || "",
                 stockQuantity: product.stockQuantity ?? '',
+                soldCount: product.soldCount ?? 0,
                 colors: product.colors || [],
                 sizes: product.sizes || [],
                 fastDelivery: product.fastDelivery || false,
@@ -819,13 +935,19 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
             setSelectedCategories(categoriesToSet)
             setIsSlugManuallyEdited(true)
             
-            setIsFormInitialized(true)
-            
             const pv = Array.isArray(product.variants) ? product.variants : []
-            setHasVariants(Boolean(product.hasVariants))
-            setVariants(pv)
-            const isMatrix = product.attributes?.variantType === 'variant_bundles'
-              || pv.some((v) => isMatrixVariant(v))
+            const variantType = String(product.attributes?.variantType || '').trim()
+            const bulkTierOnly = isBulkTierOnlyProduct(pv)
+            const hasColorSizeBundles = pv.some(
+                (v) => (String(v?.options?.color || '').trim() || String(v?.options?.size || '').trim())
+                  && (v?.options?.bundleQty != null && v?.options?.bundleQty !== ''),
+            )
+            const isMatrix = !bulkTierOnly && (
+              variantType === 'variant_bundles'
+              || (variantType !== 'bulk_bundles' && hasColorSizeBundles)
+            )
+            setHasVariants(isMatrix ? true : productUsesVariantEditor(product, pv))
+            setVariants(isMatrix ? pv : (productUsesVariantEditor(product, pv) ? pv : []))
             if (isMatrix) {
                 // Reconstruct base variants, bundle tiers, and the price/stock matrix.
                 setHasVariants(true)
@@ -852,7 +974,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                     }
                     if (!tierMap.has(qty)) {
                         tierMap.set(qty, {
-                            title: opts.title || (qty === 1 ? 'Buy 1' : `Bundle of ${qty}`),
+                            title: qty === 1 ? 'Pack of 1' : `Pack of ${qty}`,
                             qty,
                             price: v.price ?? '',
                             AED: v.AED ?? v.price ?? '',
@@ -876,31 +998,37 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                     product.images.forEach((img, i) => { if (i < 8) matrixImgState[String(i + 1)] = img })
                 }
                 setImages(matrixImgState)
+                setVariantBundleMode('matrix')
+                initializedProductIdRef.current = productId;
                 return
             }
-            const isBulk = product.attributes?.variantType === 'bulk_bundles'
-              || (pv.length > 0 && pv.every(v => v?.options && (v.options.bundleQty || v.options.bundleQty === 0) && !v.options.color && !v.options.size))
+            const isBulk = variantType === 'bulk_bundles' || bulkTierOnly
+              || (!isMatrix && pv.length > 0 && pv.every((v) => v?.options && (v.options.bundleQty || v.options.bundleQty === 0) && !v.options.color && !v.options.size))
             if (isBulk) {
                 setBulkEnabled(true)
-                // A pure bulk product's "variants" are the bundle rows, which live in
-                // bulkOptions. Keep the variant editor empty so the seller can opt in to
-                // color/size variants (which turns the product into a variant+bundle matrix).
                 setHasVariants(false)
+                setVariantBundleMode('bundles')
                 setVariants([])
-                // Map into editable bulkOptions
-                const mapped = pv.map(v => ({
-                    title: v?.options?.title || (Number(v?.options?.bundleQty) === 1 ? 'Buy 1' : `Bundle of ${Number(v?.options?.bundleQty) || 1}`),
-                    qty: Number(v?.options?.bundleQty) || 1,
-                    price: v.price ?? '',
-                    AED: v.AED ?? v.price ?? '',
-                    stock: v.stock ?? 0,
-                    tag: v.tag || v.options?.tag || '',
-                    image: v?.options?.image || '',
-                    imageSlot: v?.options?.imageSlot || '',
-                }))
-                // Keep sorted by qty
-                mapped.sort((a,b)=>a.qty-b.qty)
+                const mapped = pv.map((v) => {
+                    const qty = Number(v?.options?.bundleQty) || 1
+                    return {
+                        title: inferBulkRowLabel(v?.options, qty),
+                        qty,
+                        price: v.price ?? '',
+                        AED: v.AED ?? v.price ?? '',
+                        stock: v.stock ?? 0,
+                        tag: v.tag || v.options?.tag || '',
+                        image: v?.options?.image || '',
+                        imageSlot: v?.options?.imageSlot || '',
+                    }
+                })
+                mapped.sort((a, b) => a.qty - b.qty)
                 setBulkOptions(mapped)
+                setMatrixCells({})
+            } else if (productUsesVariantEditor(product, pv)) {
+                setVariantBundleMode('variants')
+            } else {
+                setVariantBundleMode('none')
             }
             // Map existing images to slots - store as strings (URLs)
             const imgState = { "1": null, "2": null, "3": null, "4": null, "5": null, "6": null, "7": null, "8": null }
@@ -910,7 +1038,8 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 })
             }
             setImages(imgState)
-    }, [product, isFormInitialized])
+            initializedProductIdRef.current = productId;
+    }, [product])
     
     useEffect(() => {
         setProductInfo(prev => ({
@@ -918,13 +1047,6 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
             category: selectedCategories[0] || ''
         }))
     }, [selectedCategories])
-    
-    // Reset form initialization flag when product changes or modal closes
-    useEffect(() => {
-        return () => {
-            setIsFormInitialized(false)
-        }
-    }, [product?._id])
 
     const onChangeHandler = (e) => {
         const { name, value } = e.target
@@ -1578,13 +1700,15 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
         setProductInfo(prev => ({ ...prev, reviews: prev.reviews.filter((_, i) => i !== index) }))
     }
 
-    const buildBulkRow = (qty, title = '') => {
+    const buildBulkRow = (qty, title = '', usePackLabel = false) => {
         const basePrice = Number(productInfo.price) || 0
         const baseAED = Number(productInfo.AED) || basePrice
         const stock = Number(productInfo.stockQuantity) || 0
         const bundleMultiplier = Math.max(1, Number(qty) || 1)
         return {
-            title: title || (bundleMultiplier === 1 ? 'Buy 1' : `Bundle of ${bundleMultiplier}`),
+            title: title || (usePackLabel
+                ? formatMatrixPackSizeLabel(bundleMultiplier)
+                : (bundleMultiplier === 1 ? 'Buy 1' : `Bundle of ${bundleMultiplier}`)),
             qty: bundleMultiplier,
             price: basePrice ? Number((basePrice * bundleMultiplier * (bundleMultiplier > 1 ? 0.9 : 1)).toFixed(2)) : '',
             AED: baseAED ? Number((baseAED * bundleMultiplier).toFixed(2)) : '',
@@ -1592,6 +1716,45 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
             tag: bundleMultiplier === 2 ? 'MOST_POPULAR' : '',
             image: '',
             imageSlot: '',
+        }
+    }
+
+    const seedBulkOptionsIfEmpty = (mode, usePackLabel) => {
+        if (bulkOptions.length > 0) return
+        const existingBulk = (Array.isArray(variants) ? variants : []).filter(
+            (v) => v?.options && (v.options.bundleQty || v.options.bundleQty === 0) && !v.options?.color && !v.options?.size
+        )
+        if (existingBulk.length > 0) {
+            setBulkOptions(existingBulk.map((v) => {
+                const qty = Number(v?.options?.bundleQty) || 1
+                return {
+                    title: usePackLabel ? formatMatrixPackSizeLabel(qty) : inferBulkRowLabel(v?.options, qty),
+                    qty,
+                    price: v.price ?? '',
+                    AED: v.AED ?? v.price ?? '',
+                    stock: v.stock ?? 0,
+                    tag: v.tag || v.options?.tag || '',
+                    image: v?.options?.image || '',
+                    imageSlot: v?.options?.imageSlot || '',
+                }
+            }).sort((a, b) => a.qty - b.qty))
+            return
+        }
+        setBulkOptions([
+            buildBulkRow(1, '', usePackLabel),
+            buildBulkRow(2, '', usePackLabel),
+        ])
+    }
+
+    const applyVariantBundleMode = (mode) => {
+        markDirty()
+        setVariantBundleMode(mode)
+        const nextHasVariants = mode === 'variants' || mode === 'matrix'
+        const nextBulkEnabled = mode === 'bundles' || mode === 'matrix'
+        setHasVariants(nextHasVariants)
+        setBulkEnabled(nextBulkEnabled)
+        if (mode === 'bundles' || mode === 'matrix') {
+            seedBulkOptionsIfEmpty(mode, mode === 'matrix')
         }
     }
 
@@ -1716,7 +1879,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                     .map(b => ({
                         options: resolveVariantImageOptions({
                             bundleQty: Number(b.qty),
-                            title: (b.title || undefined),
+                            title: inferBulkRowLabel({ title: b.title }, b.qty),
                             tag: b.tag || undefined,
                             ...(b.image ? { image: b.image } : {}),
                             ...(b.imageSlot ? { imageSlot: b.imageSlot } : {}),
@@ -1749,7 +1912,10 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 soldBy: productInfo.soldBy,
                 paymentInfo: productInfo.paymentInfo,
                 additionalDetails: aiAdditionalDetails || '',
-                variantType: isMatrixMode ? 'variant_bundles' : (bulkEnabled ? 'bulk_bundles' : ''),
+                variantType: isMatrixMode ? 'variant_bundles' : (bulkEnabled ? 'bulk_bundles' : null),
+            }
+            if (!attributes.variantType) {
+                delete attributes.variantType
             }
 
             const payload = {
@@ -1776,6 +1942,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                         : Number(productInfo.AED)),
                 sku: productInfo.sku || '',
                 stockQuantity: Number(productInfo.stockQuantity) || 0,
+                soldCount: Math.max(0, Number(productInfo.soldCount) || 0),
                 colors: productInfo.colors || [],
                 sizes: productInfo.sizes || [],
                 fastDelivery: Boolean(productInfo.fastDelivery),
@@ -2028,6 +2195,11 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                     <div>
                         <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Stock Qty</label>
                         <input type="number" name="stockQuantity" value={productInfo.stockQuantity ?? ''} onChange={onChangeHandler} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200" placeholder="e.g. 100" min="0" />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Units Sold (display)</label>
+                        <input type="number" name="soldCount" value={productInfo.soldCount ?? ''} onChange={onChangeHandler} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200" placeholder="e.g. 250" min="0" />
+                        <p className="mt-1 text-[11px] text-gray-500">Shown on the product page as &quot;X sold&quot; (e.g. 250 sold).</p>
                     </div>
                     <div className="sm:col-span-2 grid grid-cols-2 gap-2 pt-1 border-t border-gray-100">
                         <label className="flex items-center gap-2 text-xs cursor-pointer group"><input type="checkbox" checked={productInfo.fastDelivery} onChange={(e)=> setProductInfo(p=>({...p, fastDelivery: e.target.checked}))} className="accent-green-500 w-3.5 h-3.5" /><span className="text-gray-600 group-hover:text-green-700">Fast Delivery</span></label>
@@ -2621,67 +2793,66 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 </div>{/* END RIGHT COLUMN */}
                 </div>{/* END TWO-COLUMN GRID */}
 
-                <FormSection id="section-variants" title="Variants & Bundles" icon="🎨" subtitle="Size/color variants and bulk bundle pricing" defaultOpen={hasVariants || bulkEnabled}>
+                <FormSection id="section-variants" title="Variants & Bundles" icon="🎨" subtitle="Size/color variants and bulk bundle pricing" defaultOpen={variantBundleMode !== 'none'}>
                   <div className="space-y-5">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <label className={`flex items-start gap-3 rounded-xl border p-4 cursor-pointer transition ${hasVariants ? 'border-indigo-300 bg-indigo-50/60 ring-1 ring-indigo-200' : 'border-slate-200 bg-slate-50/50 hover:border-slate-300'}`}>
-                        <input
-                          type="checkbox"
-                          checked={hasVariants}
-                          onChange={(e) => setHasVariants(e.target.checked)}
-                          className="mt-0.5 h-4 w-4 rounded accent-indigo-600"
-                        />
-                        <div>
-                          <span className="text-sm font-semibold text-slate-800">Product variants</span>
-                          <p className="mt-1 text-xs text-slate-500 leading-relaxed">Add size, color, image, SKU, price, and stock per variant.</p>
-                        </div>
-                      </label>
-
-                      <label className={`flex items-start gap-3 rounded-xl border p-4 cursor-pointer transition ${bulkEnabled ? 'border-emerald-300 bg-emerald-50/60 ring-1 ring-emerald-200' : 'border-slate-200 bg-slate-50/50 hover:border-slate-300'}`}>
-                        <input
-                          type="checkbox"
-                          checked={bulkEnabled}
-                          onChange={(e) => {
-                            const enabled = e.target.checked
-                            setBulkEnabled(enabled)
-                            if (enabled) {
-                              if (bulkOptions.length === 0) {
-                                const existingBulk = (Array.isArray(variants) ? variants : []).filter(
-                                  (v) => v?.options && (v.options.bundleQty || v.options.bundleQty === 0) && !v.options?.color && !v.options?.size
-                                )
-                                if (existingBulk.length > 0) {
-                                  setBulkOptions(existingBulk.map((v) => ({
-                                    title: v?.options?.title || (Number(v?.options?.bundleQty) === 1 ? 'Buy 1' : `Bundle of ${Number(v?.options?.bundleQty) || 1}`),
-                                    qty: Number(v?.options?.bundleQty) || 1,
-                                    price: v.price ?? '',
-                                    AED: v.AED ?? v.price ?? '',
-                                    stock: v.stock ?? 0,
-                                    tag: v.tag || v.options?.tag || '',
-                                    image: v?.options?.image || '',
-                                    imageSlot: v?.options?.imageSlot || '',
-                                  })).sort((a, b) => a.qty - b.qty))
-                                } else {
-                                  setBulkOptions([buildBulkRow(1), buildBulkRow(2)])
-                                }
-                              }
-                            } else if (product?.attributes?.variantType === 'bulk_bundles') {
-                              setBulkOptions([])
-                            }
-                          }}
-                          className="mt-0.5 h-4 w-4 rounded accent-emerald-600"
-                        />
-                        <div>
-                          <span className="text-sm font-semibold text-slate-800">Bulk bundles</span>
-                          <p className="mt-1 text-xs text-slate-500 leading-relaxed">Buy 1, bundle of 2, 3, etc. — each with its own pricing and stock.</p>
-                        </div>
-                      </label>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Pricing mode</p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {VARIANT_BUNDLE_MODE_OPTIONS.map((option) => {
+                          const selected = variantBundleMode === option.id
+                          const accent = option.id === 'matrix'
+                            ? 'border-violet-300 bg-violet-50/60 ring-1 ring-violet-200'
+                            : option.id === 'bundles'
+                              ? 'border-emerald-300 bg-emerald-50/60 ring-1 ring-emerald-200'
+                              : option.id === 'variants'
+                                ? 'border-indigo-300 bg-indigo-50/60 ring-1 ring-indigo-200'
+                                : 'border-slate-200 bg-slate-50/50 hover:border-slate-300'
+                          return (
+                            <label
+                              key={option.id}
+                              className={`flex items-start gap-3 rounded-xl border p-4 cursor-pointer transition ${selected ? accent : 'border-slate-200 bg-slate-50/50 hover:border-slate-300'}`}
+                            >
+                              <input
+                                type="radio"
+                                name="variantBundleMode"
+                                checked={selected}
+                                onChange={() => applyVariantBundleMode(option.id)}
+                                className="mt-0.5 h-4 w-4 accent-indigo-600"
+                              />
+                              <div>
+                                <span className="text-sm font-semibold text-slate-800">{option.label}</span>
+                                <p className="mt-1 text-xs text-slate-500 leading-relaxed">{option.description}</p>
+                              </div>
+                            </label>
+                          )
+                        })}
+                      </div>
+                      <p className="mt-2 text-xs text-slate-500">
+                        Switching modes keeps your entered prices and rows — nothing is cleared when you change or turn off a mode.
+                      </p>
                     </div>
+
+                    {variantBundleMode === 'bundles' ? (
+                      <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 px-4 py-2.5 text-xs text-emerald-900">
+                        <strong>Bundle-only mode.</strong> Customers pick Buy 1, Bundle of 2, etc. on the product page — same idea as choosing a size or color.
+                      </div>
+                    ) : null}
+
+                    {variantBundleMode === 'matrix' ? (
+                      <div className="rounded-lg border border-violet-200 bg-violet-50/50 px-4 py-2.5 text-xs text-violet-900">
+                        <strong>Variants + bundles.</strong> Both are enabled automatically. Add your color/size variants below, pack sizes above, then set price &amp; stock for each combination in the matrix.
+                      </div>
+                    ) : null}
 
                     {bulkEnabled && (
                       <div className="rounded-xl border border-emerald-200 bg-emerald-50/30 overflow-hidden">
                         <div className="px-4 py-3 border-b border-emerald-100 bg-white/80">
                           <h4 className="text-sm font-semibold text-slate-800">Bundle pricing rows</h4>
-                          <p className="text-xs text-slate-500 mt-0.5">Configure quantities and pricing. Sale (AED) must be greater than 0 or the row will not be saved.</p>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            {hasVariants
+                              ? 'Pack sizes (Pack of 1, Pack of 2, …) — combined with your product variants in the matrix below.'
+                              : 'Customer-facing bundle options (Buy 1, Bundle of 2, …). Sale (AED) must be greater than 0 or the row will not be saved.'}
+                          </p>
                         </div>
                         <div className="p-4 space-y-3 overflow-x-auto">
                           <div className="min-w-[860px] grid grid-cols-[88px_minmax(130px,1.2fr)_64px_100px_100px_72px_110px_64px] gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500 px-1">
@@ -2739,14 +2910,14 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                                     ))}
                                   </select>
                                 </div>
-                                <input className="border border-slate-200 rounded-lg px-2.5 py-2 text-sm bg-white" placeholder="Buy 1 / Bundle of 2" value={b.title || ''}
+                                <input className="border border-slate-200 rounded-lg px-2.5 py-2 text-sm bg-white" placeholder={hasVariants ? 'Pack of 1' : 'Buy 1 / Bundle of 2'} value={b.title || ''}
                                   onChange={(e) => { const v = [...bulkOptions]; v[idx] = { ...b, title: e.target.value }; setBulkOptions(v) }} />
                                 <input className="border border-slate-200 rounded-lg px-2.5 py-2 text-sm bg-white" type="number" min={1} value={b.qty}
                                   onChange={(e) => { const v = [...bulkOptions]; v[idx] = { ...b, qty: Number(e.target.value) }; setBulkOptions(v) }} />
                                 <input className="border border-slate-200 rounded-lg px-2.5 py-2 text-sm bg-white" type="number" step="0.01" placeholder="0.00" value={b.price}
-                                  onChange={(e) => { const v = [...bulkOptions]; v[idx] = { ...b, price: e.target.value }; setBulkOptions(v) }} />
+                                  onChange={(e) => { markDirty(); const v = [...bulkOptions]; v[idx] = { ...b, price: parseOptionalPriceInput(e.target.value) }; setBulkOptions(v) }} />
                                 <input className="border border-slate-200 rounded-lg px-2.5 py-2 text-sm bg-white" type="number" step="0.01" placeholder="0.00" value={b.AED}
-                                  onChange={(e) => { const v = [...bulkOptions]; v[idx] = { ...b, AED: e.target.value }; setBulkOptions(v) }} />
+                                  onChange={(e) => { markDirty(); const v = [...bulkOptions]; v[idx] = { ...b, AED: parseOptionalPriceInput(e.target.value) }; setBulkOptions(v) }} />
                                 <input className="border border-slate-200 rounded-lg px-2.5 py-2 text-sm bg-white" type="number" placeholder="0" value={b.stock}
                                   onChange={(e) => { const v = [...bulkOptions]; v[idx] = { ...b, stock: Number(e.target.value) }; setBulkOptions(v) }} />
                                 <select className="border border-slate-200 rounded-lg px-2 py-2 text-sm bg-white" value={b.tag}
@@ -2763,7 +2934,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                             const nextQty = bulkOptions.length
                               ? Math.max(...bulkOptions.map((b) => Number(b.qty) || 1)) + 1
                               : 1
-                            setBulkOptions([...bulkOptions, buildBulkRow(nextQty)])
+                            setBulkOptions([...bulkOptions, buildBulkRow(nextQty, '', variantBundleMode === 'matrix')])
                           }}>+ Add bundle row</button>
                         </div>
                       </div>
@@ -2826,13 +2997,13 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                                     <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Option label</label>
                                     <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200" placeholder="e.g., Storage, Material, Model"
                                       value={v.options?.optionLabel || ''}
-                                      onChange={(e) => { const nv = [...variants]; nv[idx] = { ...v, options: { ...(v.options || {}), optionLabel: e.target.value } }; setVariants(nv) }} />
+                                      onChange={(e) => updateVariantOptionField(idx, 'optionLabel', e.target.value)} />
                                   </div>
                                   <div>
                                     <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Option value</label>
                                     <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200" placeholder="e.g., 128GB, Cotton, Pro Max"
                                       value={v.options?.option || ''}
-                                      onChange={(e) => { const nv = [...variants]; nv[idx] = { ...v, options: { ...(v.options || {}), option: e.target.value } }; setVariants(nv) }} />
+                                      onChange={(e) => updateVariantOptionField(idx, 'option', e.target.value)} />
                                   </div>
                                 </div>
 
@@ -2841,13 +3012,13 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                                     <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Color <span className="font-normal normal-case text-slate-400">(optional)</span></label>
                                     <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200" placeholder="Black, White..."
                                       value={v.options?.color || ''}
-                                      onChange={(e) => { const nv = [...variants]; nv[idx] = { ...v, options: { ...(v.options || {}), color: e.target.value } }; setVariants(nv) }} />
+                                      onChange={(e) => updateVariantOptionField(idx, 'color', e.target.value)} />
                                   </div>
                                   <div>
                                     <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Size <span className="font-normal normal-case text-slate-400">(optional)</span></label>
                                     <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200" placeholder="S, M, L..."
                                       value={v.options?.size || ''}
-                                      onChange={(e) => { const nv = [...variants]; nv[idx] = { ...v, options: { ...(v.options || {}), size: e.target.value } }; setVariants(nv) }} />
+                                      onChange={(e) => updateVariantOptionField(idx, 'size', e.target.value)} />
                                   </div>
                                 </div>
 
@@ -2899,8 +3070,8 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                                     <div className="relative">
                                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-bold">AED</span>
                                       <input className="w-full border border-gray-200 rounded-lg pl-12 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-200" placeholder="0.00" type="number" step="0.01"
-                                        value={v.price ?? ''}
-                                        onChange={(e) => { const nv = [...variants]; nv[idx] = { ...v, price: Number(e.target.value) }; setVariants(nv) }} />
+                                        value={v.price === '' || v.price == null ? '' : v.price}
+                                        onChange={(e) => { markDirty(); const nv = [...variants]; nv[idx] = { ...v, price: parseOptionalPriceInput(e.target.value) }; setVariants(nv) }} />
                                     </div>
                                   </div>
                                   <div>
@@ -2908,8 +3079,8 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                                     <div className="relative">
                                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-bold">AED</span>
                                       <input className="w-full border border-gray-200 rounded-lg pl-12 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-200" placeholder="0.00" type="number" step="0.01"
-                                        value={v.AED ?? ''}
-                                        onChange={(e) => { const nv = [...variants]; nv[idx] = { ...v, AED: Number(e.target.value) }; setVariants(nv) }} />
+                                        value={v.AED === '' || v.AED == null ? '' : v.AED}
+                                        onChange={(e) => { markDirty(); const nv = [...variants]; nv[idx] = { ...v, AED: parseOptionalPriceInput(e.target.value) }; setVariants(nv) }} />
                                     </div>
                                   </div>
                                 </div>
@@ -2929,6 +3100,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                       const tiers = bulkOptions.filter((b) => Number(b.qty) > 0)
                       if (!baseRows.length || !tiers.length) return null
                       const setCell = (opts, qty, field, value) => {
+                        markDirty()
                         const key = buildMatrixCellKey(opts, qty)
                         setMatrixCells((prev) => ({ ...prev, [key]: { ...(prev[key] || {}), [field]: value } }))
                       }
@@ -2936,15 +3108,17 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                         <div className="rounded-xl border border-violet-200 bg-violet-50/30 overflow-hidden">
                           <div className="px-4 py-3 border-b border-violet-100 bg-white/80">
                             <h4 className="text-sm font-semibold text-slate-800">Bundle pricing per variant</h4>
-                            <p className="text-xs text-slate-500 mt-0.5">Each variant has its own bundle options below. Leave a field blank to use the shared <strong>Bundle pricing row</strong> price above; fill it to override that variant. The greyed value shows what will be used.</p>
+                            <p className="text-xs text-slate-500 mt-0.5">Each block is a product option (e.g. Buy 1, Buy 2). Inside it, set prices for <strong>Pack of 1</strong>, <strong>Pack of 2</strong>, etc. — how many units the customer gets per pack.</p>
                           </div>
                           <div className="p-4 space-y-3">
                             {baseRows.map((v, vi) => (
                               <div key={vi} className="rounded-lg border border-slate-200 bg-white overflow-hidden">
-                                <div className="px-3 py-2 border-b border-slate-100 bg-slate-50 text-sm font-semibold text-slate-700">{getVariantCardLabel(v, vi)}</div>
+                                <div className="px-3 py-2 border-b border-slate-100 bg-slate-50 text-sm font-semibold text-slate-700">
+                                  Option: {getVariantCardLabel(v, vi)}
+                                </div>
                                 <div className="p-3 space-y-2">
                                   <div className="grid grid-cols-[minmax(90px,1fr)_100px_100px_84px] gap-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                                    <div>Bundle</div>
+                                    <div>Pack size</div>
                                     <div>Sale (AED)</div>
                                     <div>Regular (AED)</div>
                                     <div>Stock</div>
@@ -2956,9 +3130,12 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                                     const fallbackStock = pickMatrixNumber(v.stock, b.stock)
                                     return (
                                       <div key={bi} className="grid grid-cols-[minmax(90px,1fr)_100px_100px_84px] gap-2 items-center">
-                                        <div className="text-xs font-medium text-slate-600 truncate">{b.title || `Bundle of ${b.qty}`} <span className="text-slate-400">(×{b.qty})</span></div>
-                                        <input type="number" step="0.01" placeholder={fallbackPrice > 0 ? String(fallbackPrice) : 'Sale'} className="border border-slate-200 rounded-md px-2 py-1.5 text-sm bg-white" value={cell.price ?? ''} onChange={(e) => setCell(v.options, b.qty, 'price', e.target.value)} />
-                                        <input type="number" step="0.01" placeholder={fallbackAED > 0 ? String(fallbackAED) : 'Regular'} className="border border-slate-200 rounded-md px-2 py-1.5 text-sm bg-white" value={cell.AED ?? ''} onChange={(e) => setCell(v.options, b.qty, 'AED', e.target.value)} />
+                                        <div className="text-xs font-medium text-slate-600 truncate">
+                                          {formatMatrixPackSizeLabel(b.qty)}
+                                          <span className="text-slate-400"> ({b.qty} unit{b.qty > 1 ? 's' : ''} each)</span>
+                                        </div>
+                                        <input type="number" step="0.01" placeholder="Sale" title={fallbackPrice > 0 ? `Inherits ${fallbackPrice} if blank` : undefined} className="border border-slate-200 rounded-md px-2 py-1.5 text-sm bg-white" value={cell.price ?? ''} onChange={(e) => setCell(v.options, b.qty, 'price', parseOptionalPriceInput(e.target.value))} />
+                                        <input type="number" step="0.01" placeholder="Regular" title={fallbackAED > 0 ? `Inherits ${fallbackAED} if blank` : undefined} className="border border-slate-200 rounded-md px-2 py-1.5 text-sm bg-white" value={cell.AED ?? ''} onChange={(e) => setCell(v.options, b.qty, 'AED', parseOptionalPriceInput(e.target.value))} />
                                         <input type="number" placeholder={fallbackStock > 0 ? String(fallbackStock) : 'Stock'} className="border border-slate-200 rounded-md px-2 py-1.5 text-sm bg-white" value={cell.stock ?? ''} onChange={(e) => setCell(v.options, b.qty, 'stock', e.target.value === '' ? '' : Number(e.target.value))} />
                                       </div>
                                     )

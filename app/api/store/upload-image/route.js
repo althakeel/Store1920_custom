@@ -2,6 +2,16 @@ import authSeller from '@/middlewares/authSeller';
 import { getAuth } from '@/lib/firebase-admin';
 import { uploadToS3 } from '@/lib/storage';
 
+export const maxDuration = 300;
+
+const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
+
+function isVideoUpload(file) {
+  const mime = String(file?.type || '').toLowerCase();
+  if (mime.startsWith('video/')) return true;
+  return /\.(mp4|webm|mov|m4v|avi|mkv)$/i.test(String(file?.name || ''));
+}
+
 async function maybeOptimizeBuffer(buffer, meta) {
   try {
     const { optimizeUploadBuffer } = await import('@/lib/optimizeUploadBuffer');
@@ -48,25 +58,37 @@ export async function POST(request) {
     const type = String(formData.get('type') || '').trim();
 
     if (!image || typeof image === 'string') {
-      return Response.json({ error: 'No image provided' }, { status: 400 });
+      return Response.json({ error: 'No file provided' }, { status: 400 });
     }
 
     const buffer = Buffer.from(await image.arrayBuffer());
-    const optimized = await maybeOptimizeBuffer(buffer, {
-      contentType: image.type,
-      fileName: image.name,
-    });
-    const uploadBuffer = optimized.buffer;
-    const uploadContentType = optimized.contentType || image.type || undefined;
-    const uploadName = optimized.optimized && !String(image.name || '').toLowerCase().endsWith('.jpg')
-      ? String(image.name || 'upload').replace(/\.[^.]+$/, '.jpg')
-      : (image.name || 'upload.jpg');
+    const video = isVideoUpload(image);
+
+    if (video && buffer.length > MAX_VIDEO_BYTES) {
+      return Response.json({ error: 'Video must be 50MB or smaller' }, { status: 413 });
+    }
+
+    let uploadBuffer = buffer;
+    let uploadContentType = image.type || undefined;
+    let uploadName = image.name || (video ? 'upload.mp4' : 'upload.jpg');
+
+    if (!video) {
+      const optimized = await maybeOptimizeBuffer(buffer, {
+        contentType: image.type,
+        fileName: image.name,
+      });
+      uploadBuffer = optimized.buffer;
+      uploadContentType = optimized.contentType || image.type || undefined;
+      uploadName = optimized.optimized && !String(image.name || '').toLowerCase().endsWith('.jpg')
+        ? String(image.name || 'upload').replace(/\.[^.]+$/, '.jpg')
+        : (image.name || 'upload.jpg');
+    }
 
     const fileName = type
       ? `${type}_${Date.now()}_${uploadName}`
-      : `desc_${Date.now()}_${uploadName}`;
+      : `${video ? 'video' : 'desc'}_${Date.now()}_${uploadName}`;
 
-    if (type === 'banner') {
+    if (type === 'banner' && !video) {
       try {
         const { uploadBannerToImageKit } = await import('@/lib/bannerStorage');
         const response = await uploadBannerToImageKit({
