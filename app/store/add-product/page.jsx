@@ -942,12 +942,16 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 (v) => (String(v?.options?.color || '').trim() || String(v?.options?.size || '').trim())
                   && (v?.options?.bundleQty != null && v?.options?.bundleQty !== ''),
             )
-            const isMatrix = !bulkTierOnly && (
+            // Prefer the saved pricing mode flag. Only infer matrix from variant shape
+            // when there is no explicit simple/variants/bundles mode saved.
+            const explicitSimpleOrVariants = variantType === 'simple' || variantType === 'variants'
+            const explicitBundles = variantType === 'bulk_bundles'
+            const isMatrix = !explicitSimpleOrVariants && !explicitBundles && !bulkTierOnly && (
               variantType === 'variant_bundles'
               || (variantType !== 'bulk_bundles' && hasColorSizeBundles)
             )
-            setHasVariants(isMatrix ? true : productUsesVariantEditor(product, pv))
-            setVariants(isMatrix ? pv : (productUsesVariantEditor(product, pv) ? pv : []))
+            setHasVariants(isMatrix ? true : (explicitSimpleOrVariants ? variantType === 'variants' : productUsesVariantEditor(product, pv)))
+            setVariants(isMatrix ? pv : ((explicitSimpleOrVariants ? variantType === 'variants' : productUsesVariantEditor(product, pv)) ? pv : []))
             if (isMatrix) {
                 // Reconstruct base variants, bundle tiers, and the price/stock matrix.
                 setHasVariants(true)
@@ -956,6 +960,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 const baseMap = new Map()
                 const tierMap = new Map()
                 const cells = {}
+                const productStockFallback = Number(product.stockQuantity) || 0
                 pv.forEach((v) => {
                     const opts = v?.options || {}
                     const qty = Number(opts.bundleQty) || 1
@@ -963,12 +968,13 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                     delete baseOpts.bundleQty
                     delete baseOpts.tag
                     const key = getVariantMatrixKey(baseOpts)
+                    const rowStock = Number(v.stock) > 0 ? Number(v.stock) : productStockFallback
                     if (!baseMap.has(key)) {
                         baseMap.set(key, {
                             options: baseOpts,
                             price: v.price ?? '',
                             AED: v.AED ?? v.price ?? '',
-                            stock: v.stock ?? 0,
+                            stock: rowStock,
                             sku: v.sku || '',
                         })
                     }
@@ -978,7 +984,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                             qty,
                             price: v.price ?? '',
                             AED: v.AED ?? v.price ?? '',
-                            stock: v.stock ?? 0,
+                            stock: rowStock,
                             tag: opts.tag || v.tag || '',
                             image: '',
                             imageSlot: '',
@@ -987,7 +993,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                     cells[buildMatrixCellKey(baseOpts, qty)] = {
                         price: v.price ?? '',
                         AED: v.AED ?? v.price ?? '',
-                        stock: v.stock ?? 0,
+                        stock: Number(v.stock) > 0 ? Number(v.stock) : '',
                     }
                 })
                 setVariants([...baseMap.values()])
@@ -1002,8 +1008,8 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 initializedProductIdRef.current = productId;
                 return
             }
-            const isBulk = variantType === 'bulk_bundles' || bulkTierOnly
-              || (!isMatrix && pv.length > 0 && pv.every((v) => v?.options && (v.options.bundleQty || v.options.bundleQty === 0) && !v.options.color && !v.options.size))
+            const isBulk = explicitBundles || bulkTierOnly
+              || (!isMatrix && !explicitSimpleOrVariants && pv.length > 0 && pv.every((v) => v?.options && (v.options.bundleQty || v.options.bundleQty === 0) && !v.options.color && !v.options.size))
             if (isBulk) {
                 setBulkEnabled(true)
                 setHasVariants(false)
@@ -1025,10 +1031,19 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 mapped.sort((a, b) => a.qty - b.qty)
                 setBulkOptions(mapped)
                 setMatrixCells({})
-            } else if (productUsesVariantEditor(product, pv)) {
+            } else if (variantType === 'variants' || (!explicitSimpleOrVariants && productUsesVariantEditor(product, pv))) {
+                setBulkEnabled(false)
+                setHasVariants(true)
                 setVariantBundleMode('variants')
+                setBulkOptions([])
+                setMatrixCells({})
             } else {
+                setBulkEnabled(false)
+                setHasVariants(false)
                 setVariantBundleMode('none')
+                setVariants([])
+                setBulkOptions([])
+                setMatrixCells({})
             }
             // Map existing images to slots - store as strings (URLs)
             const imgState = { "1": null, "2": null, "3": null, "4": null, "5": null, "6": null, "7": null, "8": null }
@@ -1773,13 +1788,17 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
             }
 
             if (bulkEnabled) {
-                const validRows = bulkOptions.filter((b) => Number(b.qty) > 0 && Number(b.price) > 0)
-                if (validRows.length === 0) {
-                    return toast.error('Bundle rows need a Qty and Sale (AED) greater than 0. Rows with 0.00 are not saved.')
-                }
-                const inStockRows = validRows.filter((b) => Number(b.stock) > 0)
-                if (inStockRows.length === 0) {
-                    return toast.error('Set Stock greater than 0 on at least one bundle row so customers can buy it.')
+                if (hasVariants) {
+                    // Matrix mode stock is validated after expanding rows below.
+                } else {
+                    const validRows = bulkOptions.filter((b) => Number(b.qty) > 0 && Number(b.price) > 0)
+                    if (validRows.length === 0) {
+                        return toast.error('Bundle rows need a Qty and Sale (AED) greater than 0. Rows with 0.00 are not saved.')
+                    }
+                    const inStockRows = validRows.filter((b) => Number(b.stock) > 0)
+                    if (inStockRows.length === 0) {
+                        return toast.error('Set Stock greater than 0 on at least one bundle row so customers can buy it.')
+                    }
                 }
             }
 
@@ -1844,7 +1863,12 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
 
             if (isMatrixMode) {
                 // Matrix: every base variant × every bundle tier is its own priced variant.
+                const productStockFallback = Number(productInfo.stockQuantity) || 0
                 const bundleRows = bulkOptions.filter((b) => Number(b.qty) > 0)
+                if (bundleRows.length === 0) {
+                    setLoading(false)
+                    return toast.error('Add at least one pack size (Qty) for Variants + bundle packs.')
+                }
                 const expanded = []
                 baseVariantRows.forEach((v) => {
                     const baseOpts = { ...(v.options || {}) }
@@ -1857,7 +1881,8 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                         const price = pickMatrixNumber(cell.price, v.price, b.price)
                         if (!(price > 0)) return
                         const aed = pickMatrixNumber(cell.AED, v.AED, b.AED, price) || price
-                        const stock = pickMatrixNumber(cell.stock, v.stock, b.stock, 0)
+                        // Prefer matrix cell → variant row → pack row → product Stock Qty.
+                        const stock = pickMatrixNumber(cell.stock, v.stock, b.stock, productStockFallback, 0)
                         expanded.push({
                             sku: v.sku || '',
                             options: resolveVariantImageOptions({
@@ -1871,6 +1896,14 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                         })
                     })
                 })
+                if (expanded.length === 0) {
+                    setLoading(false)
+                    return toast.error('Fill price for at least one color/size × pack combination in the matrix.')
+                }
+                if (!expanded.some((row) => Number(row.stock) > 0)) {
+                    setLoading(false)
+                    return toast.error('Set Stock greater than 0 on at least one matrix cell (or Stock Qty) so customers can buy it.')
+                }
                 variantsToSend = expanded
                 hasVariantsFlag = expanded.length > 0
             } else if (bulkEnabled) {
@@ -1912,10 +1945,13 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 soldBy: productInfo.soldBy,
                 paymentInfo: productInfo.paymentInfo,
                 additionalDetails: aiAdditionalDetails || '',
-                variantType: isMatrixMode ? 'variant_bundles' : (bulkEnabled ? 'bulk_bundles' : null),
-            }
-            if (!attributes.variantType) {
-                delete attributes.variantType
+                // Always persist an explicit mode so refresh does not re-infer matrix
+                // from leftover color/size × bundleQty rows.
+                variantType: isMatrixMode
+                    ? 'variant_bundles'
+                    : (bulkEnabled
+                        ? 'bulk_bundles'
+                        : (hasVariantsFlag ? 'variants' : 'simple')),
             }
 
             const payload = {
@@ -3127,7 +3163,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                                     const cell = matrixCells[buildMatrixCellKey(v.options, b.qty)] || {}
                                     const fallbackPrice = pickMatrixNumber(v.price, b.price)
                                     const fallbackAED = pickMatrixNumber(v.AED, b.AED, fallbackPrice)
-                                    const fallbackStock = pickMatrixNumber(v.stock, b.stock)
+                                    const fallbackStock = pickMatrixNumber(v.stock, b.stock, Number(productInfo.stockQuantity) || 0)
                                     return (
                                       <div key={bi} className="grid grid-cols-[minmax(90px,1fr)_100px_100px_84px] gap-2 items-center">
                                         <div className="text-xs font-medium text-slate-600 truncate">

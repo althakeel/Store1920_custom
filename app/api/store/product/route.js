@@ -278,19 +278,28 @@ export async function POST(request) {
                 return NextResponse.json({ error: "Invalid variants JSON" }, { status: 400 });
             }
 
+            const stockFallback = Number(stockQuantity) || 0;
+            if (stockFallback > 0) {
+                variants = variants.map((variant) => {
+                    const stock = Number(variant?.stock);
+                    if (Number.isFinite(stock) && stock > 0) return variant;
+                    return { ...variant, stock: stockFallback };
+                });
+            }
+
             // Compute derived fields from variants
             const prices = variants.map(v => Number(v.price)).filter(n => Number.isFinite(n));
             const AEDs = variants.map(v => Number(v.AED ?? v.price)).filter(n => Number.isFinite(n));
             const stocks = variants.map(v => Number(v.stock ?? 0)).filter(n => Number.isFinite(n));
             finalPrice = prices.length ? Math.min(...prices) : 0;
             finalAED = AEDs.length ? Math.min(...AEDs) : finalPrice;
-            inStock = stocks.some(s => s > 0);
+            inStock = stocks.some(s => s > 0) || stockFallback > 0;
         } else {
             // No variants: require price and AED
             if (!Number.isFinite(price) || !Number.isFinite(AED)) {
                 return NextResponse.json({ error: "Price and AED are required when no variants provided" }, { status: 400 });
             }
-            inStock = true;
+            inStock = Number(stockQuantity) > 0;
         }
 
         // Support both file uploads and string URLs
@@ -727,12 +736,20 @@ export async function PUT(request) {
 
         if (hasVariants) {
             try { variants = JSON.parse(variantsRaw || "[]"); } catch { variants = []; }
+            const stockFallback = Number(stockQuantity ?? product.stockQuantity) || 0;
+            if (stockFallback > 0) {
+                variants = variants.map((variant) => {
+                    const stock = Number(variant?.stock);
+                    if (Number.isFinite(stock) && stock > 0) return variant;
+                    return { ...variant, stock: stockFallback };
+                });
+            }
             const prices = variants.map(v => Number(v.price)).filter(n => Number.isFinite(n));
             const AEDs = variants.map(v => Number(v.AED ?? v.price)).filter(n => Number.isFinite(n));
             const stocks = variants.map(v => Number(v.stock ?? 0)).filter(n => Number.isFinite(n));
             finalPrice = prices.length ? Math.min(...prices) : finalPrice;
             finalAED = AEDs.length ? Math.min(...AEDs) : finalAED;
-            inStock = stocks.some(s => s > 0);
+            inStock = stocks.some(s => s > 0) || stockFallback > 0;
         } else {
             variants = [];
             if (price !== undefined) finalPrice = price;

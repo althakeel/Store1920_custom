@@ -1064,12 +1064,21 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   }
   
   const availableStock = useMemo(() => {
+    const productStockFallback = typeof product.stockQuantity === 'number'
+      ? Math.max(0, product.stockQuantity)
+      : 0;
+    const anyVariantHasStock = variants.some((v) => Number(v?.stock || 0) > 0);
+
     if (isMatrixProduct) {
       const match = matchMatrixVariant(variants, selectedOptions, activeBundleTier);
-      if (typeof match?.stock === 'number') {
-        return Math.max(0, match.stock);
+      if (match) {
+        const rowStock = Number(match.stock);
+        if (Number.isFinite(rowStock) && rowStock > 0) return rowStock;
+        // Legacy matrix rows: stock often sits on product Stock Qty only.
+        if (!anyVariantHasStock && productStockFallback > 0) return productStockFallback;
+        return Math.max(0, rowStock || 0);
       }
-      return 0;
+      return productStockFallback;
     }
 
     if (isBulkBundleProduct) {
@@ -1086,8 +1095,11 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
     if (!isBulkBundleProduct && variants.length > 0) {
       const match = findVariantBySelectedOptions(variants, selectedOptions, { isBulkBundleVariant });
-      if (typeof match?.stock === 'number') {
-        return Math.max(0, match.stock);
+      if (match) {
+        const rowStock = Number(match.stock);
+        if (Number.isFinite(rowStock) && rowStock > 0) return rowStock;
+        if (!anyVariantHasStock && productStockFallback > 0) return productStockFallback;
+        return Math.max(0, rowStock || 0);
       }
     }
 
@@ -1118,7 +1130,12 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
         ? Number(selectedBundleQty)
         : matrixBundleTiers[0];
       const variant = matchMatrixVariant(variants, selectedOptions, tier);
-      const safeMax = Math.max(0, Number(variant?.stock) || 0);
+      const anyVariantHasStock = variants.some((v) => Number(v?.stock || 0) > 0);
+      const productStockFallback = Number(product.stockQuantity) || 0;
+      const rowStock = Number(variant?.stock) || 0;
+      const safeMax = rowStock > 0
+        ? rowStock
+        : (!anyVariantHasStock && productStockFallback > 0 ? productStockFallback : 0);
       if (!variant || safeMax <= 0) return 0;
 
       const offerFields = product.specialOffer?.offerToken
@@ -1234,12 +1251,13 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     setQuantity(Math.max(1, Math.min(maxOrderQty || 1, next)));
   }, [maxOrderQty, isBulkBundleProduct, bulkBundleTiers]);
 
-  const hasAnyVariantStock = variants.length > 0
-    ? variants.some(v => Number(v?.stock || 0) > 0)
-    : false;
+  const hasAnyVariantStock = variants.some((v) => Number(v?.stock || 0) > 0);
+  const hasProductStockQty = Number(product.stockQuantity) > 0;
   const hasBaseStock = typeof product.stockQuantity === 'number' ? product.stockQuantity > 0 : true;
+  // Matrix / variant products: treat as in-stock if any row has stock, or Stock Qty is set
+  // (legacy rows often have stock 0 while Stock Qty still holds inventory).
   const isGloballyOutOfStock = variants.length > 0
-    ? !hasAnyVariantStock || product.inStock === false
+    ? !(hasAnyVariantStock || hasProductStockQty)
     : product.inStock === false || !hasBaseStock;
   const discountPercent = effAED > effPrice
     ? Math.round(((effAED - effPrice) / effAED) * 100)
@@ -1519,7 +1537,11 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       const hasStockQty = typeof product.stockQuantity === 'number' ? product.stockQuantity > 0 : true;
       return product.inStock !== false && hasStockQty;
     }
-    return Boolean(selectedVariant && Number(selectedVariant.stock || 0) > 0);
+    if (!selectedVariant) return false;
+    const variantStock = Number(selectedVariant.stock || 0);
+    if (variantStock > 0) return true;
+    // Legacy matrix rows often have stock 0 while product Stock Qty still holds inventory.
+    return !hasAnyVariantStock && hasProductStockQty;
   })();
 
   useEffect(() => {
