@@ -5,6 +5,8 @@ import User from '@/models/User';
 import Order from '@/models/Order';
 import AbandonedCart from '@/models/AbandonedCart';
 import Wallet from '@/models/Wallet';
+import { linkGuestOrdersToUser } from '@/lib/linkGuestOrders';
+import { normalizeEmail } from '@/lib/orderIdentity';
 
 // Get individual customer details with full order history
 export async function GET(request, { params }) {
@@ -32,23 +34,45 @@ export async function GET(request, { params }) {
         const storeId = await authSeller(userId);
         const { customerId } = await params;
 
-        // Check if this is a guest customer
-        const isGuest = customerId.startsWith('guest-') || customerId.startsWith('unknown-');
+        let resolvedCustomerId = customerId;
+        let isGuest = customerId.startsWith('guest-') || customerId.startsWith('unknown-');
         
         let customer;
         let orders;
 
         if (isGuest) {
-            // Handle guest customer
+            const guestEmail = normalizeEmail(customerId.replace(/^(guest-|unknown-)/, ''));
+            const registeredUser = guestEmail
+                ? await User.findOne({
+                    $expr: {
+                        $eq: [
+                            { $toLower: { $ifNull: ['$email', ''] } },
+                            guestEmail,
+                        ],
+                    },
+                }).select('_id name email image').lean()
+                : null;
+
+            if (registeredUser) {
+                await linkGuestOrdersToUser(registeredUser._id, { email: registeredUser.email }).catch(() => {});
+                resolvedCustomerId = registeredUser._id;
+                isGuest = false;
+            }
+        }
+
+        if (isGuest) {
             const guestEmail = customerId.replace(/^(guest-|unknown-)/, '');
             
             // Get orders for this guest
             orders = await Order.find({
                 storeId: storeId,
+                isGuest: true,
                 $or: [
                     { guestEmail: guestEmail },
-                    { isGuest: true, guestEmail: guestEmail }
-                ]
+                    { guestEmail: normalizeEmail(guestEmail) },
+                    { 'shippingAddress.email': guestEmail },
+                    { 'shippingAddress.email': normalizeEmail(guestEmail) },
+                ],
             })
             .populate({
                 path: 'orderItems.productId',
@@ -72,7 +96,7 @@ export async function GET(request, { params }) {
         } else {
             // Get all orders from this customer for this store first
             orders = await Order.find({
-                userId: customerId,
+                userId: resolvedCustomerId,
                 storeId: storeId
             })
             .populate({
@@ -85,7 +109,7 @@ export async function GET(request, { params }) {
             // Try to get customer information for registered user
             let userDoc = null;
             try {
-                userDoc = await User.findById(customerId).select('_id name email image').lean();
+                userDoc = await User.findById(resolvedCustomerId).select('_id name email image').lean();
             } catch (err) {
                 // Invalid ObjectId format
             }
@@ -95,7 +119,7 @@ export async function GET(request, { params }) {
             } else if (orders.length > 0) {
                 // User not found but has orders - construct customer from order data
                 customer = {
-                    _id: customerId,
+                    _id: resolvedCustomerId,
                     name: orders[0].guestName || orders[0].shippingAddress?.name || 'Customer',
                     email: orders[0].guestEmail || orders[0].shippingAddress?.email || 'No email',
                     image: null
@@ -122,7 +146,7 @@ export async function GET(request, { params }) {
                 storeId: storeId
             }).lean()
             : await AbandonedCart.findOne({
-                userId: customerId,
+                userId: resolvedCustomerId,
                 storeId: storeId
             }).lean();
 
@@ -134,13 +158,14 @@ export async function GET(request, { params }) {
         let walletBalance = 0;
         let walletTransactions = [];
         if (!isGuest) {
-            const wallet = await Wallet.findOne({ userId: customerId }).lean();
+            const wallet = await Wallet.findOne({ userId: resolvedCustomerId }).lean();
             walletBalance = Number(wallet?.coins || 0);
             walletTransactions = wallet?.transactions || [];
         }
 
         const customerDetails = {
             ...customer,
+            isGuest,
             totalOrders,
             totalSpent,
             averageOrderValue: Math.round(averageOrderValue),

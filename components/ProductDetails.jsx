@@ -20,6 +20,11 @@ import {
   bundleCartSelectionMatches,
   adjustBundleCartTier,
 } from "@/lib/bulkBundleCart";
+import {
+  buildFbtBundleCartMeta,
+  calculateFbtBundleTotal,
+  distributeFbtLinePrices,
+} from "@/lib/fbtCart";
 import { decrementCartItem, incrementCartItem } from "@/lib/bundleCartActions";
 import MobileProductActions from "./MobileProductActions";
 import ProductShareButton from "./ProductShareButton";
@@ -42,6 +47,7 @@ import {
   getProductImageAspectRatioClass,
 } from '@/lib/productMedia';
 import { useHorizontalCarouselDrag } from '@/lib/useHorizontalCarouselDrag';
+import { resolveCategoryHref } from '@/lib/categoryTreeUtils';
 import { getAdjustedDeliveryDate } from '@/lib/deliveryEstimate';
 import { fetchShippingSettings } from '@/lib/shipping';
 import { getDefaultShippingOption } from '@/lib/shippingOptions';
@@ -426,6 +432,24 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   const [isOrderingNow, setIsOrderingNow] = useState(false);
   const [showRatingBreakdown, setShowRatingBreakdown] = useState(false);
   const ratingBreakdownRef = useRef(null);
+
+  const scrollToProductReviews = useCallback(() => {
+    setShowRatingBreakdown(false);
+
+    const reviewSectionIds = ['product-reviews-desktop', 'product-reviews-mobile', 'product-reviews'];
+    const target = reviewSectionIds
+      .map((id) => document.getElementById(id))
+      .find((element) => element && element.getClientRects().length > 0);
+
+    if (!target) return;
+
+    const headerOffset = 88;
+    const top = target.getBoundingClientRect().top + window.scrollY - headerOffset;
+    window.scrollTo({
+      top: Math.max(0, top),
+      behavior: 'smooth',
+    });
+  }, []);
   const [categoryMap, setCategoryMap] = useState({});
   const { user, getToken } = useAuth();
   const isSignedIn = Boolean(user);
@@ -623,7 +647,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   // Fetch all categories once to resolve IDs → {name, parentId}
   useEffect(() => {
     let mounted = true;
-    const cacheKey = `product-category-map:${language}`;
+    const cacheKey = `product-category-map:v2:${language}`;
     const cacheTtlMs = 10 * 60 * 1000;
 
     try {
@@ -646,13 +670,18 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       .then((data) => {
         if (!mounted || !data?.categories) return;
         const map = {};
-        data.categories.forEach((c) => {
-          map[c._id] = {
-            name: c.name,
-            nameAr: c.nameAr || '',
-            parentId: c.parentId || null,
+        const visitCategory = (category) => {
+          if (!category?._id) return;
+          map[String(category._id)] = {
+            name: category.name,
+            nameAr: category.nameAr || '',
+            parentId: category.parentId || null,
+            slug: category.slug || '',
+            url: category.url || '',
           };
-        });
+          (Array.isArray(category.children) ? category.children : []).forEach(visitCategory);
+        };
+        (Array.isArray(data.categories) ? data.categories : []).forEach(visitCategory);
         setCategoryMap(map);
         try {
           sessionStorage.setItem(cacheKey, JSON.stringify({
@@ -750,6 +779,13 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     handleCardClick: handleFbtCardClick,
     isDragging: fbtIsDragging,
     trackStyle: fbtTrackStyle,
+  } = useHorizontalCarouselDrag({ enableSnap: false });
+  const {
+    scrollRef: fbtMobileScrollRef,
+    handlePointerDown: handleFbtMobilePointerDown,
+    handleCardClick: handleFbtMobileCardClick,
+    isDragging: fbtMobileIsDragging,
+    trackStyle: fbtMobileTrackStyle,
   } = useHorizontalCarouselDrag({ enableSnap: false });
   const {
     scrollRef: fbtPopupScrollRef,
@@ -1695,44 +1731,89 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
     return createPortal(
       <div
-        className="fixed inset-0 z-[10050] flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px]"
+        className="fixed inset-0 z-[10050] flex items-end justify-center bg-black/55 p-0 backdrop-blur-[1px] sm:items-center sm:bg-black/60 sm:p-4 sm:backdrop-blur-[2px]"
         onClick={closeFbtPopup}
         role="dialog"
         aria-modal="true"
         aria-label={isArabic ? 'يُشترى معًا غالبًا' : 'Frequently bought together'}
       >
         <div
-          className="flex w-full max-w-4xl max-h-[min(88vh,720px)] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+          className="flex w-full max-w-md max-h-[82vh] flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:max-h-[min(88vh,720px)] sm:max-w-4xl sm:rounded-2xl"
           onClick={(event) => event.stopPropagation()}
         >
-          <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-5 py-4 sm:px-6">
+          <div className="flex items-start justify-between gap-3 border-b border-gray-100 px-4 py-3 sm:px-6 sm:py-4">
             <div className="min-w-0">
-              <h3 className="text-lg font-bold text-gray-900 sm:text-xl">
+              <h3 className="text-[15px] font-bold leading-snug text-gray-900 sm:text-xl">
                 {isArabic ? 'يُشترى معًا غالبًا' : 'Frequently Bought Together'}
               </h3>
-              <p className="mt-1 text-sm text-gray-500">
+              <p className="mt-0.5 text-[11px] text-gray-500 sm:mt-1 sm:text-sm">
                 {isArabic
-                  ? `${totalBundleItems} عناصر محددة · ${currency} ${formatDisplay(convertPrice(bundleTotal), language)}`
-                  : `${totalBundleItems} items selected · ${currency} ${formatDisplay(convertPrice(bundleTotal), language)}`}
+                  ? `${totalBundleItems} عناصر · ${currency} ${formatDisplay(convertPrice(bundleTotal), language)}`
+                  : `${totalBundleItems} items · ${currency} ${formatDisplay(convertPrice(bundleTotal), language)}`}
               </p>
             </div>
             <button
               type="button"
               onClick={closeFbtPopup}
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-500 transition hover:bg-gray-100 hover:text-gray-900"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-gray-500 transition hover:bg-gray-100 hover:text-gray-900 sm:h-9 sm:w-9"
               aria-label={isArabic ? 'إغلاق' : 'Close'}
             >
-              <X size={20} />
+              <X size={18} className="sm:hidden" />
+              <X size={20} className="hidden sm:block" />
             </button>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-hidden px-5 py-5 sm:px-6">
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3 sm:overflow-hidden sm:px-6 sm:py-5">
+            <div className="space-y-2 sm:hidden">
+              {allFbtCards.map((card) => (
+                <label
+                  key={`popup-mobile-${card._id}`}
+                  onClick={handleFbtPopupCardClick}
+                  className={`flex items-center gap-3 rounded-xl border p-2.5 transition ${
+                    card.checked
+                      ? 'border-slate-900 bg-slate-50'
+                      : 'border-gray-200 bg-white opacity-80'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={card.checked}
+                    readOnly={card.isMain}
+                    onChange={card.isMain ? undefined : () => toggleFbtProduct(card._id)}
+                    className="h-4 w-4 shrink-0 rounded accent-blue-600"
+                  />
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gray-50">
+                    <div className="relative h-11 w-11">
+                      <Image
+                        src={card.image || PLACEHOLDER_IMAGE}
+                        alt={card.name}
+                        fill
+                        className="pointer-events-none object-contain"
+                        draggable={false}
+                      />
+                    </div>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="line-clamp-2 text-[12px] leading-snug text-gray-800">{card.name}</p>
+                    {card.isMain ? (
+                      <p className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-400">
+                        {isArabic ? 'هذا المنتج' : 'This item'}
+                      </p>
+                    ) : null}
+                    <p className="mt-1 text-[13px] font-bold text-gray-900">
+                      {currency} {formatDisplay(convertPrice(card.price), language)}
+                    </p>
+                  </div>
+                </label>
+              ))}
+            </div>
+
             <div
               ref={fbtPopupScrollRef}
               role="region"
               aria-label={isArabic ? 'منتجات الحزمة' : 'Bundle products'}
               onPointerDown={handleFbtPopupPointerDown}
-              className={`overflow-x-auto scrollbar-hide overscroll-x-contain select-none ${
+              className={`hidden overflow-x-auto scrollbar-hide overscroll-x-contain select-none sm:block ${
                 fbtPopupIsDragging ? 'cursor-grabbing' : 'cursor-grab'
               }`}
               style={fbtPopupTrackStyle}
@@ -1742,7 +1823,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   <div key={card._id} className="flex items-center gap-2">
                     <label
                       onClick={handleFbtPopupCardClick}
-                      className={`relative flex w-[148px] flex-col rounded-xl border-2 p-3 transition sm:w-[164px] ${
+                      className={`relative flex w-[164px] flex-col rounded-xl border-2 p-3 transition ${
                         card.checked
                           ? 'border-slate-900 bg-slate-50 shadow-sm'
                           : 'border-gray-200 bg-white opacity-80'
@@ -1761,7 +1842,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                             src={card.image || PLACEHOLDER_IMAGE}
                             alt={card.name}
                             fill
-                            className="object-contain pointer-events-none"
+                            className="pointer-events-none object-contain"
                             draggable={false}
                           />
                         </div>
@@ -1787,28 +1868,30 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
             </div>
           </div>
 
-          <div className="flex flex-col gap-3 border-t border-gray-100 bg-gray-50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-                {isArabic ? 'إجمالي الحزمة' : 'Bundle total'}
-              </p>
-              <p className="text-xl font-bold text-gray-900">
-                {currency} {formatDisplay(convertPrice(bundleTotal), language)}
-              </p>
+          <div className="border-t border-gray-100 bg-gray-50 px-4 py-3 sm:px-6 sm:py-4">
+            <div className="flex items-center gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0 shrink-0">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 sm:text-[11px]">
+                  {isArabic ? 'الإجمالي' : 'Total'}
+                </p>
+                <p className="text-[17px] font-bold text-gray-900 sm:text-xl">
+                  {currency} {formatDisplay(convertPrice(bundleTotal), language)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  await handleAddBundleToCart();
+                  closeFbtPopup();
+                }}
+                disabled={selectedAddonProducts.length === 0}
+                className="h-10 min-w-0 flex-1 rounded-lg bg-yellow-400 px-4 text-[13px] font-bold text-gray-900 transition hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50 sm:h-12 sm:flex-none sm:rounded-xl sm:px-6 sm:text-sm sm:min-w-[220px]"
+              >
+                {isArabic
+                  ? `اشترِ ${totalBundleItems} معًا`
+                  : `Buy ${totalBundleItems} together`}
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={async () => {
-                await handleAddBundleToCart();
-                closeFbtPopup();
-              }}
-              disabled={selectedAddonProducts.length === 0}
-              className="h-12 w-full rounded-xl bg-yellow-400 px-6 text-sm font-bold text-gray-900 transition hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:min-w-[220px]"
-            >
-              {isArabic
-                ? `اشترِ ${totalBundleItems} معًا`
-                : `Buy ${totalBundleItems} together`}
-            </button>
           </div>
         </div>
       </div>,
@@ -2473,34 +2556,19 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
   };
 
   // Calculate FBT bundle total
-  const calculateFbtTotal = () => {
-    const mainProductPrice = effPrice;
-    const selectedFbtTotal = fbtProducts
-      .filter(p => selectedFbtProducts[p._id])
-      .reduce((total, p) => {
-        if (!isValidFbtPrice(p.price)) {
-          console.warn('Skipping invalid FBT product price in total calculation', { productId: p._id, price: p.price });
-          return total;
-        }
-        return total + Number(p.price);
-      }, 0);
-    
-    const bundleTotal = mainProductPrice + selectedFbtTotal;
-    
-    // Apply bundle discount if set
-    if (fbtBundlePrice && fbtBundlePrice > 0) {
-      return fbtBundlePrice;
-    } else if (fbtBundleDiscount && fbtBundleDiscount > 0) {
-      return bundleTotal * (1 - fbtBundleDiscount / 100);
-    }
-    
-    return bundleTotal;
-  };
+  const calculateFbtTotal = () => calculateFbtBundleTotal({
+    mainPrice: effPrice,
+    addonProducts: fbtProducts.filter((p) => selectedFbtProducts[p._id] && isValidFbtPrice(p.price)),
+    bundlePrice: fbtBundlePrice,
+    bundleDiscount: fbtBundleDiscount,
+  });
 
   // Add all selected FBT products to cart
   const handleAddBundleToCart = async () => {
     const selectedBundleProducts = fbtProducts.filter((p) => selectedFbtProducts[p._id] && isValidFbtPrice(p.price));
     if (selectedBundleProducts.length === 0) return;
+
+    const bundleTotal = calculateFbtTotal();
 
     pushDataLayerEvent('fbt_add_bundle_clicked', {
       currency: 'AED',
@@ -2524,32 +2592,53 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
       relatedProductIds: selectedBundleProducts.map((p) => String(p._id)),
     });
 
+    const priceByProductId = distributeFbtLinePrices({
+      mainProductId: cartProductId,
+      mainPrice: effPrice,
+      addonProducts: selectedBundleProducts,
+      bundleTotal,
+    });
+    const fbtBundle = buildFbtBundleCartMeta(
+      cartProductId,
+      selectedBundleProducts.map((p) => p._id),
+    );
+
     trackProductAddToCart({
       productId: cartProductId,
       name: product.name || product.title || 'Product',
-      price: Number(effPrice || 0),
+      price: Number(priceByProductId.get(cartProductId) ?? effPrice ?? 0),
       quantity: 1,
       currency: 'AED',
     });
 
-    // Add main product
-    dispatch(addToCart({
+    dispatch(setCartEntry({
       productId: cartProductId,
-      price: effPrice,
-      variantOptions: cartVariantOptions,
-      maxQty: maxOrderQty,
+      entry: {
+        quantity: 1,
+        price: priceByProductId.get(cartProductId) ?? effPrice,
+        variantOptions: cartVariantOptions,
+        maxQty: maxOrderQty,
+        fbtBundle,
+      },
     }));
-    
-    // Add selected FBT products
-    selectedBundleProducts.forEach(p => {
+
+    selectedBundleProducts.forEach((p) => {
+      const productId = String(p._id);
       trackProductAddToCart({
-        productId: p._id,
+        productId,
         name: p.name || 'Product',
-        price: Number(p.price || 0),
+        price: Number(priceByProductId.get(productId) ?? p.price ?? 0),
         quantity: 1,
         currency: 'AED',
       });
-      dispatch(addToCart({ productId: p._id, price: p.price }));
+      dispatch(setCartEntry({
+        productId,
+        entry: {
+          quantity: 1,
+          price: priceByProductId.get(productId) ?? p.price,
+          fbtBundle,
+        },
+      }));
     });
     
     // Upload to server if signed in
@@ -2620,6 +2709,118 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     badge: item.fastDelivery ? 'express' : (String(item.tags?.[0] || '').toLowerCase() === 'supermall' ? null : (item.tags?.[0] || null)),
   }))];
 
+  const renderFbtSection = (variant = 'desktop') => {
+    if (!fbtEnabled || fbtProducts.length === 0) return null;
+
+    const isMobile = variant === 'mobile';
+    const scrollRef = isMobile ? fbtMobileScrollRef : fbtScrollRef;
+    const handlePointerDown = isMobile ? handleFbtMobilePointerDown : handleFbtPointerDown;
+    const handleCardClick = isMobile ? handleFbtMobileCardClick : handleFbtCardClick;
+    const isDragging = isMobile ? fbtMobileIsDragging : fbtIsDragging;
+    const trackStyle = isMobile ? fbtMobileTrackStyle : fbtTrackStyle;
+    const outerClassName = isMobile
+      ? 'overflow-hidden rounded-xl border border-gray-200 bg-white lg:hidden'
+      : 'pt-4 mt-3 border-t border-gray-200 hidden lg:block';
+    const innerClassName = isMobile
+      ? 'p-3'
+      : 'rounded-lg border border-gray-200 bg-white p-4 sm:p-5';
+
+    return (
+      <div className={outerClassName}>
+        <div className={innerClassName}>
+          <div className={`flex items-start justify-between gap-2 ${isMobile ? '' : 'items-center gap-4'}`}>
+            <div className="min-w-0">
+              <h2 className={`font-bold text-gray-900 ${isMobile ? 'text-[15px] leading-snug' : 'text-[18px]'}`}>
+                {isArabic ? 'يُشترى معًا غالبًا' : 'Frequently Bought Together'}
+              </h2>
+              <p className={`text-gray-500 ${isMobile ? 'mt-0.5 text-[11px] leading-snug' : 'mt-1 text-sm'}`}>
+                {isArabic
+                  ? `${totalBundleItems} عناصر · ${currency} ${formatDisplay(convertPrice(bundleTotal), language)}`
+                  : `${totalBundleItems} items · ${currency} ${formatDisplay(convertPrice(bundleTotal), language)}`}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowFbtPopup(true)}
+              className={`shrink-0 rounded-md border border-gray-300 font-semibold text-gray-800 transition hover:bg-gray-50 ${
+                isMobile ? 'h-7 px-2.5 text-[11px]' : 'h-10 px-4 text-sm'
+              }`}
+            >
+              {isArabic ? 'عرض الكل' : 'View All'}
+            </button>
+          </div>
+
+          <div
+            ref={scrollRef}
+            role="region"
+            aria-label={isArabic ? 'يُشترى معًا غالبًا' : 'Frequently bought together products'}
+            onPointerDown={handlePointerDown}
+            className={`overflow-x-auto scrollbar-hide overscroll-x-contain select-none ${
+              isMobile ? 'mt-2.5' : 'mt-4'
+            } ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+            style={trackStyle}
+          >
+            <div className={`flex min-w-max items-start ${isMobile ? 'gap-2 pb-1' : 'gap-3 pb-2'}`}>
+              {allFbtCards.map((card, index, arr) => (
+                <div key={`${variant}-${card._id}`} className={`flex items-center ${isMobile ? 'gap-1.5' : 'gap-3'}`}>
+                  <label
+                    onClick={handleCardClick}
+                    className={`relative flex-shrink-0 cursor-pointer rounded-md border transition ${
+                      isMobile ? 'w-[104px] p-2' : 'w-[136px] p-2.5'
+                    } ${card.checked ? 'border-gray-300 bg-white' : 'border-gray-200 bg-white opacity-60'}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={card.checked}
+                      readOnly={card.isMain}
+                      onChange={card.isMain ? undefined : () => toggleFbtProduct(card._id)}
+                      className={`absolute rounded accent-blue-600 ${isMobile ? 'left-1.5 top-1.5 h-3 w-3' : 'left-2 top-2 h-3.5 w-3.5'}`}
+                    />
+                    <div className={`flex items-center justify-center overflow-hidden rounded bg-gray-50 ${
+                      isMobile ? 'mb-1.5 mt-0.5 h-[56px]' : 'mb-2 mt-1 h-[82px]'
+                    }`}>
+                      <div className={`relative ${isMobile ? 'h-[44px] w-[44px]' : 'h-[66px] w-[66px]'}`}>
+                        <Image
+                          src={card.image || 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'}
+                          alt={card.name}
+                          fill
+                          className="pointer-events-none object-contain"
+                          draggable={false}
+                        />
+                      </div>
+                    </div>
+                    <p className={`line-clamp-2 leading-snug text-gray-600 ${
+                      isMobile ? 'mb-0.5 min-h-[26px] text-[10px]' : 'mb-0.5 min-h-[30px] text-[11px]'
+                    }`}>{card.name}</p>
+                    <p className={`font-bold text-gray-900 ${isMobile ? 'text-[11px]' : 'text-[13px]'}`}>
+                      {currency} {formatDisplay(convertPrice(card.price), language)}
+                    </p>
+                  </label>
+                  {index < arr.length - 1 ? (
+                    <span className={`pointer-events-none flex-shrink-0 font-light text-gray-400 ${isMobile ? 'text-lg' : 'text-2xl'}`}>+</span>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleAddBundleToCart}
+            disabled={selectedAddonProducts.length === 0}
+            className={`w-full rounded-md bg-yellow-400 font-bold text-gray-900 transition hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50 ${
+              isMobile ? 'mt-2 h-9 text-[12px]' : 'mt-3 h-11 text-[15px]'
+            }`}
+          >
+            {isArabic
+              ? `اشترِ ${totalBundleItems} معًا · ${currency} ${formatDisplay(convertPrice(bundleTotal), language)}`
+              : `Buy ${totalBundleItems} together · ${currency} ${formatDisplay(convertPrice(bundleTotal), language)}`}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   if (!product) {
     return (
       <div className="min-h-[400px] flex items-center justify-center text-gray-400 text-lg">Product not found.</div>
@@ -2645,7 +2846,12 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
               if (firstCatId && categoryMap[firstCatId]) {
                 let cur = firstCatId;
                 while (cur && categoryMap[cur]) {
-                  chain.unshift({ id: cur, name: getCategoryLabel(categoryMap[cur]) });
+                  chain.unshift({
+                    id: cur,
+                    name: getCategoryLabel(categoryMap[cur]),
+                    slug: categoryMap[cur].slug || '',
+                    url: categoryMap[cur].url || '',
+                  });
                   cur = categoryMap[cur].parentId;
                 }
               }
@@ -2661,12 +2867,15 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   </>
                 );
               }
-              return chain.map(c => (
+              return chain.map((c, index) => {
+                const href = resolveCategoryHref(chain.slice(0, index + 1));
+                return (
                 <span key={c.id} className="flex items-center gap-x-1">
                   <span className="text-gray-400">{breadcrumbSep}</span>
-                  <a href={`/browse?category=${c.id}`} className="hover:underline hover:text-gray-800 whitespace-nowrap">{c.name}</a>
+                  <Link href={href} className="hover:underline hover:text-gray-800 whitespace-nowrap">{c.name}</Link>
                 </span>
-              ));
+                );
+              });
             })()}
             <span className="text-gray-400">{isArabic ? '‹' : '›'}</span>
             <span className="text-gray-700 truncate max-w-[160px] sm:max-w-xs md:max-w-sm">{safeProductName}</span>
@@ -2900,6 +3109,12 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 <h1 dir={isArabic ? 'rtl' : 'ltr'} className="w-full min-w-0 text-[18px] font-semibold leading-snug text-gray-900 break-words whitespace-normal [overflow-wrap:anywhere]">
                   {safeProductName}
                 </h1>
+                {mobileProductBrand ? (
+                  <p className="text-[13px] leading-snug text-gray-600">
+                    <span className="text-gray-500">{t('product.brandLabel')}: </span>
+                    <span className="font-medium text-gray-800">{mobileProductBrand}</span>
+                  </p>
+                ) : null}
                 {mobileShortDescription ? (
                   <p className="w-full min-w-0 text-[13px] leading-relaxed text-gray-600">
                     {mobileShortDescription}
@@ -2973,21 +3188,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
               ) : null}
 
               <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
-                {mobileProductBrand ? (
-                  <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-3">
-                    <span className="text-[14px] font-semibold text-gray-900">{mobileProductBrand}</span>
-                    {product?.store?.username ? (
-                      <a
-                        href={`/shop/${product.store.username}`}
-                        className="shrink-0 text-[13px] font-semibold text-[#E52721]"
-                      >
-                        {t('product.mobile.shopAllProducts')} ›
-                      </a>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                <div className="grid grid-cols-2 divide-x divide-y divide-gray-100 border-t border-gray-100">
+                <div className="grid grid-cols-2 divide-x divide-y divide-gray-100">
                   <div className="flex items-start gap-2 px-3 py-2.5">
                     <svg className="mt-0.5 h-[18px] w-[18px] shrink-0 text-[#E52721]" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24" aria-hidden="true">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a5 5 0 015 5v2M3 10l4 4m-4-4l4-4" />
@@ -3016,6 +3217,8 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 </div>
               </div>
 
+              {renderFbtSection('mobile')}
+
               <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
                 <ProductDescription
                   product={product}
@@ -3035,6 +3238,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                   reviews={reviewsToUse}
                   loading={loadingReviewsLocal || loadingReviews}
                   compactMobile
+                  sectionId="product-reviews-mobile"
                 />
               </div>
 
@@ -3063,12 +3267,21 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
               <div>
                 {renderSoldByLine('mb-1.5')}
                 <h1 dir={isArabic ? 'rtl' : 'ltr'} className="min-w-0 text-2xl font-medium leading-snug text-gray-900">{safeProductName}</h1>
+                {mobileProductBrand ? (
+                  <p className="mt-1 text-sm leading-snug text-gray-600">
+                    <span className="text-gray-500">{t('product.brandLabel')}: </span>
+                    <span className="font-medium text-gray-800">{mobileProductBrand}</span>
+                  </p>
+                ) : null}
               </div>
 
-              <div className="relative" ref={ratingBreakdownRef}>
+              <div
+                className="relative"
+                ref={ratingBreakdownRef}
+                onMouseEnter={() => reviewCount > 0 && setShowRatingBreakdown(true)}
+                onMouseLeave={() => setShowRatingBreakdown(false)}
+              >
                 <div
-                  onMouseEnter={() => reviewCount > 0 && setShowRatingBreakdown(true)}
-                  onMouseLeave={() => setShowRatingBreakdown(false)}
                   className="flex items-center gap-2 text-sm text-gray-700 border-b border-gray-200 pb-3 cursor-pointer hover:bg-gray-50 px-2 -mx-2 rounded transition"
                 >
                   <span className={`font-semibold ${reviewCount > 0 ? 'text-amber-600' : 'text-gray-500'}`}>
@@ -3096,7 +3309,8 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
                 </div>
 
                 {showRatingBreakdown && reviewCount > 0 && (
-                  <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-4 w-80">
+                  <div className="absolute left-0 top-full z-50 w-80 pt-1">
+                    <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-lg">
                     <div className="mb-4">
                       <div className="flex items-baseline gap-2 mb-2">
                         <span className="flex items-center gap-1">
@@ -3142,11 +3356,12 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
 
                     <button
                       type="button"
-                      onClick={() => document.getElementById('product-reviews')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                      onClick={scrollToProductReviews}
                       className="w-full text-center text-sm text-[#007185] hover:text-blue-600 font-medium py-2 border-t border-gray-100"
                     >
                       {t('product.seeCustomerReviews')}
                     </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -3223,85 +3438,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
               />
             </div>
 
-            {fbtEnabled && fbtProducts.length > 0 && (
-              <div className="pt-4 mt-3 border-t border-gray-200">
-                <div className="rounded-lg border border-gray-200 bg-white p-4 sm:p-5">
-                  <div className="flex items-center justify-between gap-4">
-                    <div>
-                      <h2 className="text-[18px] font-bold text-gray-900">{isArabic ? 'يُشترى معًا غالبًا' : 'Frequently Bought Together'}</h2>
-                      <p className="text-sm text-gray-500 mt-1">
-                        {isArabic
-                          ? `${totalBundleItems} عناصر محددة - الإجمالي ${currency} ${formatDisplay(convertPrice(bundleTotal), language)}`
-                          : `${totalBundleItems} items selected - Total ${currency} ${formatDisplay(convertPrice(bundleTotal), language)}`}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setShowFbtPopup(true)}
-                      className="h-10 px-4 rounded-md border border-gray-300 text-sm font-semibold text-gray-800 hover:bg-gray-50 transition"
-                    >
-                      {isArabic ? 'عرض الكل' : 'View All'}
-                    </button>
-                  </div>
-
-                  <div
-                    ref={fbtScrollRef}
-                    role="region"
-                    aria-label={isArabic ? 'يُشترى معًا غالبًا' : 'Frequently bought together products'}
-                    onPointerDown={handleFbtPointerDown}
-                    className={`mt-4 overflow-x-auto scrollbar-hide overscroll-x-contain select-none ${
-                      fbtIsDragging ? 'cursor-grabbing' : 'cursor-grab'
-                    }`}
-                    style={fbtTrackStyle}
-                  >
-                    <div className="flex items-start gap-3 min-w-max pb-2">
-                      {allFbtCards.map((card, index, arr) => (
-                        <div key={card._id} className="flex items-center gap-3">
-                          <label
-                            onClick={handleFbtCardClick}
-                            className={`relative w-[136px] p-2.5 rounded-md border cursor-pointer transition flex-shrink-0 ${card.checked ? 'bg-white border-gray-300' : 'bg-white border-gray-200 opacity-60'}`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={card.checked}
-                              readOnly={card.isMain}
-                              onChange={card.isMain ? undefined : () => toggleFbtProduct(card._id)}
-                              className="absolute left-2 top-2 h-3.5 w-3.5 rounded accent-blue-600"
-                            />
-                            <div className="h-[82px] rounded bg-gray-50 overflow-hidden flex items-center justify-center mb-2 mt-1">
-                              <div className="relative w-[66px] h-[66px]">
-                                <Image
-                                  src={card.image || 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'}
-                                  alt={card.name}
-                                  fill
-                                  className="object-contain pointer-events-none"
-                                  draggable={false}
-                                />
-                              </div>
-                            </div>
-                            <p className="text-[11px] text-gray-600 line-clamp-2 leading-snug mb-0.5 min-h-[30px]">{card.name}</p>
-                            <p className="text-[13px] font-bold text-gray-900">{currency} {formatDisplay(convertPrice(card.price), language)}</p>
-                          </label>
-                          {index < arr.length - 1 && (
-                            <span className="text-2xl font-light text-gray-400 flex-shrink-0 pointer-events-none">+</span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={handleAddBundleToCart}
-                    disabled={selectedAddonProducts.length === 0}
-                    className="mt-3 w-full h-11 rounded-md bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-bold text-[15px] transition disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isArabic
-                      ? `اشترِ ${totalBundleItems} معًا مقابل ${currency} ${formatDisplay(convertPrice(bundleTotal), language)}`
-                      : `Buy ${totalBundleItems} together for ${currency} ${formatDisplay(convertPrice(bundleTotal), language)}`}
-                  </button>
-                </div>
-              </div>
-            )}
+            {renderFbtSection('desktop')}
           </div>
 
           {/* RIGHT: Product Info (buy box) — desktop/tablet only; mobile uses fixed bar below */}
@@ -3636,6 +3773,7 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
           product={product}
           reviews={reviewsToUse}
           loading={loadingReviewsLocal || loadingReviews}
+          sectionId="product-reviews-desktop"
         />
       </div>
 

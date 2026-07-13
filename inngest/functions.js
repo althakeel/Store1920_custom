@@ -64,6 +64,88 @@ export const deleteCouponOnExpiry = inngest.createFunction(
     }
 )
 
+// Durable automatic EMX fulfillment for newly enrolled COD/verified-paid orders.
+export const autoShipWaslahOrder = inngest.createFunction(
+    {
+        id: 'auto-ship-waslah-order',
+        retries: 5,
+        concurrency: { limit: 1, key: 'event.data.orderId' },
+    },
+    { event: 'app/order.ready-for-waslah' },
+    async ({ event, step }) => step.run('create-emx-shipment-and-awb', async () => {
+        const { processWaslahAutoShipment } = await import('@/lib/waslahAutoShipment');
+        const result = await processWaslahAutoShipment(event.data.orderId, {
+            source: event.data.source || 'inngest',
+        });
+        if (result?.retryable) {
+            throw new Error(result.error || 'Retryable automatic EMX shipment failure');
+        }
+        return result;
+    }),
+)
+
+// Sweep only explicitly enrolled new orders whose first event was missed, a
+// retry became due, or a worker lease expired. The per-order database lease in
+// processWaslahAutoShipment keeps this safe alongside the event-driven worker.
+export const recoverWaslahAutoShipments = inngest.createFunction(
+    {
+        id: 'recover-waslah-auto-shipments',
+        retries: 2,
+        concurrency: { limit: 1 },
+    },
+    { cron: '*/5 * * * *' },
+    async ({ step }) => step.run('recover-due-emx-shipments', async () => {
+        const { processDueWaslahAutoShipments } = await import('@/lib/waslahAutoShipment');
+        return processDueWaslahAutoShipments({ limit: 10 });
+    }),
+)
+
+// Repair the narrow crash window where provider capture and atomic stock/paid
+// state committed, but trusted payment proof was not persisted before the
+// process stopped. Only newly enrolled, active, reservation-backed orders are
+// considered; provider APIs are re-read before proof can be restored.
+export const recoverWaslahPaymentProofs = inngest.createFunction(
+    {
+        id: 'recover-waslah-payment-proofs',
+        retries: 2,
+        concurrency: { limit: 1 },
+    },
+    { cron: '*/10 * * * *' },
+    async ({ step }) => {
+        const storeIds = await step.run('find-payment-proof-gaps', async () => {
+            await connectDB();
+            const Order = (await import('@/models/Order')).default;
+            const since = new Date(Date.now() - (72 * 60 * 60 * 1000));
+            return Order.distinct('storeId', {
+                createdAt: { $gte: since },
+                status: { $in: ['ORDER_PLACED', 'PROCESSING'] },
+                paymentMethod: { $in: ['STRIPE', 'TABBY', 'TAMARA', 'CARD'] },
+                'waslah.autoShipEnrolled': true,
+                fulfillmentStockReservedAt: { $type: 'date' },
+                $or: [
+                    { isPaid: true },
+                    { paymentStatus: { $in: ['PAID', 'CAPTURED', 'COMPLETED', 'SUCCEEDED', 'SETTLED'] } },
+                ],
+                paymentStatus: {
+                    $not: /^(REFUNDED|PARTIALLY_REFUNDED|DISPUTED|CHARGEBACK|VOID|CANCELLED|CANCELED|EXPIRED)$/i,
+                },
+                'paymentVerification.status': {
+                    $not: /^(VERIFIED|REVERSED|REVOKED)$/i,
+                },
+            });
+        });
+
+        const results = [];
+        for (const storeId of storeIds.slice(0, 20)) {
+            results.push(await step.run(`reconcile-payment-proof-${String(storeId)}`, async () => {
+                const { reconcileStoreOrderPayments } = await import('@/lib/orderPaymentReconciliation');
+                return reconcileStoreOrderPayments(String(storeId), { hours: 72, limit: 30 });
+            }));
+        }
+        return { stores: storeIds.length, results };
+    },
+)
+
 
 // Inngest Function to send daily promotional emails
 export const sendDailyPromotionalEmail = inngest.createFunction(

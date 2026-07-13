@@ -16,6 +16,8 @@ export const STORE_ORDER_STATUS_OPTIONS = [
   { value: 'DELIVERED', label: 'Delivered', color: 'bg-green-100 text-green-700' },
   { value: 'CANCELLED', label: 'Cancelled', color: 'bg-red-100 text-red-700' },
   { value: 'PAYMENT_FAILED', label: 'Payment Failed', color: 'bg-orange-100 text-orange-700' },
+  { value: 'RTO', label: 'RTO (Not Collected)', color: 'bg-rose-100 text-rose-800' },
+  { value: 'RETURN', label: 'Return (After Delivery)', color: 'bg-pink-200 text-pink-900' },
   { value: 'RETURNED', label: 'Returned', color: 'bg-indigo-100 text-indigo-700' },
   { value: 'RETURN_INITIATED', label: 'Return Initiated', color: 'bg-pink-100 text-pink-700' },
   { value: 'RETURN_APPROVED', label: 'Return Approved', color: 'bg-pink-100 text-pink-700' },
@@ -42,7 +44,7 @@ const STATUS_GROUPS = [
   },
   {
     label: 'Returns',
-    values: ['RETURN_INITIATED', 'RETURN_APPROVED', 'RETURNED'],
+    values: ['RETURN_INITIATED', 'RETURN_APPROVED', 'RTO', 'RETURN', 'RETURNED'],
   },
   {
     label: 'Issues',

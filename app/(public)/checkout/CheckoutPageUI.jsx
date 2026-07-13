@@ -29,6 +29,7 @@ import Image from "next/image";
 import BnplLogo from "@/components/BnplLogo";
 import { useStorefrontI18n } from "@/lib/useStorefrontI18n";
 import { useStorefrontMarket } from "@/lib/useStorefrontMarket";
+import { isStorefrontWalletEnabled } from "@/lib/storefrontWallet";
 import { trackCustomerEvent, withOrderTrackingFields, getOrCreateAnonymousId, getOrCreateSessionId } from '@/lib/trackingClient';
 import { pushGtmEcommerceEvent } from '@/lib/pushGtmEcommerceEvent';
 import { cartLinesToGtmItems, cartLinesToMetaItems } from '@/lib/gtmEcommerceHelpers';
@@ -93,6 +94,7 @@ export default function CheckoutPage() {
   const dispatch = useDispatch();
   const { t, isArabic } = useStorefrontI18n();
   const { market, convertPrice } = useStorefrontMarket();
+  const storefrontWalletEnabled = isStorefrontWalletEnabled();
   const addressList = useSelector((state) => state.address?.list || []);
   const addressFetchError = useSelector((state) => state.address?.error);
   const { cartItems } = useSelector((state) => state.cart);
@@ -152,6 +154,8 @@ export default function CheckoutPage() {
   const [validationIssues, setValidationIssues] = useState([]);
   const [invalidFieldIds, setInvalidFieldIds] = useState(() => new Set());
   const [checkoutProductsLoaded, setCheckoutProductsLoaded] = useState(false);
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [useWalletBalance, setUseWalletBalance] = useState(true);
   const beginCheckoutTrackedRef = useRef(false);
   const tabbyPublicKey = process.env.NEXT_PUBLIC_TABBY_PUBLIC_KEY || '';
   const tabbyMerchantCode = process.env.NEXT_PUBLIC_TABBY_MERCHANT_CODE || process.env.TABBY_MERCHANT_CODE || 'Store1920';
@@ -310,6 +314,31 @@ export default function CheckoutPage() {
 
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    if (!storefrontWalletEnabled || !user || !getToken) {
+      setWalletBalance(0);
+      return undefined;
+    }
+
+    let ignore = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        const res = await fetch('/api/wallet', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (!ignore && res.ok) {
+          setWalletBalance(Number(data.rupeesValue ?? data.coins ?? 0));
+        }
+      } catch {
+        if (!ignore) setWalletBalance(0);
+      }
+    })();
+
+    return () => { ignore = true; };
+  }, [user, getToken, storefrontWalletEnabled]);
 
   // Fetch only the products that are in the cart (fast targeted batch fetch)
   useEffect(() => {
@@ -726,7 +755,11 @@ export default function CheckoutPage() {
   const totalAfterCoupon = Math.max(0, subtotal - couponDiscount);
   
   const total = totalAfterCoupon + effectiveShipping;
-  const totalAfterWallet = total;
+  const walletRedeemAmount = storefrontWalletEnabled && user && useWalletBalance && walletBalance > 0
+    ? Math.min(Math.floor(walletBalance), Math.floor(total))
+    : 0;
+  const totalAfterWallet = Math.max(0, Number((total - walletRedeemAmount).toFixed(2)));
+  const isFullWalletPayment = user && walletRedeemAmount > 0 && totalAfterWallet === 0;
   const cartItemCount = cartArray.reduce(
     (sum, item) => sum + Number(item._displayQuantity ?? item.quantity ?? 0),
     0,
@@ -738,7 +771,7 @@ export default function CheckoutPage() {
     || getDefaultShippingOption(shippingSetting, form.state);
   const summaryDeliveryDays = formatDeliveryDays(selectedShippingOption?.estimatedDays, '2-5');
   const summaryDeliveryLabel = selectedShippingOption?.name || t('checkout.standardDelivery');
-  const totalSavings = couponDiscount + shippingDiscount;
+  const totalSavings = couponDiscount + shippingDiscount + walletRedeemAmount;
   const needsPaymentSelection = totalAfterWallet > 0;
   const paymentMethodSummary = (() => {
     if (form.payment === 'cod') return t('checkout.cashOnDelivery');
@@ -759,6 +792,7 @@ export default function CheckoutPage() {
     const variantOptions = typeof value === 'object' ? value?.variantOptions : undefined;
     const offerToken = typeof value === 'object' ? value?.offerToken : undefined;
     const freeGift = typeof value === 'object' ? value?.freeGift : undefined;
+    const fbtMainProductId = typeof value === 'object' ? value?.fbtBundle?.mainProductId : undefined;
     const bundleTier = item._bundleTier ?? variantOptions?.bundleQty;
     return {
       id: item._productId || item._id,
@@ -771,8 +805,15 @@ export default function CheckoutPage() {
       } : {}),
       ...(offerToken ? { offerToken } : {}),
       ...(freeGift ? { freeGift } : {}),
+      ...(fbtMainProductId ? { fbtMainProductId: String(fbtMainProductId) } : {}),
     };
   }).filter((item) => item.quantity > 0 && item.id);
+  const applyWalletToPayload = (payload) => {
+    if (user && walletRedeemAmount > 0) {
+      payload.coinsToRedeem = walletRedeemAmount;
+    }
+    return payload;
+  };
   const isCODDisabledForOrder =
     hasPersonalizedOfferItem ||
     shippingSetting?.enableCOD === false ||
@@ -782,10 +823,12 @@ export default function CheckoutPage() {
   const isTamaraOverLimit = isPaymentMethodOverLimit(shippingSetting, 'tamara', totalAfterWallet);
   const isPaymentMissing = needsPaymentSelection && !form.payment;
   const isInvalidPaymentSelection =
-    (form.payment === 'cod' && isCODDisabledForOrder)
-    || (form.payment === 'card' && isCardOverLimit)
-    || (form.payment === 'tabby' && isTabbyOverLimit)
-    || (form.payment === 'tamara' && isTamaraOverLimit);
+    form.payment !== 'wallet' && (
+      (form.payment === 'cod' && isCODDisabledForOrder)
+      || (form.payment === 'card' && isCardOverLimit)
+      || (form.payment === 'tabby' && isTabbyOverLimit)
+      || (form.payment === 'tamara' && isTamaraOverLimit)
+    );
   const isPlaceOrderDisabled = placingOrder || payingNow;
   const hasCheckoutFormBlockers = isPaymentMissing || isInvalidPaymentSelection;
   const isCheckoutSubmitDisabled = isPlaceOrderDisabled;
@@ -889,7 +932,20 @@ export default function CheckoutPage() {
   }, [hasPersonalizedOfferItem, form.payment]);
 
   useEffect(() => {
-    if (!form.payment) return;
+    if (!user || walletBalance <= 0) return;
+    if (isFullWalletPayment) {
+      if (form.payment !== 'wallet') {
+        setForm((f) => ({ ...f, payment: 'wallet' }));
+      }
+      return;
+    }
+    if (form.payment === 'wallet') {
+      setForm((f) => ({ ...f, payment: 'card' }));
+    }
+  }, [isFullWalletPayment, user, walletBalance, form.payment]);
+
+  useEffect(() => {
+    if (!form.payment || form.payment === 'wallet') return;
     const paymentOverLimit =
       (form.payment === 'card' && isCardOverLimit)
       || (form.payment === 'tabby' && isTabbyOverLimit)
@@ -1522,12 +1578,15 @@ export default function CheckoutPage() {
       setForm((f) => ({ ...f, payment: paymentOverride }));
     }
 
-    const paymentMissing = needsPaymentSelection && !payment;
-    const invalidCodSelection = payment === 'cod' && isCODDisabledForOrder;
+    const effectivePayment = isFullWalletPayment ? 'wallet' : payment;
+    const paymentMissing = needsPaymentSelection && !effectivePayment;
+    const invalidCodSelection = effectivePayment === 'cod' && isCODDisabledForOrder;
     const invalidOnlinePaymentSelection =
-      (payment === 'card' && isCardOverLimit)
-      || (payment === 'tabby' && isTabbyOverLimit)
-      || (payment === 'tamara' && isTamaraOverLimit);
+      effectivePayment !== 'wallet' && (
+        (effectivePayment === 'card' && isCardOverLimit)
+        || (effectivePayment === 'tabby' && isTabbyOverLimit)
+        || (effectivePayment === 'tamara' && isTamaraOverLimit)
+      );
 
     if (paymentMissing) {
       setInvalidFieldIds(new Set(['checkout-payment']));
@@ -1539,7 +1598,7 @@ export default function CheckoutPage() {
     if (invalidCodSelection || invalidOnlinePaymentSelection) {
       const limitMessage = getPaymentMethodLimitError(
         shippingSetting,
-        payment,
+        effectivePayment,
         totalAfterWallet,
         { hasPersonalizedOfferItem },
       );
@@ -1627,7 +1686,7 @@ export default function CheckoutPage() {
     setPlacingOrder(true);
     
     // For card payment, use Stripe Checkout
-    if (payment === 'card') {
+    if (effectivePayment === 'card') {
       if (getPhoneInputError(resolvedPhone, phoneCodeForValidation)) {
         setFormError(getPhoneInputError(resolvedPhone, phoneCodeForValidation));
         setPlacingOrder(false);
@@ -1683,7 +1742,7 @@ export default function CheckoutPage() {
           };
         }
 
-        await handleStripePayment(payload);
+        await handleStripePayment(applyWalletToPayload(payload));
       } catch (error) {
         setFormError(error.message || "Payment failed");
         setPlacingOrder(false);
@@ -1692,7 +1751,7 @@ export default function CheckoutPage() {
     }
 
     // Tamara BNPL payment
-    if (payment === 'tamara') {
+    if (effectivePayment === 'tamara') {
       try {
         const itemsForTamara = buildCheckoutItems();
 
@@ -1730,7 +1789,7 @@ export default function CheckoutPage() {
           };
         }
 
-        await handleTamaraPayment(payload);
+        await handleTamaraPayment(applyWalletToPayload(payload));
       } catch (error) {
         setFormError(error.message || "Tamara payment failed");
         setPlacingOrder(false);
@@ -1739,7 +1798,7 @@ export default function CheckoutPage() {
     }
 
     // Tabby BNPL payment
-    if (payment === 'tabby') {
+    if (effectivePayment === 'tabby') {
       try {
         const itemsForTabby = buildCheckoutItems();
 
@@ -1777,7 +1836,7 @@ export default function CheckoutPage() {
           };
         }
 
-        await handleTabbyPayment(payload);
+        await handleTabbyPayment(applyWalletToPayload(payload));
       } catch (error) {
         setFormError(error.message || 'Tabby payment failed');
         setPlacingOrder(false);
@@ -1799,7 +1858,7 @@ export default function CheckoutPage() {
       // Orders can work without addressId
       
       // Validate payment method for remaining balance
-      if (!payment) {
+      if (!effectivePayment) {
         setFormError("Please select a payment method.");
         setPlacingOrder(false);
         return;
@@ -1808,7 +1867,7 @@ export default function CheckoutPage() {
       // Validate payment method limits
       const paymentLimitError = getPaymentMethodLimitError(
         shippingSetting,
-        payment,
+        effectivePayment,
         totalAfterWallet,
         { hasPersonalizedOfferItem },
       );
@@ -1819,7 +1878,7 @@ export default function CheckoutPage() {
       }
 
       // Validate COD limit
-      if (payment === 'cod') {
+      if (effectivePayment === 'cod') {
         if (hasPersonalizedOfferItem) {
           setFormError('COD is not available for personalized offer products. Please use online payment.');
           setPlacingOrder(false);
@@ -1854,7 +1913,11 @@ export default function CheckoutPage() {
       // Build items directly from cartItems to preserve variantOptions
       const itemsFromState = buildCheckoutItems();
       
-      const finalPaymentMethod = payment === 'cod' ? 'COD' : payment.toUpperCase();
+      const finalPaymentMethod = effectivePayment === 'cod'
+        ? 'COD'
+        : effectivePayment === 'wallet'
+          ? 'WALLET'
+          : effectivePayment.toUpperCase();
 
       if (user) {
         console.log('Building logged-in user payload...');
@@ -1935,6 +1998,8 @@ export default function CheckoutPage() {
       if (recoveryToken) {
         payload.recoveryToken = recoveryToken;
       }
+
+      applyWalletToPayload(payload);
       
       console.log('Submitting order:', payload);
       
@@ -2004,7 +2069,7 @@ export default function CheckoutPage() {
       if (createdOrderId) {
         setPlacingOrder(false);
 
-        if (payment === 'cod') {
+        if (effectivePayment === 'cod' && data.autoEmxShipping !== true) {
           const orderTotal = Number(data.total ?? data.order?.total ?? totalAfterWallet ?? 0);
           setUpsellOrderId(createdOrderId);
           setUpsellOrderTotal(orderTotal);
@@ -2012,7 +2077,14 @@ export default function CheckoutPage() {
           setPlacingOrder(false);
           // Show modal before clearing cart so empty-cart redirect does not fire first.
           queueMicrotask(() => dispatch(clearCart()));
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new Event('walletUpdated'));
+          }
           return;
+        }
+
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('walletUpdated'));
         }
 
         setNavigatingToSuccess(true);
@@ -2049,11 +2121,15 @@ export default function CheckoutPage() {
 
     try {
       setPayingNow(true);
+      const token = await getToken();
       // Create a Stripe Checkout session for the existing COD order (5% prepaid
       // discount is applied only after Stripe confirms payment).
       const res = await fetch('/api/orders/prepaid-upsell', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ orderId: upsellOrderId }),
       });
       const data = await res.json().catch(() => ({}));
@@ -2882,6 +2958,36 @@ export default function CheckoutPage() {
               <h2 className="text-xl font-bold mb-3 mt-4 text-gray-900">{t('checkout.paymentMethods')}</h2>
               {fieldRequiredHint('checkout-payment')}
 
+              {storefrontWalletEnabled && user && walletBalance > 0 ? (
+                <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50/70 p-4">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={useWalletBalance}
+                      onChange={(e) => setUseWalletBalance(e.target.checked)}
+                      className="mt-1 h-4 w-4 accent-amber-600"
+                    />
+                    <div className="min-w-0">
+                      <span className="font-semibold text-gray-900">{t('checkout.useWalletBalance')}</span>
+                      <p className="mt-1 text-sm text-amber-900">
+                        {t('checkout.walletAvailable', { amount: formatMoney(walletBalance) })}
+                      </p>
+                      {useWalletBalance && walletRedeemAmount > 0 ? (
+                        <p className="mt-1 text-sm font-medium text-amber-800">
+                          -{formatMoney(walletRedeemAmount)} {t('checkout.walletApplied')}
+                        </p>
+                      ) : null}
+                    </div>
+                  </label>
+                </div>
+              ) : null}
+
+              {storefrontWalletEnabled && isFullWalletPayment ? (
+                <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+                  <p className="font-semibold text-emerald-900">{t('checkout.payWithWallet')}</p>
+                  <p className="mt-1 text-sm text-emerald-800">{t('checkout.walletCoversOrder')}</p>
+                </div>
+              ) : (
               <div id="checkout-payment" className={`flex flex-col gap-2 mb-4 ${fieldHasError('checkout-payment') ? 'rounded-2xl ring-2 ring-red-100' : ''}`}>
                 {/* Credit Card Option */}
                 {!isCardOverLimit ? (
@@ -2918,7 +3024,7 @@ export default function CheckoutPage() {
                 {/* Cash on Delivery Option */}
                 {!hasPersonalizedOfferItem && (() => {
                   const maxCODAmount = shippingSetting?.maxCODAmount || 0;
-                  const remainingAmount = total;
+                  const remainingAmount = totalAfterWallet;
                   const isCODDisabled = shippingSetting?.enableCOD === false ||
                     (maxCODAmount > 0 && remainingAmount > maxCODAmount);
 
@@ -3038,6 +3144,7 @@ export default function CheckoutPage() {
                   );
                 })() : null}
               </div>
+              )}
 
               {hasPersonalizedOfferItem && (
                 <div className="mb-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
@@ -3157,6 +3264,13 @@ export default function CheckoutPage() {
                 <span className="font-semibold">-{formatMoney(shippingDiscount)}</span>
               </div>
             )}
+
+            {storefrontWalletEnabled && walletRedeemAmount > 0 && (
+              <div className="flex items-center justify-between text-sm text-amber-800">
+                <span>{t('checkout.walletApplied')}</span>
+                <span className="font-semibold">-{formatMoney(walletRedeemAmount)}</span>
+              </div>
+            )}
           </div>
 
           {appliedCoupon && (couponDiscount > 0 || isFreeShippingCouponApplied) && (
@@ -3201,6 +3315,8 @@ export default function CheckoutPage() {
                   <span className="text-slate-800">{renderPayByMethodLabel('Cod')}</span>
                 ) : form.payment === 'card' ? (
                   <span className="text-slate-800">{renderPayByMethodLabel('Card')}</span>
+                ) : form.payment === 'wallet' ? (
+                  <span className="text-slate-800">{renderPayByMethodLabel('Wallet')}</span>
                 ) : (
                   <span className="font-medium text-slate-800">{paymentMethodSummary}</span>
                 )}

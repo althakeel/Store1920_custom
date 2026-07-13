@@ -3,93 +3,129 @@ import dbConnect from '@/lib/mongodb';
 import Order from '@/models/Order';
 import { getCompleteRazorpayStatus } from '@/lib/razorpay';
 import { getAuth } from '@/lib/firebase-admin';
+import { recordTrustedOrderPayment } from '@/lib/orderPaymentVerification';
+import { markOrderPaymentSucceeded } from '@/lib/deferredOrderFlow';
+import {
+  acquireCapturedRazorpayOrderGroup,
+  completeRazorpayOrderGroupClaim,
+  failRazorpayOrderGroupClaim,
+} from '@/lib/razorpayPaymentOwnership';
 
 /**
- * Check Razorpay payment status and auto-update order if settled
+ * Check Razorpay payment status and repair a paid order after provider capture.
  * GET /api/orders/check-razorpay-settlement?orderId=xxx
  */
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
     const orderId = searchParams.get('orderId');
-
     if (!orderId) {
-      return NextResponse.json({
-        error: 'Missing orderId parameter'
-      }, { status: 400 });
+      return NextResponse.json({ error: 'Missing orderId parameter' }, { status: 400 });
     }
 
-    // Authenticate user
     const authHeader = request.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json({
-        error: 'Unauthorized: Missing authorization header'
-      }, { status: 401 });
+    if (!authHeader?.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Unauthorized: Missing authorization header' }, { status: 401 });
     }
 
-    const idToken = authHeader.split(' ')[1];
     let decodedToken;
     try {
-      decodedToken = await getAuth().verifyIdToken(idToken);
-    } catch (err) {
+      decodedToken = await getAuth().verifyIdToken(authHeader.slice(7));
+    } catch {
       return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 });
     }
 
     await dbConnect();
-
-    // Fetch order
     const order = await Order.findById(orderId);
     if (!order) {
-      return NextResponse.json({
-        error: 'Order not found'
-      }, { status: 404 });
+      return NextResponse.json({ error: 'Order not found' }, { status: 404 });
     }
 
-    // Check if order has Razorpay payment method and payment ID
+    const ownsOrder = String(order.userId || '') === String(decodedToken.uid);
+    if (!ownsOrder) {
+      return NextResponse.json(
+        { error: 'Unauthorized - order does not belong to you' },
+        { status: 403 },
+      );
+    }
+
     if (!order.razorpayPaymentId) {
       return NextResponse.json({
         error: 'This order does not have a Razorpay payment ID',
-        paymentMethod: order.paymentMethod
+        paymentMethod: order.paymentMethod,
       }, { status: 400 });
     }
 
-    // Check Razorpay payment status
     const razorpayStatus = await getCompleteRazorpayStatus(order.razorpayPaymentId);
-
-    if (!razorpayStatus.payment.success) {
+    if (razorpayStatus?.payment?.success !== true) {
       return NextResponse.json({
         error: 'Failed to fetch Razorpay payment status',
-        details: razorpayStatus.payment.error
-      }, { status: 500 });
+        details: razorpayStatus?.payment?.error,
+      }, { status: 502 });
     }
 
-    // Update order if payment is captured
-    if (razorpayStatus.is_payment_captured && !order.isPaid) {
-      console.log(`[Razorpay] Auto-marking order ${orderId} as PAID - payment captured`);
-      order.isPaid = true;
-      order.paymentStatus = 'CAPTURED';
-      
-      // Store settlement info
-      order.razorpaySettlement = {
-        paymentId: order.razorpayPaymentId,
-        status: razorpayStatus.settlement_status,
-        captured_at: new Date(razorpayStatus.payment.created_at * 1000),
-        amount: razorpayStatus.payment.amount,
-        fee: razorpayStatus.payment.fee || 0,
-        is_transferred: razorpayStatus.is_transferred_to_bank,
-        transferred_at: razorpayStatus.settlement?.transferred_at || null
-      };
-      
-      await order.save();
+    const group = await acquireCapturedRazorpayOrderGroup({
+      paymentId: order.razorpayPaymentId,
+      providerStatus: razorpayStatus,
+      targetOrderId: orderId,
+      allowClaimCreation: true,
+    });
+
+    try {
+      for (const groupOrder of group.orders) {
+        const groupOrderId = String(groupOrder._id);
+        const paidOrder = await markOrderPaymentSucceeded(groupOrderId, { paymentStatus: 'PAID' });
+        if (!paidOrder) {
+          throw new Error(`Razorpay order ${groupOrderId} is no longer payable`);
+        }
+
+        await Order.findByIdAndUpdate(groupOrderId, {
+          $set: {
+            razorpaySettlement: {
+              paymentId: order.razorpayPaymentId,
+              status: razorpayStatus.settlement_status,
+              captured_at: new Date(Number(razorpayStatus.payment.created_at || 0) * 1000),
+              amount: Math.round(Number(groupOrder.total || 0) * 100),
+              fee: 0,
+              is_transferred: razorpayStatus.is_transferred_to_bank,
+              transferred_at: razorpayStatus.settlement?.transferred_at || null,
+            },
+          },
+        });
+
+        const verification = groupOrder.paymentVerification || {};
+        const hasMatchingProof = String(verification.status || '').toUpperCase() === 'VERIFIED'
+          && String(verification.provider || '').toUpperCase() === 'RAZORPAY'
+          && String(verification.providerReference || '') === String(order.razorpayPaymentId);
+        if (!hasMatchingProof) {
+          const proof = await recordTrustedOrderPayment(groupOrderId, {
+            provider: 'RAZORPAY',
+            providerReference: order.razorpayPaymentId,
+            providerEventId: group.providerPayment.providerOrderId,
+            source: 'razorpay_server_reconciliation',
+            verifiedAmount: groupOrder.total,
+            currency: group.providerPayment.currency,
+          });
+          if (groupOrder.waslah?.autoShipEnrolled === true && proof?.verified !== true) {
+            throw new Error(`Could not persist trusted Razorpay proof: ${proof?.reason || 'unknown'}`);
+          }
+        }
+      }
+      await completeRazorpayOrderGroupClaim(order.razorpayPaymentId, group.orderIds);
+    } catch (error) {
+      await failRazorpayOrderGroupClaim(order.razorpayPaymentId, error).catch(() => {});
+      throw error;
     }
 
+    const refreshedOrder = await Order.findById(orderId).lean();
     return NextResponse.json({
       success: true,
       order: {
-        _id: order._id,
-        isPaid: order.isPaid,
-        paymentStatus: order.paymentStatus,
-        razorpayPaymentId: order.razorpayPaymentId
+        _id: refreshedOrder?._id || order._id,
+        isPaid: refreshedOrder?.isPaid ?? order.isPaid,
+        paymentStatus: refreshedOrder?.paymentStatus || order.paymentStatus,
+        razorpayPaymentId: order.razorpayPaymentId,
+        orderIds: group.orderIds,
       },
       razorpayStatus: {
         payment_captured: razorpayStatus.is_payment_captured,
@@ -99,19 +135,18 @@ export async function GET(request) {
         currency: razorpayStatus.payment.currency,
         fee: razorpayStatus.payment.fee,
         created_at: razorpayStatus.payment.created_at,
-        transfer_details: razorpayStatus.settlement.is_transferred ? {
+        transfer_details: razorpayStatus.settlement?.is_transferred ? {
           transfer_id: razorpayStatus.settlement.transfer_id,
           transferred_at: razorpayStatus.settlement.transferred_at,
-          amount_transferred: razorpayStatus.settlement.amount_transferred
-        } : null
-      }
+          amount_transferred: razorpayStatus.settlement.amount_transferred,
+        } : null,
+      },
     });
-
   } catch (error) {
     console.error('[check-razorpay-settlement API]', error);
     return NextResponse.json({
-      error: 'Internal server error',
-      message: error.message
-    }, { status: 500 });
+      error: error?.message || 'Internal server error',
+      code: error?.code,
+    }, { status: Number(error?.statusCode) || 500 });
   }
 }

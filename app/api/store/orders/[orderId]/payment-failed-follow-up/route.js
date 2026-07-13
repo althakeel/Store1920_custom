@@ -95,6 +95,19 @@ export async function POST(request, { params }) {
       discountType,
     });
 
+    if (
+      existingOrder.waslah?.autoShipEnrolled === true
+      && (
+        paymentMethodChanged
+        || Math.abs(Number(pricing.hasDiscount ? pricing.newTotal : pricing.baseTotal) - Number(existingOrder.total || 0)) > 0.01
+      )
+    ) {
+      return NextResponse.json({
+        error: 'Payment method and total are locked for orders enrolled in automatic EMX fulfillment.',
+        code: 'AUTO_EMX_FULFILLMENT_LOCKED',
+      }, { status: 409 });
+    }
+
     const followUp = {
       reason: reason.slice(0, 2000),
       discountAmount: discountAmount != null ? Math.round(discountAmount * 100) / 100 : null,

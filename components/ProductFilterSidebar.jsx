@@ -89,10 +89,24 @@ export default function ProductFilterSidebar({
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      onFilterChange({ ...filters, sortBy });
+      const minRaw = filters.priceRange?.min;
+      const maxRaw = filters.priceRange?.max;
+      const min = minRaw === '' || minRaw == null ? 0 : Number(minRaw) || 0;
+      const max = maxRaw === '' || maxRaw == null
+        ? (availableFilters.maxPrice || 100000)
+        : Number(maxRaw) || 0;
+
+      onFilterChange({
+        ...filters,
+        priceRange: {
+          min: Math.min(min, max),
+          max: Math.max(min, max || availableFilters.maxPrice || 100000),
+        },
+        sortBy,
+      });
     }, 300);
     return () => clearTimeout(timer);
-  }, [filters, sortBy, onFilterChange]);
+  }, [filters, sortBy, onFilterChange, availableFilters.maxPrice]);
 
   const toggleSection = (section) => {
     setExpandedSections((prev) => ({
@@ -111,13 +125,32 @@ export default function ProductFilterSidebar({
   };
 
   const handlePriceChange = (type, value) => {
+    // Allow clearing the field while typing so a leading "0" can be removed.
+    // Empty input is treated as null in state and coerced when applying filters.
+    const nextValue = value === '' ? '' : Math.max(0, Number.parseInt(value, 10) || 0);
     setFilters((prev) => ({
       ...prev,
       priceRange: {
         ...prev.priceRange,
-        [type]: parseInt(value, 10) || 0,
+        [type]: nextValue,
       },
     }));
+  };
+
+  const handlePriceBlur = (type) => {
+    setFilters((prev) => {
+      const current = prev.priceRange?.[type];
+      if (current !== '' && current != null) return prev;
+
+      const fallback = type === 'min' ? 0 : (availableFilters.maxPrice || 100000);
+      return {
+        ...prev,
+        priceRange: {
+          ...prev.priceRange,
+          [type]: fallback,
+        },
+      };
+    });
   };
 
   const handleRatingChange = (rating) => {
@@ -319,17 +352,23 @@ export default function ProductFilterSidebar({
               <div className={`flex items-center gap-3 ${isArabic ? 'flex-row-reverse' : ''}`}>
                 <input
                   type="number"
+                  inputMode="numeric"
+                  min="0"
                   placeholder={t('category.min')}
-                  value={filters.priceRange.min}
+                  value={filters.priceRange.min === '' || filters.priceRange.min == null ? '' : filters.priceRange.min}
                   onChange={(e) => handlePriceChange('min', e.target.value)}
+                  onBlur={() => handlePriceBlur('min')}
                   className={`w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 ${isArabic ? 'text-right' : ''}`}
                 />
                 <span className="text-gray-500 text-sm">{t('category.to')}</span>
                 <input
                   type="number"
+                  inputMode="numeric"
+                  min="0"
                   placeholder={t('category.max')}
-                  value={filters.priceRange.max}
+                  value={filters.priceRange.max === '' || filters.priceRange.max == null ? '' : filters.priceRange.max}
                   onChange={(e) => handlePriceChange('max', e.target.value)}
+                  onBlur={() => handlePriceBlur('max')}
                   className={`w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 ${isArabic ? 'text-right' : ''}`}
                 />
               </div>

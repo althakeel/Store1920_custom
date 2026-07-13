@@ -70,6 +70,11 @@ export default function CustomersPage() {
     const [viewMode, setViewMode] = useState('all') // 'all' or 'registered'
     const [exporting, setExporting] = useState(false)
 
+    const formatWalletBalance = (amount) => {
+        const value = Number(amount || 0)
+        return `${currency}${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    }
+
     const fetchCustomers = useCallback(async (page = 1, { initial = false } = {}) => {
         try {
             let token = await getToken(false)
@@ -102,7 +107,9 @@ export default function CustomersPage() {
         }
     }, [debouncedSearch, getToken, viewMode])
 
-    const fetchCustomerDetails = async (customerId) => {
+    const fetchCustomerDetails = async (customer) => {
+        const customerId = customer?._id || customer?.id
+        if (!customerId) return
         setDetailsLoading(true)
         try {
             const token = await getToken()
@@ -110,6 +117,30 @@ export default function CustomersPage() {
                 headers: { Authorization: `Bearer ${token}` }
             })
             setCustomerDetails(data.customer)
+            if (data.customer?._id) {
+                setSelectedCustomer((current) => (
+                    current && String(current._id || current.id) === String(customerId)
+                        ? {
+                            ...current,
+                            ...data.customer,
+                            id: data.customer._id,
+                            isGuest: Boolean(data.customer.isGuest),
+                            walletBalance: data.customer.walletBalance,
+                        }
+                        : current
+                ))
+                setCustomers((prev) => prev.map((entry) => (
+                    String(entry._id || entry.id) === String(customerId)
+                        ? {
+                            ...entry,
+                            ...data.customer,
+                            id: data.customer._id,
+                            isGuest: Boolean(data.customer.isGuest),
+                            walletBalance: data.customer.walletBalance,
+                        }
+                        : entry
+                )))
+            }
         } catch (error) {
             toast.error(error?.response?.data?.error || error.message)
         }
@@ -177,7 +208,7 @@ export default function CustomersPage() {
     const handleCustomerClick = (customer) => {
         setSelectedCustomer(customer)
         setWalletAmount('')
-        fetchCustomerDetails(customer._id || customer.id)
+        fetchCustomerDetails(customer)
     }
 
     const closeDetails = () => {
@@ -397,7 +428,9 @@ export default function CustomersPage() {
                                 <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3 col-span-2">
                                     <div className="flex items-center justify-between">
                                         <p className="text-xs font-medium text-purple-900">Wallet Balance</p>
-                                        <span className="text-xs text-purple-700">{customer.isGuest ? 'Guest' : `${customer.walletBalance || 0} wallet`}</span>
+                                        <span className="text-xs font-semibold text-purple-700">
+                                            {customer.isGuest ? 'Guest' : formatWalletBalance(customer.walletBalance)}
+                                        </span>
                                     </div>
                                 </div>
                             </div>
@@ -582,7 +615,7 @@ export default function CustomersPage() {
                                             <div className="flex items-center justify-between mb-2">
                                                 <p className="text-sm text-purple-700 font-semibold">Wallet Balance</p>
                                                 <span className="text-purple-900 font-bold text-lg">
-                                                    {customerDetails.isGuest ? 'Guest' : `${customerDetails.walletBalance || 0} wallet`}
+                                                    {customerDetails.isGuest ? 'Guest' : formatWalletBalance(customerDetails.walletBalance)}
                                                 </span>
                                             </div>
                                             {!customerDetails.isGuest && (

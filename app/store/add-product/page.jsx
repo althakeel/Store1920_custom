@@ -29,6 +29,7 @@ import { compressImageForUpload, getUploadErrorMessage } from '@/lib/compressIma
 import { uploadStoreImage } from '@/lib/uploadStoreImage';
 import { sanitizeRichTextMedia } from '@/lib/sanitizeRichTextMedia';
 import { getVariantCardLabel, formatMatrixPackSizeLabel } from '@/lib/productVariantOptions';
+import { sanitizeCategoryIdsForSave } from '@/lib/productCategoryRefs';
 
 const VARIANT_MATRIX_SELECTION_FIELDS = ['title', 'optionLabel', 'option', 'color', 'size'];
 const getVariantMatrixKey = (options = {}) =>
@@ -147,6 +148,15 @@ const toArabicPriceDisplay = (amount) => {
         alreadyConverted: true,
     });
 };
+
+const stripBundleQtyFromVariants = (rows = []) => (
+    (Array.isArray(rows) ? rows : []).map((row) => {
+        const options = { ...(row?.options || {}) };
+        delete options.bundleQty;
+        delete options.tag;
+        return { ...row, options };
+    })
+);
 
 // Custom Video Extension for Tiptap
 const Video = Node.create({
@@ -921,13 +931,13 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
             
             // Check if product has categories array
             if (product.categories && Array.isArray(product.categories) && product.categories.length > 0) {
-                categoriesToSet = dedupeCategoryIds(product.categories)
-            } 
+                categoriesToSet = sanitizeCategoryIdsForSave(product.categories)
+            }
             // Fallback to single category
             else if (product.category) {
                 const catId = typeof product.category === 'object' ? product.category._id : product.category
                 if (catId) {
-                    categoriesToSet = dedupeCategoryIds([catId])
+                    categoriesToSet = sanitizeCategoryIdsForSave([catId])
                 }
             }
             
@@ -1037,6 +1047,12 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 setVariantBundleMode('variants')
                 setBulkOptions([])
                 setMatrixCells({})
+                // If this product was previously matrix, strip pack Qty so the editor
+                // and next save stay on "Product variants only".
+                const cleaned = stripBundleQtyFromVariants(pv).filter((v) => (
+                    VARIANT_MATRIX_SELECTION_FIELDS.some((f) => String(v?.options?.[f] || '').trim())
+                ))
+                setVariants(cleaned.length ? cleaned : stripBundleQtyFromVariants(pv))
             } else {
                 setBulkEnabled(false)
                 setHasVariants(false)
@@ -1771,6 +1787,17 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
         if (mode === 'bundles' || mode === 'matrix') {
             seedBulkOptionsIfEmpty(mode, mode === 'matrix')
         }
+        if (mode === 'variants' || mode === 'none') {
+            // Leaving pack/matrix mode must not keep pack rows in memory — otherwise
+            // a later refresh re-infers "Variants + bundle packs" from leftover data.
+            setBulkOptions([])
+            setMatrixCells({})
+            if (mode === 'variants') {
+                setVariants((prev) => stripBundleQtyFromVariants(prev))
+            } else {
+                setVariants([])
+            }
+        }
     }
 
     const onSubmitHandler = async (e) => {
@@ -1787,19 +1814,17 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 return toast.error('Product ID missing. Close the editor and try again.')
             }
 
-            if (bulkEnabled) {
-                if (hasVariants) {
-                    // Matrix mode stock is validated after expanding rows below.
-                } else {
-                    const validRows = bulkOptions.filter((b) => Number(b.qty) > 0 && Number(b.price) > 0)
-                    if (validRows.length === 0) {
-                        return toast.error('Bundle rows need a Qty and Sale (AED) greater than 0. Rows with 0.00 are not saved.')
-                    }
-                    const inStockRows = validRows.filter((b) => Number(b.stock) > 0)
-                    if (inStockRows.length === 0) {
-                        return toast.error('Set Stock greater than 0 on at least one bundle row so customers can buy it.')
-                    }
+            if (variantBundleMode === 'bundles') {
+                const validRows = bulkOptions.filter((b) => Number(b.qty) > 0 && Number(b.price) > 0)
+                if (validRows.length === 0) {
+                    return toast.error('Bundle rows need a Qty and Sale (AED) greater than 0. Rows with 0.00 are not saved.')
                 }
+                const inStockRows = validRows.filter((b) => Number(b.stock) > 0)
+                if (inStockRows.length === 0) {
+                    return toast.error('Set Stock greater than 0 on at least one bundle row so customers can buy it.')
+                }
+            } else if (variantBundleMode === 'matrix') {
+                // Matrix mode stock is validated after expanding rows below.
             }
 
             setLoading(true)
@@ -1843,13 +1868,19 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
             const description = await sanitizeRichTextMedia(productInfo.description, uploadEmbedded)
             const descriptionAr = await sanitizeRichTextMedia(productInfo.descriptionAr, uploadEmbedded)
 
-            let variantsToSend = hasVariants
+            // Pricing mode radio is the source of truth — do not re-infer from leftover
+            // bulkOptions / bundleQty that may still be in state after switching modes.
+            const pricingMode = variantBundleMode
+            const wantsVariants = pricingMode === 'variants' || pricingMode === 'matrix'
+            const wantsBulk = pricingMode === 'bundles' || pricingMode === 'matrix'
+
+            let variantsToSend = wantsVariants
                 ? variants.map((variant) => ({
                     ...variant,
                     options: resolveVariantImageOptions(variant.options),
                 }))
-                : variants
-            let hasVariantsFlag = hasVariants
+                : []
+            let hasVariantsFlag = wantsVariants
 
             // Base variant rows carry a color/size/option selection and are NOT
             // bundle rows themselves (bundle rows have bundleQty and live in bulkOptions).
@@ -1859,7 +1890,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 if (isBundleRow) return false
                 return VARIANT_MATRIX_SELECTION_FIELDS.some((f) => String(opts[f] || '').trim())
             })
-            const isMatrixMode = hasVariants && bulkEnabled && baseVariantRows.length > 0
+            const isMatrixMode = pricingMode === 'matrix' && baseVariantRows.length > 0
 
             if (isMatrixMode) {
                 // Matrix: every base variant × every bundle tier is its own priced variant.
@@ -1906,7 +1937,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 }
                 variantsToSend = expanded
                 hasVariantsFlag = expanded.length > 0
-            } else if (bulkEnabled) {
+            } else if (pricingMode === 'bundles' || (wantsBulk && !wantsVariants)) {
                 variantsToSend = bulkOptions
                     .filter(b => Number(b.qty) > 0 && Number(b.price) > 0)
                     .map(b => ({
@@ -1922,7 +1953,30 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                         stock: Number(b.stock || 0),
                     }))
                 hasVariantsFlag = variantsToSend.length > 0
+            } else if (pricingMode === 'variants') {
+                // Persist color/size rows only — strip any leftover pack Qty so reload
+                // cannot re-detect matrix mode from saved data.
+                variantsToSend = stripBundleQtyFromVariants(variantsToSend)
+                    .filter((v) => VARIANT_MATRIX_SELECTION_FIELDS.some(
+                        (f) => String(v?.options?.[f] || '').trim(),
+                    ))
+                hasVariantsFlag = variantsToSend.length > 0
+                if (!hasVariantsFlag) {
+                    setLoading(false)
+                    return toast.error('Add at least one variant (color/size/option) before saving.')
+                }
+            } else {
+                variantsToSend = []
+                hasVariantsFlag = false
             }
+
+            const resolvedVariantType = pricingMode === 'matrix'
+                ? 'variant_bundles'
+                : pricingMode === 'bundles'
+                    ? 'bulk_bundles'
+                    : pricingMode === 'variants'
+                        ? 'variants'
+                        : 'simple'
 
             const attributes = {
                 brand: productInfo.brand,
@@ -1947,11 +2001,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 additionalDetails: aiAdditionalDetails || '',
                 // Always persist an explicit mode so refresh does not re-infer matrix
                 // from leftover color/size × bundleQty rows.
-                variantType: isMatrixMode
-                    ? 'variant_bundles'
-                    : (bulkEnabled
-                        ? 'bulk_bundles'
-                        : (hasVariantsFlag ? 'variants' : 'simple')),
+                variantType: resolvedVariantType,
             }
 
             const payload = {
@@ -1968,14 +2018,18 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 descriptionAr,
                 price: isMatrixMode
                     ? (Number(productInfo.price) || (variantsToSend.length > 0 ? Number(variantsToSend[0].price) : 0))
-                    : (bulkEnabled && variantsToSend.length > 0
+                    : (pricingMode === 'bundles' && variantsToSend.length > 0
                         ? Number(variantsToSend[0].price)
-                        : Number(productInfo.price)),
+                        : (pricingMode === 'variants' && variantsToSend.length > 0
+                            ? Number(variantsToSend[0].price || productInfo.price)
+                            : Number(productInfo.price))),
                 AED: isMatrixMode
                     ? (Number(productInfo.AED) || (variantsToSend.length > 0 ? Number(variantsToSend[0].AED) : 0))
-                    : (bulkEnabled && variantsToSend.length > 0
+                    : (pricingMode === 'bundles' && variantsToSend.length > 0
                         ? Number(variantsToSend[0].AED)
-                        : Number(productInfo.AED)),
+                        : (pricingMode === 'variants' && variantsToSend.length > 0
+                            ? Number(variantsToSend[0].AED || variantsToSend[0].price || productInfo.AED)
+                            : Number(productInfo.AED))),
                 sku: productInfo.sku || '',
                 stockQuantity: Number(productInfo.stockQuantity) || 0,
                 soldCount: Math.max(0, Number(productInfo.soldCount) || 0),
@@ -1994,7 +2048,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 specTableEnabled: Boolean(productInfo.specTableEnabled),
                 specTableColumns: productInfo.specTableColumns || ['Property', 'Value'],
                 specTableRows: productInfo.specTableRows || [],
-                categories: dedupeCategoryIds(selectedCategories),
+                categories: sanitizeCategoryIdsForSave(selectedCategories),
                 attributes,
                 hasVariants: hasVariantsFlag,
                 variants: hasVariantsFlag ? variantsToSend : [],
@@ -2864,7 +2918,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                         })}
                       </div>
                       <p className="mt-2 text-xs text-slate-500">
-                        Switching modes keeps your entered prices and rows — nothing is cleared when you change or turn off a mode.
+                        Switching modes keeps color and price values. Pack rows are cleared when you leave bundle or matrix mode so the selected mode saves correctly.
                       </p>
                     </div>
 

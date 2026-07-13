@@ -12,7 +12,7 @@ import { decodeHtmlEntities } from '@/lib/displayText'
 import { useStorefrontI18n } from '@/lib/useStorefrontI18n'
 import { getLocalizedCategoryName } from '@/lib/categoryLocalization'
 
-const SHOP_PAGE_SIZE = 24;
+const SHOP_PAGE_SIZE = 60;
 
 function buildCatalogUrl({
   search,
@@ -309,7 +309,7 @@ function ShopContent() {
         params.delete('categories');
         params.delete('category');
         const query = params.toString();
-        router.push(query ? `/shop?${query}` : '/shop');
+        router.replace(query ? `/shop?${query}` : '/shop', { scroll: false });
     }, [router, searchParams]);
 
     const clearCategories = useCallback(() => {
@@ -317,7 +317,7 @@ function ShopContent() {
         params.delete('categories');
         params.delete('category');
         const query = params.toString();
-        router.push(query ? `/shop?${query}` : '/shop');
+        router.replace(query ? `/shop?${query}` : '/shop', { scroll: false });
     }, [router, searchParams]);
 
     const toggleCategory = useCallback((slug) => {
@@ -338,7 +338,7 @@ function ShopContent() {
         }
 
         const query = params.toString();
-        router.push(query ? `/shop?${query}` : '/shop');
+        router.replace(query ? `/shop?${query}` : '/shop', { scroll: false });
     }, [router, searchParams, selectedCategories]);
 
     const fastSellingProduct = fastSellingProducts[fastSellingIndex];

@@ -444,6 +444,7 @@ export default function ProductReviewsSection({
   loading = false,
   initialVisibleCount = REVIEWS_PREVIEW_COUNT,
   compactMobile = false,
+  sectionId = 'product-reviews',
 }) {
   const { t, isArabic } = useStorefrontI18n();
   const [starFilter, setStarFilter] = useState('all');
@@ -599,7 +600,7 @@ export default function ProductReviewsSection({
 
   return (
     <section
-      id="product-reviews"
+      id={sectionId}
       className={compactMobile ? 'border-t border-gray-100 bg-white pt-4' : 'border-t border-gray-200 bg-white pt-8'}
       dir={isArabic ? 'rtl' : 'ltr'}
     >

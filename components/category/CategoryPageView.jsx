@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { decodeHtmlEntities } from '@/lib/displayText';
 import { getLocalizedCategoryName } from '@/lib/categoryLocalization';
 import { useStorefrontI18n } from '@/lib/useStorefrontI18n';
+import { resolveCategoryHref } from '@/lib/categoryTreeUtils';
 import CategoryProductsPanel from '@/components/category/CategoryProductsPanel';
 
 function localizeCategoryRecord(category, language) {
@@ -27,23 +28,17 @@ export default function CategoryPageView({
 
   const breadcrumbs = [
     { name: t('category.home'), href: '/' },
-    ...chain.map((item, index) => {
-      const pathSegments = chain.slice(0, index + 1).map((entry) => entry.slug).filter(Boolean);
-      return {
-        name: localizeCategoryRecord(item, language),
-        href: `/category/${pathSegments.join('/')}`,
-      };
-    }),
+    ...chain.map((item, index) => ({
+      name: localizeCategoryRecord(item, language),
+      href: resolveCategoryHref(chain.slice(0, index + 1)),
+    })),
   ];
 
-  const subcategoryLinks = children.map((child) => {
-    const childChain = [...chain, child];
-    return {
-      name: localizeCategoryRecord(child, language),
-      href: `/category/${childChain.map((item) => item.slug).join('/')}`,
-      slug: child.slug,
-    };
-  });
+  const subcategoryLinks = children.map((child) => ({
+    name: localizeCategoryRecord(child, language),
+    href: resolveCategoryHref(chain, child),
+    slug: child.slug,
+  }));
 
   return (
     <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-8" dir={isArabic ? 'rtl' : 'ltr'}>
@@ -88,8 +83,8 @@ export default function CategoryPageView({
           </h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
             {children.map((child) => {
-              const childChain = [...chain, child];
-              const href = `/category/${childChain.map((item) => item.slug).join('/')}`;
+              const href = resolveCategoryHref(chain, child);
+              if (!href || href === '/shop') return null;
               return (
                 <Link
                   key={child._id}

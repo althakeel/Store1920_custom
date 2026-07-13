@@ -3,8 +3,10 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import axios from 'axios';
+import { isStorefrontWalletEnabled } from '@/lib/storefrontWallet';
 
 export default function SitemapPage() {
+  const storefrontWalletEnabled = isStorefrontWalletEnabled();
   const [sitemapCategories, setSitemapCategories] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -175,7 +177,7 @@ export default function SitemapPage() {
 
                 {/* Links */}
                 <ul className="space-y-2">
-                  {section.links.filter(link => link && link.path).map((link, i) => (
+                  {section.links.filter((link) => link && link.path && (storefrontWalletEnabled || link.path !== '/wallet')).map((link, i) => (
                     <li key={i} className="group">
                       <Link 
                         href={link.path || '#'}

@@ -7,7 +7,9 @@ import Wallet from '@/models/Wallet';
 import {
   aggregateStoreCustomers,
   enrichCustomersWithUsers,
+  resolveRegisteredCustomerIds,
 } from '@/lib/storeCustomersApi';
+import { reconcileUnlinkedGuestOrdersForStore } from '@/lib/linkGuestOrders';
 import { getAuth } from '@/lib/firebase-admin';
 
 export async function GET(request) {
@@ -37,6 +39,10 @@ export async function GET(request) {
     const limit = Math.min(50, Math.max(1, Number.parseInt(searchParams.get('limit') || '20', 10) || 20));
     const search = String(searchParams.get('search') || '').trim();
     const view = searchParams.get('view') === 'registered' ? 'registered' : 'all';
+
+    await reconcileUnlinkedGuestOrdersForStore(storeId).catch((error) => {
+      console.warn('[customers API] guest order reconcile skipped:', error?.message || error);
+    });
 
     let matchingUserIds = [];
     if (search) {
@@ -74,7 +80,12 @@ export async function GET(request) {
       profileUsers
     );
 
-    const userIds = enrichedCustomers
+    const reconciledCustomers = await resolveRegisteredCustomerIds(
+      enrichedCustomers,
+      User,
+    );
+
+    const userIds = reconciledCustomers
       .filter((customer) => !customer.isGuest
         && customer.id
         && !String(customer.id).startsWith('guest-')
@@ -86,7 +97,7 @@ export async function GET(request) {
       : [];
     const walletMap = new Map(wallets.map((wallet) => [wallet.userId, Number(wallet.coins || 0)]));
 
-    const customersWithWallet = enrichedCustomers.map((customer) => ({
+    const customersWithWallet = reconciledCustomers.map((customer) => ({
       ...customer,
       walletBalance: customer.isGuest ? 0 : (walletMap.get(String(customer.id)) || 0),
     }));

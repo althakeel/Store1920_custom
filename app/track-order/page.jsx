@@ -8,6 +8,9 @@ import AnimatedProgressTracker from "@/components/AnimatedProgressTracker";
 import styles from "./tracking.module.css";
 import { CheckCircle2, Clock3, PackageSearch, RefreshCw, SearchCheck } from "lucide-react";
 import { getDisplayOrderNumber, getDisplayOrderLabel } from "@/lib/orderDisplay";
+import { isWaslahCourierTerminal } from "@/lib/waslahTracking";
+
+const LIVE_TRACKING_POLL_MS = 30 * 1000;
 
 function buildTrackingParams(phoneNumber, awbNumber) {
   const params = new URLSearchParams();
@@ -23,14 +26,41 @@ function buildTrackingParams(phoneNumber, awbNumber) {
   if (reference) {
     if (!contact && reference.includes('@')) {
       params.append('email', reference);
-    } else if (!contact && /^[\d+\s()-]{9,}$/.test(reference) && !/^[a-fA-F0-9]{24}$/.test(reference)) {
-      params.append('phone', reference);
     } else {
       params.append('awb', reference);
     }
   }
 
   return params;
+}
+
+function getTrackingOrderKey(order = {}) {
+  return String(order?._id || order?.trackingId || order?.waslah?.trackingNumber || '').trim();
+}
+
+function mergePublicLiveTracking(current, incoming) {
+  if (!current || !incoming) return incoming || current;
+  const currentId = String(current._id || '');
+  const incomingId = String(incoming._id || '');
+  if (currentId && currentId !== incomingId) return current;
+  if (!currentId && incomingId) return incoming;
+
+  return {
+    ...current,
+    status: incoming.status ?? current.status,
+    courier: incoming.courier ?? current.courier,
+    trackingId: incoming.trackingId ?? current.trackingId,
+    trackingUrl: incoming.trackingUrl ?? current.trackingUrl,
+    waslah: incoming.waslah
+      ? { ...(current.waslah || {}), ...incoming.waslah }
+      : current.waslah,
+    c3x: incoming.c3x
+      ? { ...(current.c3x || {}), ...incoming.c3x }
+      : current.c3x,
+    delhivery: incoming.delhivery
+      ? { ...(current.delhivery || {}), ...incoming.delhivery }
+      : current.delhivery,
+  };
 }
 
 function TrackOrderPageInner() {
@@ -43,25 +73,117 @@ function TrackOrderPageInner() {
   const [notFound, setNotFound] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const autoTrackStarted = useRef(false)
+  const trackingRefreshInFlight = useRef(false)
+  const trackingRefreshController = useRef(null)
+  const trackingLookupGeneration = useRef(0)
+  const activeTrackingOrderKey = useRef('')
 
-  const handleRefresh = async () => {
-    if (refreshing || !order) return;
-    setRefreshing(true);
+  activeTrackingOrderKey.current = getTrackingOrderKey(order)
+
+  const refreshLiveTracking = async ({ manual = false } = {}) => {
+    if (trackingRefreshInFlight.current || !order) return null;
+    const trackingReference = String(order.trackingId || order.waslah?.trackingNumber || awbNumber || '').trim();
+    if (!trackingReference) return null;
+
+    const requestGeneration = trackingLookupGeneration.current;
+    const requestOrderKey = getTrackingOrderKey(order) || trackingReference;
+    const controller = new AbortController();
+    trackingRefreshInFlight.current = true;
+    trackingRefreshController.current = controller;
+    if (manual) setRefreshing(true);
     try {
-      const params = buildTrackingParams(phoneNumber, order.trackingId || awbNumber);
+      const params = buildTrackingParams('', trackingReference);
 
-      const res = await axios.get(`/api/track-order?${params.toString()}`);
+      const res = await axios.get(`/api/track-order?${params.toString()}`, {
+        signal: controller.signal,
+      });
       if (res.data.success && res.data.order) {
-        setOrder(res.data.order);
-        setRelatedOrders(Array.isArray(res.data.relatedOrders) ? res.data.relatedOrders : []);
-        toast.success("Tracking updated!");
+        if (
+          controller.signal.aborted
+          || requestGeneration !== trackingLookupGeneration.current
+          || requestOrderKey !== activeTrackingOrderKey.current
+        ) return null;
+
+        const liveOrder = res.data.order;
+        const currentId = String(order._id || '');
+        const liveId = String(liveOrder._id || '');
+        if (currentId && currentId !== liveId) return null;
+
+        setOrder((current) => (
+          getTrackingOrderKey(current) === requestOrderKey
+            ? mergePublicLiveTracking(current, liveOrder)
+            : current
+        ));
+        if (Array.isArray(res.data.relatedOrders)) setRelatedOrders(res.data.relatedOrders);
+        if (manual) toast.success("Tracking updated!");
+        return liveOrder;
       }
     } catch (error) {
-      toast.error("Failed to refresh tracking");
+      if (manual && !axios.isCancel(error) && error?.name !== 'CanceledError') {
+        toast.error("Failed to refresh tracking");
+      }
     } finally {
-      setRefreshing(false);
+      if (trackingRefreshController.current === controller) trackingRefreshController.current = null;
+      trackingRefreshInFlight.current = false;
+      if (manual) setRefreshing(false);
     }
+    return null;
   };
+
+  const handleRefresh = () => refreshLiveTracking({ manual: true });
+
+  useEffect(() => {
+    const trackingReference = String(order?.trackingId || order?.waslah?.trackingNumber || '').trim();
+    const courier = String(order?.courier || '').toLowerCase();
+    const isEmxOrder = Boolean(
+      order?.waslah?.orderId
+      || order?.waslah?.trackingNumber
+      || courier.includes('emx')
+      || courier.includes('waslah'),
+    );
+    const isTerminal = isWaslahCourierTerminal(order);
+    if (!trackingReference || !isEmxOrder || isTerminal) return undefined;
+
+    let stopped = false;
+    let timerId = null;
+
+    const scheduleNext = () => {
+      if (stopped) return;
+      if (timerId) window.clearTimeout(timerId);
+      timerId = window.setTimeout(runRefresh, LIVE_TRACKING_POLL_MS);
+    };
+    const runRefresh = async () => {
+      if (stopped) return;
+      if (document.visibilityState !== 'hidden') await refreshLiveTracking();
+      scheduleNext();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'visible' || stopped) return;
+      if (timerId) window.clearTimeout(timerId);
+      runRefresh();
+    };
+
+    scheduleNext();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      stopped = true;
+      trackingRefreshController.current?.abort();
+      if (timerId) window.clearTimeout(timerId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+    // Primitive dependencies keep the timer stable when only timeline details change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    order?._id,
+    order?.trackingId,
+    order?.waslah?.trackingNumber,
+    order?.waslah?.appStatus,
+    order?.waslah?.carrierStatus,
+    order?.waslah?.currentSubtag,
+    order?.waslah?.lastSubtag,
+    order?.courier,
+    order?.status,
+  ]);
 
   useEffect(() => {
     const orderNo = searchParams.get('orderNo') || searchParams.get('orderId');
@@ -96,6 +218,8 @@ function TrackOrderPageInner() {
       return false;
     }
 
+    trackingLookupGeneration.current += 1;
+    trackingRefreshController.current?.abort();
     setLoading(true);
     setNotFound(false);
     setOrder(null);
@@ -110,6 +234,17 @@ function TrackOrderPageInner() {
       }
 
       if (ref) {
+        const emxRetry = await axios.get(`/api/track-order?carrier=emx&awb=${encodeURIComponent(ref)}`, {
+          validateStatus: (status) => status < 500,
+        });
+        if (emxRetry.data?.success && emxRetry.data?.order) {
+          setOrder(emxRetry.data.order);
+          setRelatedOrders([]);
+          setNotFound(false);
+          toast.dismiss();
+          return true;
+        }
+
         const retry = await axios.get(`/api/track-order?carrier=c3xpress&awb=${encodeURIComponent(ref)}`, {
           validateStatus: (status) => status < 500,
         });
@@ -176,6 +311,10 @@ function TrackOrderPageInner() {
         return 'bg-yellow-100 text-yellow-700';
       case 'RETURN_REQUESTED':
         return 'bg-pink-100 text-pink-700';
+      case 'RTO':
+        return 'bg-rose-100 text-rose-800';
+      case 'RETURN':
+        return 'bg-pink-200 text-pink-900';
       case 'RETURNED':
         return 'bg-pink-200 text-pink-800';
       case 'CANCELLED':
@@ -189,11 +328,17 @@ function TrackOrderPageInner() {
     const steps = [
       'ORDER_PLACED',
       'PROCESSING',
-      'PICKED_UP',
+      'SHIPPED',
       'OUT_FOR_DELIVERY',
       'DELIVERED'
     ];
-    const currentIndex = steps.indexOf(status?.toUpperCase());
+    const normalizedStatus = status?.toUpperCase();
+    const progressStatus = ['PICKED_UP', 'WAREHOUSE_RECEIVED'].includes(normalizedStatus)
+      ? 'SHIPPED'
+      : ['WAITING_FOR_PICKUP', 'PICKUP_REQUESTED'].includes(normalizedStatus)
+        ? 'PROCESSING'
+        : normalizedStatus;
+    const currentIndex = steps.indexOf(progressStatus);
     const safeIndex = currentIndex >= 0 ? currentIndex : 0;
     return steps.map((step, idx) => ({
       name: step.replace(/_/g, ' '),
@@ -209,7 +354,7 @@ function TrackOrderPageInner() {
         <div className="max-w-5xl mx-auto px-4">
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold text-slate-800 mb-2">Track Your Order</h1>
-            <p className="text-slate-600">Enter your mobile number, email, AWB, reference number, or booking number to track your shipment</p>
+            <p className="text-slate-600">Enter your mobile number, email, AWB, reference number, or order number to track your shipment</p>
           </div>
 
           {/* Search Form */}
@@ -242,7 +387,7 @@ function TrackOrderPageInner() {
                   placeholder="Enter AWB, reference number, booking number, or order no"
                   className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
-                <p className="text-xs text-slate-500 mt-1">You can use your C3X AWB, shipper reference number, booking number, Order No, mobile number, or email.</p>
+                <p className="text-xs text-slate-500 mt-1">You can use your EMX AWB, C3X AWB, order number, mobile number, or email.</p>
               </div>
               <button
                 type="submit"
@@ -292,6 +437,8 @@ function TrackOrderPageInner() {
                         type="button"
                         onClick={async () => {
                           const nextReference = getDisplayOrderNumber(entry) || String(entry.shortOrderNumber || '')
+                          trackingLookupGeneration.current += 1
+                          trackingRefreshController.current?.abort()
                           setAwbNumber(nextReference)
                           setPhoneNumber('')
                           setLoading(true)
@@ -312,7 +459,7 @@ function TrackOrderPageInner() {
                 </div>
               )}
               {/* Tracking not ready notice */}
-              {!order.trackingId && !order.c3x && (
+              {!order.trackingId && !order.c3x && !order.waslah && (
                 <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-yellow-800 text-sm">
                   Shipment hasn't been created yet. You'll see live tracking here once the courier AWB is generated.
                 </div>
@@ -321,7 +468,9 @@ function TrackOrderPageInner() {
               <div className="overflow-hidden rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
                 <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <p className="text-xs font-bold uppercase tracking-wider text-blue-600">Current Status</p>
+                    <p className="text-xs font-bold uppercase tracking-wider text-blue-600">
+                      {order._id ? 'Store order status' : 'Shipment status'}
+                    </p>
                     <h2 className="mt-1 text-xl font-semibold text-slate-900">
                       {order.trackingId
                         ? `Tracking ID: ${order.trackingId}`
@@ -341,7 +490,7 @@ function TrackOrderPageInner() {
               </div>
 
               {/* Tracking Info */}
-              {(order.trackingId || order.trackingUrl || order.courier || order.c3x) && (
+              {(order.trackingId || order.trackingUrl || order.courier || order.c3x || order.waslah) && (
                 <>
                   <div className="rounded-xl border border-blue-100 bg-blue-50 p-6">
                     <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
@@ -381,6 +530,56 @@ function TrackOrderPageInner() {
                       )}
                     </div>
                   </div>
+
+              {/* EMX / Waslah Timeline */}
+              {(order.waslah?.events?.length > 0
+                || order.waslah?.currentStatus
+                || order.waslah?.lastSubtagMessage
+                || order.waslah?.trackingNumber
+                || (order.courier && String(order.courier).toLowerCase().includes('emx'))) && (
+                <div className={`rounded-xl border border-slate-200 bg-white p-6 shadow-sm ${styles["tracking-card-enter"]}`}>
+                  <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-violet-600">EMX</p>
+                      <h3 className="mt-1 text-lg font-semibold text-slate-900">Shipment Updates</h3>
+                    </div>
+                    <button
+                      onClick={handleRefresh}
+                      disabled={refreshing}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 bg-violet-50 hover:bg-violet-100 text-violet-700 rounded-lg text-sm font-medium transition disabled:opacity-50"
+                    >
+                      <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
+                      {refreshing ? "Refreshing..." : "Refresh"}
+                    </button>
+                  </div>
+                  {(order.waslah?.currentStatus || order.waslah?.lastSubtagMessage) && (
+                    <p className="mb-2 rounded-lg bg-violet-50 border border-violet-200 px-3 py-2 text-sm text-violet-900">
+                      <span className="font-medium">EMX courier status:</span>{' '}
+                      {order.waslah.currentStatus || order.waslah.lastSubtagMessage}
+                    </p>
+                  )}
+                  {!isWaslahCourierTerminal(order) && (
+                    <p className="mb-3 text-xs text-violet-700">
+                      Live EMX updates refresh automatically every 30 seconds while this page is open.
+                    </p>
+                  )}
+                  {order.waslah?.isDelivered && (
+                    <div className={`mb-4 flex items-center gap-2 text-sm font-medium text-green-700 bg-green-50 border border-green-200 rounded-lg px-4 py-2 ${styles["status-badge-active"]}`}>
+                      <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Package delivered
+                    </div>
+                  )}
+                  {order.waslah?.events?.length > 0 ? (
+                    <TrackingTimeline events={order.waslah.events} type="waslah" />
+                  ) : (
+                    <p className="rounded-lg border border-dashed border-violet-200 bg-violet-50/60 px-4 py-6 text-center text-sm text-violet-800">
+                      Live status is available. Event history will appear here after the next EMX update — tap Refresh to check again.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* C3Xpress Timeline */}
               {order.c3x?.events?.length > 0 && (
@@ -521,7 +720,7 @@ function TrackOrderPageInner() {
                   <div>
                     <h3 className="text-sm font-semibold text-slate-900">What you can enter</h3>
                     <p className="mt-1 text-sm leading-6 text-slate-600">
-                      Mobile number, email, C3X AWB, reference number, booking number, or Order No.
+                      Mobile number, email, EMX AWB, C3X AWB, reference number, or Order No.
                     </p>
                   </div>
                 </div>

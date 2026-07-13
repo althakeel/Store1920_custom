@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import connectDB from '@/lib/mongodb'
 import { fetchNormalizedC3XTracking, trackByReference, normalizeC3XShipment, trackPickup } from '@/lib/c3xpress'
+import { isWaslahConfigured } from '@/lib/waslah'
+import { fetchNormalizedWaslahTracking } from '@/lib/waslahTracking'
 import {
   parseTrackingIdentifiers,
   findOrderByTrackingIdentifier,
@@ -15,7 +17,9 @@ const asOrderShape = (normalized, awb = '') => {
     trackingId: normalized.trackingId || awb,
     trackingUrl: normalized.trackingUrl,
     c3x: normalized.c3x,
-    status: normalized.c3x?.appStatus || 'SHIPPED',
+    waslah: normalized.waslah,
+    delhivery: normalized.delhivery,
+    status: normalized.waslah?.appStatus || normalized.c3x?.appStatus || normalized.delhivery?.current_status || 'PROCESSING',
     orderItems: [],
     total: 0
   };
@@ -82,6 +86,12 @@ const lookupC3XByIdentifier = async (identifier) => {
   return pickupRaw ? normalizeC3XPickup(pickupRaw, value) : null;
 };
 
+const lookupWaslahByAwb = async (awb) => {
+  const value = String(awb || '').trim();
+  if (!value || !isWaslahConfigured()) return null;
+  return fetchNormalizedWaslahTracking(value).catch(() => null);
+};
+
 export async function GET(req) {
   try {
     await connectDB()
@@ -117,6 +127,21 @@ export async function GET(req) {
       }
     }
 
+    if ((carrier === 'waslah' || carrier === 'emx') && identifier) {
+      try {
+        const normalized = await lookupWaslahByAwb(identifier)
+        if (!normalized) {
+          return NextResponse.json({ success: false, message: 'Shipment not found on EMX / Waslah' }, { status: 404 })
+        }
+        return NextResponse.json({ success: true, order: asOrderShape(normalized, identifier) })
+      } catch (e) {
+        const msg = (e?.message || '').includes('not configured')
+          ? 'EMX tracking is not configured on this store.'
+          : `EMX tracking failed: ${e?.message || 'Unknown error'}`
+        return NextResponse.json({ success: false, message: msg }, { status: 503 })
+      }
+    }
+
     let order = null
     let relatedOrders = []
 
@@ -132,6 +157,16 @@ export async function GET(req) {
     if (!order) {
       if (identifier) {
         try {
+          const waslahNormalized = await lookupWaslahByAwb(identifier)
+          const waslahSynthetic = asOrderShape(waslahNormalized, identifier)
+          if (waslahSynthetic?.waslah?.events?.length) {
+            return NextResponse.json({ success: true, order: waslahSynthetic })
+          }
+        } catch (e) {
+          console.error('Waslah fallback failed:', e?.message || e)
+        }
+
+        try {
           const normalized = await lookupC3XByIdentifier(identifier)
           const synthetic = asOrderShape(normalized, identifier)
           if (synthetic) {
@@ -139,6 +174,18 @@ export async function GET(req) {
           }
         } catch (e) {
           console.error('C3Xpress fallback failed:', e?.message || e)
+        }
+
+        if (isWaslahConfigured()) {
+          try {
+            const waslahNormalized = await lookupWaslahByAwb(identifier)
+            const waslahSynthetic = asOrderShape(waslahNormalized, identifier)
+            if (waslahSynthetic) {
+              return NextResponse.json({ success: true, order: waslahSynthetic })
+            }
+          } catch (e) {
+            console.error('Waslah AWB fallback failed:', e?.message || e)
+          }
         }
       }
 

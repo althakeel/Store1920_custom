@@ -123,7 +123,7 @@ export async function GET(request){
     const paginated = !fetchAll && (searchParams.get('paginated') === 'true' || searchParams.has('page'));
     const limit = fetchAll
         ? null
-        : Math.min(Number.isFinite(parsedLimit) ? parsedLimit : (paginated ? 24 : 20), paginated ? 48 : 300);
+        : Math.min(Number.isFinite(parsedLimit) ? parsedLimit : (paginated ? 24 : 20), paginated ? 60 : 500);
     const offset = paginated
         ? (page - 1) * limit
         : (Number.isFinite(parsedOffset) ? parsedOffset : 0);

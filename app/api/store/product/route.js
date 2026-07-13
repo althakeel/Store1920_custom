@@ -13,7 +13,7 @@ import {
 } from '@/lib/storeProductPicker';
 import { NextResponse } from "next/server";
 import { getAuth } from '@/lib/firebase-admin';
-import { createProductFromJson, updateProductFromJson } from '@/lib/productJsonSave';
+import { sanitizeCategoryIdsForSave } from '@/lib/productCategoryRefs';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -262,6 +262,7 @@ export async function POST(request) {
         }
         
         console.log('POST: Final categories to save:', categories, 'count:', categories.length);
+        categories = sanitizeCategoryIdsForSave(categories);
 
         let variants = [];
         let finalPrice = price;
@@ -818,6 +819,7 @@ export async function PUT(request) {
         }
         
         console.log('PUT: Final categories to save:', categories, 'count:', categories.length);
+        categories = sanitizeCategoryIdsForSave(categories);
 
         // If slug is provided and changed, check uniqueness
         let updateData = {

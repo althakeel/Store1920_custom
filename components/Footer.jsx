@@ -113,46 +113,45 @@ const Footer = () => {
         {
             title: t('footer.shop'),
             links: [
-                { text: t('footer.allProducts'), path: '/products', icon: null },
-                { text: t('footer.topSelling'), path: '/top-selling', icon: null },
-                { text: t('footer.newArrivals'), path: '/new', icon: null },
-                { text: t('footer.categories'), path: '/categories', icon: null },
-            ]
+                { text: t('footer.allProducts'), path: '/shop' },
+                { text: t('footer.todaysDeals'), path: '/offers' },
+                { text: t('footer.newArrivals'), path: '/new' },
+                { text: t('footer.bestSellers'), path: '/best-sellers' },
+                { text: t('footer.fastDelivery'), path: '/fast-delivery' },
+            ],
         },
         {
             title: t('footer.customerCare'),
             links: [
-                { text: t('footer.trackOrder'), path: '/track-order', icon: null },
-                { text: t('footer.myOrders'), path: '/orders', icon: null },
-                { text: t('footer.myWishlist'), path: '/wishlist', icon: null },
-                { text: t('footer.faq'), path: '/faq', icon: null },
-                { text: t('footer.support'), path: '/support', icon: null },
-            ]
+                { text: t('footer.trackOrder'), path: '/track-order' },
+                { text: t('footer.myOrders'), path: '/orders' },
+                { text: t('footer.myWishlist'), path: '/wishlist' },
+                { text: t('footer.faq'), path: '/faq' },
+                { text: t('footer.support'), path: '/support' },
+                { text: t('footer.contactUs'), path: '/contact-us' },
+            ],
         },
         {
             title: t('footer.legalInfo'),
             links: [
-                { text: t('footer.termsAndConditions'), path: '/terms-and-conditions', icon: null },
-                { text: t('footer.termsOfSale'), path: '/terms-of-sale', icon: null },
-                { text: t('footer.shippingPolicy'), path: '/shipping-policy', icon: null },
-                { text: t('footer.privacyPolicy'), path: '/privacy-policy', icon: null },
-                { text: t('footer.returnRefund'), path: '/return-policy', icon: null },
-                { text: t('footer.cancellationRefunds'), path: '/cancellation-and-refunds', icon: null },
-                { text: t('footer.businessInformation'), path: '/business-information', icon: null },
-                { text: t('footer.contactUs'), path: '/contact-us', icon: null },
-                { text: t('footer.sitemap'), path: '/sitemap', icon: null },
-            ]
+                { text: t('footer.termsAndConditions'), path: '/terms-and-conditions' },
+                { text: t('footer.termsOfSale'), path: '/terms-of-sale' },
+                { text: t('footer.shippingPolicy'), path: '/shipping-policy' },
+                { text: t('footer.privacyPolicy'), path: '/privacy-policy' },
+                { text: t('footer.returnRefund'), path: '/return-policy' },
+                { text: t('footer.cancellationRefunds'), path: '/cancellation-and-refunds' },
+                { text: t('footer.sitemap'), path: '/sitemap' },
+            ],
         },
         {
             title: t('footer.aboutStore'),
             links: [
-                { text: t('footer.aboutUs'), path: '/about-us', icon: null },
-                { text: t('footer.businessInformation'), path: '/business-information', icon: null },
-                { text: t('footer.createYourStore'), path: '/create-store', icon: null },
-                { text: t('footer.becomeSeller'), path: '/create-store', icon: null },
-                { text: t('footer.careers'), path: '/careers', icon: null },
-            ]
-        }
+                { text: t('footer.aboutUs'), path: '/about-us' },
+                { text: t('footer.businessInformation'), path: '/business-information' },
+                { text: t('footer.sellOnStore1920'), path: '/create-store' },
+                { text: t('footer.careers'), path: '/careers' },
+            ],
+        },
     ];
 
     const socialIcons = [
@@ -208,9 +207,7 @@ const Footer = () => {
     return (
         <footer className="bg-black text-slate-200 border-t border-slate-800 pt-0 pb-[5.25rem] lg:pb-12 lg:pt-12" dir={isArabic ? 'rtl' : 'ltr'}>
             <div className={HOME_SECTION_INNER_CLASS}>
-                {/* Main Footer Content */}
                 <div className="py-2 grid grid-cols-2 gap-2 md:grid-cols-2 lg:grid-cols-6 md:gap-4 lg:gap-6">
-                    {/* Brand Section - Takes 2 columns on large screens */}
                     <div className="col-span-2 lg:col-span-2">
                         <Link href="/" className="inline-block mb-4">
                             <Image
@@ -225,7 +222,6 @@ const Footer = () => {
                         <p className="text-sm text-slate-400 leading-relaxed mb-6 max-w-sm">
                             {t('footer.description')}
                         </p>
-                        {/* Contact Info */}
                         <div className="space-y-3 mb-6">
                             <div className="flex items-center gap-2 text-sm">
                                 <MailIcon />
@@ -255,17 +251,16 @@ const Footer = () => {
                                 </button>
                             ))}
                         </div>
-                        {/* Social Icons removed from brand section to avoid duplication */}
                     </div>
-                    {/* Link Sections - Each takes 1 column */}
-                    {linkSections.map((section, index) => (
-                        <div key={index}>
+
+                    {linkSections.map((section) => (
+                        <div key={section.title}>
                             <h3 className="text-white font-semibold text-sm mb-4 tracking-wider">{section.title}</h3>
                             <ul className="space-y-3">
-                                {section.links.map((link, i) => (
-                                    <li key={i}>
-                                        <Link 
-                                            href={link.path} 
+                                {section.links.map((link) => (
+                                    <li key={link.path}>
+                                        <Link
+                                            href={link.path}
                                             className="text-sm text-slate-400 hover:text-white transition inline-block"
                                         >
                                             {link.text}
@@ -277,16 +272,15 @@ const Footer = () => {
                     ))}
                 </div>
 
-                {/* Bottom Bar - Normal flow, always at bottom of footer */}
                 <div className="border-t border-slate-800 py-8 mt-4 w-full flex flex-col items-center justify-end">
                     <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 w-full">
                         <div className="flex items-center justify-center lg:justify-start gap-3">
                             {socialIcons.map((item, i) => (
-                                <Link 
-                                    href={item.link} 
-                                    key={i} 
-                                    target="_blank" 
-                                    rel="noopener noreferrer" 
+                                <Link
+                                    href={item.link}
+                                    key={i}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
                                     className="flex items-center justify-center w-8 h-8 bg-white/5 hover:bg-white/10 border border-slate-800 hover:border-slate-700 transition rounded-lg"
                                 >
                                     <item.icon />
@@ -296,7 +290,6 @@ const Footer = () => {
                         <p className="text-sm text-slate-500 text-center">
                             {t('footer.copyright', { year: new Date().getFullYear() })}
                         </p>
-
                     </div>
                 </div>
             </div>

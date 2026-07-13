@@ -12,51 +12,59 @@ import { Package, Truck, X, Download, Printer, RefreshCw, MapPin, Trash2, Calend
 import StoreCreateOrderModal from '@/components/store/StoreCreateOrderModal';
 import PaymentFailedCallCustomerModal from '@/components/store/PaymentFailedCallCustomerModal';
 import StoreEditOrderPanel from '@/components/store/StoreEditOrderPanel';
-import OrderStatusPicker, { STORE_ORDER_STATUS_FILTER_OPTIONS, STORE_ORDER_STATUS_OPTIONS } from '@/components/store/OrderStatusPicker';
+import OrderStatusPicker, { getStoreOrderStatusMeta, STORE_ORDER_STATUS_FILTER_OPTIONS, STORE_ORDER_STATUS_OPTIONS } from '@/components/store/OrderStatusPicker';
+import {
+    addDaysToDateOnly,
+    buildOrdersByProductDateTime,
+    DEFAULT_ORDERS_BY_PRODUCT_TIME,
+    getDubaiDateParts,
+    getOrdersByProductBusinessDayBounds,
+    normalizeOrdersByProductTime,
+} from '@/lib/storeOrdersByProductDates';
 
 function formatFilterDateLabel(value = '') {
     if (!value) return '';
-    const parsed = new Date(`${value}T12:00:00`);
+    const [year, month, day] = String(value).split('-').map(Number);
+    if (!year || !month || !day) return value;
+    const parsed = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
     if (Number.isNaN(parsed.getTime())) return value;
-    return parsed.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    return parsed.toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        timeZone: 'UTC',
+    });
 }
 
-const DEFAULT_ORDER_FILTER_TIME = '10:00';
+const DEFAULT_ORDER_FILTER_TIME = DEFAULT_ORDERS_BY_PRODUCT_TIME;
 
 function normalizeFilterTimeValue(value = '', fallback = DEFAULT_ORDER_FILTER_TIME) {
-    const text = String(value || fallback).trim();
-    if (/^\d{2}:\d{2}$/.test(text)) return text;
-    if (/^\d{2}:\d{2}:\d{2}$/.test(text)) return text.slice(0, 5);
-    return fallback;
+    return normalizeOrdersByProductTime(value, fallback);
 }
 
+/** Interpret YYYY-MM-DD + HH:mm as Asia/Dubai wall time. */
 function buildFilterDateTime(dateValue = '', timeValue = '') {
-    if (!dateValue) return null;
-    const time = normalizeFilterTimeValue(timeValue);
-    const parsed = new Date(`${dateValue}T${time}:00`);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
+    return buildOrdersByProductDateTime(dateValue, timeValue);
 }
 
 function formatFilterTimeLabel(value = '') {
     const time = normalizeFilterTimeValue(value);
-    const parsed = new Date(`2000-01-01T${time}:00`);
-    if (Number.isNaN(parsed.getTime())) return time;
-    return parsed.toLocaleTimeString('en-GB', {
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true,
-    });
+    const [hour, minute] = time.split(':').map(Number);
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) return time;
+    const suffix = hour >= 12 ? 'pm' : 'am';
+    const hour12 = hour % 12 || 12;
+    return `${hour12}:${String(minute).padStart(2, '0')} ${suffix}`;
 }
 
 function buildDateRangeSummary(fromDate, toDate, fromTime = DEFAULT_ORDER_FILTER_TIME, toTime = DEFAULT_ORDER_FILTER_TIME) {
     if (fromDate && toDate) {
-        return `${formatFilterDateLabel(fromDate)} ${formatFilterTimeLabel(fromTime)} – ${formatFilterDateLabel(toDate)} ${formatFilterTimeLabel(toTime)}`;
+        return `${formatFilterDateLabel(fromDate)} ${formatFilterTimeLabel(fromTime)} – ${formatFilterDateLabel(toDate)} ${formatFilterTimeLabel(toTime)} (Dubai)`;
     }
     if (fromDate) {
-        return `from ${formatFilterDateLabel(fromDate)} ${formatFilterTimeLabel(fromTime)}`;
+        return `from ${formatFilterDateLabel(fromDate)} ${formatFilterTimeLabel(fromTime)} (Dubai)`;
     }
     if (toDate) {
-        return `until ${formatFilterDateLabel(toDate)} ${formatFilterTimeLabel(toTime)}`;
+        return `until ${formatFilterDateLabel(toDate)} ${formatFilterTimeLabel(toTime)} (Dubai)`;
     }
     return '';
 }
@@ -91,6 +99,18 @@ import {
 } from '@/lib/storeOrderWooExport';
 import { isAwaitingPaymentOrder, isVisibleStoreOrder } from '@/lib/deferredOrderStatus';
 import { isPaymentFailedStoreOrder, hasPaymentFailedFollowUpDiscount, hasPaymentFailedFollowUp } from '@/lib/paymentFailedFollowUp';
+import { getDefaultWaslahPickupInfo } from '@/lib/waslahOrderMapper';
+import WaslahShipNotice, { buildWaslahShipNotice } from '@/components/store/WaslahShipNotice';
+import {
+    getWaslahCourierStatus,
+    isWaslahCourierTerminal,
+    mapWaslahSubtagToOrderStatus,
+    resolveLatestWaslahAppStatus,
+    resolveWaslahOrderStatusTransition,
+    buildEmxTrackingUrl,
+} from '@/lib/waslahTracking';
+import { isWaslahLabelReadyOrder, isWaslahLabelNotPrinted } from '@/lib/waslahReceipts';
+import TrackingTimeline from '@/components/TrackingTimeline';
 
 function normalizeOrderSearchQuery(value = '') {
     return String(value || '').trim().toLowerCase();
@@ -117,6 +137,8 @@ function orderMatchesSearch(order, query) {
         order?._id ? String(order._id) : '',
         order?.legacySourceId,
         order?.trackingId,
+        order?.waslah?.trackingNumber,
+        order?.waslah?.orderId,
         order?.trackingUrl,
         order?.courier,
         order?.delhivery?.waybill,
@@ -143,6 +165,7 @@ function orderMatchesSearch(order, query) {
             order?.shippingAddress?.phone,
             order?.shortOrderNumber != null ? String(order.shortOrderNumber) : '',
             order?.trackingId,
+            order?.waslah?.trackingNumber,
             order?.delhivery?.waybill,
         ]
             .filter(Boolean)
@@ -258,6 +281,91 @@ const updateTrackingDetails = async (orderId, trackingId, trackingUrl, courier, 
     }
 };
 
+function isWaslahShipmentProcessed(order) {
+    return Boolean(getOrderAwb(order));
+}
+
+/** Waslah already has this shipment but Store1920 is not linked yet. */
+function isWaslahUnlinkedDuplicate(order) {
+    return Boolean(
+        order?.waslah?.unlinkedInWaslah
+        && !isWaslahShipmentProcessed(order),
+    );
+}
+
+function getOrderAwb(order) {
+    const waslahTrackingNumber = String(order?.waslah?.trackingNumber || '').trim();
+    if (waslahTrackingNumber) return waslahTrackingNumber;
+
+    const courier = String(order?.courier || '').toLowerCase();
+    const hasWaslahAssociation = Boolean(
+        order?.waslah?.orderId
+        || order?.waslah?.processed
+        || courier.includes('emx')
+        || courier.includes('waslah'),
+    );
+    return hasWaslahAssociation ? String(order?.trackingId || '').trim() : '';
+}
+
+/** Any courier AWB for list/filters (EMX Waslah number or manual trackingId). */
+function getDisplayAwb(order) {
+    return getOrderAwb(order) || String(order?.trackingId || '').trim();
+}
+
+function getWaslahOrderReference(order) {
+    return String(order?.waslah?.reference || order?.shortOrderNumber || '').trim();
+}
+
+const WASLAH_LIVE_STATUS_POLL_MS = 30 * 1000;
+const WASLAH_LIVE_STATUS_BATCH_SIZE = 12;
+
+function getWaslahLiveAppStatus(order) {
+    return getWaslahCourierStatus(order);
+}
+
+function isWaslahLiveTerminalOrder(order) {
+    return isWaslahCourierTerminal(order);
+}
+
+function getWaslahLiveStatusColor(order) {
+    const liveStatus = getWaslahLiveAppStatus(order);
+    return getStoreOrderStatusMeta(liveStatus || String(order?.status || '').toUpperCase()).color;
+}
+
+function getWaslahLiveStatusLabel(order) {
+    return String(
+        order?.waslah?.currentStatus
+        || order?.waslah?.lastSubtagMessage
+        || getStoreOrderStatusMeta(String(order?.status || '').toUpperCase()).label
+        || 'AWB created',
+    ).trim();
+}
+
+function mergeWaslahLiveStatusPatch(current, incoming) {
+    if (!current || !incoming || String(current._id) !== String(incoming._id)) return current;
+
+    const currentUpdatedAt = Date.parse(current.updatedAt || '');
+    const incomingUpdatedAt = Date.parse(incoming.updatedAt || '');
+    if (
+        Number.isFinite(currentUpdatedAt)
+        && Number.isFinite(incomingUpdatedAt)
+        && incomingUpdatedAt < currentUpdatedAt
+    ) return current;
+
+    return {
+        ...current,
+        status: incoming.status ?? current.status,
+        trackingId: incoming.trackingId ?? current.trackingId,
+        trackingUrl: incoming.trackingUrl ?? current.trackingUrl,
+        courier: incoming.courier ?? current.courier,
+        updatedAt: incoming.updatedAt ?? current.updatedAt,
+        waslah: {
+            ...(current.waslah || {}),
+            ...(incoming.waslah || {}),
+        },
+    };
+}
+
 export default function StoreOrders() {
     const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || 'AED';
     const [orders, setOrders] = useState([]);
@@ -310,13 +418,18 @@ export default function StoreOrders() {
         serviceType: 'NOR'
     });
     const [waslahConfig, setWaslahConfig] = useState({ configured: false, createOrderUrl: '' });
+    const [waslahSenders, setWaslahSenders] = useState([]);
+    const [waslahServices, setWaslahServices] = useState([]);
+    const [loadingWaslahSenders, setLoadingWaslahSenders] = useState(false);
+    const [loadingWaslahServices, setLoadingWaslahServices] = useState(false);
     const [shippingWithWaslah, setShippingWithWaslah] = useState(false);
-    const [testingWaslah, setTestingWaslah] = useState(false);
-    const [waslahPickupInfo, setWaslahPickupInfo] = useState({
-        pickup_date: '',
-        pickup_time: '09:00-21:00',
-        pickup_vehicle: 'motorcycle',
-    });
+    const [refreshingWaslahStatus, setRefreshingWaslahStatus] = useState(false);
+    const [waslahStatusRefreshedAt, setWaslahStatusRefreshedAt] = useState(null);
+    const [waslahPickupInfo, setWaslahPickupInfo] = useState(() => getDefaultWaslahPickupInfo());
+    const [waslahManualOrderId, setWaslahManualOrderId] = useState('');
+    const [waslahLinkHelpOpen, setWaslahLinkHelpOpen] = useState(false);
+    const [waslahSuccessNotice, setWaslahSuccessNotice] = useState(null);
+    const [downloadingWaslahReceipts, setDownloadingWaslahReceipts] = useState(false);
     const [refreshInterval, setRefreshInterval] = useState(30); // seconds
     const [liveOrderAlert, setLiveOrderAlert] = useState('');
     const [showRejectModal, setShowRejectModal] = useState(false);
@@ -340,9 +453,24 @@ export default function StoreOrders() {
     });
     const [generatingAwb, setGeneratingAwb] = useState(false);
     const refreshIntervalRef = useRef(null);
+    const waslahStatusRefreshInFlightRef = useRef(new Set());
+    const waslahBatchRefreshInFlightRef = useRef(false);
+    const waslahBatchCursorRef = useRef(0);
+    const selectedOrderIdRef = useRef('');
     const router = useRouter();
 
+    selectedOrderIdRef.current = String(selectedOrder?._id || '');
+
     const { user, getToken, loading: authLoading } = useAuth();
+
+    const liveWaslahOrderIds = useMemo(() => orders
+        .filter((order) => (
+            isWaslahShipmentProcessed(order)
+            && !isWaslahLiveTerminalOrder(order)
+        ))
+        .map((order) => String(order._id))
+        .filter(Boolean), [orders]);
+    const liveWaslahOrderIdsKey = liveWaslahOrderIds.join(',');
 
     const callCourierProxy = async (action, params, data) => {
         setLtlLoading(true);
@@ -423,6 +551,27 @@ export default function StoreOrders() {
         return null;
     };
 
+    const mapWaslahToOrderStatus = (waslah, currentStatus) => {
+        if (!waslah) return null;
+
+        const fromEvents = Array.isArray(waslah.events) && waslah.events.length
+            ? resolveLatestWaslahAppStatus(waslah.events)
+            : null;
+        const candidate = waslah.appStatus || fromEvents;
+
+        const candidateOrderStatus = resolveWaslahOrderStatusTransition(candidate, currentStatus);
+        if (candidateOrderStatus && candidateOrderStatus !== currentStatus) return candidateOrderStatus;
+
+        const subtag = waslah.currentSubtag || waslah.lastSubtag;
+        if (subtag) {
+            const mapped = mapWaslahSubtagToOrderStatus(subtag);
+            const mappedOrderStatus = resolveWaslahOrderStatusTransition(mapped, currentStatus);
+            if (mappedOrderStatus && mappedOrderStatus !== currentStatus) return mappedOrderStatus;
+        }
+
+        return null;
+    };
+
     // Unified payment-status resolver for dashboard
     const isOrderPaid = (order) => {
         if (isAwaitingPaymentOrder(order)) return false;
@@ -467,27 +616,52 @@ export default function StoreOrders() {
         { value: 'TAMARA', label: 'Tamara' },
         { value: 'WALLET', label: 'Wallet' },
     ];
-    const getOrderStats = () => {
-        const confirmedOrders = orders.filter(isVisibleStoreOrder);
+    const getOrderStats = (baseOrders = orders) => {
+        const confirmedOrders = baseOrders.filter(isVisibleStoreOrder);
         const stats = {
-            TOTAL: orders.length,
+            TOTAL: baseOrders.length,
             ACTIVE: confirmedOrders.length,
-            RETURN_REQUESTED: orders.filter((o) => o.returns && o.returns.some((r) => r.status === 'REQUESTED')).length,
-            PENDING_PAYMENT: orders.filter(isAwaitingPaymentOrder).length,
-            PENDING_SHIPMENT: confirmedOrders.filter((o) => !o.trackingId && ['ORDER_PLACED', 'PROCESSING'].includes(o.status)).length,
+            RETURN_REQUESTED: baseOrders.filter((o) => o.returns && o.returns.some((r) => r.status === 'REQUESTED')).length,
+            PENDING_PAYMENT: baseOrders.filter(isAwaitingPaymentOrder).length,
+            PENDING_SHIPMENT: confirmedOrders.filter((o) => !getDisplayAwb(o) && ['ORDER_PLACED', 'PROCESSING'].includes(o.status)).length,
+            LABEL_READY: baseOrders.filter(isWaslahLabelReadyOrder).length,
         };
 
         STORE_ORDER_STATUS_OPTIONS.forEach(({ value }) => {
-            stats[value] = orders.filter((o) => o.status === value).length;
+            stats[value] = baseOrders.filter((o) => o.status === value).length;
         });
 
         return stats;
     };
+
+    const getStatsBaseOrders = () => {
+        let base = orders;
+        if (fromDate || toDate) {
+            base = base.filter(isOrderInRange);
+        }
+        if (filterPayment !== 'ALL') {
+            base = base.filter((o) => normalizeOrderPaymentMethod(o) === filterPayment);
+        }
+        if (filterTrafficSource !== 'ALL') {
+            base = base.filter((o) => getOrderTrafficSourceKey(o) === filterTrafficSource);
+        }
+        if (orderSearchQuery.trim()) {
+            base = base.filter((order) => orderMatchesSearch(order, orderSearchQuery));
+        }
+        return base;
+    };
     const getDateRange = () => {
         if (!fromDate && !toDate) return { start: null, end: null };
-        const start = fromDate ? buildFilterDateTime(fromDate, fromTime) : null;
-        let end = toDate ? buildFilterDateTime(toDate, toTime) : null;
-        if (start && end && end <= start) {
+        const normalizedFromTime = normalizeFilterTimeValue(fromTime);
+        const normalizedToTime = normalizeFilterTimeValue(toTime);
+        const start = fromDate ? buildFilterDateTime(fromDate, normalizedFromTime) : null;
+        let end = toDate ? buildFilterDateTime(toDate, normalizedToTime) : null;
+
+        // Same cutover on both ends (or To-only) → To date includes that full business day.
+        // e.g. 10:00–10:00 means through the next 10:00 cutover.
+        if (end && toDate && (!start || normalizedFromTime === normalizedToTime)) {
+            end = buildFilterDateTime(addDaysToDateOnly(toDate, 1), normalizedToTime);
+        } else if (start && end && end.getTime() <= start.getTime()) {
             end = new Date(end.getTime() + 24 * 60 * 60 * 1000);
         }
         return { start, end };
@@ -499,7 +673,7 @@ export default function StoreOrders() {
         const createdAt = order?.createdAt ? new Date(order.createdAt) : null;
         if (!createdAt || Number.isNaN(createdAt.getTime())) return false;
         if (start && createdAt < start) return false;
-        if (end && createdAt > end) return false;
+        if (end && createdAt >= end) return false;
         return true;
     };
 
@@ -512,7 +686,9 @@ export default function StoreOrders() {
         } else if (filterStatus === 'PENDING_PAYMENT') {
             dateFiltered = dateFiltered.filter(isAwaitingPaymentOrder);
         } else if (filterStatus === 'PENDING_SHIPMENT') {
-            dateFiltered = dateFiltered.filter((o) => !o.trackingId && ['ORDER_PLACED', 'PROCESSING'].includes(o.status));
+            dateFiltered = dateFiltered.filter((o) => !getDisplayAwb(o) && ['ORDER_PLACED', 'PROCESSING'].includes(o.status));
+        } else if (filterStatus === 'LABEL_READY') {
+            dateFiltered = dateFiltered.filter(isWaslahLabelReadyOrder);
         } else if (filterStatus === 'RETURN_REQUESTED') {
             dateFiltered = dateFiltered.filter((o) => o.returns && o.returns.some((r) => r.status === 'REQUESTED'));
         } else if (filterStatus === 'CONVERTED') {
@@ -615,8 +791,16 @@ export default function StoreOrders() {
         [orders]
     );
 
-    const stats = getOrderStats();
     const hasDateFilter = Boolean(fromDate || toDate);
+    const hasStatsScopeFilter = hasDateFilter
+        || filterPayment !== 'ALL'
+        || filterTrafficSource !== 'ALL'
+        || Boolean(orderSearchQuery.trim());
+    const statsBaseOrders = useMemo(
+        () => getStatsBaseOrders(),
+        [orders, fromDate, toDate, fromTime, toTime, filterPayment, filterTrafficSource, orderSearchQuery],
+    );
+    const stats = useMemo(() => getOrderStats(statsBaseOrders), [statsBaseOrders, orders]);
     const ordersMatchingDateRange = useMemo(
         () => orders.filter(isOrderInRange),
         [orders, fromDate, toDate, fromTime, toTime],
@@ -640,6 +824,108 @@ export default function StoreOrders() {
         .filter((orderId) => selectedOrderIds.includes(orderId));
     const allVisibleSelected = paginatedOrders.length > 0 && selectedVisibleOrderIds.length === paginatedOrders.length;
     const hasSelectedOrders = selectedOrderIds.length > 0;
+
+    const applyLabelPrintedToOrders = (orderIds, printedAt = new Date().toISOString()) => {
+        const idSet = new Set(orderIds.map(String));
+        const updater = (order) => (
+            idSet.has(String(order._id))
+                ? { ...order, waslah: { ...(order.waslah || {}), labelPrintedAt: printedAt } }
+                : order
+        );
+        setOrders((prev) => prev.map(updater));
+        setSelectedOrder((prev) => (prev && idSet.has(String(prev._id)) ? updater(prev) : prev));
+    };
+
+    const markOrdersLabelPrinted = async (orderIds) => {
+        const ids = (Array.isArray(orderIds) ? orderIds : [orderIds])
+            .map((id) => String(id || '').trim())
+            .filter(Boolean);
+        if (!ids.length) return false;
+
+        try {
+            const token = await getToken();
+            const { data } = await axios.post(
+                '/api/store/waslah/mark-label-printed',
+                { orderIds: ids },
+                { headers: { Authorization: `Bearer ${token}` } },
+            );
+            if (data?.success) {
+                applyLabelPrintedToOrders(data.orderIds || ids, data.labelPrintedAt);
+                return true;
+            }
+        } catch (error) {
+            console.error('Mark label printed failed:', error);
+            toast.error(error?.response?.data?.error || 'Failed to mark label as printed');
+        }
+        return false;
+    };
+
+    const getLabelReadyOrdersForReceiptDownload = () => {
+        let pool = filteredOrders.filter(isWaslahLabelReadyOrder);
+        if (hasSelectedOrders) {
+            const selectedSet = new Set(selectedOrderIds.map(String));
+            pool = pool.filter((order) => selectedSet.has(String(order._id)));
+        }
+        return pool;
+    };
+
+    const downloadBulkWaslahReceipts = async () => {
+        if (!waslahConfig.configured) {
+            toast.error('Waslah is not configured on the server');
+            return;
+        }
+
+        const labelReadyOrders = getLabelReadyOrdersForReceiptDownload();
+        if (!labelReadyOrders.length) {
+            toast.error(hasSelectedOrders
+                ? 'None of the selected orders have an AWB and Waslah label ready'
+                : 'No label-ready orders in the current list');
+            return;
+        }
+
+        setDownloadingWaslahReceipts(true);
+        try {
+            const token = await getToken();
+            const response = await axios.post(
+                '/api/store/waslah/print-receipts',
+                { orderIds: labelReadyOrders.map((order) => order._id) },
+                {
+                    headers: { Authorization: `Bearer ${token}` },
+                    responseType: 'blob',
+                },
+            );
+
+            const blob = new Blob([response.data], { type: 'application/pdf' });
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `order-receipts-${labelReadyOrders.length}-${new Date().toISOString().slice(0, 10)}.pdf`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(url);
+
+            await markOrdersLabelPrinted(labelReadyOrders.map((order) => order._id));
+            toast.success(`Downloaded ${labelReadyOrders.length} order receipt(s) as one PDF`);
+        } catch (error) {
+            console.error('Bulk Waslah receipt download failed:', error);
+            let message = 'Failed to download order receipts';
+            if (error?.response?.data instanceof Blob) {
+                try {
+                    const text = await error.response.data.text();
+                    const parsed = JSON.parse(text);
+                    message = parsed?.error || message;
+                } catch {
+                    // keep default message
+                }
+            } else if (error?.response?.data?.error) {
+                message = error.response.data.error;
+            }
+            toast.error(message);
+        } finally {
+            setDownloadingWaslahReceipts(false);
+        }
+    };
 
     const toggleOrderSelection = (orderId) => {
         const normalizedOrderId = String(orderId);
@@ -787,8 +1073,9 @@ export default function StoreOrders() {
     // Manually trigger automatic status sync from latest courier tracking
     const autoSyncStatusFromTracking = async (targetOrder) => {
         const order = targetOrder || selectedOrder;
+        const awb = getDisplayAwb(order);
 
-        if (!order || !order.trackingId) {
+        if (!order || !awb) {
             toast.error('Add a tracking ID first');
             return;
         }
@@ -797,20 +1084,22 @@ export default function StoreOrders() {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
             
-            const { data } = await axios.get(`/api/track-order?awb=${order.trackingId}`, {
+            const { data } = await axios.get(`/api/track-order?awb=${encodeURIComponent(awb)}`, {
                 headers: { Authorization: `Bearer ${token}` },
                 signal: controller.signal
             });
             
             clearTimeout(timeoutId);
 
-            if (!data.order || !data.order.delhivery) {
+            if (!data.order || (!data.order.delhivery && !data.order.waslah)) {
                 toast.error('No live courier status found yet. Try again later.');
                 return;
             }
 
             const currentStatus = data.order.status || order.status;
-            const mappedStatus = mapDelhiveryStatusToOrderStatus(data.order.delhivery, currentStatus);
+            const mappedStatus = data.order.waslah
+                ? mapWaslahToOrderStatus(data.order.waslah, currentStatus)
+                : mapDelhiveryStatusToOrderStatus(data.order.delhivery, currentStatus);
 
             if (!mappedStatus || mappedStatus === currentStatus) {
                 toast.error('Status is already up to date with tracking.');
@@ -864,6 +1153,10 @@ export default function StoreOrders() {
             product: 'DOM',
             serviceType: 'NOR'
         });
+        setWaslahPickupInfo(getDefaultWaslahPickupInfo());
+        setWaslahLinkHelpOpen(isWaslahUnlinkedDuplicate(order));
+        setWaslahSuccessNotice(null);
+        setWaslahStatusRefreshedAt(null);
         // Pre-fill AWB manifest data from order
         const isCod = order.payment_method === 'cod' || order.paymentMethod === 'cod';
         setAwbManifestData({
@@ -936,6 +1229,7 @@ export default function StoreOrders() {
         setIsModalOpen(false);
         setSelectedOrder(null);
         setShowOrderEditPanel(false);
+        setWaslahStatusRefreshedAt(null);
         // Reset tracking data
         setTrackingData({
             trackingId: '',
@@ -962,7 +1256,10 @@ export default function StoreOrders() {
             if (!silent && !readPageCache('store-orders')) setLoading(true);
 
             const { data } = await axios.get('/api/store/orders', {
-                params: { withDelhivery: autoRefreshEnabled ? 'true' : 'false' },
+                params: {
+                    withDelhivery: autoRefreshEnabled ? 'true' : 'false',
+                    withWaslah: 'true',
+                },
                 headers: { Authorization: `Bearer ${token}` },
             });
             console.log('[ORDERS DEBUG] Raw orders data:', data.orders);
@@ -982,7 +1279,11 @@ export default function StoreOrders() {
             // and persist the change back to the backend so customer views stay in sync.
             const updatesToPersist = [];
             syncedOrders = syncedOrders.map(order => {
-                const mapped = mapDelhiveryStatusToOrderStatus(order.delhivery, order.status);
+                const waslahMapped = order?.waslah
+                    ? mapWaslahToOrderStatus(order.waslah, order.status)
+                    : null;
+                const delhiveryMapped = mapDelhiveryStatusToOrderStatus(order.delhivery, order.status);
+                const mapped = waslahMapped || delhiveryMapped;
                 if (mapped && mapped !== order.status) {
                     updatesToPersist.push({ orderId: order._id, status: mapped });
                     return { ...order, status: mapped };
@@ -1142,6 +1443,50 @@ export default function StoreOrders() {
         }
     };
 
+    const loadWaslahSenders = async () => {
+        setLoadingWaslahSenders(true);
+        try {
+            const token = await getToken();
+            const { data } = await axios.get('/api/store/waslah/senders', {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            const addresses = Array.isArray(data?.addresses) ? data.addresses : [];
+            setWaslahSenders(addresses);
+            if (addresses.length) {
+                toast.success(`Found ${addresses.length} Waslah sender address(es). Copy the id into WASLAH_SENDER_ID in .env`);
+            } else {
+                toast.error(data?.hint || 'No sender addresses found. Ask Waslah support for your sender _id.');
+            }
+        } catch (error) {
+            setWaslahSenders([]);
+            toast.error(error?.response?.data?.error || 'Could not load Waslah sender addresses');
+        } finally {
+            setLoadingWaslahSenders(false);
+        }
+    };
+
+    const loadWaslahServices = async () => {
+        setLoadingWaslahServices(true);
+        try {
+            const token = await getToken();
+            const { data } = await axios.get('/api/store/waslah/services', {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            const services = Array.isArray(data?.services) ? data.services : [];
+            setWaslahServices(services);
+            if (services.length) {
+                toast.success(`Found ${services.length} ${data?.preferredCourier || 'EMX'} service(s). Copy the id into WASLAH_SERVICE_ID in .env`);
+            } else {
+                toast.error(data?.hint || `No ${data?.preferredCourier || 'EMX'} services found. Ask Waslah support for your EMX service _id.`);
+            }
+        } catch (error) {
+            setWaslahServices([]);
+            toast.error(error?.response?.data?.error || 'Could not load Waslah services');
+        } finally {
+            setLoadingWaslahServices(false);
+        }
+    };
+
     useEffect(() => {
         if (authLoading || !user) return;
         loadWaslahConfig();
@@ -1210,36 +1555,30 @@ export default function StoreOrders() {
     }, [autoRefreshEnabled, selectedOrder, refreshInterval]);
 
     useEffect(() => {
-        const today = new Date();
-        const yyyy = today.getFullYear();
-        const mm = String(today.getMonth() + 1).padStart(2, '0');
-        const dd = String(today.getDate()).padStart(2, '0');
-        const todayStr = `${yyyy}-${mm}-${dd}`;
+        const cutover = DEFAULT_ORDER_FILTER_TIME;
+        const bounds = getOrdersByProductBusinessDayBounds(cutover);
+        const dubaiToday = getDubaiDateParts().date;
 
         if (datePreset === 'TODAY') {
-            setFromDate(todayStr);
-            setToDate(todayStr);
-            setFromTime(DEFAULT_ORDER_FILTER_TIME);
-            setToTime(DEFAULT_ORDER_FILTER_TIME);
+            setFromDate(bounds.startDate || dubaiToday);
+            setToDate(bounds.startDate || dubaiToday);
+            setFromTime(cutover);
+            setToTime(cutover);
             return;
         }
         if (datePreset === 'LAST_7_DAYS') {
-            const lastWeek = new Date(today);
-            lastWeek.setDate(today.getDate() - 6);
-            const wyyyy = lastWeek.getFullYear();
-            const wmm = String(lastWeek.getMonth() + 1).padStart(2, '0');
-            const wdd = String(lastWeek.getDate()).padStart(2, '0');
-            setFromDate(`${wyyyy}-${wmm}-${wdd}`);
-            setToDate(todayStr);
-            setFromTime(DEFAULT_ORDER_FILTER_TIME);
-            setToTime(DEFAULT_ORDER_FILTER_TIME);
+            const startDate = addDaysToDateOnly(bounds.startDate || dubaiToday, -6);
+            setFromDate(startDate);
+            setToDate(bounds.startDate || dubaiToday);
+            setFromTime(cutover);
+            setToTime(cutover);
             return;
         }
         if (datePreset === 'ALL') {
             setFromDate('');
             setToDate('');
-            setFromTime(DEFAULT_ORDER_FILTER_TIME);
-            setToTime(DEFAULT_ORDER_FILTER_TIME);
+            setFromTime(cutover);
+            setToTime(cutover);
         }
     }, [datePreset]);
 
@@ -1251,18 +1590,20 @@ export default function StoreOrders() {
                 headers: { Authorization: `Bearer ${token}` }
             });
             if (data.order) {
-                // Optionally sync internal order.status with Delhivery live status
-                const mappedStatus = mapDelhiveryStatusToOrderStatus(
-                    data.order.delhivery,
-                    selectedOrder.status || data.order.status
-                );
+                const mappedStatus = data.order.waslah
+                    ? mapWaslahToOrderStatus(data.order.waslah, selectedOrder.status || data.order.status)
+                    : mapDelhiveryStatusToOrderStatus(
+                        data.order.delhivery,
+                        selectedOrder.status || data.order.status
+                    );
 
                 if (mappedStatus && mappedStatus !== (selectedOrder.status || data.order.status)) {
                     try {
                         // Persist new status silently (no toast spam during auto-refresh)
                         await axios.post('/api/store/orders/update-status', {
                             orderId: selectedOrder._id,
-                            status: mappedStatus
+                            status: mappedStatus,
+                            silent: true,
                         }, {
                             headers: { Authorization: `Bearer ${token}` }
                         });
@@ -1277,7 +1618,8 @@ export default function StoreOrders() {
                 setSelectedOrder(prev => ({
                     ...prev,
                     ...data.order,
-                    delhivery: data.order.delhivery || prev.delhivery
+                    delhivery: data.order.delhivery || prev.delhivery,
+                    waslah: data.order.waslah || prev.waslah,
                 }));
                 // Also update in orders list
                 setOrders(prev => prev.map(o => o._id === selectedOrder._id ? {...o, ...data.order} : o));
@@ -1698,7 +2040,12 @@ export default function StoreOrders() {
         });
     };
 
-    const callWaslahShip = async ({ dryRun = false, testCreateOnly = false } = {}) => {
+    const callWaslahShip = async ({
+        dryRun = false,
+        testCreateOnly = false,
+        syncOnly = false,
+        waslahOrderId = '',
+    } = {}) => {
         if (!selectedOrder) return null;
 
         if (!selectedOrder.shippingAddress?.street && !selectedOrder.shippingAddress?.city) {
@@ -1707,15 +2054,19 @@ export default function StoreOrders() {
         }
 
         const token = await getToken();
+        const pickupDefaults = getDefaultWaslahPickupInfo();
         const pickupInfo = {
-            ...(waslahPickupInfo.pickup_date ? { pickup_date: waslahPickupInfo.pickup_date } : {}),
-            pickup_time: waslahPickupInfo.pickup_time || '09:00-21:00',
-            pickup_vehicle: waslahPickupInfo.pickup_vehicle || 'motorcycle',
+            pickup_date: waslahPickupInfo.pickup_date || pickupDefaults.pickup_date,
+            pickup_time: waslahPickupInfo.pickup_time || pickupDefaults.pickup_time,
+            pickup_vehicle: waslahPickupInfo.pickup_vehicle || pickupDefaults.pickup_vehicle,
         };
 
         const { data } = await axios.post('/api/store/waslah/ship', {
             orderId: selectedOrder._id,
             pickupInfo,
+            serviceId: waslahServices[0]?.id || undefined,
+            waslahOrderId: waslahOrderId || waslahManualOrderId || undefined,
+            syncOnly,
             dryRun,
             testCreateOnly,
         }, {
@@ -1725,44 +2076,285 @@ export default function StoreOrders() {
         return data;
     };
 
-    const testWaslahConnection = async () => {
-        if (!selectedOrder) return;
-        setTestingWaslah(true);
+    const formatWaslahError = (error, fallback = 'Waslah request failed') => {
+        const data = error?.response?.data;
+        const parts = [];
+        if (data?.error) parts.push(data.error);
+        if (data?.hint) parts.push(data.hint);
+        if (Array.isArray(data?.validationIssues) && data.validationIssues.length) {
+            parts.push(data.validationIssues.join(' '));
+        }
+        if (parts.length) return parts.join(' — ');
+        if (error?.message) return error.message;
+        return fallback;
+    };
+
+    const showWaslahSuccessNotice = (data = {}) => {
+        setWaslahSuccessNotice(buildWaslahShipNotice(data));
+    };
+
+    const refreshWaslahStatus = async ({ orderId, manual = false, signal } = {}) => {
+        const targetOrderId = String(orderId || selectedOrder?._id || '').trim();
+        if (!targetOrderId) return null;
+        if (waslahStatusRefreshInFlightRef.current.has(targetOrderId)) {
+            if (manual) toast('An EMX status refresh is already running.');
+            return { busy: true };
+        }
+
+        waslahStatusRefreshInFlightRef.current.add(targetOrderId);
+        if (manual) setRefreshingWaslahStatus(true);
+
         try {
-            const data = await callWaslahShip({ dryRun: true });
-            if (data?.success) {
-                toast.success(`Waslah preview OK — create URL: ${data.createOrderUrl || waslahConfig.createOrderUrl}`);
-                console.info('[Waslah dry-run payload]', data.payload);
-            } else {
-                toast.error(data?.error || 'Waslah preview failed');
+            const token = await getToken();
+            if (!token) throw new Error('Authentication failed. Please sign in again.');
+
+            const { data } = await axios.post('/api/store/waslah/sync-status', {
+                orderId: targetOrderId,
+                force: manual,
+            }, {
+                headers: { Authorization: `Bearer ${token}` },
+                signal,
+            });
+
+            if (!data?.success || !data?.order) {
+                throw new Error(data?.error || 'EMX did not return a live status');
             }
+            if (data.skipped) {
+                throw new Error('This order does not have an EMX AWB to refresh');
+            }
+
+            const liveOrder = data.order;
+            const mergeLiveOrder = (current) => mergeWaslahLiveStatusPatch(current, liveOrder);
+
+            setSelectedOrder((current) => (
+                current && String(current._id) === targetOrderId
+                    ? mergeLiveOrder(current)
+                    : current
+            ));
+            setOrders((current) => current.map((order) => (
+                String(order._id) === targetOrderId ? mergeLiveOrder(order) : order
+            )));
+            if (selectedOrderIdRef.current === targetOrderId) {
+                setWaslahStatusRefreshedAt(data.refreshedAt || new Date().toISOString());
+            }
+
+            clearPageCache('store-orders');
+
+            if (manual && selectedOrderIdRef.current === targetOrderId) {
+                const liveLabel = getWaslahLiveStatusLabel(liveOrder);
+                toast.success(data.changed
+                    ? `EMX status updated: ${liveLabel}`
+                    : `EMX status is up to date: ${liveLabel}`);
+            }
+
+            return data;
         } catch (error) {
-            console.error('Waslah test error:', error);
-            toast.error(error?.response?.data?.error || 'Waslah preview failed');
+            if (axios.isCancel(error) || error?.name === 'CanceledError' || error?.name === 'AbortError') {
+                return null;
+            }
+            if (manual) {
+                toast.error(error?.response?.data?.error || error?.message || 'Failed to refresh EMX status');
+            } else {
+                console.error('Live EMX status refresh failed:', error?.response?.data?.detail || error?.message || error);
+            }
+            return null;
         } finally {
-            setTestingWaslah(false);
+            waslahStatusRefreshInFlightRef.current.delete(targetOrderId);
+            if (manual) setRefreshingWaslahStatus(false);
         }
     };
 
-    const testWaslahCreateOrder = async () => {
-        if (!selectedOrder) return;
-        setTestingWaslah(true);
+    const refreshWaslahStatusBatch = async ({ orderIds = [], signal } = {}) => {
+        if (waslahBatchRefreshInFlightRef.current) return { busy: true };
+
+        const targets = [...new Set(orderIds.map((value) => String(value || '').trim()))]
+            .filter((value) => value && !waslahStatusRefreshInFlightRef.current.has(value))
+            .slice(0, WASLAH_LIVE_STATUS_BATCH_SIZE);
+        if (!targets.length) return { busy: true };
+
+        waslahBatchRefreshInFlightRef.current = true;
+        targets.forEach((id) => waslahStatusRefreshInFlightRef.current.add(id));
+
         try {
-            const data = await callWaslahShip({ testCreateOnly: true });
-            if (data?.success) {
-                applyWaslahShipResult(data);
-                toast.success(`Waslah order created: ${data.waslahOrderId}`);
-                await fetchOrders();
-            } else {
-                toast.error(data?.error || 'Waslah create-order test failed');
-            }
+            const token = await getToken();
+            if (!token) return null;
+
+            const { data } = await axios.post('/api/store/waslah/sync-status', {
+                orderIds: targets,
+            }, {
+                headers: { Authorization: `Bearer ${token}` },
+                signal,
+            });
+            if (!data?.success || !Array.isArray(data.orders)) return null;
+
+            const liveById = new Map(data.orders.map((entry) => [String(entry._id), entry]));
+            const mergeLiveOrder = (current) => {
+                const liveOrder = liveById.get(String(current?._id));
+                return liveOrder ? mergeWaslahLiveStatusPatch(current, liveOrder) : current;
+            };
+
+            setOrders((current) => current.map(mergeLiveOrder));
+            setSelectedOrder((current) => (current ? mergeLiveOrder(current) : current));
+            clearPageCache('store-orders');
+            return data;
         } catch (error) {
-            console.error('Waslah create test error:', error);
-            toast.error(error?.response?.data?.error || 'Waslah create-order test failed');
+            if (!axios.isCancel(error) && error?.name !== 'CanceledError' && error?.name !== 'AbortError') {
+                console.error('Background EMX status refresh failed:', error?.response?.data?.detail || error?.message || error);
+            }
+            return null;
         } finally {
-            setTestingWaslah(false);
+            targets.forEach((id) => waslahStatusRefreshInFlightRef.current.delete(id));
+            waslahBatchRefreshInFlightRef.current = false;
         }
     };
+
+    // Keep the open EMX shipment synchronized without re-running the shipping workflow.
+    useEffect(() => {
+        const orderId = String(selectedOrder?._id || '');
+        const trackingId = getOrderAwb(selectedOrder);
+        const isWaslahOrder = Boolean(
+            selectedOrder?.waslah?.orderId
+            || selectedOrder?.waslah?.trackingNumber
+            || String(selectedOrder?.courier || '').toLowerCase().includes('emx')
+            || String(selectedOrder?.courier || '').toLowerCase().includes('waslah'),
+        );
+
+        if (
+            !isModalOpen
+            || !waslahConfig.configured
+            || !orderId
+            || !trackingId
+            || !isWaslahOrder
+            || isWaslahLiveTerminalOrder(selectedOrder)
+        ) {
+            return undefined;
+        }
+
+        let stopped = false;
+        let running = false;
+        let timerId = null;
+        const controller = new AbortController();
+
+        function scheduleNext(delay = WASLAH_LIVE_STATUS_POLL_MS) {
+            if (stopped) return;
+            if (timerId) window.clearTimeout(timerId);
+            timerId = window.setTimeout(runRefresh, delay);
+        }
+
+        async function runRefresh() {
+            if (stopped || running) return;
+            running = true;
+            let nextDelay = WASLAH_LIVE_STATUS_POLL_MS;
+            try {
+                if (document.visibilityState !== 'hidden') {
+                    const result = await refreshWaslahStatus({ orderId, signal: controller.signal });
+                    if (result?.busy) nextDelay = 500;
+                }
+            } finally {
+                running = false;
+                scheduleNext(nextDelay);
+            }
+        }
+
+        const handleVisibilityChange = () => {
+            if (document.visibilityState !== 'visible' || stopped) return;
+            if (timerId) window.clearTimeout(timerId);
+            runRefresh();
+        };
+
+        runRefresh();
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        return () => {
+            stopped = true;
+            controller.abort();
+            if (timerId) window.clearTimeout(timerId);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+        // Primitive dependencies intentionally restart polling only when the shipment changes.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [
+        isModalOpen,
+        waslahConfig.configured,
+        selectedOrder?._id,
+        selectedOrder?.trackingId,
+        selectedOrder?.waslah?.trackingNumber,
+        selectedOrder?.waslah?.orderId,
+        selectedOrder?.waslah?.appStatus,
+        selectedOrder?.waslah?.carrierStatus,
+        selectedOrder?.waslah?.currentSubtag,
+        selectedOrder?.waslah?.lastSubtag,
+        selectedOrder?.courier,
+        selectedOrder?.status,
+    ]);
+
+    // Reconcile every active EMX row, even when its details modal is closed.
+    // Large lists are rotated through small batches to keep courier/API load bounded.
+    useEffect(() => {
+        if (authLoading || !user || !waslahConfig.configured || !liveWaslahOrderIdsKey) {
+            return undefined;
+        }
+
+        const orderIds = liveWaslahOrderIdsKey.split(',').filter(Boolean);
+        if (!orderIds.length) return undefined;
+        if (waslahBatchCursorRef.current >= orderIds.length) waslahBatchCursorRef.current = 0;
+
+        let stopped = false;
+        let running = false;
+        let timerId = null;
+        const controller = new AbortController();
+
+        function scheduleNext(delay = WASLAH_LIVE_STATUS_POLL_MS) {
+            if (stopped) return;
+            if (timerId) window.clearTimeout(timerId);
+            timerId = window.setTimeout(runRefresh, delay);
+        }
+
+        async function runRefresh() {
+            if (stopped || running) return;
+            if (document.visibilityState === 'hidden') {
+                scheduleNext();
+                return;
+            }
+
+            running = true;
+            let nextDelay = WASLAH_LIVE_STATUS_POLL_MS;
+            const start = waslahBatchCursorRef.current % orderIds.length;
+            const batch = orderIds.slice(start, start + WASLAH_LIVE_STATUS_BATCH_SIZE);
+            try {
+                const result = await refreshWaslahStatusBatch({
+                    orderIds: batch,
+                    signal: controller.signal,
+                });
+                if (result?.busy) {
+                    nextDelay = 1000;
+                } else {
+                    waslahBatchCursorRef.current = (start + batch.length) % orderIds.length;
+                }
+            } finally {
+                running = false;
+                scheduleNext(nextDelay);
+            }
+        }
+
+        const handleVisibilityChange = () => {
+            if (document.visibilityState !== 'visible' || stopped) return;
+            if (timerId) window.clearTimeout(timerId);
+            runRefresh();
+        };
+
+        scheduleNext();
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        return () => {
+            stopped = true;
+            controller.abort();
+            if (timerId) window.clearTimeout(timerId);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+        // The key changes only when the set of active EMX shipments changes.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [authLoading, user?.uid, waslahConfig.configured, liveWaslahOrderIdsKey]);
 
     const shipOrderWithWaslah = async () => {
         if (!selectedOrder) return;
@@ -1786,15 +2378,52 @@ export default function StoreOrders() {
             }
 
             applyWaslahShipResult(data);
-            const parts = [
-                data.trackingNumber ? `AWB ${data.trackingNumber}` : null,
-                data.labelUrl ? 'label ready' : null,
-            ].filter(Boolean);
-            toast.success(`Shipped with Waslah${parts.length ? ` — ${parts.join(', ')}` : ''}`);
+            setWaslahLinkHelpOpen(false);
+            showWaslahSuccessNotice(data);
             await fetchOrders();
         } catch (error) {
             console.error('Ship with Waslah error:', error);
-            toast.error(error?.response?.data?.error || 'Failed to ship with Waslah');
+            const data = error?.response?.data;
+            if (data?.code === 'WASLAH_DUPLICATE_REFERENCE' || data?.code === 'WASLAH_LINK_REQUIRED') {
+                setWaslahLinkHelpOpen(true);
+            }
+            if (data?.order) {
+                applyWaslahShipResult({ order: data.order });
+            }
+            toast.error(formatWaslahError(error, 'Failed to ship with Waslah'));
+        } finally {
+            setShippingWithWaslah(false);
+        }
+    };
+
+    const linkWaslahAwb = async () => {
+        if (!selectedOrder) return;
+
+        if (!String(waslahManualOrderId || '').trim()) {
+            toast.error('Paste the 24-character Waslah Order ID from ship.waslah.ae (not order #616532)');
+            return;
+        }
+
+        if (!/^[a-f0-9]{24}$/i.test(String(waslahManualOrderId).trim())) {
+            toast.error('That looks like an order number. Waslah needs the 24-character ID from ship.waslah.ae');
+            return;
+        }
+
+        setShippingWithWaslah(true);
+        try {
+            const data = await callWaslahShip({ syncOnly: true });
+            if (!data?.success) {
+                toast.error(data?.error || 'Failed to link Waslah shipment');
+                return;
+            }
+
+            applyWaslahShipResult(data);
+            setWaslahLinkHelpOpen(false);
+            showWaslahSuccessNotice({ ...data, syncOnly: true });
+            await fetchOrders();
+        } catch (error) {
+            console.error('Link Waslah AWB error:', error);
+            toast.error(formatWaslahError(error, 'Failed to link Waslah shipment'));
         } finally {
             setShippingWithWaslah(false);
         }
@@ -1907,6 +2536,11 @@ export default function StoreOrders() {
             </div>
             
             {/* Order Statistics Cards */}
+            {hasStatsScopeFilter ? (
+                <p className="mb-2 text-xs text-slate-500">
+                    Summary counts match your current date, payment, source, and search filters.
+                </p>
+            ) : null}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
                 <div 
                     onClick={() => setFilterStatus('ALL')}
@@ -1956,6 +2590,62 @@ export default function StoreOrders() {
                 </div>
             </div>
 
+            {waslahConfig.configured && stats.LABEL_READY > 0 ? (
+                <div className="mb-6 flex flex-col gap-3 rounded-xl border border-violet-200 bg-violet-50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <p className="text-sm font-semibold text-violet-900">EMX labels ready</p>
+                        <p className="mt-0.5 text-xs text-violet-700">
+                            {stats.LABEL_READY} order(s) with shipment created and AWB generated
+                        </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setFilterStatus('LABEL_READY');
+                                setCurrentPage(1);
+                            }}
+                            className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${
+                                filterStatus === 'LABEL_READY'
+                                    ? 'bg-violet-700 text-white'
+                                    : 'border border-violet-300 bg-white text-violet-800 hover:bg-violet-100'
+                            }`}
+                        >
+                            <Package size={16} />
+                            Show label-ready only
+                        </button>
+                        {(filterStatus === 'LABEL_READY' || hasSelectedOrders || stats.LABEL_READY > 0) ? (
+                            <button
+                                type="button"
+                                onClick={downloadBulkWaslahReceipts}
+                                disabled={downloadingWaslahReceipts}
+                                className="inline-flex items-center gap-2 rounded-lg bg-violet-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-violet-800 disabled:cursor-wait disabled:opacity-60"
+                            >
+                                <Download size={16} className={downloadingWaslahReceipts ? 'animate-pulse' : ''} />
+                                {downloadingWaslahReceipts
+                                    ? 'Preparing PDF…'
+                                    : filterStatus === 'LABEL_READY' && !hasSelectedOrders
+                                        ? 'Download all receipts (PDF)'
+                                        : hasSelectedOrders
+                                            ? 'Download selected receipts (PDF)'
+                                            : 'Download label-ready receipts (PDF)'}
+                            </button>
+                        ) : null}
+                    </div>
+                </div>
+            ) : null}
+
+            {filterStatus === 'LABEL_READY' ? (
+                <div className="mb-4 rounded-lg border border-violet-200 bg-white px-4 py-3 text-sm text-violet-900">
+                    Showing {filteredOrders.length} order(s) with Waslah AWB generated.
+                    {filteredOrders.length > 0 ? (
+                        <span className="text-violet-700">
+                            {' '}Use <strong>Download all receipts (PDF)</strong> to get every label in one file.
+                        </span>
+                    ) : null}
+                </div>
+            ) : null}
+
             {/* Order filters — status, payment, traffic source */}
             <div className="mb-6">
                 <div className="mb-3 flex flex-wrap items-center gap-3">
@@ -1995,7 +2685,11 @@ export default function StoreOrders() {
                     </button>
                     {!showOrderFilters && activeOrderFilterCount > 0 ? (
                         <p className="text-xs text-slate-500">
-                            {filterStatus !== 'ALL' ? `Status: ${STORE_ORDER_STATUS_FILTER_OPTIONS.find((t) => t.value === filterStatus)?.label || filterStatus}` : null}
+                            {filterStatus !== 'ALL' ? `Status: ${
+                                filterStatus === 'LABEL_READY'
+                                    ? 'Labels ready'
+                                    : (STORE_ORDER_STATUS_FILTER_OPTIONS.find((t) => t.value === filterStatus)?.label || filterStatus)
+                            }` : null}
                             {filterPayment !== 'ALL' ? `${filterStatus !== 'ALL' ? ' · ' : ''}Payment: ${PAYMENT_FILTER_OPTIONS.find((o) => o.value === filterPayment)?.label || filterPayment}` : null}
                             {filterTrafficSource !== 'ALL' ? `${filterStatus !== 'ALL' || filterPayment !== 'ALL' ? ' · ' : ''}Source: ${TRAFFIC_SOURCE_FILTER_OPTIONS.find((o) => o.value === filterTrafficSource)?.label || filterTrafficSource}` : null}
                         </p>
@@ -2264,6 +2958,9 @@ export default function StoreOrders() {
                         </p>
                     ) : null}
                 </div>
+                <p className="text-xs text-slate-500">
+                    Dates use Dubai time (Asia/Dubai). With matching From/To times (default 10:00), the To date includes that full business day through the next 10:00.
+                </p>
 
                 {(hasDateFilter || orders.length > 0) && (
                     <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
@@ -2646,7 +3343,7 @@ export default function StoreOrders() {
                                                     className="min-w-[160px] flex-1"
                                                     onChange={(newStatus) => updateOrderStatus(order._id, newStatus, getToken, fetchOrders)}
                                                 />
-                                                {order.trackingId && (
+                                                {getDisplayAwb(order) && (
                                                     <button
                                                         type="button"
                                                         onClick={() => autoSyncStatusFromTracking(order)}
@@ -2670,10 +3367,17 @@ export default function StoreOrders() {
                                         </div>
                                     </td>
                                     <td className="px-4 py-3">
-                                        {order.trackingId ? (
-                                            <span className="bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded-full font-medium">
-                                                {order.trackingId.substring(0, 8)}...
-                                            </span>
+                                        {getDisplayAwb(order) ? (
+                                            <div className="flex flex-col items-start gap-1">
+                                                <span className="bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded-full font-medium">
+                                                    {getDisplayAwb(order).substring(0, 8)}...
+                                                </span>
+                                                {isWaslahLabelNotPrinted(order) ? (
+                                                    <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700 ring-1 ring-red-200">
+                                                        Not printed
+                                                    </span>
+                                                ) : null}
+                                            </div>
                                         ) : (
                                             <span className="text-slate-400 text-xs">Not shipped</span>
                                         )}
@@ -2712,6 +3416,14 @@ export default function StoreOrders() {
                                 <div>
                                     <h2 className="text-2xl font-bold mb-1">Order Details</h2>
                                     <p className="text-blue-100 text-xs">Order No: <span className='font-mono text-white'>{getDisplayOrderNumber(selectedOrder) || 'Pending'}</span></p>
+                                    {selectedOrder?.warehousePacking?.packed ? (
+                                        <p className="mt-2 inline-flex items-center rounded-full bg-teal-400/20 px-2.5 py-1 text-[11px] font-semibold text-teal-50 ring-1 ring-teal-200/40">
+                                            Packed
+                                            {selectedOrder.warehousePacking.packedByName
+                                                ? ` · ${selectedOrder.warehousePacking.packedByName}`
+                                                : ''}
+                                        </p>
+                                    ) : null}
                                     {isManualOrder ? (
                                         <div className="mt-2 flex flex-wrap gap-2">
                                             <span className="rounded-full bg-white/20 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
@@ -2781,16 +3493,309 @@ export default function StoreOrders() {
                                 />
                             ) : null}
 
-                            {/* Tracking Details Section */}
+                            {/* Shipping & Tracking */}
                             <div className="bg-gradient-to-br from-orange-50 to-orange-100 border border-orange-200 rounded-xl p-5">
                                 <div className="flex items-center gap-2 mb-4">
                                     <div className="w-10 h-10 bg-orange-500 rounded-lg flex items-center justify-center">
                                         <Truck size={20} className="text-white" />
                                     </div>
-                                    <h3 className="text-lg font-semibold text-orange-900">Tracking Information</h3>
+                                    <div>
+                                        <h3 className="text-lg font-semibold text-orange-900">Shipping &amp; Tracking</h3>
+                                        <p className="text-xs text-orange-800/80">Ship with EMX via Waslah, or enter tracking manually.</p>
+                                    </div>
                                 </div>
-                                
-                                {selectedOrder.trackingId ? (
+
+                                {waslahConfig.configured ? (
+                                    <div className="mb-4 space-y-3 rounded-lg border border-violet-200 bg-violet-50 p-4">
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                            <p className="text-sm font-semibold text-violet-900">EMX via Waslah</p>
+                                            {isWaslahShipmentProcessed(selectedOrder) ? (
+                                                <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${getWaslahLiveStatusColor(selectedOrder)}`}>
+                                                    {getWaslahLiveStatusLabel(selectedOrder)}
+                                                </span>
+                                            ) : isWaslahUnlinkedDuplicate(selectedOrder) ? (
+                                                <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold text-amber-900">
+                                                    In Waslah — link AWB
+                                                </span>
+                                            ) : (
+                                                <span className="rounded-full bg-violet-100 px-2.5 py-1 text-[11px] font-semibold text-violet-800">
+                                                    Ready to ship
+                                                </span>
+                                            )}
+                                            {isWaslahLabelNotPrinted(selectedOrder) ? (
+                                                <span className="rounded-full bg-red-100 px-2.5 py-1 text-[11px] font-bold text-red-700 ring-1 ring-red-200">
+                                                    Not printed
+                                                </span>
+                                            ) : null}
+                                        </div>
+
+                                        <WaslahShipNotice
+                                            notice={waslahSuccessNotice}
+                                            onDismiss={() => setWaslahSuccessNotice(null)}
+                                            onLabelDownload={() => {
+                                                if (selectedOrder?._id) {
+                                                    markOrdersLabelPrinted([selectedOrder._id]);
+                                                }
+                                            }}
+                                        />
+
+                                        {!isWaslahShipmentProcessed(selectedOrder) && !isWaslahUnlinkedDuplicate(selectedOrder) ? (
+                                            <ol className="list-decimal space-y-1 pl-4 text-[11px] text-violet-900">
+                                                <li>Click <strong>Ship with EMX</strong> — creates shipment &amp; schedules pickup</li>
+                                                <li>AWB + label download appear automatically here</li>
+                                                <li>Print label, attach to parcel — EMX collects on pickup date</li>
+                                            </ol>
+                                        ) : null}
+
+                                        {waslahConfig.configured && !waslahConfig.senderConfigured ? (
+                                            <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5">
+                                                <p className="text-xs font-medium text-amber-800">
+                                                    Add <code className="rounded bg-white px-1">WASLAH_SENDER_ID</code> to server <code className="rounded bg-white px-1">.env</code>, then restart.
+                                                </p>
+                                                <button
+                                                    type="button"
+                                                    onClick={loadWaslahSenders}
+                                                    disabled={loadingWaslahSenders}
+                                                    className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-900 transition hover:bg-amber-100 disabled:opacity-60"
+                                                >
+                                                    {loadingWaslahSenders ? 'Loading…' : 'Fetch sender IDs'}
+                                                </button>
+                                                {waslahSenders.length > 0 ? (
+                                                    <ul className="space-y-1 text-[11px] text-amber-900">
+                                                        {waslahSenders.map((sender) => (
+                                                            <li key={sender.id} className="rounded bg-white px-2 py-1.5 font-mono break-all">
+                                                                <span className="font-sans font-semibold">{sender.contactName || sender.companyName || 'Sender'}</span>
+                                                                {' — '}
+                                                                {sender.id}
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                ) : null}
+                                            </div>
+                                        ) : null}
+
+                                        {waslahConfig.configured && !waslahConfig.serviceConfigured ? (
+                                            <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5">
+                                                <p className="text-xs font-medium text-amber-800">
+                                                    Add <code className="rounded bg-white px-1">WASLAH_SERVICE_ID</code> (EMX) to server <code className="rounded bg-white px-1">.env</code>, then restart.
+                                                </p>
+                                                <button
+                                                    type="button"
+                                                    onClick={loadWaslahServices}
+                                                    disabled={loadingWaslahServices}
+                                                    className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-900 transition hover:bg-amber-100 disabled:opacity-60"
+                                                >
+                                                    {loadingWaslahServices ? 'Loading…' : 'Fetch EMX service ID'}
+                                                </button>
+                                                {waslahServices.length > 0 ? (
+                                                    <ul className="space-y-1 text-[11px] text-amber-900">
+                                                        {waslahServices.map((service) => (
+                                                            <li key={service.id} className="rounded bg-white px-2 py-1.5 font-mono break-all">
+                                                                <span className="font-sans font-semibold">
+                                                                    {service.name || 'Service'}
+                                                                    {service.courier ? ` (${service.courier})` : ''}
+                                                                </span>
+                                                                {' — '}
+                                                                {service.id}
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                ) : null}
+                                            </div>
+                                        ) : null}
+
+                                        {getOrderAwb(selectedOrder) ? (
+                                            <div className="rounded-lg border border-violet-200 bg-white p-3">
+                                                <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
+                                                    <div>
+                                                        <p className="text-xs text-slate-500">AWB</p>
+                                                        <p className="font-semibold text-slate-900">{getOrderAwb(selectedOrder)}</p>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs text-slate-500">Courier</p>
+                                                        <p className="font-semibold text-slate-900">{selectedOrder.courier || 'EMX'}</p>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs text-slate-500">Live EMX status</p>
+                                                        <p className="font-semibold text-slate-900">{getWaslahLiveStatusLabel(selectedOrder)}</p>
+                                                        <p className="text-[10px] text-slate-500">
+                                                            Store status: {selectedOrder.status || '—'}
+                                                            {waslahStatusRefreshedAt
+                                                                ? ` · checked ${new Date(waslahStatusRefreshedAt).toLocaleTimeString()}`
+                                                                : ''}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <div className="mt-3 flex flex-wrap gap-2">
+                                                    {selectedOrder?.waslah?.labelUrl ? (
+                                                        <a
+                                                            href={selectedOrder.waslah.labelUrl}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            onClick={() => markOrdersLabelPrinted([selectedOrder._id])}
+                                                            className="inline-flex items-center rounded-lg border border-violet-300 bg-violet-100 px-3 py-1.5 text-xs font-semibold text-violet-900 hover:bg-violet-200"
+                                                        >
+                                                            Download label
+                                                        </a>
+                                                    ) : null}
+                                                    {isWaslahLabelNotPrinted(selectedOrder) ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => markOrdersLabelPrinted([selectedOrder._id])}
+                                                            className="inline-flex items-center rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100"
+                                                        >
+                                                            Mark label printed
+                                                        </button>
+                                                    ) : null}
+                                                    <a
+                                                        href={
+                                                            selectedOrder.trackingUrl
+                                                            || buildEmxTrackingUrl(getOrderAwb(selectedOrder))
+                                                            || 'https://tracking.waslah.ae/'
+                                                        }
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                                    >
+                                                        Track on EMX
+                                                    </a>
+                                                </div>
+                                                {(Array.isArray(selectedOrder?.waslah?.events) && selectedOrder.waslah.events.length > 0) ? (
+                                                    <div className="mt-3 rounded-lg border border-violet-100 bg-violet-50/50 p-3">
+                                                        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-violet-700">
+                                                            Live EMX tracking events
+                                                        </p>
+                                                        <TrackingTimeline events={selectedOrder.waslah.events} type="waslah" />
+                                                    </div>
+                                                ) : (
+                                                    <p className="mt-3 text-[11px] text-violet-800">
+                                                        Click <strong>Refresh EMX status</strong> to load the live event timeline from Waslah.
+                                                    </p>
+                                                )}
+                                            </div>
+                                        ) : null}
+
+                                        {isWaslahUnlinkedDuplicate(selectedOrder) ? (
+                                            <p className="text-xs text-amber-900">
+                                                Pickup may already be scheduled in Waslah for reference {getWaslahOrderReference(selectedOrder) || '—'}.
+                                                Store1920 only needs a one-time sync to pull the AWB/label — paste the Waslah Order ID below (do not ship again).
+                                            </p>
+                                        ) : null}
+
+                                        {(isWaslahUnlinkedDuplicate(selectedOrder) || waslahLinkHelpOpen) ? (
+                                            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                                                <p className="text-xs font-semibold text-amber-900">One-time sync from Waslah</p>
+                                                <p className="mt-1 text-[11px] text-amber-800">
+                                                    Open <a href="https://ship.waslah.ae/" target="_blank" rel="noopener noreferrer" className="underline">ship.waslah.ae</a>
+                                                    {' '}→ find order <strong>{getWaslahOrderReference(selectedOrder) || '—'}</strong>
+                                                    {' '}→ copy the 24-character ID from the URL → paste below → sync AWB.
+                                                </p>
+                                                <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                                                    <input
+                                                        type="text"
+                                                        value={waslahManualOrderId}
+                                                        onChange={(e) => setWaslahManualOrderId(e.target.value)}
+                                                        placeholder="24-character Waslah Order ID"
+                                                        className="w-full flex-1 rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={linkWaslahAwb}
+                                                        disabled={shippingWithWaslah}
+                                                        className="rounded-lg border border-amber-400 bg-white px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-60"
+                                                    >
+                                                        Sync AWB from Waslah
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : null}
+
+                                        {!selectedOrder?.waslah?.labelUrl && !waslahLinkHelpOpen && !isWaslahUnlinkedDuplicate(selectedOrder) ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => setWaslahLinkHelpOpen(true)}
+                                                className="text-left text-[11px] font-medium text-violet-700 underline underline-offset-2 hover:text-violet-900"
+                                            >
+                                                Shipment already exists in Waslah? Link it manually
+                                            </button>
+                                        ) : null}
+
+                                        {!isWaslahShipmentProcessed(selectedOrder) && !isWaslahUnlinkedDuplicate(selectedOrder) ? (
+                                            <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                                                <div>
+                                                    <label className="text-xs font-medium text-violet-800 block mb-1">Pickup date</label>
+                                                    <input
+                                                        type="date"
+                                                        value={waslahPickupInfo.pickup_date}
+                                                        onChange={(e) => setWaslahPickupInfo((prev) => ({ ...prev, pickup_date: e.target.value }))}
+                                                        className="w-full px-3 py-2 border border-violet-300 rounded-lg text-sm bg-white"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-medium text-violet-800 block mb-1">Pickup time</label>
+                                                    <input
+                                                        type="text"
+                                                        value={waslahPickupInfo.pickup_time}
+                                                        onChange={(e) => setWaslahPickupInfo((prev) => ({ ...prev, pickup_time: e.target.value }))}
+                                                        placeholder="09:00-21:00"
+                                                        className="w-full px-3 py-2 border border-violet-300 rounded-lg text-sm bg-white"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-medium text-violet-800 block mb-1">Vehicle</label>
+                                                    <select
+                                                        value={waslahPickupInfo.pickup_vehicle}
+                                                        onChange={(e) => setWaslahPickupInfo((prev) => ({ ...prev, pickup_vehicle: e.target.value }))}
+                                                        className="w-full px-3 py-2 border border-violet-300 rounded-lg text-sm bg-white"
+                                                    >
+                                                        <option value="motorcycle">Motorcycle</option>
+                                                        <option value="car">Car</option>
+                                                        <option value="van">Van</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        ) : null}
+
+                                        {isWaslahShipmentProcessed(selectedOrder) && !isWaslahLiveTerminalOrder(selectedOrder) ? (
+                                            <p className="text-[11px] text-emerald-800">
+                                                Live EMX status refreshes every 30 seconds here and in the orders list.
+                                            </p>
+                                        ) : null}
+
+                                        {isWaslahShipmentProcessed(selectedOrder) && isWaslahLiveTerminalOrder(selectedOrder) ? (
+                                            <p className="text-[11px] font-medium text-slate-700">
+                                                Final EMX status: {getWaslahLiveStatusLabel(selectedOrder)}.
+                                            </p>
+                                        ) : null}
+
+                                        {!isWaslahUnlinkedDuplicate(selectedOrder) ? (
+                                        <button
+                                            type="button"
+                                            onClick={isWaslahShipmentProcessed(selectedOrder)
+                                                ? () => refreshWaslahStatus({ manual: true })
+                                                : shipOrderWithWaslah}
+                                            disabled={shippingWithWaslah || refreshingWaslahStatus}
+                                            className="w-full bg-violet-600 hover:bg-violet-700 disabled:bg-slate-300 text-white font-medium py-2.5 rounded-lg text-sm transition-colors flex items-center justify-center gap-2"
+                                        >
+                                            {shippingWithWaslah || refreshingWaslahStatus ? (
+                                                <>
+                                                    <RefreshCw size={16} className="animate-spin" />
+                                                    {refreshingWaslahStatus ? 'Refreshing EMX status…' : 'Shipping…'}
+                                                </>
+                                            ) : (
+                                                <>
+                                                    {isWaslahShipmentProcessed(selectedOrder)
+                                                        ? <RefreshCw size={16} />
+                                                        : <Truck size={16} />}
+                                                    {isWaslahShipmentProcessed(selectedOrder) ? 'Refresh EMX status' : 'Ship with EMX'}
+                                                </>
+                                            )}
+                                        </button>
+                                        ) : null}
+                                    </div>
+                                ) : null}
+
+                                {!waslahConfig.configured && selectedOrder.trackingId ? (
                                     <div className="bg-white rounded-lg p-4 mb-4">
                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                             <div>
@@ -2881,181 +3886,87 @@ export default function StoreOrders() {
                                     </div>
                                 ) : null}
 
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                    <div>
-                                        <label className="text-xs font-medium text-slate-700 block mb-1">AWB / Tracking ID *</label>
-                                        <input
-                                            type="text"
-                                            value={trackingData.trackingId}
-                                            onChange={e => setTrackingData({...trackingData, trackingId: e.target.value})}
-                                            placeholder="Enter C3X/Delhivery AWB or courier tracking ID"
-                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
-                                        />
+                                <details className="rounded-lg border border-slate-200 bg-white/80 p-3">
+                                    <summary className="cursor-pointer text-sm font-semibold text-slate-800">
+                                        Manual tracking (other couriers)
+                                    </summary>
+                                    <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                                        <div>
+                                            <label className="text-xs font-medium text-slate-700 block mb-1">AWB / Tracking ID</label>
+                                            <input
+                                                type="text"
+                                                value={trackingData.trackingId}
+                                                onChange={e => setTrackingData({...trackingData, trackingId: e.target.value})}
+                                                placeholder="Courier tracking number"
+                                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-medium text-slate-700 block mb-1">Courier name</label>
+                                            <input
+                                                type="text"
+                                                value={trackingData.courier}
+                                                onChange={e => setTrackingData({...trackingData, courier: e.target.value})}
+                                                placeholder="e.g. Delhivery, DHL"
+                                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-medium text-slate-700 block mb-1">Tracking URL</label>
+                                            <input
+                                                type="url"
+                                                value={trackingData.trackingUrl}
+                                                onChange={e => setTrackingData({...trackingData, trackingUrl: e.target.value})}
+                                                placeholder="https://..."
+                                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                            />
+                                        </div>
                                     </div>
-                                    <div>
-                                        <label className="text-xs font-medium text-slate-700 block mb-1">Courier Name *</label>
-                                        <input
-                                            type="text"
-                                            value={trackingData.courier}
-                                            onChange={e => setTrackingData({...trackingData, courier: e.target.value})}
-                                            placeholder="e.g., FedEx, DHL, UPS"
-                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-medium text-slate-700 block mb-1">Tracking URL</label>
-                                        <input
-                                            type="url"
-                                            value={trackingData.trackingUrl}
-                                            onChange={e => setTrackingData({...trackingData, trackingUrl: e.target.value})}
-                                            placeholder="https://..."
-                                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
-                                        />
-                                    </div>
-                                </div>
-                                <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-                                    <div>
-                                        <label className="text-xs font-medium text-emerald-800 block mb-1">C3X Product Type</label>
-                                        <input
-                                            type="text"
-                                            value={c3xConfig.product}
-                                            onChange={e => setC3xConfig(prev => ({ ...prev, product: e.target.value.toUpperCase() }))}
-                                            placeholder="DOM / DOC / INT"
-                                            className="w-full px-3 py-2 border border-emerald-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-medium text-emerald-800 block mb-1">C3X Service Type</label>
-                                        <input
-                                            type="text"
-                                            value={c3xConfig.serviceType}
-                                            onChange={e => setC3xConfig(prev => ({ ...prev, serviceType: e.target.value.toUpperCase() }))}
-                                            placeholder="NOR / EXP"
-                                            className="w-full px-3 py-2 border border-emerald-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                                        />
-                                    </div>
-                                    <p className="md:col-span-2 text-[11px] text-emerald-700">
-                                        Used by Send to C3Xpress. If AWB fails, try product from your C3X account sheet.
+                                    <details className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                                        <summary className="cursor-pointer text-xs font-semibold text-emerald-800">C3X settings</summary>
+                                        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="text-xs font-medium text-emerald-800 block mb-1">C3X Product Type</label>
+                                                <input
+                                                    type="text"
+                                                    value={c3xConfig.product}
+                                                    onChange={e => setC3xConfig(prev => ({ ...prev, product: e.target.value.toUpperCase() }))}
+                                                    placeholder="DOM / DOC / INT"
+                                                    className="w-full px-3 py-2 border border-emerald-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="text-xs font-medium text-emerald-800 block mb-1">C3X Service Type</label>
+                                                <input
+                                                    type="text"
+                                                    value={c3xConfig.serviceType}
+                                                    onChange={e => setC3xConfig(prev => ({ ...prev, serviceType: e.target.value.toUpperCase() }))}
+                                                    placeholder="NOR / EXP"
+                                                    className="w-full px-3 py-2 border border-emerald-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                                />
+                                            </div>
+                                        </div>
+                                    </details>
+                                    <button
+                                        onClick={updateTrackingDetails}
+                                        className="mt-3 w-full bg-orange-500 hover:bg-orange-600 text-white font-medium py-2.5 rounded-lg transition-colors"
+                                    >
+                                        Update tracking &amp; notify customer
+                                    </button>
+                                    <button
+                                        onClick={autoSyncStatusFromTracking}
+                                        className="mt-2 w-full bg-slate-800 hover:bg-slate-900 text-white font-medium py-2.5 rounded-lg transition-colors text-sm"
+                                    >
+                                        Auto status from tracking
+                                    </button>
+                                </details>
+
+                                {!waslahConfig.configured ? (
+                                    <p className="mt-3 text-xs text-violet-700">
+                                        To ship with EMX, add <code className="rounded bg-white px-1">WASLAH_API_TOKEN</code> and{' '}
+                                        <code className="rounded bg-white px-1">WASLAH_API_BASE_URL</code> to server .env, then restart.
                                     </p>
-                                </div>
-                                <button
-                                    onClick={updateTrackingDetails}
-                                    className="mt-3 w-full bg-orange-500 hover:bg-orange-600 text-white font-medium py-2.5 rounded-lg transition-colors"
-                                >
-                                    Update Tracking & Notify Customer
-                                </button>
-
-                                {/* Manual trigger to auto-sync status from courier tracking */}
-                                <button
-                                    onClick={autoSyncStatusFromTracking}
-                                    className="mt-2 w-full bg-slate-800 hover:bg-slate-900 text-white font-medium py-2.5 rounded-lg transition-colors text-sm"
-                                >
-                                    Auto Status from Tracking
-                                </button>
-
-                                {/* Waslah Shipping (UAE / EMX) */}
-                                <div className="mt-4 space-y-2 rounded-lg border border-violet-200 bg-violet-50 p-3">
-                                    <p className="text-xs font-semibold uppercase tracking-wide text-violet-800">Waslah shipping (UAE)</p>
-                                    {!waslahConfig.configured ? (
-                                        <p className="text-xs text-violet-700">
-                                            Add <code className="rounded bg-white px-1">WASLAH_API_TOKEN</code> and{' '}
-                                            <code className="rounded bg-white px-1">WASLAH_API_BASE_URL</code> to server .env, then restart.
-                                        </p>
-                                    ) : (
-                                        <>
-                                            <p className="text-[11px] text-violet-600 break-all">
-                                                Create order: {waslahConfig.createOrderUrl || `${waslahConfig.baseUrl || ''}/orders`}
-                                            </p>
-                                            {selectedOrder?.waslah?.orderId ? (
-                                                <p className="text-[11px] text-violet-700">
-                                                    Waslah order: <span className="font-mono">{selectedOrder.waslah.orderId}</span>
-                                                </p>
-                                            ) : null}
-                                            {selectedOrder?.waslah?.labelUrl ? (
-                                                <a
-                                                    href={selectedOrder.waslah.labelUrl}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="inline-flex text-sm font-medium text-violet-700 underline"
-                                                >
-                                                    Download shipping label (PDF)
-                                                </a>
-                                            ) : null}
-                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                                                <div>
-                                                    <label className="text-xs font-medium text-violet-800 block mb-1">Pickup date</label>
-                                                    <input
-                                                        type="date"
-                                                        value={waslahPickupInfo.pickup_date}
-                                                        onChange={(e) => setWaslahPickupInfo((prev) => ({ ...prev, pickup_date: e.target.value }))}
-                                                        className="w-full px-3 py-2 border border-violet-300 rounded-lg text-sm bg-white"
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="text-xs font-medium text-violet-800 block mb-1">Pickup time</label>
-                                                    <input
-                                                        type="text"
-                                                        value={waslahPickupInfo.pickup_time}
-                                                        onChange={(e) => setWaslahPickupInfo((prev) => ({ ...prev, pickup_time: e.target.value }))}
-                                                        placeholder="09:00-21:00"
-                                                        className="w-full px-3 py-2 border border-violet-300 rounded-lg text-sm bg-white"
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="text-xs font-medium text-violet-800 block mb-1">Vehicle</label>
-                                                    <select
-                                                        value={waslahPickupInfo.pickup_vehicle}
-                                                        onChange={(e) => setWaslahPickupInfo((prev) => ({ ...prev, pickup_vehicle: e.target.value }))}
-                                                        className="w-full px-3 py-2 border border-violet-300 rounded-lg text-sm bg-white"
-                                                    >
-                                                        <option value="motorcycle">Motorcycle</option>
-                                                        <option value="car">Car</option>
-                                                        <option value="van">Van</option>
-                                                    </select>
-                                                </div>
-                                            </div>
-                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={testWaslahConnection}
-                                                    disabled={testingWaslah || shippingWithWaslah}
-                                                    className="w-full bg-white hover:bg-violet-100 disabled:opacity-60 border border-violet-300 text-violet-800 font-medium py-2 rounded-lg text-sm transition-colors"
-                                                >
-                                                    {testingWaslah ? 'Testing…' : 'Test preview'}
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={testWaslahCreateOrder}
-                                                    disabled={testingWaslah || shippingWithWaslah}
-                                                    className="w-full bg-violet-100 hover:bg-violet-200 disabled:opacity-60 border border-violet-300 text-violet-900 font-medium py-2 rounded-lg text-sm transition-colors"
-                                                >
-                                                    Test create order
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={shipOrderWithWaslah}
-                                                    disabled={shippingWithWaslah || testingWaslah}
-                                                    className="w-full bg-violet-600 hover:bg-violet-700 disabled:bg-slate-300 text-white font-medium py-2 rounded-lg text-sm transition-colors flex items-center justify-center gap-2"
-                                                >
-                                                    {shippingWithWaslah ? (
-                                                        <>
-                                                            <RefreshCw size={16} className="animate-spin" />
-                                                            Shipping…
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            <Truck size={16} />
-                                                            Ship with Waslah
-                                                        </>
-                                                    )}
-                                                </button>
-                                            </div>
-                                            <p className="text-[11px] text-violet-600">
-                                                Full ship: create order → pickup cart → checkout → print label. Use &quot;Test preview&quot; first (no API charge).
-                                            </p>
-                                        </>
-                                    )}
-                                </div>
+                                ) : null}
 
                                 {/* Delhivery Pickup & Auto-Refresh Controls */}
                                 {selectedOrder?.courier?.toLowerCase() === 'delhivery' && (

@@ -10,7 +10,8 @@ import { getAuth } from "firebase/auth";
 import Image from 'next/image';
 import axios from "axios";
 import toast from "react-hot-toast";
-import WalletIcon from '../assets/common/wallet.svg';
+import WalletIcon from '@/assets/icons/wallet.png';
+import { isStorefrontWalletEnabled } from '@/lib/storefrontWallet';
 import SignInModal from './SignInModal';
 import AddressModal from './AddressModal';
 import NavbarMenuBar from './NavbarMenuBar';
@@ -130,6 +131,7 @@ const Navbar = () => {
   const [signOutConfirmOpen, setSignOutConfirmOpen] = useState(false);
   const [signOutContext, setSignOutContext] = useState('desktop');
   const [walletCoins, setWalletCoins] = useState(0);
+  const storefrontWalletEnabled = isStorefrontWalletEnabled();
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchSuggestionResults, setSearchSuggestionResults] = useState([]);
   const [searchSuggestionTotal, setSearchSuggestionTotal] = useState(0);
@@ -162,6 +164,33 @@ const Navbar = () => {
     const raw = String(user?.displayName || user?.email?.split('@')[0] || '').trim();
     if (!raw) return 'there';
     return raw.length > 16 ? `${raw.slice(0, 16)}…` : raw;
+  };
+
+  const formatWalletAmount = (amount) => {
+    const value = Number(amount || 0);
+    if (!Number.isFinite(value)) return '0';
+    return Math.round(value).toLocaleString(undefined, { maximumFractionDigits: 0 });
+  };
+
+  const renderWalletAmount = ({ size = 16, amountClassName = '', showAmount = true, tone = 'light' }) => {
+    const amountLabel = formatWalletAmount(walletCoins);
+    const textClass = tone === 'light' ? 'text-white/85' : 'text-gray-600';
+
+    return (
+      <span className={`inline-flex min-w-0 items-center gap-1.5 ${textClass}`}>
+        <Image
+          src={WalletIcon}
+          alt=""
+          width={size}
+          height={size}
+          className="shrink-0 object-contain"
+          aria-hidden="true"
+        />
+        {showAmount ? (
+          <span className={`truncate ${amountClassName}`.trim()}>{amountLabel}</span>
+        ) : null}
+      </span>
+    );
   };
 
   const renderAccountMenuTrigger = ({ signedIn, onClick, tone = 'light', variant = 'full', className = '', compactIcon = false }) => {
@@ -216,12 +245,16 @@ const Navbar = () => {
       ? getUserGreetingName(firebaseUser)
       : t('navbar.signInRegister');
 
+    const bottomLine = storefrontWalletEnabled && signedIn && walletCoins > 0
+      ? renderWalletAmount({ size: 16, amountClassName: 'text-[11px] font-normal leading-none', tone: isLightTone ? 'light' : 'dark' })
+      : t('navbar.ordersAndAccount');
+
     return (
       <button
         type="button"
         onClick={onClick}
         className={`group inline-flex max-w-[128px] items-center gap-2 rounded-md px-1 py-1 text-left transition xl:max-w-[210px] xl:gap-2.5 ${shellClass} ${className}`.trim()}
-        aria-label={signedIn ? t('navbar.ordersAndAccount') : t('navbar.signInRegister')}
+        aria-label={signedIn ? (storefrontWalletEnabled && walletCoins > 0 ? `Wallet balance ${formatWalletAmount(walletCoins)}` : t('navbar.ordersAndAccount')) : t('navbar.signInRegister')}
         aria-haspopup="true"
       >
         <span className="flex h-7 w-7 shrink-0 items-center justify-center">
@@ -232,7 +265,7 @@ const Navbar = () => {
             {topLine}
           </span>
           <span className={`mt-1 truncate text-[11px] font-normal leading-none ${isLightTone ? 'text-white/85' : 'text-gray-600'}`}>
-            {t('navbar.ordersAndAccount')}
+            {bottomLine}
           </span>
         </span>
       </button>
@@ -765,13 +798,19 @@ const Navbar = () => {
     }
     categoryTimer.current = window.setTimeout(() => {
       closeCategoriesDropdownNow();
-    }, 120);
+    }, 280);
   }, [closeCategoriesDropdownNow]);
 
   useEffect(() => {
     if (!categoriesDropdownOpen) return undefined;
 
-    const handleScroll = () => closeCategoriesDropdownNow();
+    const handleScroll = (event) => {
+      const panel = categoriesDropdownPanelRef.current;
+      if (panel && event.target instanceof Node && panel.contains(event.target)) {
+        return;
+      }
+      closeCategoriesDropdownNow();
+    };
 
     window.addEventListener('scroll', handleScroll, { capture: true, passive: true });
     return () => window.removeEventListener('scroll', handleScroll, { capture: true });
@@ -863,9 +902,14 @@ const Navbar = () => {
   };
 
   useEffect(() => {
+    if (!storefrontWalletEnabled) {
+      setWalletCoins(0);
+      return undefined;
+    }
+
     if (!firebaseUser) {
       setWalletCoins(0);
-      return;
+      return undefined;
     }
 
     fetchWalletCoins();
@@ -890,7 +934,7 @@ const Navbar = () => {
       window.removeEventListener('walletUpdated', handleWalletUpdate);
       clearInterval(intervalId);
     };
-  }, [firebaseUser]);
+  }, [firebaseUser, storefrontWalletEnabled]);
 
   // Listen for custom event to open sign in modal
   useEffect(() => {
@@ -1345,8 +1389,8 @@ const Navbar = () => {
         onMouseLeave={closeCategoriesDropdown}
       >
         <div className="mt-0.5 overflow-hidden rounded-b-[28px] border border-slate-200 bg-white shadow-[0_20px_44px_rgba(15,23,42,0.16)]">
-        <div className="grid max-h-[420px] grid-cols-[minmax(0,220px)_minmax(0,1fr)]">
-          <div className="category-dropdown-scroll max-h-[420px] w-full max-w-[220px] shrink-0 overflow-y-auto overflow-x-hidden border-r border-slate-200 bg-white py-2">
+        <div className="grid min-h-0 max-h-[420px] grid-cols-[minmax(0,220px)_minmax(0,1fr)]">
+          <div className="category-dropdown-scroll min-h-0 max-h-[420px] w-full max-w-[220px] shrink-0 overflow-y-auto overflow-x-hidden border-r border-slate-200 bg-white py-2">
             {mainCategories.map((category) => {
               const isActive = getCategoryId(activeCategory) === getCategoryId(category);
               return (
@@ -1556,7 +1600,10 @@ const Navbar = () => {
       </nav>
 
       {/* Original Full Navbar (Desktop only) */}
-      <div className="relative z-50 hidden overflow-visible lg:block">
+      <div
+        className="relative z-50 hidden overflow-visible lg:block"
+        onMouseLeave={categoriesDropdownOpen ? closeCategoriesDropdown : undefined}
+      >
       <nav
         className="overflow-visible border-b text-white shadow-[0_12px_28px_rgba(15,23,42,0.08)]"
         style={{
@@ -1629,7 +1676,6 @@ const Navbar = () => {
                   ref={categoriesTriggerRef}
                   className="flex shrink-0 items-center"
                   onMouseEnter={openCategoriesDropdown}
-                  onMouseLeave={closeCategoriesDropdown}
                 >
                   <button
                     type="button"
@@ -1691,6 +1737,12 @@ const Navbar = () => {
                     )}
                     <Link href="/dashboard/profile" className="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm" onClick={() => setUserDropdownOpen(false)}>{t('navbar.profile')}</Link>
                     <Link href="/dashboard/orders" className="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm" onClick={() => setUserDropdownOpen(false)}>{t('navbar.orders')}</Link>
+                    {storefrontWalletEnabled ? (
+                    <Link href="/wallet" className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm" onClick={() => setUserDropdownOpen(false)}>
+                      <Image src={WalletIcon} alt="" width={18} height={18} className="shrink-0 object-contain" aria-hidden="true" />
+                      <span>{walletCoins > 0 ? formatWalletAmount(walletCoins) : t('navbar.wallet')}</span>
+                    </Link>
+                    ) : null}
                     <Link href="/dashboard/wishlist" className="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm" onClick={() => setUserDropdownOpen(false)}>{t('navbar.wishlist')}</Link>
                     <Link href="/dashboard/addresses" className="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm" onClick={() => setUserDropdownOpen(false)}>{t('navbar.addresses')}</Link>
                     <div className="my-1 border-t border-gray-200" />
@@ -1808,19 +1860,22 @@ const Navbar = () => {
                   )}
                   <div className="flex flex-col leading-tight">
                     <span className="font-medium">Hi, {getUserGreetingName(firebaseUser)}</span>
+                    {storefrontWalletEnabled && walletCoins > 0 ? (
                     <Link
                       href="/wallet"
-                      className="mt-0 inline-flex items-center gap-1 px-2 py-0 bg-amber-100 border border-amber-200 rounded-full text-amber-800 text-[10px] font-semibold w-fit"
+                      className="mt-0 inline-flex items-center gap-1.5 px-2 py-0.5 bg-amber-100 border border-amber-200 rounded-full text-amber-800 text-[10px] font-semibold w-fit"
                       onClick={() => setMobileMenuOpen(false)}
+                      aria-label={`Wallet balance ${formatWalletAmount(walletCoins)}`}
                     >
-                      <Image src={WalletIcon} alt="Wallet" width={14} height={14} />
-                      <span>Wallet: {walletCoins}</span>
+                      <Image src={WalletIcon} alt="" width={17} height={17} className="shrink-0 object-contain" aria-hidden="true" />
+                      <span>{formatWalletAmount(walletCoins)}</span>
                     </Link>
+                    ) : null}
                   </div>
                 </div>
               )}
 
-              {firebaseUser ? null : (
+              {firebaseUser ? null : storefrontWalletEnabled ? (
                 <button
                   type="button"
                   onClick={() => {
@@ -1830,10 +1885,10 @@ const Navbar = () => {
                   }}
                   className="w-full px-4 py-3 bg-amber-50 text-amber-800 text-sm font-semibold rounded-full mb-4 flex items-center gap-2"
                 >
-                  <Image src={WalletIcon} alt="Wallet" width={20} height={20} />
+                  <Image src={WalletIcon} alt="" width={20} height={20} className="shrink-0 object-contain" aria-hidden="true" />
                   <span>{t('navbar.wallet')}</span>
                 </button>
-              )}
+              ) : null}
 
               {/* Links */}
               <div className="flex flex-col gap-1">

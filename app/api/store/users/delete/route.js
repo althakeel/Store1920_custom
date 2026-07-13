@@ -14,26 +14,43 @@ export async function POST(request) {
     }
     const idToken = authHeader.split('Bearer ')[1];
     const decodedToken = await getAuth().verifyIdToken(idToken);
-    const userId = decodedToken.uid;
-    const { userEmail } = await request.json();
+    const ownerUserId = decodedToken.uid;
+    const body = await request.json();
+    const userEmail = String(body?.userEmail || '').trim().toLowerCase();
+    const userId = String(body?.userId || body?.memberId || '').trim();
 
-    if (!userEmail) {
-      return NextResponse.json({ error: 'Missing userEmail' }, { status: 400 });
+    if (!userEmail && !userId) {
+      return NextResponse.json({ error: 'Missing userEmail or userId' }, { status: 400 });
     }
 
-    // Find store owned by this user
-    const store = await Store.findOne({ userId }).lean();
+    // Only the store owner can remove team members
+    const store = await Store.findOne({ userId: ownerUserId }).lean();
     if (!store) {
       return NextResponse.json({ error: 'Store not found' }, { status: 404 });
     }
 
-    // Delete the store user
-    await StoreUser.deleteOne({ 
-      storeId: store._id.toString(), 
-      email: userEmail 
-    });
+    const storeId = store._id.toString();
+    const filter = userId
+      ? { _id: userId, storeId }
+      : { storeId, email: userEmail };
 
-    return NextResponse.json({ message: 'User removed successfully' });
+    const member = await StoreUser.findOne(filter).lean();
+    if (!member) {
+      return NextResponse.json({ error: 'Team member not found' }, { status: 404 });
+    }
+
+    // Never allow removing the store owner via this path
+    if (member.userId && String(member.userId) === String(ownerUserId)) {
+      return NextResponse.json({ error: 'You cannot remove yourself as store owner' }, { status: 400 });
+    }
+
+    await StoreUser.deleteOne({ _id: member._id, storeId });
+
+    return NextResponse.json({
+      message: 'User removed successfully',
+      removedId: String(member._id),
+      removedEmail: member.email || null,
+    });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }

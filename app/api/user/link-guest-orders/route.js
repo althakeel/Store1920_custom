@@ -1,6 +1,7 @@
 import connectDB from '@/lib/mongodb';
 import { NextResponse } from "next/server";
 import { getAuth } from '@/lib/firebase-admin';
+import User from '@/models/User';
 import { linkGuestOrdersToUser, resolveContactForGuestLinking } from '@/lib/linkGuestOrders';
 
 function parseAuthHeader(request) {
@@ -44,6 +45,18 @@ export async function POST(request) {
         if (!email && !phone && !(phones || []).length) {
             return NextResponse.json({ error: "Email or phone required" }, { status: 400 });
         }
+
+        await User.findOneAndUpdate(
+            { _id: userId },
+            {
+                $set: {
+                    ...(email ? { email } : {}),
+                    ...(phone ? { phone } : {}),
+                    firebaseUid: userId,
+                },
+            },
+            { upsert: true, setDefaultsOnInsert: true }
+        ).catch(() => {});
 
         const result = await linkGuestOrdersToUser(userId, { email, phone, phones });
 

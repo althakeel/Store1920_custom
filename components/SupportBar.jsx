@@ -87,7 +87,6 @@ export default function SupportBar() {
           </span>
           <div className="min-w-0 leading-none sm:leading-tight">
             <p className="truncate text-[11px] font-semibold sm:text-sm">{t('support.title')}</p>
-            <p className="mt-0.5 hidden truncate text-[11px] text-white/75 sm:block">{t('support.subtitle')}</p>
           </div>
         </div>
 

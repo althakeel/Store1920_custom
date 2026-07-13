@@ -9,7 +9,13 @@ import { sendMetaPurchaseFromOrder } from '@/lib/metaConversionsApi';
 import { finalizeAbandonedCartFromStripeSession } from '@/lib/abandonedCartConversion';
 import { handlePaymentCancellationRecovery } from '@/lib/paymentCancellationRecovery';
 import { markOrderPaymentSucceeded } from '@/lib/deferredOrderFlow';
-import { finalizePrepaidUpsellPayment } from '@/lib/stripeOrderPayment';
+import {
+    finalizePrepaidUpsellPayment,
+    validateStripePaidCheckoutSession,
+    validateStripePaidSessionForOrders,
+} from '@/lib/stripeOrderPayment';
+import { recordTrustedOrderPayment } from '@/lib/orderPaymentVerification';
+import { blockOrdersForPaymentReversal } from '@/lib/orderPaymentReversal';
 
 export async function POST(request){
     try {
@@ -25,12 +31,40 @@ export async function POST(request){
 
         const event = stripe.webhooks.constructEvent(body, sig, webhookSecret)
 
-        const markOrdersPaid = async (orderIds, userId) => {
+        const markOrdersPaid = async (orderIds, userId, session = null) => {
             await dbConnect()
-            await Promise.all(orderIds.map(async (orderId) => {
+            const sessionValidation = await validateStripePaidCheckoutSession(session, {
+                stripeClient: stripe,
+            })
+            if (!sessionValidation.valid) {
+                throw new Error(`Stripe Checkout verification failed: ${sessionValidation.reason}`)
+            }
+            const authoritativeSession = sessionValidation.session
+            const authoritativeOrderIds = sessionValidation.orderIds
+            const requestedIds = [...new Set(orderIds.map((value) => String(value).trim()).filter(Boolean))]
+            if (
+                requestedIds.length !== authoritativeOrderIds.length
+                || requestedIds.some((orderId) => !authoritativeOrderIds.includes(orderId))
+            ) {
+                throw new Error('Stripe event order metadata changed before authoritative verification')
+            }
+
+            await Promise.all(authoritativeOrderIds.map(async (orderId) => {
                 const order = await markOrderPaymentSucceeded(orderId, { paymentStatus: 'PAID' })
 
                 if (order) {
+                    const proof = await recordTrustedOrderPayment(orderId, {
+                        provider: 'STRIPE',
+                        providerReference: authoritativeSession.id,
+                        providerEventId: sessionValidation.paymentIntentId || event?.id || '',
+                        source: 'signed_stripe_webhook',
+                        verifiedAmount: order.total,
+                        currency: authoritativeSession?.currency || 'AED',
+                        allowUnenrolledWithoutAutoShipment: true,
+                    });
+                    if (proof?.verified !== true) {
+                        throw new Error(`Could not persist trusted Stripe proof for ${orderId}: ${proof?.reason || 'unknown'}`)
+                    }
                     await Order.findByIdAndUpdate(orderId, {
                         stripePaymentStatus: 'paid',
                     });
@@ -82,6 +116,67 @@ export async function POST(request){
             userId: metadata.userId || null,
         })
 
+        const resolveStripeReversalContext = async (object = {}) => {
+            await dbConnect()
+            let paymentIntentId = String(
+                typeof object?.payment_intent === 'string'
+                    ? object.payment_intent
+                    : object?.payment_intent?.id || '',
+            ).trim()
+            let charge = null
+
+            const chargeId = String(
+                typeof object?.charge === 'string'
+                    ? object.charge
+                    : object?.charge?.id || (object?.object === 'charge' ? object?.id : ''),
+            ).trim()
+            if ((!paymentIntentId || object?.object !== 'charge') && chargeId) {
+                charge = await stripe.charges.retrieve(chargeId)
+                paymentIntentId = paymentIntentId || String(
+                    typeof charge?.payment_intent === 'string'
+                        ? charge.payment_intent
+                        : charge?.payment_intent?.id || '',
+                ).trim()
+            } else if (object?.object === 'charge') {
+                charge = object
+            }
+
+            if (!paymentIntentId) return null
+            const sessions = await stripe.checkout.sessions.list({
+                payment_intent: paymentIntentId,
+                limit: 10,
+            })
+            const session = sessions.data.find((entry) => extractMeta(entry.metadata).orderIds.length)
+            if (!session) return null
+
+            const { orderIds } = extractMeta(session.metadata)
+            const orders = await Order.find({ _id: { $in: orderIds } }).select('_id total').lean()
+            const validation = validateStripePaidSessionForOrders(session, orders)
+            if (!validation.valid) {
+                throw new Error(`Stripe reversal order verification failed: ${validation.reason}`)
+            }
+
+            return { session, orderIds: validation.orderIds, charge, paymentIntentId }
+        }
+
+        const blockStripeReversal = async (object, {
+            paymentStatus,
+            reason,
+        }) => {
+            const context = await resolveStripeReversalContext(object)
+            if (!context) {
+                throw new Error(`Could not link Stripe payment reversal to a Checkout session (${event.id})`)
+            }
+            await blockOrdersForPaymentReversal(context.orderIds, {
+                provider: 'STRIPE',
+                providerReference: context.session.id,
+                providerEventId: event.id,
+                source: `signed_stripe_${event.type}`,
+                paymentStatus,
+                reason,
+            })
+        }
+
         switch (event.type) {
             // Primary event: hosted Stripe Checkout session completed (payment captured)
             case 'checkout.session.completed': {
@@ -93,9 +188,13 @@ export async function POST(request){
                 if (session.payment_status === 'paid') {
                     const { orderIds, userId } = extractMeta(session.metadata)
                     if (session.metadata?.prepaidUpsell === '1' && orderIds.length) {
-                        await finalizePrepaidUpsellPayment(orderIds[0], session, { source: 'stripe_webhook_prepaid' })
+                        const result = await finalizePrepaidUpsellPayment(orderIds[0], session, {
+                            source: 'stripe_webhook_prepaid',
+                            stripeClient: stripe,
+                        })
+                        if (result?.success !== true) throw new Error(`Stripe prepaid finalization failed: ${result?.reason || 'unknown'}`)
                     } else if (orderIds.length) {
-                        await markOrdersPaid(orderIds, userId)
+                        await markOrdersPaid(orderIds, userId, session)
                     }
                 }
                 break
@@ -110,9 +209,13 @@ export async function POST(request){
 
                 const { orderIds, userId } = extractMeta(session.metadata)
                 if (session.metadata?.prepaidUpsell === '1' && orderIds.length) {
-                    await finalizePrepaidUpsellPayment(orderIds[0], session, { source: 'stripe_webhook_prepaid' })
+                    const result = await finalizePrepaidUpsellPayment(orderIds[0], session, {
+                        source: 'stripe_webhook_prepaid',
+                        stripeClient: stripe,
+                    })
+                    if (result?.success !== true) throw new Error(`Stripe prepaid finalization failed: ${result?.reason || 'unknown'}`)
                 } else if (orderIds.length) {
-                    await markOrdersPaid(orderIds, userId)
+                    await markOrdersPaid(orderIds, userId, session)
                 }
                 break
             }
@@ -132,7 +235,15 @@ export async function POST(request){
                 const sess = sessions.data[0]
                 if (sess) {
                     const { orderIds, userId } = extractMeta(sess.metadata)
-                    if (orderIds.length) await markOrdersPaid(orderIds, userId)
+                    if (sess.metadata?.prepaidUpsell === '1' && orderIds.length) {
+                        const result = await finalizePrepaidUpsellPayment(orderIds[0], sess, {
+                            source: 'stripe_webhook_prepaid',
+                            stripeClient: stripe,
+                        })
+                        if (result?.success !== true) throw new Error(`Stripe prepaid finalization failed: ${result?.reason || 'unknown'}`)
+                    } else if (orderIds.length) {
+                        await markOrdersPaid(orderIds, userId, sess)
+                    }
                 }
                 break
             }
@@ -146,6 +257,50 @@ export async function POST(request){
                 if (sess) {
                     const { orderIds } = extractMeta(sess.metadata)
                     if (orderIds.length) await cancelUnpaidOrders(orderIds, 'Payment failed')
+                }
+                break
+            }
+
+            // A successful refund makes the original captured amount
+            // insufficient for every order in the Checkout split group.
+            case 'charge.refunded': {
+                const charge = event.data.object
+                const original = Number(charge?.amount || 0)
+                const refunded = Number(charge?.amount_refunded || 0)
+                if (refunded > 0) {
+                    const fullyRefunded = original > 0 && refunded >= original
+                    await blockStripeReversal(charge, {
+                        paymentStatus: fullyRefunded ? 'REFUNDED' : 'PARTIALLY_REFUNDED',
+                        reason: fullyRefunded
+                            ? 'Stripe payment was fully refunded before fulfillment.'
+                            : 'Stripe payment was partially refunded before fulfillment.',
+                    })
+                }
+                break
+            }
+
+            case 'refund.created':
+            case 'refund.updated': {
+                const refund = event.data.object
+                if (String(refund?.status || '').toLowerCase() === 'succeeded') {
+                    await blockStripeReversal(refund, {
+                        paymentStatus: 'REFUNDED',
+                        reason: 'Stripe confirmed a refund before fulfillment.',
+                    })
+                }
+                break
+            }
+
+            case 'charge.dispute.created':
+            case 'charge.dispute.updated':
+            case 'charge.dispute.closed':
+            case 'charge.dispute.funds_withdrawn': {
+                const dispute = event.data.object
+                if (String(dispute?.status || '').toLowerCase() !== 'won') {
+                    await blockStripeReversal(dispute, {
+                        paymentStatus: 'DISPUTED',
+                        reason: 'Stripe reported a payment dispute before fulfillment.',
+                    })
                 }
                 break
             }

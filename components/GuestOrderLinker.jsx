@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import toast from 'react-hot-toast'
 import { useAuth } from '@/lib/useAuth'
 import { linkGuestOrdersForCurrentUser } from '@/lib/linkGuestOrdersClient'
@@ -8,22 +8,26 @@ import { linkGuestOrdersForCurrentUser } from '@/lib/linkGuestOrdersClient'
 export default function GuestOrderLinker() {
     const { user, loading, getToken } = useAuth()
     const isSignedIn = !!user
-    const [checkedUid, setCheckedUid] = useState(null)
     const linkingRef = useRef(false)
+    const lastAttemptRef = useRef({ uid: null, at: 0 })
 
     useEffect(() => {
-        const controller = new AbortController()
         let active = true
 
         const linkGuestOrders = async () => {
             if (loading || !isSignedIn || !user?.uid) return
-            if (checkedUid === user.uid || linkingRef.current) return
+
+            const now = Date.now()
+            const lastAttempt = lastAttemptRef.current
+            const recentlyAttempted = lastAttempt.uid === user.uid && now - lastAttempt.at < 15000
+            if (recentlyAttempted || linkingRef.current) return
 
             try {
                 const token = await getToken()
                 if (!token || !active) return
 
                 linkingRef.current = true
+                lastAttemptRef.current = { uid: user.uid, at: now }
 
                 const data = await linkGuestOrdersForCurrentUser(user, token)
 
@@ -34,14 +38,9 @@ export default function GuestOrderLinker() {
                         duration: 5000
                     })
                 }
-
-                setCheckedUid(user.uid)
             } catch (error) {
                 if (process.env.NODE_ENV !== 'production') {
                     console.warn('Failed to link guest orders:', error)
-                }
-                if (active) {
-                    setCheckedUid(user.uid)
                 }
             } finally {
                 linkingRef.current = false
@@ -49,14 +48,15 @@ export default function GuestOrderLinker() {
         }
 
         const timer = setTimeout(linkGuestOrders, 300)
+        const retryTimer = setTimeout(linkGuestOrders, 2500)
 
         return () => {
             active = false
             clearTimeout(timer)
-            controller.abort()
+            clearTimeout(retryTimer)
             linkingRef.current = false
         }
-    }, [isSignedIn, user, getToken, loading, checkedUid])
+    }, [isSignedIn, user, getToken, loading])
 
     return null
 }

@@ -3,9 +3,11 @@ import connectDB from '@/lib/mongodb';
 import Product from '@/models/Product';
 import Order from '@/models/Order';
 import { NextResponse } from 'next/server';
+import { requestWaslahAutoShipment } from '@/lib/waslahAutoShipment';
 import { getAuth } from '@/lib/firebase-admin';
 import { buildGuestInfoFromForm } from '@/lib/storeCreateOrder';
 import { validateAddressPayload } from '@/lib/addressValidation';
+import { runWithTrustedManualStoreOrder } from '@/lib/manualStoreOrderContext';
 
 async function verifySeller(request) {
   const authHeader = request.headers.get('authorization');
@@ -144,7 +146,14 @@ export async function POST(request) {
     });
 
     const { POST: createOrder } = await import('@/app/api/orders/route');
-    const orderResponse = await createOrder(orderRequest);
+    const orderResponse = await runWithTrustedManualStoreOrder(
+      {
+        source: 'store_order_create',
+        storeId,
+        actorId: sellerUid,
+      },
+      () => createOrder(orderRequest),
+    );
     const orderData = await orderResponse.json();
 
     if (!orderResponse.ok) {
@@ -155,6 +164,9 @@ export async function POST(request) {
     let savedOrder = orderData.order || orderData.orders?.[0] || null;
 
     if (orderId) {
+      if (!savedOrder) {
+        savedOrder = await Order.findOne({ _id: orderId, storeId }).lean();
+      }
       const referenceId = String(paymentReferenceId || '').trim();
       const noteLines = [
         notes ? String(notes).trim() : '',
@@ -163,6 +175,12 @@ export async function POST(request) {
       ].filter(Boolean);
 
       const isCod = paymentMethod === 'COD';
+      const autoShipReadyAt = isCod
+        && savedOrder?.waslah?.autoShipEnrolled === true
+        && savedOrder?.fulfillmentStockReservedAt
+        && savedOrder?.waslah?.autoShipLastErrorCode !== 'STOCK_RESERVATION_FAILED'
+        ? new Date()
+        : null;
 
       // Resolve an optional manual discount entered by store staff. Applied here
       // (authenticated store route) rather than in the public /api/orders so
@@ -200,6 +218,7 @@ export async function POST(request) {
             manualStoreOrder: true,
             storeCreatedByUid: sellerUid,
             storeCreatedByName: sellerName,
+            ...(autoShipReadyAt ? { 'waslah.autoShipReadyAt': autoShipReadyAt } : {}),
             ...(referenceId ? { paymentReferenceId: referenceId } : {}),
             ...buildPaymentReferenceUpdate(paymentMethod, referenceId),
             ...(discountAmount > 0
@@ -217,6 +236,20 @@ export async function POST(request) {
         },
         { new: true },
       ).lean();
+
+      if (savedOrder) {
+        if (
+          isCod
+          && savedOrder.waslah?.autoShipEnrolled === true
+          && savedOrder.fulfillmentStockReservedAt
+          && savedOrder.waslah?.autoShipReadyAt
+          && savedOrder.waslah?.autoShipLastErrorCode !== 'STOCK_RESERVATION_FAILED'
+        ) {
+          await requestWaslahAutoShipment(orderId, {
+            source: 'new_store_cod_order',
+          });
+        }
+      }
     }
 
     return NextResponse.json({

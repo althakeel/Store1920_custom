@@ -13,6 +13,7 @@ import {
   Save,
   Shield,
   Sparkles,
+  Trash2,
   UserRound,
 } from "lucide-react";
 import { useAuth } from "@/lib/useAuth";
@@ -141,6 +142,8 @@ export default function SettingsPage() {
   const [teamMembers, setTeamMembers] = useState([]);
   const [memberPermissions, setMemberPermissions] = useState({});
   const [editingMemberId, setEditingMemberId] = useState(null);
+  const [deletingMemberId, setDeletingMemberId] = useState(null);
+  const [memberPendingDelete, setMemberPendingDelete] = useState(null);
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
   const [currencyPreference, setCurrencyPreference] = useState("AED");
   const [transactionalSmtp, setTransactionalSmtp] = useState({
@@ -288,6 +291,33 @@ export default function SettingsPage() {
       setMessage("Failed to load team members");
     } finally {
       setLoadingTeam(false);
+    }
+  };
+
+  const handleDeleteTeamMember = async (member) => {
+    if (!member?.id) return;
+
+    setDeletingMemberId(member.id);
+    try {
+      const token = await getToken();
+      await axios.post(
+        "/api/store/users/delete",
+        { userId: member.id, userEmail: member.email },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      toast.success("Team member removed");
+      if (editingMemberId === member.id) setEditingMemberId(null);
+      setMemberPendingDelete(null);
+      setMemberPermissions((prev) => {
+        const next = { ...prev };
+        delete next[member.id];
+        return next;
+      });
+      setTeamMembers((prev) => prev.filter((entry) => entry.id !== member.id));
+    } catch (err) {
+      toast.error(err?.response?.data?.error || "Failed to remove team member");
+    } finally {
+      setDeletingMemberId(null);
     }
   };
 
@@ -785,7 +815,7 @@ export default function SettingsPage() {
           </div>
         </SettingsCard>
 
-      <SettingsCard title="Team members" description="Edit what each invited user can see in the sidebar.">
+      <SettingsCard title="Team members" description="Edit what each invited user can see in the sidebar, or delete them to revoke access.">
         {loadingTeam ? (
           <p className="rounded-xl bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">Loading team members...</p>
         ) : teamMembers.length === 0 ? (
@@ -826,6 +856,15 @@ export default function SettingsPage() {
                         className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                       >
                         {isEditing ? "Hide" : "Edit access"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMemberPendingDelete(member)}
+                        disabled={deletingMemberId === member.id}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60"
+                      >
+                        <Trash2 size={13} />
+                        Delete
                       </button>
                     </div>
                   </div>
@@ -986,6 +1025,53 @@ export default function SettingsPage() {
           {activeTab === "dataImport" ? importContent : null}
         </div>
       </div>
+
+      {memberPendingDelete ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600">
+                <Trash2 size={18} />
+              </span>
+              <div className="min-w-0">
+                <h3 className="text-lg font-semibold text-slate-900">Remove team member?</h3>
+                <p className="mt-2 text-sm text-slate-600">
+                  Remove{" "}
+                  <span className="font-semibold text-slate-900">
+                    {memberPendingDelete.name || memberPendingDelete.username || memberPendingDelete.email || "this team member"}
+                  </span>
+                  {memberPendingDelete.email ? (
+                    <>
+                      {" "}
+                      (<span className="text-slate-500">({memberPendingDelete.email})</span>
+                    </>
+                  ) : null}
+                  ? They will lose dashboard access immediately.
+                </p>
+              </div>
+            </div>
+            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setMemberPendingDelete(null)}
+                disabled={Boolean(deletingMemberId)}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDeleteTeamMember(memberPendingDelete)}
+                disabled={Boolean(deletingMemberId)}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                <Trash2 size={15} />
+                {deletingMemberId === memberPendingDelete.id ? "Removing..." : "Yes, delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

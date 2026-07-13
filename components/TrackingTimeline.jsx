@@ -65,8 +65,10 @@ export default function TrackingTimeline({ events, type = 'delhivery' }) {
         {events.map((event, idx) => {
           const isAnimated = animatedEvents.includes(idx)
           const color = getStatusColor(event.status)
-          const timestamp = type === 'c3xpress' ? event.time : new Date(event.time || event.createdAt).toLocaleString()
-          const location = event.location || event.locationName || 'Location not specified'
+          const timestamp = (type === 'c3xpress' || type === 'waslah')
+            ? (event.time || '')
+            : (event.time || event.createdAt ? new Date(event.time || event.createdAt).toLocaleString() : '')
+          const location = event.location || event.locationName || ''
           const remarks = event.remarks || event.description || ''
           const deliveredTo = event.deliveredTo || ''
 
@@ -97,14 +99,16 @@ export default function TrackingTimeline({ events, type = 'delhivery' }) {
                     {String(event.status || '').replace(/_/g, ' ')}
                   </h4>
                   <span className="w-fit rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
-                    {timestamp}
+                    {timestamp || 'Update'}
                   </span>
                 </div>
 
+                {location ? (
                 <p className="text-sm text-slate-700 mb-1 flex items-center gap-1.5">
                   <span className="w-1 h-1 bg-slate-600 rounded-full" />
                   {location}
                 </p>
+                ) : null}
 
                 {remarks && (
                   <p className="text-sm text-slate-600 mt-2 italic">"{remarks}"</p>

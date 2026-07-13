@@ -21,10 +21,14 @@ async function hydrateOrderItemProducts(orders = []) {
     for (const item of order.orderItems || []) {
       const product = getOrderLineProduct(item);
       const rawId = typeof item.productId === 'object'
-        ? item.productId?._id
+        ? (item.productId?._id || item.productId?.id)
         : item.productId;
       if (!rawId) continue;
-      if (!product?.variants?.length) {
+
+      const hasName = Boolean(String(product?.name || item?.name || '').trim());
+      const hasImage = Boolean(product?.images?.length || item?.image);
+      // Always refill when populate was skipped/wiped or the line snapshot is empty.
+      if (!hasName || !hasImage || !product?.variants) {
         missingIds.add(String(rawId));
       }
     }
@@ -41,14 +45,19 @@ async function hydrateOrderItemProducts(orders = []) {
     ...order,
     orderItems: (order.orderItems || []).map((item) => {
       const rawId = typeof item.productId === 'object'
-        ? String(item.productId?._id || '')
+        ? String(item.productId?._id || item.productId?.id || '')
         : String(item.productId || '');
       const hydrated = productById.get(rawId);
       if (!hydrated) return item;
-      if (typeof item.productId === 'object') {
-        return { ...item, productId: { ...item.productId, ...hydrated } };
+      const lineName = String(item.name || item.productName || '').trim();
+      const nextItem = {
+        ...item,
+        name: lineName || hydrated.name || item.name || '',
+      };
+      if (typeof item.productId === 'object' && item.productId) {
+        return { ...nextItem, productId: { ...item.productId, ...hydrated } };
       }
-      return { ...item, productId: hydrated };
+      return { ...nextItem, productId: hydrated };
     }),
   }));
 }
@@ -110,6 +119,7 @@ export async function GET(request){
 
         const { searchParams } = new URL(request.url);
         const includeDelhivery = searchParams.get('withDelhivery') === 'true';
+        const includeWaslah = searchParams.get('withWaslah') !== 'false';
         
         // Firebase Auth: Extract token from Authorization header
         const authHeader = request.headers.get('authorization');
@@ -178,7 +188,6 @@ export async function GET(request){
         }
 
         let enrichedOrders = attachConversionToOrders(orders, convertedCarts);
-        enrichedOrders = await hydrateOrderItemProducts(enrichedOrders);
 
         const bundleRepairUpdates = [];
         enrichedOrders = enrichedOrders.map((order) => {
@@ -199,7 +208,7 @@ export async function GET(request){
             const shouldFetchDelhivery = (order) => {
                 const trackingId = order.trackingId || order.awb || order.airwayBillNo;
                 const courier = (order.courier || '').toLowerCase();
-                const isTerminal = ['DELIVERED', 'RETURNED'].includes(order.status);
+                const isTerminal = ['DELIVERED', 'RTO', 'RETURN', 'RETURNED'].includes(order.status);
                 return Boolean(trackingId) && (courier.includes('delhivery') || !order.trackingUrl) && !isTerminal;
             };
 
@@ -227,6 +236,23 @@ export async function GET(request){
                 return order;
             }));
         }
+
+        if (includeWaslah) {
+            try {
+                const { syncWaslahStatusForOrders } = await import('@/lib/waslahOrderStatusSync');
+                enrichedOrders = await syncWaslahStatusForOrders(enrichedOrders, {
+                    max: 12,
+                    persist: true,
+                    concurrency: 4,
+                });
+            } catch (waslahSyncError) {
+                debugLog('Waslah status sync failed:', waslahSyncError?.message || waslahSyncError);
+            }
+        }
+
+        // Hydrate catalog name/images AFTER Waslah/Delhivery sync. Those paths can
+        // re-read lean orders and wipe populated orderItems.productId.
+        enrichedOrders = await hydrateOrderItemProducts(enrichedOrders);
 
         return NextResponse.json({orders: enrichedOrders})
     } catch (error) {

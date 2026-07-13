@@ -15,6 +15,7 @@
     "migrate:product-images-s3": "node scripts/migrateProductImagesToS3.js",
     "migrate:product-images-s3:dry-run": "node scripts/migrateProductImagesToS3.js --dry-run",
     "migrate:categories": "node scripts/migrateCategories.mjs --no-backup",
+    "test:waslah": "node --experimental-default-type=module --test tests/waslahTracking.test.mjs tests/waslahAutoShipPolicy.test.mjs",
     "test:zoho-inventory": "node --env-file=.env scripts/testZohoInventory.js",
     "sync:zoho-products": "node scripts/syncZohoProducts.js",
     "sync:zoho-products:dry-run": "node scripts/syncZohoProducts.js --dry-run --limit=10",

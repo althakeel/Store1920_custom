@@ -14,7 +14,7 @@ import Loading from "@/components/Loading"
 import axios from "axios"
 import nextDynamic from "next/dynamic"
 import { ChevronDown } from 'lucide-react'
-import ProductBulkImportPanel from '@/components/store/ProductBulkImportPanel'
+import ProductDetailCompletenessDots from '@/components/store/ProductDetailCompletenessDots'
 import {
     buildCategoryLookup,
     getProductCategoryLabels,
@@ -22,7 +22,6 @@ import {
 } from '@/lib/categoryLookup'
 import { getProductThumbnailUrl } from '@/lib/productMedia'
 
-const FBT_PICKER_LIMIT = 48
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100, 500]
 
 const MANAGE_PRODUCT_SELECT_CLASS =
@@ -55,7 +54,6 @@ const ProductForm = nextDynamic(() => import('../add-product/page'), {
     ),
 })
 
-const MAX_VISIBLE_TAGS = 3
 const MAX_VISIBLE_CATEGORIES = 2
 
 function CompactPills({ items = [], maxVisible = 2, pillClassName, moreClassName }) {
@@ -143,14 +141,16 @@ export default function StoreManageProducts() {
     const [fbtConfigLoading, setFbtConfigLoading] = useState(false)
     const [fbtSaving, setFbtSaving] = useState(false)
     const [enableFBT, setEnableFBT] = useState(false)
-    const [selectedFbtProductIds, setSelectedFbtProductIds] = useState([])
+    const [selectedFbtProducts, setSelectedFbtProducts] = useState([])
+    const [fbtPricingMode, setFbtPricingMode] = useState('none')
+    const [fbtBundlePrice, setFbtBundlePrice] = useState('')
     const [fbtBundleDiscount, setFbtBundleDiscount] = useState('')
     const [searchFbt, setSearchFbt] = useState('')
     const [debouncedSearchFbt, setDebouncedSearchFbt] = useState('')
     const searchFbtDebounceRef = useRef(null)
-    const [fbtCatalogProducts, setFbtCatalogProducts] = useState([])
+    const [fbtSearchResults, setFbtSearchResults] = useState([])
     const [fbtCatalogLoading, setFbtCatalogLoading] = useState(false)
-    const [fbtCatalogTotal, setFbtCatalogTotal] = useState(0)
+    const [fbtSearchTotal, setFbtSearchTotal] = useState(0)
     const [selectedProductIds, setSelectedProductIds] = useState([])
     const [deletingBulkProducts, setDeletingBulkProducts] = useState(false)
     const [showBulkEditModal, setShowBulkEditModal] = useState(false)
@@ -204,41 +204,35 @@ export default function StoreManageProducts() {
         }
     }, [currentPage, debouncedSearch, selectedCategory, pageSize, getToken])
 
-    const fetchFbtCatalogProducts = useCallback(async (search = '') => {
+    const fetchFbtSearchResults = useCallback(async (search = '') => {
+        const query = String(search || '').trim()
+        if (query.length < 2) {
+            setFbtSearchResults([])
+            setFbtSearchTotal(0)
+            return
+        }
+
         setFbtCatalogLoading(true)
         try {
             const token = await getToken()
-            let page = 1
-            let totalPages = 1
-            let catalogTotal = 0
-            const collected = []
+            const { data } = await axios.get('/api/store/product', {
+                headers: { Authorization: `Bearer ${token}` },
+                params: {
+                    page: 1,
+                    limit: 20,
+                    search: query,
+                    manage: 'true',
+                    sort: 'newest',
+                },
+            })
 
-            while (page <= totalPages) {
-                const { data } = await axios.get('/api/store/product', {
-                    headers: { Authorization: `Bearer ${token}` },
-                    params: {
-                        page,
-                        limit: FBT_PICKER_LIMIT,
-                        search: search || undefined,
-                        manage: 'true',
-                        sort: 'newest',
-                    },
-                })
-
-                const batch = Array.isArray(data?.products) ? data.products : []
-                collected.push(...batch)
-                totalPages = Number(data?.pagination?.totalPages) || 1
-                catalogTotal = Number(data?.pagination?.total) || collected.length
-                page += 1
-                if (!batch.length) break
-            }
-
-            setFbtCatalogProducts(collected)
-            setFbtCatalogTotal(catalogTotal)
+            const batch = Array.isArray(data?.products) ? data.products : []
+            setFbtSearchResults(batch)
+            setFbtSearchTotal(Number(data?.pagination?.total) || batch.length)
         } catch (error) {
-            toast.error(error?.response?.data?.error || 'Failed to load products for FBT')
-            setFbtCatalogProducts([])
-            setFbtCatalogTotal(0)
+            toast.error(error?.response?.data?.error || 'Failed to search products for FBT')
+            setFbtSearchResults([])
+            setFbtSearchTotal(0)
         } finally {
             setFbtCatalogLoading(false)
         }
@@ -443,6 +437,21 @@ export default function StoreManageProducts() {
         return data.message
     }
 
+    const confirmToggleStock = (product) => {
+        const nextInStock = !product.inStock
+        const label = String(product?.name || 'this product').trim()
+        const message = nextInStock
+            ? `Mark "${label}" as in stock?`
+            : `Mark "${label}" as out of stock?`
+        if (!confirm(message)) return
+
+        toast.promise(toggleStock(product._id), {
+            loading: 'Updating...',
+            success: (message) => message || 'Stock updated',
+            error: (error) => error?.response?.data?.error || error?.message || 'Failed to update stock',
+        })
+    }
+
     const toggleFastDelivery = async (productId) => {
         const token = await getToken()
         const { data } = await axios.post('/api/store/fast-delivery-toggle', { productId }, {headers: { Authorization: `Bearer ${token}` } })
@@ -467,6 +476,21 @@ export default function StoreManageProducts() {
         return data.message
     }
 
+    const confirmTogglePublished = (product) => {
+        const nextOnline = !isProductOnline(product)
+        const label = String(product?.name || 'this product').trim()
+        const message = nextOnline
+            ? `Set "${label}" online on the storefront?`
+            : `Take "${label}" offline from the storefront?`
+        if (!confirm(message)) return
+
+        toast.promise(togglePublished(product._id), {
+            loading: 'Updating...',
+            success: (message) => message || 'Visibility updated',
+            error: (error) => error?.response?.data?.error || error?.message || 'Failed to update visibility',
+        })
+    }
+
     const handleEdit = async (product) => {
         try {
             const token = await getToken()
@@ -480,8 +504,11 @@ export default function StoreManageProducts() {
         }
     }
 
-    const handleDelete = async (productId) => {
-        if (!confirm('Are you sure you want to delete this product?')) return
+    const handleDelete = async (product) => {
+        const productId = product?._id
+        const label = String(product?.name || 'this product').trim()
+        if (!productId) return
+        if (!confirm(`Delete "${label}"? This cannot be undone.`)) return
         
         try {
             const token = await getToken()
@@ -504,12 +531,29 @@ export default function StoreManageProducts() {
         try {
             const { data } = await axios.get(`/api/products/${product._id}/fbt`)
             setEnableFBT(Boolean(data?.enableFBT))
-            setFbtBundleDiscount(data?.bundleDiscount ?? '')
-            setSelectedFbtProductIds(Array.isArray(data?.products) ? data.products.map((p) => String(p._id)) : [])
+            setSelectedFbtProducts(Array.isArray(data?.products) ? data.products : [])
+
+            const bundlePrice = Number(data?.bundlePrice)
+            const bundleDiscount = Number(data?.bundleDiscount)
+            if (Number.isFinite(bundlePrice) && bundlePrice > 0) {
+                setFbtPricingMode('fixed')
+                setFbtBundlePrice(String(bundlePrice))
+                setFbtBundleDiscount('')
+            } else if (Number.isFinite(bundleDiscount) && bundleDiscount > 0) {
+                setFbtPricingMode('percent')
+                setFbtBundleDiscount(String(bundleDiscount))
+                setFbtBundlePrice('')
+            } else {
+                setFbtPricingMode('none')
+                setFbtBundlePrice('')
+                setFbtBundleDiscount('')
+            }
         } catch (error) {
             setEnableFBT(false)
+            setSelectedFbtProducts([])
+            setFbtPricingMode('none')
+            setFbtBundlePrice('')
             setFbtBundleDiscount('')
-            setSelectedFbtProductIds([])
         } finally {
             setFbtConfigLoading(false)
         }
@@ -542,36 +586,51 @@ export default function StoreManageProducts() {
         setShowFbtModal(false)
         setFbtTargetProduct(null)
         setEnableFBT(false)
-        setSelectedFbtProductIds([])
+        setSelectedFbtProducts([])
+        setFbtPricingMode('none')
+        setFbtBundlePrice('')
         setFbtBundleDiscount('')
         setSearchFbt('')
         setDebouncedSearchFbt('')
-        setFbtCatalogProducts([])
-        setFbtCatalogTotal(0)
+        setFbtSearchResults([])
+        setFbtSearchTotal(0)
     }
 
-    const toggleFbtProduct = (productId) => {
-        setSelectedFbtProductIds((prev) => {
-            if (prev.includes(productId)) {
-                return prev.filter((id) => id !== productId)
-            }
+    const addFbtProduct = (product) => {
+        const productId = String(product?._id || '')
+        if (!productId || productId === String(fbtTargetProduct?._id || '')) return
+
+        setSelectedFbtProducts((prev) => {
+            if (prev.some((item) => String(item._id) === productId)) return prev
             if (prev.length >= 10) {
                 toast.error('Maximum 10 related products allowed')
                 return prev
             }
-            return [...prev, productId]
+            return [...prev, product]
         })
+    }
+
+    const removeFbtProduct = (productId) => {
+        setSelectedFbtProducts((prev) => prev.filter((item) => String(item._id) !== String(productId)))
     }
 
     const handleSaveFbtConfig = async () => {
         if (!fbtTargetProduct?._id) return
 
-        if (enableFBT && selectedFbtProductIds.length === 0) {
+        if (enableFBT && selectedFbtProducts.length === 0) {
             toast.error('Select at least one related product')
             return
         }
 
-        const parsedDiscount = fbtBundleDiscount === '' ? null : Number(fbtBundleDiscount)
+        const selectedFbtProductIds = selectedFbtProducts.map((item) => String(item._id))
+        const parsedPrice = fbtPricingMode === 'fixed' && fbtBundlePrice !== '' ? Number(fbtBundlePrice) : null
+        const parsedDiscount = fbtPricingMode === 'percent' && fbtBundleDiscount !== '' ? Number(fbtBundleDiscount) : null
+
+        if (parsedPrice !== null && (!Number.isFinite(parsedPrice) || parsedPrice < 0)) {
+            toast.error('Bundle price must be a non-negative number')
+            return
+        }
+
         if (parsedDiscount !== null && (!Number.isFinite(parsedDiscount) || parsedDiscount < 0 || parsedDiscount > 100)) {
             toast.error('Discount must be between 0 and 100')
             return
@@ -582,7 +641,7 @@ export default function StoreManageProducts() {
             await axios.patch(`/api/products/${fbtTargetProduct._id}/fbt`, {
                 enableFBT,
                 fbtProductIds: enableFBT ? selectedFbtProductIds : [],
-                fbtBundlePrice: null,
+                fbtBundlePrice: enableFBT ? parsedPrice : null,
                 fbtBundleDiscount: enableFBT ? parsedDiscount : null,
             })
 
@@ -592,6 +651,7 @@ export default function StoreManageProducts() {
                         ...p,
                         enableFBT,
                         fbtProductIds: enableFBT ? selectedFbtProductIds : [],
+                        fbtBundlePrice: enableFBT ? parsedPrice : null,
                         fbtBundleDiscount: enableFBT ? parsedDiscount : null,
                     }
                     : p
@@ -648,8 +708,8 @@ export default function StoreManageProducts() {
 
     useEffect(() => {
         if (!showFbtModal) return
-        fetchFbtCatalogProducts(debouncedSearchFbt)
-    }, [showFbtModal, debouncedSearchFbt, fetchFbtCatalogProducts])
+        fetchFbtSearchResults(debouncedSearchFbt)
+    }, [showFbtModal, debouncedSearchFbt, fetchFbtSearchResults])
 
     useEffect(() => {
         if (!user) return
@@ -678,8 +738,14 @@ export default function StoreManageProducts() {
     const paginationStart = totalProducts ? ((safeCurrentPage - 1) * pageSize) + 1 : 0
     const paginationEnd = totalProducts ? Math.min(safeCurrentPage * pageSize, totalProducts) : 0
 
-    const filteredFbtProducts = fbtCatalogProducts
-        .filter((p) => String(p._id) !== String(fbtTargetProduct?._id || ''))
+    const selectedFbtProductIds = useMemo(
+        () => selectedFbtProducts.map((item) => String(item._id)),
+        [selectedFbtProducts]
+    )
+
+    const fbtSearchMatches = fbtSearchResults
+        .filter((product) => String(product._id) !== String(fbtTargetProduct?._id || ''))
+        .filter((product) => !selectedFbtProductIds.includes(String(product._id)))
 
     const productNameById = useMemo(
         () => Object.fromEntries(products.map((product) => [String(product._id), product.name || 'Product'])),
@@ -1287,9 +1353,9 @@ export default function StoreManageProducts() {
                             />
                         </th>
                         <th className="px-4 py-3">Name</th>
+                        <th className="px-4 py-3 hidden md:table-cell">Details</th>
                         <th className="px-4 py-3 hidden lg:table-cell">SKU</th>
                         <th className={`px-4 py-3 ${showDetailColumns ? '' : 'hidden'}`}>Categories</th>
-                        <th className="px-4 py-3">Tags</th>
                         <th className={`px-4 py-3 ${showDetailColumns ? '' : 'hidden'}`}>Description</th>
                         <th className="px-4 py-3">Sale price</th>
                         <th className="px-4 py-3 hidden sm:table-cell">Fast Delivery</th>
@@ -1340,8 +1406,16 @@ export default function StoreManageProducts() {
                                             N/A
                                         </div>
                                     ) : null}
-                                    <span className="break-words line-clamp-2 text-sm font-medium" title={product.name}>{product.name}</span>
+                                    <div className="min-w-0 flex-1">
+                                        <span className="break-words line-clamp-2 text-sm font-medium" title={product.name}>{product.name}</span>
+                                        <div className="mt-1 md:hidden">
+                                            <ProductDetailCompletenessDots product={product} compact />
+                                        </div>
+                                    </div>
                                 </div>
+                            </td>
+                            <td className="px-4 py-3 hidden md:table-cell align-top">
+                                <ProductDetailCompletenessDots product={product} />
                             </td>
                             <td className="px-4 py-3 text-slate-600 hidden lg:table-cell">{product.sku || '-'}</td>
                             <td className={`px-4 py-3 align-top ${showDetailColumns ? '' : 'hidden'}`}>
@@ -1350,18 +1424,6 @@ export default function StoreManageProducts() {
                                         items={getDisplayCategoryLabels(product)}
                                         maxVisible={MAX_VISIBLE_CATEGORIES}
                                         pillClassName="inline-block max-w-[160px] truncate px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded"
-                                        moreClassName="inline-block px-2 py-1 text-xs font-medium bg-slate-100 text-slate-600 rounded"
-                                    />
-                                ) : (
-                                    <span className="text-slate-400">-</span>
-                                )}
-                            </td>
-                            <td className="px-4 py-3 align-top">
-                                {product.tags && product.tags.length > 0 ? (
-                                    <CompactPills
-                                        items={product.tags}
-                                        maxVisible={MAX_VISIBLE_TAGS}
-                                        pillClassName="inline-block max-w-[140px] truncate px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded"
                                         moreClassName="inline-block px-2 py-1 text-xs font-medium bg-slate-100 text-slate-600 rounded"
                                     />
                                 ) : (
@@ -1415,11 +1477,7 @@ export default function StoreManageProducts() {
                                         <input
                                             type="checkbox"
                                             className="sr-only peer"
-                                            onChange={() => toast.promise(togglePublished(product._id), {
-                                                loading: 'Updating...',
-                                                success: (message) => message || 'Visibility updated',
-                                                error: (error) => error?.response?.data?.error || error?.message || 'Failed to update visibility',
-                                            })}
+                                            onChange={() => confirmTogglePublished(product)}
                                             checked={isProductOnline(product)}
                                         />
                                         <div className="w-9 h-5 bg-slate-300 rounded-full peer peer-checked:bg-emerald-600 transition-colors duration-200"></div>
@@ -1432,11 +1490,7 @@ export default function StoreManageProducts() {
                             </td>
                             <td className="px-4 py-3">
                                 <label className="relative inline-flex items-center cursor-pointer">
-                                    <input type="checkbox" className="sr-only peer" onChange={() => toast.promise(toggleStock(product._id), {
-                                        loading: 'Updating...',
-                                        success: (message) => message || 'Stock updated',
-                                        error: (error) => error?.response?.data?.error || error?.message || 'Failed to update stock',
-                                    })} checked={product.inStock} />
+                                    <input type="checkbox" className="sr-only peer" onChange={() => confirmToggleStock(product)} checked={product.inStock} />
                                     <div className="w-9 h-5 bg-slate-300 rounded-full peer peer-checked:bg-green-600 transition-colors duration-200"></div>
                                     <span className="dot absolute left-1 top-1 w-3 h-3 bg-white rounded-full transition-transform duration-200 ease-in-out peer-checked:translate-x-4"></span>
                                 </label>
@@ -1456,7 +1510,7 @@ export default function StoreManageProducts() {
                                         Edit
                                     </button>
                                     <button 
-                                        onClick={() => handleDelete(product._id)}
+                                        onClick={() => handleDelete(product)}
                                         className="px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition"
                                     >
                                         Delete
@@ -1625,75 +1679,175 @@ export default function StoreManageProducts() {
                                     Enable frequently bought together
                                 </label>
 
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-800 mb-1">FBT Discount (%)</label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        max="100"
-                                        step="0.1"
-                                        value={fbtBundleDiscount}
-                                        onChange={(e) => setFbtBundleDiscount(e.target.value)}
-                                        className="w-full max-w-[220px] border border-slate-300 rounded px-3 py-2 text-sm text-slate-900"
-                                        placeholder="0"
-                                    />
-                                    <p className="text-xs text-slate-500 mt-1">Leave empty for no discount.</p>
-                                </div>
+                                {enableFBT ? (
+                                    <>
+                                        <div>
+                                            <p className="mb-2 text-sm font-medium text-slate-800">Bundle pricing</p>
+                                            <div className="flex flex-wrap gap-4 text-sm text-slate-700">
+                                                <label className="inline-flex items-center gap-2">
+                                                    <input
+                                                        type="radio"
+                                                        name="fbtPricingMode"
+                                                        checked={fbtPricingMode === 'none'}
+                                                        onChange={() => {
+                                                            setFbtPricingMode('none')
+                                                            setFbtBundlePrice('')
+                                                            setFbtBundleDiscount('')
+                                                        }}
+                                                    />
+                                                    No discount
+                                                </label>
+                                                <label className="inline-flex items-center gap-2">
+                                                    <input
+                                                        type="radio"
+                                                        name="fbtPricingMode"
+                                                        checked={fbtPricingMode === 'percent'}
+                                                        onChange={() => {
+                                                            setFbtPricingMode('percent')
+                                                            setFbtBundlePrice('')
+                                                        }}
+                                                    />
+                                                    Percentage discount
+                                                </label>
+                                                <label className="inline-flex items-center gap-2">
+                                                    <input
+                                                        type="radio"
+                                                        name="fbtPricingMode"
+                                                        checked={fbtPricingMode === 'fixed'}
+                                                        onChange={() => {
+                                                            setFbtPricingMode('fixed')
+                                                            setFbtBundleDiscount('')
+                                                        }}
+                                                    />
+                                                    Fixed bundle price
+                                                </label>
+                                            </div>
 
-                                <div>
-                                    <input
-                                        type="text"
-                                        value={searchFbt}
-                                        onChange={(e) => setSearchFbt(e.target.value)}
-                                        className="w-full border border-slate-300 rounded px-3 py-2 text-sm text-slate-900"
-                                        placeholder="Search products by name, SKU or tags"
-                                    />
-                                    <p className="mt-1 text-xs text-slate-500">
-                                        {fbtCatalogLoading
-                                            ? 'Loading full product catalog...'
-                                            : `Showing ${filteredFbtProducts.length} of ${fbtCatalogTotal} products. You can select up to 10.`}
-                                    </p>
-                                </div>
+                                            {fbtPricingMode === 'percent' ? (
+                                                <div className="mt-3">
+                                                    <label className="mb-1 block text-sm font-medium text-slate-800">FBT discount (%)</label>
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        max="100"
+                                                        step="0.1"
+                                                        value={fbtBundleDiscount}
+                                                        onChange={(e) => setFbtBundleDiscount(e.target.value)}
+                                                        className="w-full max-w-[220px] rounded border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                                                        placeholder="0"
+                                                    />
+                                                </div>
+                                            ) : null}
 
-                                <div className="border border-slate-200 rounded-lg max-h-[360px] overflow-y-auto">
-                                    {fbtCatalogLoading ? (
-                                        <div className="p-4 text-sm text-slate-500">Loading products...</div>
-                                    ) : filteredFbtProducts.length === 0 ? (
-                                        <div className="p-4 text-sm text-slate-500">No products found.</div>
-                                    ) : (
-                                        <div className="divide-y divide-slate-100">
-                                            {filteredFbtProducts.map((item) => {
-                                                const checked = selectedFbtProductIds.includes(String(item._id))
-                                                return (
-                                                    <label key={item._id} className="flex items-center gap-3 p-3 hover:bg-slate-50 cursor-pointer">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={checked}
-                                                            onChange={() => toggleFbtProduct(String(item._id))}
-                                                            disabled={!enableFBT}
-                                                        />
-                                                        <Image
-                                                            src={item.images?.[0] || 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'}
-                                                            alt={item.name}
-                                                            width={34}
-                                                            height={34}
-                                                            className="rounded border border-slate-200 object-cover"
-                                                        />
-                                                        <div className="min-w-0 flex-1">
-                                                            <p className="text-sm text-slate-900 truncate">{item.name}</p>
-                                                            <p className="text-xs text-slate-500">{currency} {formatAmount(item.price)}</p>
-                                                        </div>
-                                                    </label>
-                                                )
-                                            })}
+                                            {fbtPricingMode === 'fixed' ? (
+                                                <div className="mt-3">
+                                                    <label className="mb-1 block text-sm font-medium text-slate-800">Fixed bundle price ({currency})</label>
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        step="0.01"
+                                                        value={fbtBundlePrice}
+                                                        onChange={(e) => setFbtBundlePrice(e.target.value)}
+                                                        className="w-full max-w-[220px] rounded border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                                                        placeholder="e.g. 99.00"
+                                                    />
+                                                    <p className="mt-1 text-xs text-slate-500">Customers pay this total when buying the bundle together.</p>
+                                                </div>
+                                            ) : null}
                                         </div>
-                                    )}
-                                </div>
+
+                                        <div>
+                                            <p className="mb-2 text-sm font-medium text-slate-800">Selected products</p>
+                                            {selectedFbtProducts.length === 0 ? (
+                                                <p className="text-sm text-slate-500">No products selected yet. Search below to add up to 10.</p>
+                                            ) : (
+                                                <div className="space-y-2">
+                                                    {selectedFbtProducts.map((item) => (
+                                                        <div key={item._id} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                                                            <Image
+                                                                src={item.images?.[0] || 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'}
+                                                                alt={item.name}
+                                                                width={34}
+                                                                height={34}
+                                                                className="rounded border border-slate-200 object-cover"
+                                                            />
+                                                            <div className="min-w-0 flex-1">
+                                                                <p className="truncate text-sm text-slate-900">{item.name}</p>
+                                                                <p className="text-xs text-slate-500">{currency} {formatAmount(item.price)}</p>
+                                                            </div>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => removeFbtProduct(item._id)}
+                                                                className="text-sm font-medium text-red-600 hover:text-red-700"
+                                                            >
+                                                                Remove
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div>
+                                            <label className="mb-1 block text-sm font-medium text-slate-800">Add products</label>
+                                            <input
+                                                type="text"
+                                                value={searchFbt}
+                                                onChange={(e) => setSearchFbt(e.target.value)}
+                                                className="w-full rounded border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                                                placeholder="Search products by name, SKU or tags"
+                                            />
+                                            <p className="mt-1 text-xs text-slate-500">
+                                                {debouncedSearchFbt.trim().length < 2
+                                                    ? 'Type at least 2 characters to search. You can select up to 10 products.'
+                                                    : fbtCatalogLoading
+                                                        ? 'Searching products...'
+                                                        : fbtSearchMatches.length === 0
+                                                            ? 'No matching products found.'
+                                                            : `Showing ${fbtSearchMatches.length}${fbtSearchTotal > fbtSearchMatches.length ? ` of ${fbtSearchTotal}` : ''} matches.`}
+                                            </p>
+                                        </div>
+
+                                        {debouncedSearchFbt.trim().length >= 2 ? (
+                                            <div className="max-h-[240px] overflow-y-auto rounded-lg border border-slate-200">
+                                                {fbtCatalogLoading ? (
+                                                    <div className="p-4 text-sm text-slate-500">Searching products...</div>
+                                                ) : fbtSearchMatches.length === 0 ? (
+                                                    <div className="p-4 text-sm text-slate-500">No products found.</div>
+                                                ) : (
+                                                    <div className="divide-y divide-slate-100">
+                                                        {fbtSearchMatches.map((item) => (
+                                                            <button
+                                                                key={item._id}
+                                                                type="button"
+                                                                onClick={() => addFbtProduct(item)}
+                                                                className="flex w-full items-center gap-3 p-3 text-left hover:bg-slate-50"
+                                                            >
+                                                                <Image
+                                                                    src={item.images?.[0] || 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png'}
+                                                                    alt={item.name}
+                                                                    width={34}
+                                                                    height={34}
+                                                                    className="rounded border border-slate-200 object-cover"
+                                                                />
+                                                                <div className="min-w-0 flex-1">
+                                                                    <p className="truncate text-sm text-slate-900">{item.name}</p>
+                                                                    <p className="text-xs text-slate-500">{currency} {formatAmount(item.price)}</p>
+                                                                </div>
+                                                                <span className="text-xs font-semibold text-emerald-700">Add</span>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ) : null}
+                                    </>
+                                ) : null}
                             </div>
                         )}
 
                         <div className="px-5 py-4 border-t border-slate-200 flex items-center justify-between">
-                            <p className="text-sm text-slate-600">Selected: {selectedFbtProductIds.length} / 10</p>
+                            <p className="text-sm text-slate-600">Selected: {selectedFbtProducts.length} / 10</p>
                             <div className="flex gap-2">
                                 <button
                                     onClick={closeFbtModal}

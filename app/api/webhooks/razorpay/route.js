@@ -1,8 +1,16 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Order from '@/models/Order';
-import { validateRazorpayWebhookSignature } from '@/lib/razorpay';
 import crypto from 'crypto';
+import { recordTrustedOrderPayment } from '@/lib/orderPaymentVerification';
+import { markOrderPaymentSucceeded } from '@/lib/deferredOrderFlow';
+import { getCompleteRazorpayStatus } from '@/lib/razorpay';
+import {
+  acquireCapturedRazorpayOrderGroup,
+  completeRazorpayOrderGroupClaim,
+  failRazorpayOrderGroupClaim,
+  revokeRazorpayOrderGroup,
+} from '@/lib/razorpayPaymentOwnership';
 
 /**
  * Razorpay Webhook Handler for real-time payment and settlement updates
@@ -17,16 +25,34 @@ import crypto from 'crypto';
  */
 export async function POST(request) {
   try {
+    const webhookSecret = String(process.env.RAZORPAY_WEBHOOK_SECRET || '').trim();
+    if (!webhookSecret) {
+      console.error('[Razorpay Webhook] RAZORPAY_WEBHOOK_SECRET is not configured');
+      return NextResponse.json(
+        { error: 'Webhook is not configured' },
+        { status: 503 },
+      );
+    }
+
     const body = await request.text();
     const signature = request.headers.get('x-razorpay-signature');
 
+    if (!signature) {
+      return NextResponse.json({ error: 'Missing signature' }, { status: 400 });
+    }
+
     // Verify webhook signature
     const hash = crypto
-      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+      .createHmac('sha256', webhookSecret)
       .update(body)
       .digest('hex');
 
-    if (hash !== signature) {
+    const receivedSignature = Buffer.from(String(signature), 'utf8');
+    const expectedSignature = Buffer.from(hash, 'utf8');
+    const signatureMatches = receivedSignature.length === expectedSignature.length
+      && crypto.timingSafeEqual(receivedSignature, expectedSignature);
+
+    if (!signatureMatches) {
       console.warn('[Razorpay Webhook] Invalid signature');
       return NextResponse.json({
         error: 'Invalid signature'
@@ -47,6 +73,23 @@ export async function POST(request) {
 
       case 'payment.failed':
         return handlePaymentFailed(event.payload);
+
+      case 'refund.created':
+      case 'refund.processed':
+        return handlePaymentReversed({
+          paymentId: event.payload?.refund?.entity?.payment_id,
+          reason: `Razorpay ${event.event}`,
+          paymentStatus: 'REFUNDED',
+        });
+
+      case 'payment.dispute.created':
+      case 'payment.dispute.lost':
+        return handlePaymentReversed({
+          paymentId: event.payload?.dispute?.entity?.payment_id
+            || event.payload?.payment?.entity?.id,
+          reason: `Razorpay ${event.event}`,
+          paymentStatus: 'CHARGEBACK',
+        });
 
       case 'settlement.processed':
         return handleSettlementProcessed(event.payload);
@@ -71,30 +114,72 @@ export async function POST(request) {
 
 async function handlePaymentCaptured(payload) {
   try {
-    const paymentId = payload.payment.id;
-    const amount = payload.payment.amount;
+    const payment = payload?.payment?.entity || payload?.payment || {};
+    const paymentId = payment.id;
+    if (!paymentId) {
+      throw new Error('Razorpay payment.captured payload is missing a payment id');
+    }
 
-    // Find order with this payment ID
-    const order = await Order.findOne({ razorpayPaymentId: paymentId });
-
-    if (order) {
-      console.log(`[Webhook] Payment captured for order ${order._id}`);
-      
-      // Update order as paid
-      order.isPaid = true;
-      order.paymentStatus = 'CAPTURED';
-      
-      // Store settlement info
-      order.razorpaySettlement = {
+    const providerStatus = await getCompleteRazorpayStatus(paymentId);
+    let group;
+    try {
+      group = await acquireCapturedRazorpayOrderGroup({
         paymentId,
-        status: 'PENDING',
-        captured_at: new Date(),
-        amount: amount / 100, // Convert paise to rupees
-        fee: payload.payment.fee ? payload.payment.fee / 100 : 0
-      };
-      
-      await order.save();
-      console.log(`[Webhook] Order ${order._id} marked as PAID`);
+        providerStatus,
+        allowClaimCreation: false,
+      });
+    } catch (error) {
+      if (['RAZORPAY_CLAIM_NOT_READY', 'RAZORPAY_CLAIM_PROCESSING'].includes(error?.code)) {
+        console.log('[Razorpay Webhook] Order group is not pinned yet; verification will recover it:', paymentId);
+        return NextResponse.json({ success: true, deferred: true }, { status: 202 });
+      }
+      throw error;
+    }
+
+    try {
+      for (const order of group.orders) {
+        const orderId = String(order._id);
+        console.log(`[Webhook] Payment captured for order ${orderId}`);
+        const paidOrder = await markOrderPaymentSucceeded(orderId, { paymentStatus: 'PAID' });
+        if (!paidOrder) throw new Error(`Razorpay order ${orderId} is no longer payable`);
+
+        await Order.findByIdAndUpdate(orderId, {
+          $set: {
+            razorpaySettlement: {
+              paymentId,
+              status: providerStatus.settlement_status || 'PENDING',
+              captured_at: new Date(Number(providerStatus.payment?.created_at || 0) * 1000),
+              amount: Math.round(Number(order.total || 0) * 100),
+              fee: 0,
+              is_transferred: providerStatus.is_transferred_to_bank,
+              transferred_at: providerStatus.settlement?.transferred_at || null,
+            },
+          },
+        });
+
+        const verification = order.paymentVerification || {};
+        const hasMatchingProof = String(verification.status || '').toUpperCase() === 'VERIFIED'
+          && String(verification.provider || '').toUpperCase() === 'RAZORPAY'
+          && String(verification.providerReference || '') === paymentId;
+        if (!hasMatchingProof) {
+          const proof = await recordTrustedOrderPayment(orderId, {
+            provider: 'RAZORPAY',
+            providerReference: paymentId,
+            providerEventId: group.providerPayment.providerOrderId,
+            source: 'signed_razorpay_webhook',
+            verifiedAmount: order.total,
+            currency: group.providerPayment.currency,
+          });
+          if (order.waslah?.autoShipEnrolled === true && proof?.verified !== true) {
+            throw new Error(`Could not persist trusted Razorpay proof: ${proof?.reason || 'unknown'}`);
+          }
+        }
+        console.log(`[Webhook] Order ${orderId} marked as PAID`);
+      }
+      await completeRazorpayOrderGroupClaim(paymentId, group.orderIds);
+    } catch (error) {
+      await failRazorpayOrderGroupClaim(paymentId, error).catch(() => {});
+      throw error;
     }
 
     return NextResponse.json({
@@ -105,6 +190,22 @@ async function handlePaymentCaptured(payload) {
     console.error('[handlePaymentCaptured Error]', error);
     throw error;
   }
+}
+
+async function handlePaymentReversed({ paymentId, reason, paymentStatus }) {
+  if (!paymentId) throw new Error('Razorpay reversal payload is missing payment_id');
+  const providerStatus = await getCompleteRazorpayStatus(paymentId);
+  const result = await revokeRazorpayOrderGroup({
+    paymentId,
+    providerStatus,
+    reason,
+    paymentStatus,
+  });
+  return NextResponse.json({
+    success: true,
+    message: `Payment ${String(paymentStatus).toLowerCase()} processed`,
+    orderIds: result.orderIds,
+  });
 }
 
 async function handlePaymentAuthorized(payload) {

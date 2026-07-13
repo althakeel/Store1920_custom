@@ -12,6 +12,7 @@ import { isFailedSalesReportOrder } from '@/lib/storeSalesReport';
 import {
   aggregateOrdersByProduct,
   buildFailedOrderRows,
+  buildSalesOrderRows,
   buildOrdersByProductDateFilter,
   enrichOrdersByProductRows,
   getOrdersByProductDateLabel,
@@ -48,7 +49,8 @@ export async function GET(request) {
     const toDate = searchParams.get('toDate') || '';
     const fromTime = searchParams.get('fromTime') || '';
     const toTime = searchParams.get('toTime') || '';
-    const view = searchParams.get('view') === 'failed' ? 'failed' : 'products';
+    const viewParam = String(searchParams.get('view') || 'products').toLowerCase();
+    const view = ['failed', 'sales'].includes(viewParam) ? viewParam : 'products';
     const dateFilter = buildOrdersByProductDateFilter(dateRange, fromDate, toDate, fromTime, toTime);
 
     await connectDB();
@@ -57,16 +59,15 @@ export async function GET(request) {
       storeId,
       ...dateFilter,
       ...ACTIVE_RECORD_FILTER,
-      status: { $ne: 'CANCELLED' },
     })
-      .select('shortOrderNumber createdAt total status orderItems paymentMethod paymentStatus isPaid delhivery guestName guestEmail guestPhone shippingAddress')
+      .select('shortOrderNumber createdAt total status orderItems items paymentMethod paymentStatus isPaid delhivery guestName guestEmail guestPhone shippingAddress')
       .lean();
 
-    const failedOrders = orders.filter((order) => isFailedSalesReportOrder(order));
-    const successOrders = orders.filter((order) => !isFailedSalesReportOrder(order));
+    const failedOrders = orders.filter((order) => isFailedSalesReportOrder(order) || String(order?.status || '').toUpperCase() === 'CANCELLED');
+    const successOrders = orders.filter((order) => !isFailedSalesReportOrder(order) && String(order?.status || '').toUpperCase() !== 'CANCELLED');
 
     if (view === 'failed') {
-      const failedRows = buildFailedOrderRows(failedOrders);
+      const failedRows = buildFailedOrderRows(orders.filter((order) => isFailedSalesReportOrder(order)));
 
       return NextResponse.json({
         view,
@@ -77,6 +78,21 @@ export async function GET(request) {
         totalOrdersInRange: orders.length,
         totalProducts: 0,
         rows: failedRows,
+      });
+    }
+
+    if (view === 'sales') {
+      const salesRows = buildSalesOrderRows(successOrders);
+
+      return NextResponse.json({
+        view,
+        dateRange,
+        dateLabel: getOrdersByProductDateLabel(dateRange, fromDate, toDate, fromTime, toTime),
+        totalOrders: successOrders.length,
+        failedOrders: failedOrders.length,
+        totalOrdersInRange: orders.length,
+        totalProducts: 0,
+        rows: salesRows,
       });
     }
 

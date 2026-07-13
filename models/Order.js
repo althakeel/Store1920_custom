@@ -33,6 +33,25 @@ const OrderSchema = new mongoose.Schema({
   paymentMethod: String,
   paymentStatus: String,
   isPaid: { type: Boolean, default: false },
+  // Set only by the current checkout flow. It distinguishes new orders whose
+  // inventory lifecycle is transaction-backed from legacy orders that predate
+  // the fulfillment reservation marker.
+  fulfillmentStockReservationRequired: { type: Boolean, default: false },
+  fulfillmentStockReservationId: { type: String, default: null },
+  fulfillmentStockReservedAt: { type: Date, default: null },
+  paymentVerification: {
+    status: { type: String, default: 'UNVERIFIED' },
+    provider: { type: String, default: null },
+    providerReference: { type: String, default: null },
+    providerEventId: { type: String, default: null },
+    source: { type: String, default: null },
+    verifiedAt: { type: Date, default: null },
+    verifiedAmount: { type: Number, default: null },
+    currency: { type: String, default: null },
+    orderTotalAtVerification: { type: Number, default: null },
+    reversedAt: { type: Date, default: null },
+    reversalReason: { type: String, default: null },
+  },
   isCouponUsed: { type: Boolean, default: false },
   coupon: Object,
   isGuest: { type: Boolean, default: false },
@@ -48,11 +67,42 @@ const OrderSchema = new mongoose.Schema({
   waslah: {
     orderId: { type: String, default: null, index: true },
     cartId: { type: String, default: null },
+    serviceId: { type: String, default: null },
     reference: { type: String, default: null },
     trackingNumber: { type: String, default: null },
     labelUrl: { type: String, default: null },
+    labelPrintedAt: { type: Date, default: null },
+    processed: { type: Boolean, default: false },
+    processedAt: { type: Date, default: null },
+    unlinkedInWaslah: { type: Boolean, default: false },
+    carrierStatus: { type: String, default: null },
     lastSubtag: { type: String, default: null },
     lastSubtagMessage: { type: String, default: null },
+    lastEventAt: { type: Date, default: null },
+    lastEventId: { type: String, default: null },
+    // Explicit opt-in written only by the new-order creation flow. Existing
+    // orders intentionally remain outside automatic EMX fulfillment.
+    autoShipEnrolled: { type: Boolean, default: false },
+    autoShipEnrolledAt: { type: Date, default: null },
+    autoShipReadyAt: { type: Date, default: null },
+    autoShipStatus: { type: String, default: null, index: true },
+    autoShipAttemptId: { type: String, default: null },
+    autoShipAttemptCount: { type: Number, default: 0 },
+    autoShipTrigger: { type: String, default: null },
+    autoShipRequestedAt: { type: Date, default: null },
+    autoShipStartedAt: { type: Date, default: null },
+    autoShipCompletedAt: { type: Date, default: null },
+    autoShipFailedAt: { type: Date, default: null },
+    autoShipNextRetryAt: { type: Date, default: null },
+    autoShipLeaseExpiresAt: { type: Date, default: null },
+    autoShipLastError: { type: String, default: null },
+    autoShipLastErrorCode: { type: String, default: null },
+    // Shared by manual and automatic fulfillment. This short lease serializes
+    // the external create/cart/checkout workflow so the two entry points
+    // cannot create separate EMX shipments for the same store order.
+    shipmentOperationClaimId: { type: String, default: null },
+    shipmentOperationStartedAt: { type: Date, default: null },
+    shipmentOperationLeaseExpiresAt: { type: Date, default: null },
   },
   zohoCrm: {
     contactId: { type: String, default: null },
@@ -98,6 +148,8 @@ const OrderSchema = new mongoose.Schema({
   razorpayOrderId: String,                                  // Razorpay order ID
   razorpaySignature: String,                                // Webhook signature for verification
   razorpaySettlement: RazorpaySettlementSchema,            // Settlement details
+  stripeCheckoutSessionId: { type: String, index: true },
+  stripePaymentStatus: { type: String, default: null },
 
   // Tamara BNPL
   tamaraOrderId: { type: String, index: true },             // Tamara order ID (if BNPL payment)
@@ -185,6 +237,18 @@ const OrderSchema = new mongoose.Schema({
     previousPaymentMethod: { type: String, default: null },
   },
 
+  // Warehouse packing (Android / store Packed button)
+  warehousePacking: {
+    packed: { type: Boolean, default: false, index: true },
+    packedAt: { type: Date, default: null },
+    packedByUid: { type: String, default: null },
+    packedByName: { type: String, default: null },
+    packedByEmail: { type: String, default: null },
+    previousStatus: { type: String, default: null },
+    notes: { type: String, default: null },
+    emailSentAt: { type: Date, default: null },
+  },
+
   deletedAt: { type: Date, default: null, index: true },
   deletedBy: { type: String, default: null },
   deletedByName: { type: String, default: null },
@@ -203,5 +267,7 @@ OrderSchema.index({ userId: 1, 'coupon.code': 1 });           // Per-user coupon
 OrderSchema.index({ isGuest: 1, guestEmail: 1 });             // Link guest orders by email
 OrderSchema.index({ storeId: 1, deletedAt: 1, createdAt: -1 });
 OrderSchema.index({ isGuest: 1, guestPhone: 1 });             // Link guest orders by phone
+OrderSchema.index({ storeId: 1, 'warehousePacking.packed': 1, 'warehousePacking.packedAt': -1 });
+OrderSchema.index({ 'waslah.autoShipStatus': 1, 'waslah.autoShipNextRetryAt': 1 });
 
 export default mongoose.models.Order || mongoose.model("Order", OrderSchema);

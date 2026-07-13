@@ -1,202 +1,38 @@
-import Link from 'next/link';
-import { FolderIcon } from 'lucide-react';
-import { decodeHtmlEntities } from '@/lib/displayText';
-import { buildCategoryUrl } from '@/lib/categorySlug';
+'use client';
 
-function buildCategoryHref(category, ancestors = []) {
-  return buildCategoryUrl([...ancestors, category]);
+import Link from 'next/link';
+import { ArrowUpRight, ChevronRight } from 'lucide-react';
+import { decodeHtmlEntities } from '@/lib/displayText';
+import { getLocalizedCategoryName } from '@/lib/categoryLocalization';
+import { useStorefrontI18n } from '@/lib/useStorefrontI18n';
+import { resolveCategoryHref } from '@/lib/categoryTreeUtils';
+
+function getCategoryLabel(category, language) {
+  return decodeHtmlEntities(getLocalizedCategoryName(category, language));
 }
 
-function CategoryImage({ category, className, iconSize = 32, fallbackClassName = 'bg-orange-50 text-orange-500' }) {
-  const name = decodeHtmlEntities(category.name);
-
-  if (category.image) {
-    return (
-      <img
-        src={category.image}
-        alt={name}
-        className={className}
-        loading="lazy"
-      />
-    );
+function CategoryHref({ category, ancestors = [], className, children }) {
+  const href = resolveCategoryHref(ancestors, category);
+  if (!href || href === '/shop') {
+    return <span className={className}>{children}</span>;
   }
 
   return (
-    <div className={`flex items-center justify-center ${fallbackClassName}`}>
-      <FolderIcon size={iconSize} strokeWidth={1.75} />
-    </div>
+    <Link href={href} className={className}>
+      {children}
+    </Link>
   );
 }
 
-function MobileCategoriesLayout({ parentCategories, childrenByParent }) {
+function EmptyCategoriesState({ t, isArabic }) {
   return (
-    <div className="bg-slate-50 pb-2 lg:hidden">
-      <div className="border-b border-slate-200 bg-white px-4 pb-5 pt-4">
-        <h1 className="text-[26px] font-bold leading-tight tracking-tight text-slate-900">
-          Shop by Category
-        </h1>
-        <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500">
-          Browse our wide selection of products across {parentCategories.length} main categories
-        </p>
-      </div>
-
-      <div className="space-y-5 px-4 pt-4">
-        {parentCategories.map((parent) => {
-          const children = childrenByParent[String(parent._id)] || [];
-          const parentHref = buildCategoryHref(parent);
-
-          return (
-            <section key={parent._id}>
-              <Link
-                href={parentHref}
-                className="mb-3 flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3.5 shadow-[0_2px_12px_rgba(15,23,42,0.05)] transition active:scale-[0.99]"
-              >
-                <CategoryImage
-                  category={parent}
-                  className="h-14 w-14 shrink-0 rounded-xl object-cover"
-                  iconSize={28}
-                  fallbackClassName="h-14 w-14 shrink-0 rounded-xl bg-orange-50 text-orange-500"
-                />
-                <div className="min-w-0 flex-1">
-                  <h2 className="truncate text-[17px] font-bold leading-snug text-slate-900">
-                    {decodeHtmlEntities(parent.name)}
-                  </h2>
-                  {children.length > 0 ? (
-                    <p className="mt-0.5 text-[13px] text-slate-500">
-                      {children.length} subcategories
-                    </p>
-                  ) : null}
-                </div>
-              </Link>
-
-              {children.length > 0 ? (
-                <div className="grid grid-cols-3 gap-2">
-                  {children.map((child) => (
-                    <Link
-                      key={child._id}
-                      href={buildCategoryHref(child, [parent])}
-                      className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_6px_rgba(15,23,42,0.04)] transition active:scale-[0.98]"
-                    >
-                      <div className="aspect-square overflow-hidden bg-slate-100">
-                        <CategoryImage
-                          category={child}
-                          className="h-full w-full object-cover"
-                          iconSize={22}
-                          fallbackClassName="h-full w-full bg-slate-100 text-slate-400"
-                        />
-                      </div>
-                      <h3 className="px-1 py-1.5 text-center text-[10px] font-semibold leading-tight text-slate-900 line-clamp-2 min-h-[2rem]">
-                        {decodeHtmlEntities(child.name)}
-                      </h3>
-                    </Link>
-                  ))}
-                </div>
-              ) : null}
-            </section>
-          );
-        })}
-      </div>
+    <div
+      className="mx-auto flex min-h-[50vh] max-w-[1400px] flex-col items-center justify-center px-4 py-20 text-center"
+      dir={isArabic ? 'rtl' : 'ltr'}
+    >
+      <p className="text-xl font-semibold text-slate-800">{t('categories.emptyTitle')}</p>
+      <p className="mt-2 max-w-md text-sm text-slate-500">{t('categories.emptySubtitle')}</p>
     </div>
-  );
-}
-
-function DesktopCategoriesLayout({ parentCategories, childrenByParent }) {
-  return (
-    <div className="hidden bg-gray-50 lg:block">
-      <div className="mx-auto min-h-[60vh] max-w-7xl px-4 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Shop by Category</h1>
-          <p className="mt-2 text-gray-600">
-            Browse our wide selection of products across {parentCategories.length} main categories
-          </p>
-        </div>
-
-        <div className="space-y-8">
-          {parentCategories.map((parent) => {
-            const children = childrenByParent[String(parent._id)] || [];
-            const parentHref = buildCategoryHref(parent);
-
-            return (
-              <div key={parent._id} className="overflow-hidden rounded-lg bg-white shadow-sm">
-                <Link
-                  href={parentHref}
-                  className="group flex items-center justify-between bg-gradient-to-r from-orange-50 to-white p-6 transition-colors hover:from-orange-100"
-                >
-                  <div className="flex items-center gap-4">
-                    {parent.image ? (
-                      <img
-                        src={parent.image}
-                        alt={decodeHtmlEntities(parent.name)}
-                        className="h-20 w-20 rounded-lg object-cover shadow-md"
-                      />
-                    ) : (
-                      <div className="flex h-20 w-20 items-center justify-center rounded-lg bg-orange-100">
-                        <FolderIcon size={40} className="text-orange-500" />
-                      </div>
-                    )}
-                    <div>
-                      <h2 className="text-2xl font-bold text-gray-900 transition-colors group-hover:text-orange-600">
-                        {decodeHtmlEntities(parent.name)}
-                      </h2>
-                      {parent.description ? (
-                        <p className="mt-1 text-gray-600">{decodeHtmlEntities(parent.description)}</p>
-                      ) : null}
-                      {children.length > 0 ? (
-                        <p className="mt-2 text-sm text-gray-500">{children.length} subcategories</p>
-                      ) : null}
-                    </div>
-                  </div>
-                </Link>
-
-                {children.length > 0 ? (
-                  <div className="grid grid-cols-2 gap-4 bg-gray-50 p-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-                    {children.map((child) => (
-                      <Link
-                        key={child._id}
-                        href={buildCategoryHref(child, [parent])}
-                        className="group rounded-lg border border-gray-200 bg-white p-3 transition-all hover:-translate-y-1 hover:shadow-lg"
-                      >
-                        <div className="mb-2 flex aspect-square items-center justify-center overflow-hidden rounded-lg bg-gray-100">
-                          {child.image ? (
-                            <img
-                              src={child.image}
-                              alt={decodeHtmlEntities(child.name)}
-                              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-110"
-                            />
-                          ) : (
-                            <FolderIcon size={32} className="text-gray-400" />
-                          )}
-                        </div>
-                        <h3 className="line-clamp-2 text-center text-sm font-semibold text-gray-900 transition-colors group-hover:text-orange-500">
-                          {decodeHtmlEntities(child.name)}
-                        </h3>
-                      </Link>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function EmptyCategoriesState() {
-  return (
-    <>
-      <div className="px-4 py-16 text-center lg:hidden">
-        <p className="mb-2 text-xl text-slate-400">No categories available</p>
-        <p className="text-sm text-slate-500">Categories will appear here once they are added</p>
-      </div>
-      <div className="hidden py-20 text-center lg:block">
-        <div className="mx-auto max-w-7xl rounded-lg bg-white px-4 shadow-sm">
-          <p className="mb-2 text-2xl text-gray-400">No categories available</p>
-          <p className="text-gray-500">Categories will appear here once they are added</p>
-        </div>
-      </div>
-    </>
   );
 }
 
@@ -204,20 +40,102 @@ export default function CategoriesDirectoryView({
   parentCategories,
   childrenByParent,
 }) {
+  const { t, language, isArabic } = useStorefrontI18n();
+
   if (!parentCategories.length) {
-    return <EmptyCategoriesState />;
+    return <EmptyCategoriesState t={t} isArabic={isArabic} />;
   }
 
   return (
-    <>
-      <MobileCategoriesLayout
-        parentCategories={parentCategories}
-        childrenByParent={childrenByParent}
-      />
-      <DesktopCategoriesLayout
-        parentCategories={parentCategories}
-        childrenByParent={childrenByParent}
-      />
-    </>
+    <div className="min-h-screen bg-slate-50" dir={isArabic ? 'rtl' : 'ltr'}>
+      <section className="border-b border-slate-200/80 bg-white">
+        <div className="mx-auto max-w-[1400px] px-4 py-10 sm:px-6 sm:py-12">
+          <div className="max-w-3xl">
+            <span className="inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-orange-700">
+              {parentCategories.length} {t('shop.categories')}
+            </span>
+            <h1 className="mt-4 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
+              {t('categories.title')}
+            </h1>
+            <p className="mt-3 text-base leading-relaxed text-slate-600">
+              {t('categories.subtitle', { count: parentCategories.length })}
+            </p>
+          </div>
+
+          <div className="mt-8 flex flex-wrap gap-2">
+            {parentCategories.map((parent) => (
+              <CategoryHref
+                key={parent._id}
+                category={parent}
+                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-orange-300 hover:text-orange-700 hover:shadow"
+              >
+                {getCategoryLabel(parent, language)}
+              </CategoryHref>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <div className="mx-auto max-w-[1400px] space-y-4 px-4 py-8 sm:px-6 sm:py-10">
+        {parentCategories.map((parent) => {
+          const children = childrenByParent[String(parent._id)] || [];
+
+          return (
+            <section
+              key={parent._id}
+              className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]"
+            >
+              <div className={`border-slate-100 px-5 py-4 sm:px-6 ${isArabic ? 'border-r-4 border-r-orange-500' : 'border-l-4 border-l-orange-500'}`}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <CategoryHref
+                      category={parent}
+                      className="text-xl font-bold text-slate-900 transition hover:text-orange-600"
+                    >
+                      {getCategoryLabel(parent, language)}
+                    </CategoryHref>
+                    {children.length > 0 ? (
+                      <p className="mt-1 text-sm text-slate-500">
+                        {t('categories.subcategoriesCount', { count: children.length })}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <CategoryHref
+                    category={parent}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-3 py-1.5 text-sm font-semibold text-orange-700 transition hover:border-orange-300 hover:bg-orange-100"
+                  >
+                    {t('categories.viewAll')}
+                    <ChevronRight size={15} className={isArabic ? 'rotate-180' : ''} />
+                  </CategoryHref>
+                </div>
+              </div>
+
+              {children.length > 0 ? (
+                <ul className="grid grid-cols-1 gap-2 border-t border-slate-100 px-5 py-4 sm:grid-cols-2 sm:px-6 lg:grid-cols-3 xl:grid-cols-4">
+                  {children.map((child) => (
+                    <li key={child._id}>
+                      <CategoryHref
+                        category={child}
+                        ancestors={[parent]}
+                        className="group flex items-center justify-between gap-2 rounded-xl border border-transparent px-3 py-2.5 text-sm text-slate-700 transition hover:border-slate-200 hover:bg-slate-50 hover:text-orange-700"
+                      >
+                        <span className="min-w-0 truncate font-medium">
+                          {getCategoryLabel(child, language)}
+                        </span>
+                        <ArrowUpRight
+                          size={14}
+                          className={`shrink-0 text-slate-300 transition group-hover:text-orange-500 ${isArabic ? '-scale-x-100' : ''}`}
+                        />
+                      </CategoryHref>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </section>
+          );
+        })}
+      </div>
+    </div>
   );
 }

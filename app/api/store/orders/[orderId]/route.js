@@ -7,8 +7,37 @@ import { appendOrderCommunicationLog } from '@/lib/orderCommunicationLog';
 import { ACTIVE_RECORD_FILTER, buildTrashMeta } from '@/lib/storeTrash';
 import { getRepairedBundleOrderLine } from '@/lib/bundleOrderRepair';
 import { getOrderLineProduct } from '@/lib/orderDisplay';
+import { requestWaslahAutoShipment } from '@/lib/waslahAutoShipment';
 
 const ORDER_LINE_PRODUCT_SELECT = 'name slug images sku variants price salePrice';
+
+function stableValue(value) {
+    if (Array.isArray(value)) return value.map(stableValue);
+    if (value && typeof value === 'object') {
+        return Object.fromEntries(
+            Object.keys(value).sort().map((key) => [key, stableValue(value[key])]),
+        );
+    }
+    return value;
+}
+
+function comparableOrderItems(items = []) {
+    return (Array.isArray(items) ? items : []).map((item) => ({
+        productId: String(item?.productId?._id || item?.productId || ''),
+        name: String(item?.name || '').trim(),
+        price: Number(Number(item?.price || 0).toFixed(2)),
+        quantity: Math.max(1, Number(item?.quantity) || 1),
+        variantOptions: stableValue(item?.variantOptions || null),
+    }));
+}
+
+function changedMoney(next, current) {
+    if (next === undefined) return false;
+    const nextAmount = Number(next);
+    const currentAmount = Number(current || 0);
+    if (!Number.isFinite(nextAmount) || !Number.isFinite(currentAmount)) return true;
+    return Math.abs(nextAmount - currentAmount) > 0.01;
+}
 
 // Update order status and tracking details
 export async function PUT(request, { params }) {
@@ -78,6 +107,42 @@ export async function PUT(request, { params }) {
 
         if (!existingOrder) {
             return NextResponse.json({ error: 'Order not found or unauthorized' }, { status: 404 });
+        }
+
+        if (existingOrder.waslah?.autoShipEnrolled === true) {
+            const paymentMethodChanged = paymentMethod !== undefined
+                && String(paymentMethod || '').trim().toUpperCase()
+                    !== String(existingOrder.paymentMethod || '').trim().toUpperCase();
+            const paymentStatusChanged = paymentStatus !== undefined
+                && String(paymentStatus || '').trim().toUpperCase()
+                    !== String(existingOrder.paymentStatus || '').trim().toUpperCase();
+            const paidFlagChanged = isPaid !== undefined && Boolean(isPaid) !== Boolean(existingOrder.isPaid);
+            const itemsChanged = Array.isArray(orderItems)
+                && JSON.stringify(comparableOrderItems(orderItems))
+                    !== JSON.stringify(comparableOrderItems(existingOrder.orderItems));
+            const referenceId = String(paymentReferenceId || tabbyPaymentId || tamaraOrderId || '').trim();
+            const paymentReferenceChanged = Boolean(referenceId)
+                && referenceId !== String(
+                    existingOrder.paymentReferenceId
+                    || existingOrder.tabbyPaymentId
+                    || existingOrder.tamaraOrderId
+                    || '',
+                ).trim();
+
+            if (
+                paymentMethodChanged
+                || paymentStatusChanged
+                || paidFlagChanged
+                || changedMoney(shippingFee, existingOrder.shippingFee)
+                || changedMoney(total, existingOrder.total)
+                || itemsChanged
+                || paymentReferenceChanged
+            ) {
+                return NextResponse.json({
+                    error: 'Payment, totals, and items are locked because this new order is enrolled for automatic EMX fulfillment.',
+                    code: 'AUTO_EMX_FULFILLMENT_LOCKED',
+                }, { status: 409 });
+            }
         }
 
         // Prepare update data
@@ -169,6 +234,12 @@ export async function PUT(request, { params }) {
             select: ORDER_LINE_PRODUCT_SELECT,
         })
         .lean();
+
+        if (updatedOrder?.waslah?.autoShipEnrolled === true && !updatedOrder.trackingId) {
+            await requestWaslahAutoShipment(updatedOrder, {
+                source: 'eligible_order_details_updated',
+            });
+        }
 
         if (detailsChanged) {
             await appendOrderCommunicationLog(orderId, {

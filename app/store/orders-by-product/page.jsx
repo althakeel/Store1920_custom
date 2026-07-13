@@ -10,8 +10,10 @@ import Loading from '@/components/Loading';
 import {
   ORDERS_BY_PRODUCT_EXPORT_HEADERS,
   FAILED_ORDERS_EXPORT_HEADERS,
+  SALES_ORDERS_EXPORT_HEADERS,
   buildOrdersByProductExportRows,
   buildFailedOrdersExportRows,
+  buildSalesOrdersExportRows,
 } from '@/lib/storeOrdersByProductExport';
 import {
   DEFAULT_ORDERS_BY_PRODUCT_TIME,
@@ -107,7 +109,7 @@ export default function OrdersByProductPage() {
     const query = String(searchQuery || '').trim().toLowerCase();
     if (!query) return rows;
 
-    if (viewMode === 'failed') {
+    if (viewMode === 'failed' || viewMode === 'sales') {
       return rows.filter((row) => {
         const fields = [
           row.orderNumber,
@@ -142,10 +144,17 @@ export default function OrdersByProductPage() {
       setExporting(true);
       const XLSX = await import('xlsx');
       const isFailedView = viewMode === 'failed';
-      const headers = isFailedView ? FAILED_ORDERS_EXPORT_HEADERS : ORDERS_BY_PRODUCT_EXPORT_HEADERS;
+      const isSalesView = viewMode === 'sales';
+      const headers = isFailedView
+        ? FAILED_ORDERS_EXPORT_HEADERS
+        : isSalesView
+          ? SALES_ORDERS_EXPORT_HEADERS
+          : ORDERS_BY_PRODUCT_EXPORT_HEADERS;
       const exportRows = isFailedView
         ? buildFailedOrdersExportRows(filteredRows, currency)
-        : buildOrdersByProductExportRows(filteredRows, currency);
+        : isSalesView
+          ? buildSalesOrdersExportRows(filteredRows, currency)
+          : buildOrdersByProductExportRows(filteredRows, currency);
       const worksheetData = [headers, ...exportRows];
       const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
       worksheet['!cols'] = headers.map((header) => ({
@@ -153,12 +162,16 @@ export default function OrdersByProductPage() {
       }));
 
       const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, isFailedView ? 'Failed orders' : 'Orders by product');
+      XLSX.utils.book_append_sheet(
+        workbook,
+        worksheet,
+        isFailedView ? 'Failed orders' : isSalesView ? 'Sales data' : 'Orders by product',
+      );
 
       const dateSlug = dateRange === 'CUSTOM'
         ? [fromDate, toDate].filter(Boolean).join('_') || 'custom'
         : dateRange.toLowerCase();
-      const viewSlug = isFailedView ? 'failed' : 'products';
+      const viewSlug = isFailedView ? 'failed' : isSalesView ? 'sales' : 'products';
       XLSX.writeFile(workbook, `orders-by-product-${viewSlug}-${dateSlug}-${Date.now()}.xlsx`);
       toast.success('Exported to Excel');
     } catch (error) {
@@ -222,6 +235,24 @@ export default function OrdersByProductPage() {
                 {preset.label}
               </button>
             ))}
+            <button
+              type="button"
+              onClick={() => setViewMode('sales')}
+              className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
+                viewMode === 'sales'
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+              }`}
+            >
+              Sales data
+              {summary.totalOrders > 0 ? (
+                <span className={`ms-2 rounded-full px-2 py-0.5 text-xs font-bold ${
+                  viewMode === 'sales' ? 'bg-emerald-800 text-white' : 'bg-emerald-600 text-white'
+                }`}>
+                  {summary.totalOrders}
+                </span>
+              ) : null}
+            </button>
             <button
               type="button"
               onClick={() => setViewMode('failed')}
@@ -306,6 +337,15 @@ export default function OrdersByProductPage() {
               <span>
                 Failed orders: <strong className="text-red-600">{filteredRows.length}</strong>
               </span>
+            ) : viewMode === 'sales' ? (
+              <>
+                <span>
+                  Sales orders: <strong className="text-emerald-700">{filteredRows.length}</strong>
+                </span>
+                <span>
+                  Failed / cancelled excluded: <strong className="text-red-600">{summary.failedOrders}</strong>
+                </span>
+              </>
             ) : (
               <>
                 <span>
@@ -326,7 +366,9 @@ export default function OrdersByProductPage() {
           <p className="mt-2 text-xs text-slate-500">
             {viewMode === 'failed'
               ? 'Showing individual failed or unpaid orders for the selected period.'
-              : 'Date ranges use a 10:00 am to 10:00 am window by default. Failed and unpaid orders are excluded from the product breakdown.'}
+              : viewMode === 'sales'
+                ? 'Sales data lists each successful order (excludes cancelled, payment failed, and unpaid). Dates use Dubai time (Asia/Dubai).'
+                : 'Dates use Dubai time (Asia/Dubai). Default window is the current business day from 10:00 to next 10:00. Failed and unpaid orders are excluded from the product breakdown. Units count pack size × packs for bundles.'}
           </p>
         </div>
 
@@ -334,9 +376,13 @@ export default function OrdersByProductPage() {
           <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-lg font-semibold text-slate-900">
-                {viewMode === 'failed' ? 'Failed orders' : 'Product breakdown'}
+                {viewMode === 'failed'
+                  ? 'Failed orders'
+                  : viewMode === 'sales'
+                    ? 'Sales data'
+                    : 'Product breakdown'}
               </h2>
-              {viewMode === 'failed' ? (
+              {viewMode === 'failed' || viewMode === 'sales' ? (
                 <button
                   type="button"
                   onClick={() => setViewMode('products')}
@@ -352,7 +398,11 @@ export default function OrdersByProductPage() {
                 type="search"
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder={viewMode === 'failed' ? 'Search order, customer, product...' : 'Search product, SKU, brand...'}
+                placeholder={
+                  viewMode === 'failed' || viewMode === 'sales'
+                    ? 'Search order, customer, product...'
+                    : 'Search product, SKU, brand...'
+                }
                 className="w-full rounded-lg border border-slate-300 py-2 ps-9 pe-3 text-sm"
               />
             </div>
@@ -368,9 +418,11 @@ export default function OrdersByProductPage() {
             <div className="py-12 text-center text-sm text-slate-500">
               {viewMode === 'failed'
                 ? 'No failed orders found for this date range.'
-                : 'No product orders found for this date range.'}
+                : viewMode === 'sales'
+                  ? 'No sales orders found for this date range.'
+                  : 'No product orders found for this date range.'}
             </div>
-          ) : viewMode === 'failed' ? (
+          ) : viewMode === 'failed' || viewMode === 'sales' ? (
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead>
@@ -387,7 +439,12 @@ export default function OrdersByProductPage() {
                 </thead>
                 <tbody>
                   {filteredRows.map((row) => (
-                    <tr key={row.orderId} className="border-b border-slate-100 bg-red-50/30 last:border-0">
+                    <tr
+                      key={row.orderId}
+                      className={`border-b border-slate-100 last:border-0 ${
+                        viewMode === 'failed' ? 'bg-red-50/30' : 'bg-emerald-50/20'
+                      }`}
+                    >
                       <td className="px-3 py-3 font-medium text-slate-900">
                         #{row.orderNumber || '—'}
                       </td>
@@ -398,8 +455,12 @@ export default function OrdersByProductPage() {
                       <td className="px-3 py-3 text-slate-700">{row.customerName || '—'}</td>
                       <td className="px-3 py-3 text-slate-700">{row.paymentMethod || '—'}</td>
                       <td className="px-3 py-3">
-                        <span className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-medium text-red-800">
-                          {row.status || 'FAILED'}
+                        <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                          viewMode === 'failed'
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-emerald-100 text-emerald-800'
+                        }`}>
+                          {row.status || (viewMode === 'failed' ? 'FAILED' : '—')}
                         </span>
                       </td>
                       <td className="px-3 py-3 text-slate-700">{row.products || '—'}</td>

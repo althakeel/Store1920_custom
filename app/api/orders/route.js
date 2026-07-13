@@ -23,8 +23,6 @@ import { markAbandonedCartsConvertedForOrder } from '@/lib/markAbandonedCartsCon
 import {
   applyDeferredPaymentOrderDefaults,
   isDeferredPaymentMethod,
-  shouldDeferPaymentAtCreate,
-  isPrepaidCapturedAtCreate,
   upsertAbandonedCartForPendingOrder,
 } from '@/lib/deferredOrderFlow';
 import { allocateShortOrderNumber } from '@/lib/orderNumber';
@@ -45,9 +43,14 @@ import {
   findBulkBundleVariant,
   isBulkBundleProduct,
 } from '@/lib/bulkBundleCart';
+import { applyFbtBundlePricingToOrderItems } from '@/lib/fbtCart';
 import { getPaymentMethodLimitError } from '@/lib/paymentMethodLimits';
+import { requestWaslahAutoShipment } from '@/lib/waslahAutoShipment';
+import { isWaslahAutoShipEnabled } from '@/lib/waslahAutoShipPolicy';
+import { reserveOrderStockAtomically } from '@/lib/orderStockReservation';
+import { getVerifiedRazorpayOrder } from '@/lib/razorpayVerifiedOrderContext';
+import { getTrustedManualStoreOrder } from '@/lib/manualStoreOrderContext';
 import {
-  buildVariantStockDecrementQuery,
   matchVariantByOptions,
 } from '@/lib/productVariantOptions';
 
@@ -81,13 +84,12 @@ export async function POST(request) {
     try {
         await connectDB();
         
-        // Parse and log request
-        const headersObj = Object.fromEntries(request.headers.entries());
+        // Parse the request without logging credentials, payment signatures, or
+        // customer details from its headers/body.
         let bodyText = '';
         try { bodyText = await request.text(); } catch (err) { bodyText = '[unreadable]'; }
         let body = {};
         try { body = JSON.parse(bodyText); } catch (err) { body = { raw: bodyText }; }
-        console.log('ORDER API: Incoming request', { method: request.method, headers: headersObj, body });
 
         // Extract fields
         const {
@@ -112,16 +114,50 @@ export async function POST(request) {
         let userId = null;
         let isPlusMember = false;
 
-        console.log('ORDER API: Full body:', JSON.stringify(body, null, 2));
-        console.log('ORDER API: isGuest value:', isGuest, 'type:', typeof isGuest);
-        console.log('ORDER API: guestInfo exists:', !!guestInfo);
+        const manualStoreOrderRequested = manualStoreOrder === true;
+        const manualStoreOrderContext = getTrustedManualStoreOrder();
+        const trustedManualStoreOrder = Boolean(
+            manualStoreOrderRequested
+            && manualStoreOrderContext?.storeId
+            && manualStoreOrderContext?.actorId
+        );
+        if (Boolean(manualStoreOrder) && !trustedManualStoreOrder) {
+            return NextResponse.json({
+                error: 'Manual store orders must be created from an authenticated store workflow',
+                code: 'MANUAL_STORE_ORDER_FORBIDDEN',
+            }, { status: 403 });
+        }
+
+        const verifiedRazorpayOrder = getVerifiedRazorpayOrder();
+        const suppliedRazorpayPaymentId = String(razorpayPaymentId || '');
+        const suppliedRazorpayOrderId = String(razorpayOrderId || '');
+        const suppliedRazorpaySignature = String(razorpaySignature || '');
+        const hasRazorpayPaymentDetails = Boolean(
+            suppliedRazorpayPaymentId
+            || suppliedRazorpayOrderId
+            || suppliedRazorpaySignature
+        );
+        const isVerifiedRazorpayOrder = Boolean(
+            hasRazorpayPaymentDetails
+            && suppliedRazorpayPaymentId === verifiedRazorpayOrder?.paymentId
+            && suppliedRazorpayOrderId === verifiedRazorpayOrder?.orderId
+            && suppliedRazorpaySignature === verifiedRazorpayOrder?.signature
+        );
+
+        // Razorpay payment details are accepted only inside the server-verified
+        // flow. A public caller cannot turn CARD into a paid order by replaying
+        // provider ids or a previously issued checkout signature.
+        if (hasRazorpayPaymentDetails && !isVerifiedRazorpayOrder) {
+            return NextResponse.json({
+                error: 'Razorpay payment must be verified before order creation',
+                code: 'RAZORPAY_VERIFICATION_REQUIRED',
+            }, { status: 403 });
+        }
 
         // Auth for logged-in user - ONLY if explicitly NOT a guest
         if (isGuest !== true) {
-            console.log('ORDER API: Not a guest order (isGuest !== true), checking auth header...');
             const authHeader = request.headers.get('authorization');
             if (!authHeader || !authHeader.startsWith('Bearer ')) {
-                console.log('ORDER API: No valid auth header found. isGuest:', isGuest);
                 return NextResponse.json({ 
                     error: 'Authentication required for non-guest orders',
                     isGuest: isGuest,
@@ -189,8 +225,6 @@ export async function POST(request) {
                     missingFields.push('pincode');
                 }
             }
-            console.log('ORDER API DEBUG: guestInfo received:', guestInfo);
-            console.log('ORDER API DEBUG: missingFields:', missingFields);
             if (missingFields.length > 0) {
                 return NextResponse.json({ error: 'missing guest information', missingFields, guestInfo }, { status: 400 });
             }
@@ -310,6 +344,25 @@ export async function POST(request) {
             }).lean();
             for (const offer of offers) {
                 offerByKey.set(`${offer.offerToken}:${String(offer.productId)}`, offer);
+            }
+        }
+
+        const fbtMainProductIds = [...new Set(
+            items
+                .map((item) => item.fbtMainProductId)
+                .filter(Boolean)
+                .map(String),
+        )];
+        const fbtConfigByMainProductId = new Map();
+        if (fbtMainProductIds.length > 0) {
+            const fbtConfigs = await Product.find({
+                _id: { $in: fbtMainProductIds },
+                enableFBT: true,
+            })
+                .select('_id enableFBT fbtProductIds fbtBundlePrice fbtBundleDiscount')
+                .lean();
+            for (const config of fbtConfigs) {
+                fbtConfigByMainProductId.set(String(config._id), config);
             }
         }
 
@@ -449,12 +502,33 @@ export async function POST(request) {
             if (!ordersByStore.has(storeId)) ordersByStore.set(storeId, []);
             checkoutStoreIds.add(String(storeId));
             ordersByStore.get(storeId).push({ 
-                ...item, 
+                ...item,
+                name: item.name || item.productName || item.title || product.name || '',
                 quantity: orderQty, 
                 price: finalPrice,
                 appliedOffer: appliedOffer 
             });
             grandSubtotal += Number(finalPrice) * Number(orderQty);
+        }
+
+        if (
+            trustedManualStoreOrder
+            && [...checkoutStoreIds].some(
+                (checkoutStoreId) => checkoutStoreId !== manualStoreOrderContext.storeId,
+            )
+        ) {
+            return NextResponse.json({
+                error: 'Manual store order items must belong to the authenticated store',
+                code: 'MANUAL_STORE_ORDER_STORE_MISMATCH',
+            }, { status: 403 });
+        }
+
+        applyFbtBundlePricingToOrderItems(ordersByStore, fbtConfigByMainProductId);
+        grandSubtotal = 0;
+        for (const sellerItems of ordersByStore.values()) {
+            for (const item of sellerItems) {
+                grandSubtotal += Number(item.price) * Number(item.quantity);
+            }
         }
 
         if (recoveryContext?.valid) {
@@ -611,13 +685,18 @@ export async function POST(request) {
                 shippingFee: shippingFee,
                 paymentMethod,
                 paymentStatus: paymentStatus || 'PENDING',
+                fulfillmentStockReservationRequired: true,
                 isCouponUsed: !!coupon,
                 coupon: coupon || {},
                 coinsRedeemed,
                 walletDiscount,
+                waslah: {
+                    autoShipEnrolled: isWaslahAutoShipEnabled(),
+                    autoShipEnrolledAt: isWaslahAutoShipEnabled() ? new Date() : null,
+                },
                 orderItems: sellerItems.map(item => ({
                     productId: item.id,
-                    name: item.name || item.productName || item.title || '',
+                    name: item.name || item.productName || item.title || productById.get(String(item.id))?.name || '',
                     quantity: item.quantity,
                     price: item.price,
                     variantOptions: item.variantOptions || null,
@@ -626,10 +705,10 @@ export async function POST(request) {
 
             const normalizedPaymentMethod = String(paymentMethod || '').toUpperCase();
             const paidOnlineMethods = new Set(['CARD', 'RAZORPAY', 'UPI', 'NETBANKING', 'ONLINE', 'PREPAID', 'WALLET']);
-            const prepaidCapturedAtCreate = isPrepaidCapturedAtCreate(normalizedPaymentMethod, {
-              razorpayPaymentId,
-            });
-            const deferPaymentAtCreate = shouldDeferPaymentAtCreate(paymentMethod, { razorpayPaymentId });
+            const prepaidCapturedAtCreate = normalizedPaymentMethod === 'CARD'
+                && isVerifiedRazorpayOrder;
+            const deferPaymentAtCreate = isDeferredPaymentMethod(paymentMethod)
+                && !prepaidCapturedAtCreate;
 
             if (normalizedPaymentMethod === 'COD') {
                 orderData.isPaid = false;
@@ -641,7 +720,7 @@ export async function POST(request) {
 
             Object.assign(
                 orderData,
-                manualStoreOrder || prepaidCapturedAtCreate
+                trustedManualStoreOrder || prepaidCapturedAtCreate
                   ? {}
                   : applyDeferredPaymentOrderDefaults(orderData, paymentMethod),
             );
@@ -652,7 +731,7 @@ export async function POST(request) {
                 orderData.paymentStatus = 'PAID';
             }
 
-            if (manualStoreOrder) {
+            if (trustedManualStoreOrder) {
                 orderData.status = 'ORDER_PLACED';
                 if (normalizedPaymentMethod === 'COD') {
                     orderData.isPaid = false;
@@ -821,13 +900,9 @@ export async function POST(request) {
                     orderData.alternatePhone = addressData.alternatePhone || '';
                     orderData.alternatePhoneCode = addressData.alternatePhoneCode || addressData.phoneCode || '';
                 }
-                console.log('FINAL orderData before Order.create:', JSON.stringify(orderData, null, 2));
             }
 
             // Create order
-            console.log('ORDER API DEBUG: orderData keys:', Object.keys(orderData));
-            console.log('ORDER API DEBUG: orderData before Order.create:', JSON.stringify(orderData, null, 2));
-            
             const order = await Order.create(orderData);
 
             // Mark personalized offers as used
@@ -945,64 +1020,59 @@ export async function POST(request) {
                 });
             }
 
-            if (deferPaymentAtCreate && !manualStoreOrder) {
+            if (deferPaymentAtCreate && !trustedManualStoreOrder) {
                 deferPostOrderTask('awaiting-payment-abandoned-cart', () =>
                     upsertAbandonedCartForPendingOrder(order, { source: 'checkout_payment' })
                 );
             }
-            // Decrement stock for each item in this store order (batched)
-            const stockUpdates = sellerItems
-                .map((item) => ({
-                    id: item.id,
-                    qty: Number(item.quantity) || 0,
-                    variantOptions: item.variantOptions,
-                }))
-                .filter((item) => item.qty > 0 && item.id);
-
-            if (stockUpdates.length > 0 && !deferPaymentAtCreate) {
+            // Reserve product and selected-variant inventory as one transaction.
+            // The fulfillment/EMX-ready marker is committed in that transaction,
+            // so a concurrent last-unit checkout cannot leave a shippable order
+            // after only part of its inventory was decremented.
+            const shouldPrepareNewCod = !deferPaymentAtCreate
+                && !trustedManualStoreOrder
+                && normalizedPaymentMethod === 'COD'
+                && order.waslah?.autoShipEnrolled === true;
+            let stockReservationSucceeded = deferPaymentAtCreate;
+            let stockReservedAt = null;
+            if (!deferPaymentAtCreate) {
                 try {
-                    await Product.bulkWrite(
-                        stockUpdates.map(({ id, qty }) => ({
-                            updateOne: {
-                                filter: { _id: id },
-                                update: [
-                                    {
-                                        $set: {
-                                            stockQuantity: {
-                                                $max: [0, { $subtract: [{ $ifNull: ['$stockQuantity', 0] }, qty] }],
-                                            },
-                                        },
-                                    },
-                                    {
-                                        $set: {
-                                            inStock: { $gt: ['$stockQuantity', 0] },
-                                        },
-                                    },
-                                ],
-                            },
-                        })),
-                        { ordered: false }
-                    );
-
-                    await Promise.all(
-                        stockUpdates
-                            .map(({ id, qty, variantOptions }) => {
-                                if (!variantOptions) return null;
-                                const productDoc = productById.get(String(id));
-                                const matchedVariant = productDoc?.variants?.length
-                                    ? matchVariantByOptions(productDoc.variants, variantOptions)
-                                    : null;
-                                if (!matchedVariant) return null;
-                                return Product.updateOne(
-                                    buildVariantStockDecrementQuery(id, matchedVariant),
-                                    { $inc: { 'variants.$.stock': -qty } },
-                                );
-                            })
-                            .filter(Boolean),
-                    );
+                    const reservation = await reserveOrderStockAtomically(order._id, {
+                        markAutoShipReady: shouldPrepareNewCod,
+                    });
+                    stockReservationSucceeded = reservation.reserved === true;
+                    stockReservedAt = reservation.reservedAt || null;
                 } catch (stockErr) {
-                    console.error('Stock decrement batch error:', stockErr);
+                    stockReservationSucceeded = false;
+                    console.error('Atomic stock reservation error:', stockErr);
+                    if (order.waslah?.autoShipEnrolled === true) {
+                        await Order.findByIdAndUpdate(order._id, {
+                            $set: {
+                                'waslah.autoShipStatus': 'BLOCKED',
+                                'waslah.autoShipLeaseExpiresAt': null,
+                                'waslah.autoShipNextRetryAt': null,
+                                'waslah.autoShipLastError': 'Stock reservation did not complete; automatic EMX shipping was not started.',
+                                'waslah.autoShipLastErrorCode': 'STOCK_RESERVATION_FAILED',
+                            },
+                        }).catch((blockError) => {
+                            console.error('[orders] Could not block EMX after stock failure:', order._id, blockError);
+                        });
+                    }
                 }
+            }
+
+            const shouldQueueNewCod = stockReservationSucceeded
+                && shouldPrepareNewCod
+                && stockReservedAt;
+
+            // Queue only after the order number, checkout bookkeeping, and stock
+            // reservation have completed. Prepaid orders enter from trusted
+            // provider confirmation instead of client-supplied paid flags.
+            if (shouldQueueNewCod) {
+                await requestWaslahAutoShipment(order._id, { source: 'new_cod_order' })
+                    .catch((error) => {
+                        console.error('[orders] Could not queue automatic EMX shipment:', order._id, error);
+                    });
             }
         }
 
@@ -1023,7 +1093,7 @@ export async function POST(request) {
                 }],
                 expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
                 mode: 'payment',
-                success_url: `${origin}/order-success?orderId=${primaryOrderId}&stripe=1`,
+                success_url: `${origin}/order-success?orderId=${primaryOrderId}&stripe=1&session_id={CHECKOUT_SESSION_ID}`,
                 cancel_url: `${origin}/order-failed?orderId=${primaryOrderId}&reason=${encodeURIComponent('Payment cancelled')}`,
                 metadata: {
                     orderIds: orderIds.join(','),
@@ -1111,8 +1181,13 @@ export async function POST(request) {
                 description: paymentReference,
             });
 
-            // Store Tamara order ID on our order
-            await Order.findByIdAndUpdate(primaryOrderId, { tamaraOrderId: tamaraResult.tamara_order_id });
+            // A single Tamara checkout can cover orders split across several stores.
+            // Persist the provider id on every member so the signed webhook can
+            // validate the provider total against the complete order group.
+            await Order.updateMany(
+                { _id: { $in: orderIds } },
+                { $set: { tamaraOrderId: tamaraResult.tamara_order_id } },
+            );
 
             return NextResponse.json({
                 checkout_url: tamaraResult.checkout_url,
@@ -1206,7 +1281,13 @@ export async function POST(request) {
                 }),
             });
 
-            await Order.findByIdAndUpdate(primaryOrderId, { tabbyPaymentId: tabbyResult.payment_id || '' });
+            // One Tabby checkout may cover orders split across stores. Persist
+            // the provider payment ID on every member so server verification
+            // can validate the exact aggregate amount and finalize each order.
+            await Order.updateMany(
+                { _id: { $in: orderIds } },
+                { $set: { tabbyPaymentId: tabbyResult.payment_id || '' } },
+            );
 
             return NextResponse.json({
                 checkout_url: tabbyResult.web_url,
@@ -1286,6 +1367,8 @@ export async function POST(request) {
             id: primaryOrderId,
             orderId: primaryOrderId,
             total: primaryTotal,
+            autoEmxShipping: isWaslahAutoShipEnabled(),
+            orderIds,
         };
 
         if (isGuest) {

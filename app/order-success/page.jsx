@@ -20,7 +20,7 @@ import { useAuth } from '@/lib/useAuth';
 import { trackPurchase } from '@/lib/tracking';
 import { trackOrderSuccessPurchaseOnce } from '@/lib/orderSuccessMetaPurchase';
 import { canTrackMetaPurchaseOnOrderSuccess } from '@/lib/orderConfirmationPolicy';
-import { hasTrackedPersistently, markTrackedPersistently } from '@/lib/trackingDedupe';
+import { hasTrackedPersistently, markTrackedPersistently, hasTrackedOnce, markTrackedOnce } from '@/lib/trackingDedupe';
 import { getMetaPurchaseDedupeKey } from '@/lib/metaPurchase';
 import { getDisplayOrderNumber } from '@/lib/orderDisplay';
 import { resolveOrderLineLineTotal, resolveOrderLinePackQuantity, resolveOrderLineQuantity } from '@/lib/gtmEcommerceHelpers';
@@ -102,6 +102,8 @@ function OrderSuccessContent() {
           const isPrepaidReturn = params.get('prepaid') === '1';
           const orderTrulyPaid = loadedOrder.isPaid === true
             || String(loadedOrder.paymentStatus || '').toLowerCase() === 'paid';
+          const prepaidDiscountMissing = isPrepaidReturn
+            && String(loadedOrder.coupon?.code || '').toUpperCase() !== 'PREPAID5';
 
           if (params.get('tabby') === '1' && !orderIsPaid) {
             fetch('/api/orders/verify-tabby', {
@@ -128,11 +130,17 @@ function OrderSuccessContent() {
               .catch(() => {});
           }
 
-          if (params.get('stripe') === '1' && (isPrepaidReturn ? !orderTrulyPaid : !orderIsPaid)) {
+          if (params.get('stripe') === '1' && (prepaidDiscountMissing || (isPrepaidReturn ? !orderTrulyPaid : !orderIsPaid))) {
             fetch('/api/orders/verify-stripe', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ orderId: loadedOrder._id }),
+              headers: {
+                ...fetchOptions.headers,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                orderId: loadedOrder._id,
+                sessionId: params.get('session_id') || '',
+              }),
             })
               .then((res) => (res.ok ? res.json() : null))
               .then((result) => {
@@ -183,10 +191,16 @@ function OrderSuccessContent() {
 
     const orderTrackingKey = `order-success:tracked:${String(order._id)}`;
     const purchaseKey = getMetaPurchaseDedupeKey(String(order._id));
-    if (hasTrackedPersistently(orderTrackingKey)) {
+    const orderStartKey = `order-success:started:${String(order._id)}`;
+    if (hasTrackedPersistently(orderTrackingKey) || hasTrackedPersistently(purchaseKey)) {
       purchaseTrackedRef.current = true;
       return;
     }
+    if (hasTrackedOnce(orderStartKey)) {
+      purchaseTrackedRef.current = true;
+      return;
+    }
+    markTrackedOnce(orderStartKey);
 
     let cancelled = false;
     let attempts = 0;
