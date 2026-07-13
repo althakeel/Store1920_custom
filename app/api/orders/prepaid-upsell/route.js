@@ -5,16 +5,18 @@ import Order from '@/models/Order';
 import { getAuth } from '@/lib/firebase-admin';
 import { getAuthoritativeStripeCheckoutPayment } from '@/lib/stripeOrderPayment';
 import { validateStripeAuthoritativePaymentState } from '@/lib/stripePaymentState';
+import { verifyPrepaidUpsellToken } from '@/lib/prepaidUpsellToken';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * Creates a Stripe Checkout session so a customer can pay online (with 5% off)
- * for an already-placed COD order (the order-success "PAY NOW" upsell).
+ * for an already-placed COD order (checkout / order-success prepaid upsell).
  *
- * The base order is left as COD/unpaid; the discount and paid status are only
- * applied when Stripe confirms payment (webhook or verify fallback), so an
- * abandoned payment keeps the original COD order intact.
+ * Auth: logged-in owner Bearer token, OR a short-lived prepaidUpsellToken
+ * returned when the COD order was created (guest checkout).
+ *
+ * The base order stays COD/unpaid until Stripe confirms payment.
  */
 export async function POST(request) {
   try {
@@ -25,20 +27,22 @@ export async function POST(request) {
 
     const body = await request.json().catch(() => ({}));
     const orderId = String(body?.orderId || '').trim();
+    const prepaidUpsellToken = String(body?.prepaidUpsellToken || '').trim();
     if (!orderId) {
       return NextResponse.json({ error: 'orderId is required' }, { status: 400 });
     }
 
+    let decodedToken = null;
     const authorization = request.headers.get('authorization') || '';
-    if (!authorization.startsWith('Bearer ')) {
-      return NextResponse.json({ error: 'Authentication is required' }, { status: 401 });
+    if (authorization.startsWith('Bearer ')) {
+      try {
+        decodedToken = await getAuth().verifyIdToken(authorization.slice(7));
+      } catch {
+        decodedToken = null;
+      }
     }
-    let decodedToken;
-    try {
-      decodedToken = await getAuth().verifyIdToken(authorization.slice(7));
-    } catch {
-      return NextResponse.json({ error: 'Invalid or expired authentication' }, { status: 401 });
-    }
+
+    const tokenOk = verifyPrepaidUpsellToken(prepaidUpsellToken, orderId);
 
     await dbConnect();
     const order = await Order.findById(orderId).lean();
@@ -46,8 +50,19 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 });
     }
 
-    if (!order.userId || String(order.userId) !== String(decodedToken.uid)) {
-      return NextResponse.json({ error: 'You cannot pay this order' }, { status: 403 });
+    const orderUserId = String(order.userId || '').trim();
+    const authOk = Boolean(
+      decodedToken?.uid
+      && orderUserId
+      && orderUserId === String(decodedToken.uid),
+    );
+
+    if (!authOk && !tokenOk) {
+      return NextResponse.json({
+        error: orderUserId
+          ? 'Please sign in to pay this order, or use the payment link from checkout'
+          : 'This payment link expired. Continue with COD from your order confirmation',
+      }, { status: 401 });
     }
 
     if (order.isPaid === true || String(order.paymentStatus || '').toUpperCase() === 'PAID') {
@@ -143,6 +158,7 @@ export async function POST(request) {
       mode: 'payment',
       success_url: `${origin}/order-success?orderId=${orderId}&stripe=1&prepaid=1&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/order-success?orderId=${orderId}`,
+      customer_email: String(order.guestEmail || order.shippingAddress?.email || '').trim() || undefined,
       metadata: {
         orderIds: orderId,
         userId: order.userId || '',
@@ -151,20 +167,24 @@ export async function POST(request) {
       },
     });
 
-    const persisted = await Order.findOneAndUpdate(
-      {
-        _id: orderId,
-        userId: String(decodedToken.uid),
-        isPaid: { $ne: true },
-        paymentStatus: {
-          $not: /^(PAID|REFUNDED|PARTIALLY_REFUNDED|REVERSED|DISPUTED|CHARGEBACK|VOID|CANCELLED|CANCELED|EXPIRED)$/i,
-        },
-        'paymentVerification.status': {
-          $not: /^(REVERSED|REVOKED|REFUNDED|DISPUTED|CHARGEBACK|VOID)$/i,
-        },
-        'waslah.autoShipEnrolled': { $ne: true },
-        stripeCheckoutSessionId: storedSessionId || { $in: [null, ''] },
+    const persistFilter = {
+      _id: orderId,
+      isPaid: { $ne: true },
+      paymentStatus: {
+        $not: /^(PAID|REFUNDED|PARTIALLY_REFUNDED|REVERSED|DISPUTED|CHARGEBACK|VOID|CANCELLED|CANCELED|EXPIRED)$/i,
       },
+      'paymentVerification.status': {
+        $not: /^(REVERSED|REVOKED|REFUNDED|DISPUTED|CHARGEBACK|VOID)$/i,
+      },
+      'waslah.autoShipEnrolled': { $ne: true },
+      stripeCheckoutSessionId: storedSessionId || { $in: [null, ''] },
+    };
+    if (authOk && orderUserId) {
+      persistFilter.userId = orderUserId;
+    }
+
+    const persisted = await Order.findOneAndUpdate(
+      persistFilter,
       { $set: { stripeCheckoutSessionId: session.id } },
       { new: true },
     ).lean();

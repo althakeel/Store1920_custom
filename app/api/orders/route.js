@@ -47,6 +47,7 @@ import { applyFbtBundlePricingToOrderItems } from '@/lib/fbtCart';
 import { getPaymentMethodLimitError } from '@/lib/paymentMethodLimits';
 import { requestWaslahAutoShipment } from '@/lib/waslahAutoShipment';
 import { isWaslahAutoShipEnabled } from '@/lib/waslahAutoShipPolicy';
+import { createPrepaidUpsellToken } from '@/lib/prepaidUpsellToken';
 import { reserveOrderStockAtomically } from '@/lib/orderStockReservation';
 import { getVerifiedRazorpayOrder } from '@/lib/razorpayVerifiedOrderContext';
 import { getTrustedManualStoreOrder } from '@/lib/manualStoreOrderContext';
@@ -1370,6 +1371,17 @@ export async function POST(request) {
             autoEmxShipping: isWaslahAutoShipEnabled(),
             orderIds,
         };
+
+        // COD → card 5% popup needs a token for guests (no Firebase userId on the order).
+        if (
+            String(paymentMethod || '').toUpperCase() === 'COD'
+            && !isWaslahAutoShipEnabled()
+        ) {
+            const prepaidUpsellToken = createPrepaidUpsellToken(primaryOrderId);
+            if (prepaidUpsellToken) {
+                successPayload.prepaidUpsellToken = prepaidUpsellToken;
+            }
+        }
 
         if (isGuest) {
             return NextResponse.json(successPayload);

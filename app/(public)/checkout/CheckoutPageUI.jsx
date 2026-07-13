@@ -126,6 +126,7 @@ export default function CheckoutPage() {
   const [showPrepaidModal, setShowPrepaidModal] = useState(false);
   const [upsellOrderId, setUpsellOrderId] = useState(null);
   const [upsellOrderTotal, setUpsellOrderTotal] = useState(0);
+  const [upsellToken, setUpsellToken] = useState('');
   const [navigatingToSuccess, setNavigatingToSuccess] = useState(false);
   const [shippingSetting, setShippingSetting] = useState(null);
   const [shipping, setShipping] = useState(0);
@@ -2073,6 +2074,7 @@ export default function CheckoutPage() {
           const orderTotal = Number(data.total ?? data.order?.total ?? totalAfterWallet ?? 0);
           setUpsellOrderId(createdOrderId);
           setUpsellOrderTotal(orderTotal);
+          setUpsellToken(String(data.prepaidUpsellToken || ''));
           setShowPrepaidModal(true);
           setPlacingOrder(false);
           // Show modal before clearing cart so empty-cart redirect does not fire first.
@@ -2112,6 +2114,8 @@ export default function CheckoutPage() {
     if (!orderId) return;
     setShowPrepaidModal(false);
     setUpsellOrderId(null);
+    setUpsellOrderTotal(0);
+    setUpsellToken('');
     setNavigatingToSuccess(true);
     router.push(`/order-success?orderId=${orderId}`);
   }, [router, upsellOrderId]);
@@ -2121,40 +2125,50 @@ export default function CheckoutPage() {
 
     try {
       setPayingNow(true);
-      const token = await getToken();
-      // Create a Stripe Checkout session for the existing COD order (5% prepaid
-      // discount is applied only after Stripe confirms payment).
+      const headers = { 'Content-Type': 'application/json' };
+      if (user && getToken) {
+        try {
+          const token = await getToken(true);
+          if (token) headers.Authorization = `Bearer ${token}`;
+        } catch (tokenError) {
+          console.warn('[checkout] prepaid upsell auth token unavailable', tokenError);
+        }
+      }
+
+      // Stripe Checkout for the COD order (5% off applied only after Stripe pays).
       const res = await fetch('/api/orders/prepaid-upsell', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ orderId: upsellOrderId }),
+        headers,
+        body: JSON.stringify({
+          orderId: upsellOrderId,
+          prepaidUpsellToken: upsellToken || undefined,
+        }),
       });
       const data = await res.json().catch(() => ({}));
 
       if (res.ok && data?.url) {
-        // Redirect to Stripe-hosted card checkout.
         window.location.href = data.url;
         return;
       }
 
       setPayingNow(false);
-      alert('Failed to create payment. Redirecting to order page...');
+      const message = data?.error || 'Failed to create payment. Continuing with COD...';
+      alert(message);
       setTimeout(() => {
         setShowPrepaidModal(false);
+        setUpsellToken('');
         router.push(`/order-success?orderId=${upsellOrderId}`);
-      }, 1500);
+      }, 1200);
     } catch (err) {
       console.error('Payment error:', err);
       setPayingNow(false);
-      alert('Payment failed. Redirecting to order page...');
+      alert('Payment failed. Continuing with COD...');
       setTimeout(() => {
         setNavigatingToSuccess(true);
         setShowPrepaidModal(false);
+        setUpsellToken('');
         router.push(`/order-success?orderId=${upsellOrderId}`);
-      }, 1500);
+      }, 1200);
     }
   };
 
