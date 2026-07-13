@@ -11,14 +11,24 @@ import { buildCategoryLookupForProductRefs } from '@/lib/categoryLookup';
 import { isFailedSalesReportOrder } from '@/lib/storeSalesReport';
 import {
   aggregateOrdersByProduct,
+  applyCatalogNamesToOrders,
   buildFailedOrderRows,
   buildSalesOrderRows,
   buildOrdersByProductDateFilter,
+  collectOrderProductIds,
   enrichOrdersByProductRows,
   getOrdersByProductDateLabel,
 } from '@/lib/storeOrdersByProduct';
 
 export const dynamic = 'force-dynamic';
+
+async function loadCatalogProducts(productIds = []) {
+  const ids = [...new Set((productIds || []).map(String).filter(Boolean))];
+  if (!ids.length) return [];
+  return Product.find({ _id: { $in: ids } })
+    .select('name nameAr title sku brand category categories slug images inStock')
+    .lean();
+}
 
 export async function GET(request) {
   try {
@@ -55,13 +65,16 @@ export async function GET(request) {
 
     await connectDB();
 
-    const orders = await Order.find({
+    const rawOrders = await Order.find({
       storeId,
       ...dateFilter,
       ...ACTIVE_RECORD_FILTER,
     })
       .select('shortOrderNumber createdAt total status orderItems items paymentMethod paymentStatus isPaid delhivery guestName guestEmail guestPhone shippingAddress')
       .lean();
+
+    const catalogProducts = await loadCatalogProducts(collectOrderProductIds(rawOrders));
+    const orders = applyCatalogNamesToOrders(rawOrders, catalogProducts);
 
     const failedOrders = orders.filter((order) => isFailedSalesReportOrder(order) || String(order?.status || '').toUpperCase() === 'CANCELLED');
     const successOrders = orders.filter((order) => !isFailedSalesReportOrder(order) && String(order?.status || '').toUpperCase() !== 'CANCELLED');
@@ -102,14 +115,15 @@ export async function GET(request) {
       .filter((id) => id && !String(id).startsWith('line:'));
 
     const products = productIds.length
-      ? await Product.find({ _id: { $in: productIds }, storeId })
-        .select('name sku brand category categories slug images inStock')
-        .lean()
+      ? catalogProducts.filter((product) => productIds.includes(String(product._id)))
       : [];
+    // Load any IDs missing from the first catalog pass (shouldn't happen often).
+    const missingIds = productIds.filter((id) => !products.some((product) => String(product._id) === String(id)));
+    const extraProducts = missingIds.length ? await loadCatalogProducts(missingIds) : [];
+    const allProducts = [...products, ...extraProducts];
 
-    const categoryMap = await buildCategoryLookupForProductRefs(Category, products);
-
-    const rows = enrichOrdersByProductRows(aggregated, products, categoryMap);
+    const categoryMap = await buildCategoryLookupForProductRefs(Category, allProducts);
+    const rows = enrichOrdersByProductRows(aggregated, allProducts, categoryMap);
 
     return NextResponse.json({
       view: 'products',

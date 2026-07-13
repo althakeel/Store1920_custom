@@ -17,6 +17,7 @@ import {
 } from '@/lib/storeOrdersByProductExport';
 import {
   DEFAULT_ORDERS_BY_PRODUCT_TIME,
+  getDubaiDateParts,
   normalizeOrdersByProductTime,
 } from '@/lib/storeOrdersByProduct';
 
@@ -26,6 +27,13 @@ const DATE_PRESETS = [
   { value: 'LAST_MONTH', label: 'Last month' },
   { value: 'CUSTOM', label: 'Custom' },
 ];
+
+function formatMoney(amount, currency) {
+  return `${currency} ${Number(amount || 0).toLocaleString('en-AE', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  })}`;
+}
 
 export default function OrdersByProductPage() {
   const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || 'AED';
@@ -49,6 +57,10 @@ export default function OrdersByProductPage() {
     dateLabel: 'Today',
   });
   const [rows, setRows] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
+
+  const showDateTimeFilters = dateRange === 'CUSTOM' || viewMode === 'sales';
 
   const fetchReport = useCallback(async () => {
     if (dateRange === 'CUSTOM' && (!fromDate || !toDate)) {
@@ -91,8 +103,39 @@ export default function OrdersByProductPage() {
 
   const applyDatePreset = (preset) => {
     setDateRange(preset);
+    setCurrentPage(1);
     setFromTime(DEFAULT_ORDERS_BY_PRODUCT_TIME);
     setToTime(DEFAULT_ORDERS_BY_PRODUCT_TIME);
+    if (preset === 'CUSTOM') {
+      const today = getDubaiDateParts().date;
+      setFromDate((prev) => prev || today);
+      setToDate((prev) => prev || today);
+    }
+  };
+
+  const openSalesData = () => {
+    setViewMode('sales');
+    setSearchQuery('');
+    setCurrentPage(1);
+    if (dateRange !== 'CUSTOM') {
+      const today = getDubaiDateParts().date;
+      setDateRange('CUSTOM');
+      setFromDate((prev) => prev || today);
+      setToDate((prev) => prev || today);
+      setFromTime(DEFAULT_ORDERS_BY_PRODUCT_TIME);
+      setToTime(DEFAULT_ORDERS_BY_PRODUCT_TIME);
+    }
+  };
+
+  const openOrdersByProduct = () => {
+    setViewMode('products');
+    setSearchQuery('');
+    setCurrentPage(1);
+  };
+
+  const markCustomRange = () => {
+    setDateRange('CUSTOM');
+    setCurrentPage(1);
   };
 
   useEffect(() => {
@@ -134,6 +177,24 @@ export default function OrdersByProductPage() {
     });
   }, [rows, searchQuery, viewMode]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, viewMode, dateRange, fromDate, toDate, fromTime, toTime, rowsPerPage]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / rowsPerPage));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedRows = useMemo(() => {
+    const start = (safePage - 1) * rowsPerPage;
+    return filteredRows.slice(start, start + rowsPerPage);
+  }, [filteredRows, safePage, rowsPerPage]);
+
+  const paginationWindowStart = Math.max(1, safePage - 2);
+  const paginationWindowEnd = Math.min(totalPages, paginationWindowStart + 4);
+  const visiblePageNumbers = [];
+  for (let page = Math.max(1, paginationWindowEnd - 4); page <= paginationWindowEnd; page += 1) {
+    visiblePageNumbers.push(page);
+  }
+
   const exportToExcel = async () => {
     if (!filteredRows.length) {
       toast.error('No data to export');
@@ -143,36 +204,34 @@ export default function OrdersByProductPage() {
     try {
       setExporting(true);
       const XLSX = await import('xlsx');
-      const isFailedView = viewMode === 'failed';
-      const isSalesView = viewMode === 'sales';
-      const headers = isFailedView
-        ? FAILED_ORDERS_EXPORT_HEADERS
-        : isSalesView
-          ? SALES_ORDERS_EXPORT_HEADERS
-          : ORDERS_BY_PRODUCT_EXPORT_HEADERS;
-      const exportRows = isFailedView
-        ? buildFailedOrdersExportRows(filteredRows, currency)
-        : isSalesView
-          ? buildSalesOrdersExportRows(filteredRows, currency)
-          : buildOrdersByProductExportRows(filteredRows, currency);
-      const worksheetData = [headers, ...exportRows];
-      const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
-      worksheet['!cols'] = headers.map((header) => ({
-        wch: Math.max(header.length + 2, 14),
-      }));
-
       const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(
-        workbook,
-        worksheet,
-        isFailedView ? 'Failed orders' : isSalesView ? 'Sales data' : 'Orders by product',
-      );
-
       const dateSlug = dateRange === 'CUSTOM'
         ? [fromDate, toDate].filter(Boolean).join('_') || 'custom'
         : dateRange.toLowerCase();
-      const viewSlug = isFailedView ? 'failed' : isSalesView ? 'sales' : 'products';
-      XLSX.writeFile(workbook, `orders-by-product-${viewSlug}-${dateSlug}-${Date.now()}.xlsx`);
+
+      if (viewMode === 'failed') {
+        const headers = FAILED_ORDERS_EXPORT_HEADERS;
+        const exportRows = buildFailedOrdersExportRows(filteredRows, currency);
+        const worksheet = XLSX.utils.aoa_to_sheet([headers, ...exportRows]);
+        worksheet['!cols'] = headers.map((header) => ({ wch: Math.max(header.length + 2, 14) }));
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Failed orders');
+        XLSX.writeFile(workbook, `orders-by-product-failed-${dateSlug}-${Date.now()}.xlsx`);
+      } else if (viewMode === 'sales') {
+        const headers = SALES_ORDERS_EXPORT_HEADERS;
+        const exportRows = buildSalesOrdersExportRows(filteredRows, currency);
+        const worksheet = XLSX.utils.aoa_to_sheet([headers, ...exportRows]);
+        worksheet['!cols'] = headers.map((header) => ({ wch: Math.max(header.length + 2, 14) }));
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Sales orders');
+        XLSX.writeFile(workbook, `orders-by-product-sales-${dateSlug}-${Date.now()}.xlsx`);
+      } else {
+        const headers = ORDERS_BY_PRODUCT_EXPORT_HEADERS;
+        const exportRows = buildOrdersByProductExportRows(filteredRows, currency);
+        const worksheet = XLSX.utils.aoa_to_sheet([headers, ...exportRows]);
+        worksheet['!cols'] = headers.map((header) => ({ wch: Math.max(header.length + 2, 14) }));
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Orders by product');
+        XLSX.writeFile(workbook, `orders-by-product-products-${dateSlug}-${Date.now()}.xlsx`);
+      }
+
       toast.success('Exported to Excel');
     } catch (error) {
       console.error('[orders-by-product] export error:', error);
@@ -196,7 +255,7 @@ export default function OrdersByProductPage() {
               Orders by Product
             </h1>
             <p className="mt-1 text-sm text-slate-600">
-              See how many orders included each product in the selected date range.
+              Sales data shows order details. Orders by product shows product counts for the same date range.
             </p>
           </div>
 
@@ -222,10 +281,7 @@ export default function OrdersByProductPage() {
               <button
                 key={preset.value}
                 type="button"
-                onClick={() => {
-                  applyDatePreset(preset.value);
-                  setViewMode('products');
-                }}
+                onClick={() => applyDatePreset(preset.value)}
                 className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
                   dateRange === preset.value
                     ? 'bg-slate-900 text-white'
@@ -235,9 +291,13 @@ export default function OrdersByProductPage() {
                 {preset.label}
               </button>
             ))}
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-slate-100 pt-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">View</p>
             <button
               type="button"
-              onClick={() => setViewMode('sales')}
+              onClick={openSalesData}
               className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
                 viewMode === 'sales'
                   ? 'bg-emerald-600 text-white'
@@ -255,7 +315,27 @@ export default function OrdersByProductPage() {
             </button>
             <button
               type="button"
-              onClick={() => setViewMode('failed')}
+              onClick={openOrdersByProduct}
+              className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
+                viewMode === 'products'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-indigo-50 text-indigo-800 hover:bg-indigo-100'
+              }`}
+            >
+              Orders by product
+              {viewMode === 'products' && filteredRows.length > 0 ? (
+                <span className="ms-2 rounded-full bg-indigo-800 px-2 py-0.5 text-xs font-bold text-white">
+                  {filteredRows.length}
+                </span>
+              ) : null}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setViewMode('failed');
+                setSearchQuery('');
+                setCurrentPage(1);
+              }}
               className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
                 viewMode === 'failed'
                   ? 'bg-red-600 text-white'
@@ -266,7 +346,7 @@ export default function OrdersByProductPage() {
             </button>
           </div>
 
-          {dateRange === 'CUSTOM' ? (
+          {showDateTimeFilters ? (
             <div className="mt-4 flex flex-wrap items-end gap-3 border-t border-slate-100 pt-4">
               <div className="min-w-[160px]">
                 <label htmlFor="orders-by-product-from" className="text-xs font-medium text-slate-500">
@@ -277,7 +357,10 @@ export default function OrdersByProductPage() {
                   type="date"
                   value={fromDate}
                   max={toDate || undefined}
-                  onChange={(event) => setFromDate(event.target.value)}
+                  onChange={(event) => {
+                    setFromDate(event.target.value);
+                    markCustomRange();
+                  }}
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                 />
               </div>
@@ -289,7 +372,10 @@ export default function OrdersByProductPage() {
                   id="orders-by-product-from-time"
                   type="time"
                   value={fromTime}
-                  onChange={(event) => setFromTime(normalizeOrdersByProductTime(event.target.value))}
+                  onChange={(event) => {
+                    setFromTime(normalizeOrdersByProductTime(event.target.value));
+                    markCustomRange();
+                  }}
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                 />
               </div>
@@ -302,7 +388,10 @@ export default function OrdersByProductPage() {
                   type="date"
                   value={toDate}
                   min={fromDate || undefined}
-                  onChange={(event) => setToDate(event.target.value)}
+                  onChange={(event) => {
+                    setToDate(event.target.value);
+                    markCustomRange();
+                  }}
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                 />
               </div>
@@ -314,7 +403,10 @@ export default function OrdersByProductPage() {
                   id="orders-by-product-to-time"
                   type="time"
                   value={toTime}
-                  onChange={(event) => setToTime(normalizeOrdersByProductTime(event.target.value))}
+                  onChange={(event) => {
+                    setToTime(normalizeOrdersByProductTime(event.target.value));
+                    markCustomRange();
+                  }}
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                 />
               </div>
@@ -352,10 +444,7 @@ export default function OrdersByProductPage() {
                   Successful orders: <strong>{summary.totalOrders}</strong>
                 </span>
                 <span>
-                  Failed orders: <strong className="text-red-600">{summary.failedOrders}</strong>
-                </span>
-                <span>
-                  Products with orders: <strong>{summary.totalProducts}</strong>
+                  Products: <strong>{summary.totalProducts}</strong>
                 </span>
                 <span>
                   Showing: <strong>{filteredRows.length}</strong>
@@ -367,49 +456,57 @@ export default function OrdersByProductPage() {
             {viewMode === 'failed'
               ? 'Showing individual failed or unpaid orders for the selected period.'
               : viewMode === 'sales'
-                ? 'Sales data lists each successful order (excludes cancelled, payment failed, and unpaid). Dates use Dubai time (Asia/Dubai).'
-                : 'Dates use Dubai time (Asia/Dubai). Default window is the current business day from 10:00 to next 10:00. Failed and unpaid orders are excluded from the product breakdown. Units count pack size × packs for bundles.'}
+                ? 'Sales data shows order details only (cancelled, payment failed, and unpaid excluded). Use Orders by product for product counts.'
+                : 'Orders by product shows each product with order count, units, and revenue. Dates use Dubai time (Asia/Dubai).'}
           </p>
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
           <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="flex flex-wrap items-center gap-2">
+            <div>
               <h2 className="text-lg font-semibold text-slate-900">
                 {viewMode === 'failed'
                   ? 'Failed orders'
                   : viewMode === 'sales'
-                    ? 'Sales data'
-                    : 'Product breakdown'}
+                    ? 'Sales data — order list'
+                    : 'Orders by product — product counts'}
               </h2>
-              {viewMode === 'failed' || viewMode === 'sales' ? (
-                <button
-                  type="button"
-                  onClick={() => setViewMode('products')}
-                  className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-200"
-                >
-                  Back to products
-                </button>
-              ) : null}
+              <p className="mt-1 text-xs text-slate-500">
+                Showing {paginatedRows.length
+                  ? `${(safePage - 1) * rowsPerPage + 1}–${Math.min(safePage * rowsPerPage, filteredRows.length)}`
+                  : 0} of {filteredRows.length}
+              </p>
             </div>
-            <div className="relative w-full md:max-w-sm">
-              <Search size={16} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="search"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder={
-                  viewMode === 'failed' || viewMode === 'sales'
-                    ? 'Search order, customer, product...'
-                    : 'Search product, SKU, brand...'
-                }
-                className="w-full rounded-lg border border-slate-300 py-2 ps-9 pe-3 text-sm"
-              />
+            <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center md:max-w-xl md:justify-end">
+              <select
+                value={rowsPerPage}
+                onChange={(event) => setRowsPerPage(Number(event.target.value) || 25)}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                aria-label="Rows per page"
+              >
+                <option value={25}>25 / page</option>
+                <option value={50}>50 / page</option>
+                <option value={100}>100 / page</option>
+              </select>
+              <div className="relative w-full md:max-w-sm">
+                <Search size={16} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="search"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder={
+                    viewMode === 'failed' || viewMode === 'sales'
+                      ? 'Search order, customer, product...'
+                      : 'Search product, SKU, brand...'
+                  }
+                  className="w-full rounded-lg border border-slate-300 py-2 ps-9 pe-3 text-sm"
+                />
+              </div>
             </div>
           </div>
 
           {loading ? (
-            <div className="py-12 text-center text-sm text-slate-500">Loading product breakdown...</div>
+            <div className="py-12 text-center text-sm text-slate-500">Loading...</div>
           ) : dateRange === 'CUSTOM' && (!fromDate || !toDate) ? (
             <div className="py-12 text-center text-sm text-slate-500">
               Choose a from and to date, then click Apply.
@@ -422,7 +519,7 @@ export default function OrdersByProductPage() {
                   ? 'No sales orders found for this date range.'
                   : 'No product orders found for this date range.'}
             </div>
-          ) : viewMode === 'failed' || viewMode === 'sales' ? (
+          ) : viewMode === 'sales' || viewMode === 'failed' ? (
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead>
@@ -438,11 +535,11 @@ export default function OrdersByProductPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredRows.map((row) => (
+                  {paginatedRows.map((row) => (
                     <tr
                       key={row.orderId}
                       className={`border-b border-slate-100 last:border-0 ${
-                        viewMode === 'failed' ? 'bg-red-50/30' : 'bg-emerald-50/20'
+                        viewMode === 'failed' ? 'bg-red-50/30' : ''
                       }`}
                     >
                       <td className="px-3 py-3 font-medium text-slate-900">
@@ -463,13 +560,12 @@ export default function OrdersByProductPage() {
                           {row.status || (viewMode === 'failed' ? 'FAILED' : '—')}
                         </span>
                       </td>
-                      <td className="px-3 py-3 text-slate-700">{row.products || '—'}</td>
+                      <td className="max-w-[280px] px-3 py-3 text-slate-700">
+                        {row.products || '—'}
+                      </td>
                       <td className="px-3 py-3 text-end text-slate-700">{row.unitsSold}</td>
                       <td className="px-3 py-3 text-end font-semibold text-slate-900">
-                        {currency} {Number(row.total || 0).toLocaleString('en-AE', {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 2,
-                        })}
+                        {formatMoney(row.total, currency)}
                       </td>
                     </tr>
                   ))}
@@ -491,7 +587,7 @@ export default function OrdersByProductPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredRows.map((row) => (
+                  {paginatedRows.map((row) => (
                     <tr key={row.productId} className="border-b border-slate-100 last:border-0">
                       <td className="px-3 py-3">
                         <div className="flex items-center gap-3">
@@ -521,10 +617,7 @@ export default function OrdersByProductPage() {
                       <td className="px-3 py-3 text-end font-semibold text-slate-900">{row.orderCount}</td>
                       <td className="px-3 py-3 text-end text-slate-700">{row.unitsSold}</td>
                       <td className="px-3 py-3 text-end text-slate-700">
-                        {currency} {Number(row.revenue || 0).toLocaleString('en-AE', {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 2,
-                        })}
+                        {formatMoney(row.revenue, currency)}
                       </td>
                     </tr>
                   ))}
@@ -532,6 +625,62 @@ export default function OrdersByProductPage() {
               </table>
             </div>
           )}
+
+          {filteredRows.length > 0 && !loading ? (
+            <div className="mt-4 flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-slate-600">
+                Page <strong>{safePage}</strong> of <strong>{totalPages}</strong>
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={safePage <= 1}
+                  onClick={() => setCurrentPage(1)}
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  First
+                </button>
+                <button
+                  type="button"
+                  disabled={safePage <= 1}
+                  onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Previous
+                </button>
+                {visiblePageNumbers.map((page) => (
+                  <button
+                    key={page}
+                    type="button"
+                    onClick={() => setCurrentPage(page)}
+                    className={`min-w-9 rounded-lg px-3 py-1.5 text-sm font-medium ${
+                      page === safePage
+                        ? 'bg-slate-900 text-white'
+                        : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    {page}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  disabled={safePage >= totalPages}
+                  onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Next
+                </button>
+                <button
+                  type="button"
+                  disabled={safePage >= totalPages}
+                  onClick={() => setCurrentPage(totalPages)}
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Last
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
