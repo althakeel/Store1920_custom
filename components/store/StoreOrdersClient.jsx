@@ -2660,7 +2660,7 @@ export default function StoreOrders() {
                 <div>
                     <p className="font-semibold text-slate-900">Payment health check (last 24 hours)</p>
                     <p className="mt-1 text-xs text-slate-500">
-                        Auto-runs every 15 minutes on this page, plus a server job every 15 minutes (even when closed). Re-checks Stripe, Tabby, Tamara, and card payments that may show failed/pending due to webhook issues.
+                        Auto-runs every 15 minutes here, plus a Vercel cron every 15 minutes (even when this page is closed). Only marks paid when Tabby/Tamara/Stripe confirm payment — true Pending/Awaiting orders stay unpaid until the customer finishes.
                         {paymentReconcileStatus?.checkedAt ? (
                             <>
                                 {' '}Last check: {new Date(paymentReconcileStatus.checkedAt).toLocaleString('en-GB')}
