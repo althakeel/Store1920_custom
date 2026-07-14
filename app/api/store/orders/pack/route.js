@@ -36,6 +36,7 @@ export async function POST(request) {
     const q = String(body?.q || body?.awb || body?.trackingId || body?.orderNo || '').trim();
     const notes = String(body?.notes || '').trim();
     const force = Boolean(body?.force);
+    const resendEmail = Boolean(body?.resendEmail || body?.resend);
 
     if (!orderId && !q) {
       return NextResponse.json(
@@ -52,6 +53,7 @@ export async function POST(request) {
       q,
       notes,
       force,
+      resendEmail,
       actor: {
         uid: decodedToken.uid,
         name: decodedToken.name || decodedToken.email || 'Warehouse staff',

@@ -551,21 +551,22 @@ export default function StoreOrders() {
         return null;
     };
 
-    const mapWaslahToOrderStatus = (waslah, currentStatus) => {
+    const mapWaslahToOrderStatus = (waslah, currentStatus, order = null) => {
         if (!waslah) return null;
 
+        const packed = order?.warehousePacking?.packed === true;
         const fromEvents = Array.isArray(waslah.events) && waslah.events.length
             ? resolveLatestWaslahAppStatus(waslah.events)
             : null;
         const candidate = waslah.appStatus || fromEvents;
 
-        const candidateOrderStatus = resolveWaslahOrderStatusTransition(candidate, currentStatus);
+        const candidateOrderStatus = resolveWaslahOrderStatusTransition(candidate, currentStatus, { packed });
         if (candidateOrderStatus && candidateOrderStatus !== currentStatus) return candidateOrderStatus;
 
         const subtag = waslah.currentSubtag || waslah.lastSubtag;
         if (subtag) {
             const mapped = mapWaslahSubtagToOrderStatus(subtag);
-            const mappedOrderStatus = resolveWaslahOrderStatusTransition(mapped, currentStatus);
+            const mappedOrderStatus = resolveWaslahOrderStatusTransition(mapped, currentStatus, { packed });
             if (mappedOrderStatus && mappedOrderStatus !== currentStatus) return mappedOrderStatus;
         }
 
@@ -624,7 +625,8 @@ export default function StoreOrders() {
             RETURN_REQUESTED: baseOrders.filter((o) => o.returns && o.returns.some((r) => r.status === 'REQUESTED')).length,
             PENDING_PAYMENT: baseOrders.filter(isAwaitingPaymentOrder).length,
             PENDING_SHIPMENT: confirmedOrders.filter((o) => !getDisplayAwb(o) && ['ORDER_PLACED', 'PROCESSING'].includes(o.status)).length,
-            LABEL_READY: baseOrders.filter(isWaslahLabelReadyOrder).length,
+            LABEL_READY: baseOrders.filter(isWaslahLabelNotPrinted).length,
+            PACKED: baseOrders.filter((o) => o?.warehousePacking?.packed === true).length,
         };
 
         STORE_ORDER_STATUS_OPTIONS.forEach(({ value }) => {
@@ -688,7 +690,9 @@ export default function StoreOrders() {
         } else if (filterStatus === 'PENDING_SHIPMENT') {
             dateFiltered = dateFiltered.filter((o) => !getDisplayAwb(o) && ['ORDER_PLACED', 'PROCESSING'].includes(o.status));
         } else if (filterStatus === 'LABEL_READY') {
-            dateFiltered = dateFiltered.filter(isWaslahLabelReadyOrder);
+            dateFiltered = dateFiltered.filter(isWaslahLabelNotPrinted);
+        } else if (filterStatus === 'PACKED') {
+            dateFiltered = dateFiltered.filter((o) => o?.warehousePacking?.packed === true);
         } else if (filterStatus === 'RETURN_REQUESTED') {
             dateFiltered = dateFiltered.filter((o) => o.returns && o.returns.some((r) => r.status === 'REQUESTED'));
         } else if (filterStatus === 'CONVERTED') {
@@ -861,7 +865,10 @@ export default function StoreOrders() {
     };
 
     const getLabelReadyOrdersForReceiptDownload = () => {
-        let pool = filteredOrders.filter(isWaslahLabelReadyOrder);
+        // Default queue: not yet downloaded. Selected rows can re-download.
+        let pool = hasSelectedOrders
+            ? filteredOrders.filter(isWaslahLabelReadyOrder)
+            : filteredOrders.filter(isWaslahLabelNotPrinted);
         if (hasSelectedOrders) {
             const selectedSet = new Set(selectedOrderIds.map(String));
             pool = pool.filter((order) => selectedSet.has(String(order._id)));
@@ -879,7 +886,7 @@ export default function StoreOrders() {
         if (!labelReadyOrders.length) {
             toast.error(hasSelectedOrders
                 ? 'None of the selected orders have an AWB and Waslah label ready'
-                : 'No label-ready orders in the current list');
+                : 'No undownloaded label-ready orders in the current list');
             return;
         }
 
@@ -905,7 +912,12 @@ export default function StoreOrders() {
             link.remove();
             window.URL.revokeObjectURL(url);
 
-            await markOrdersLabelPrinted(labelReadyOrders.map((order) => order._id));
+            // print-receipts already sets waslah.labelPrintedAt — update UI + cache immediately
+            const printedAt = new Date().toISOString();
+            const downloadedIds = labelReadyOrders.map((order) => order._id);
+            applyLabelPrintedToOrders(downloadedIds, printedAt);
+            clearPageCache('store-orders');
+            await markOrdersLabelPrinted(downloadedIds);
             toast.success(`Downloaded ${labelReadyOrders.length} order receipt(s) as one PDF`);
         } catch (error) {
             console.error('Bulk Waslah receipt download failed:', error);
@@ -1097,8 +1109,9 @@ export default function StoreOrders() {
             }
 
             const currentStatus = data.order.status || order.status;
+            const orderForMap = { ...order, ...data.order };
             const mappedStatus = data.order.waslah
-                ? mapWaslahToOrderStatus(data.order.waslah, currentStatus)
+                ? mapWaslahToOrderStatus(data.order.waslah, currentStatus, orderForMap)
                 : mapDelhiveryStatusToOrderStatus(data.order.delhivery, currentStatus);
 
             if (!mappedStatus || mappedStatus === currentStatus) {
@@ -1128,6 +1141,60 @@ export default function StoreOrders() {
             }
         }
     };
+
+    const markOrderPacked = async (order) => {
+        if (!order?._id) return;
+        if (order?.warehousePacking?.packed) {
+            toast('Order is already packed');
+            return;
+        }
+        try {
+            const token = await getToken();
+            if (!token) {
+                toast.error('Authentication failed. Please sign in again.');
+                return;
+            }
+            const { data } = await axios.post(
+                '/api/store/orders/pack',
+                { orderId: order._id },
+                { headers: { Authorization: `Bearer ${token}` } },
+            );
+
+            const packing = {
+                packed: true,
+                packedAt: new Date().toISOString(),
+                ...(data?.warehousePacking || data?.order?.warehousePacking || {}),
+            };
+            const nextStatus = data?.status
+                || data?.order?.status
+                || 'WAITING_FOR_PICKUP';
+            const nextOrder = {
+                ...order,
+                ...(data?.order || {}),
+                status: nextStatus,
+                warehousePacking: packing,
+            };
+
+            setSelectedOrder((prev) => (prev && prev._id === order._id ? { ...prev, ...nextOrder } : prev));
+            setOrders((prev) => {
+                const updated = prev.map((o) => (o._id === order._id ? { ...o, ...nextOrder } : o));
+                writePageCache('store-orders', { orders: updated, fetchedAt: Date.now() });
+                return updated;
+            });
+
+            if (data?.emailSent) {
+                toast.success(data?.message || 'Order packed — customer emailed');
+            } else if (data?.emailError) {
+                toast.success(data?.message || 'Order packed');
+                toast.error(`Customer email not sent: ${data.emailError}`);
+            } else {
+                toast.success(data?.message || 'Order packed');
+            }
+        } catch (error) {
+            toast.error(error?.response?.data?.error || 'Failed to mark order packed');
+        }
+    };
+
     // Move openModal and closeModal to top level
     const openModal = (order) => {
         console.log('[MODAL DEBUG] Opening order:', order);
@@ -1280,7 +1347,7 @@ export default function StoreOrders() {
             const updatesToPersist = [];
             syncedOrders = syncedOrders.map(order => {
                 const waslahMapped = order?.waslah
-                    ? mapWaslahToOrderStatus(order.waslah, order.status)
+                    ? mapWaslahToOrderStatus(order.waslah, order.status, order)
                     : null;
                 const delhiveryMapped = mapDelhiveryStatusToOrderStatus(order.delhivery, order.status);
                 const mapped = waslahMapped || delhiveryMapped;
@@ -2595,7 +2662,7 @@ export default function StoreOrders() {
                     <div>
                         <p className="text-sm font-semibold text-violet-900">EMX labels ready</p>
                         <p className="mt-0.5 text-xs text-violet-700">
-                            {stats.LABEL_READY} order(s) with shipment created and AWB generated
+                            {stats.LABEL_READY} order(s) with AWB ready — not downloaded yet
                         </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -2637,7 +2704,7 @@ export default function StoreOrders() {
 
             {filterStatus === 'LABEL_READY' ? (
                 <div className="mb-4 rounded-lg border border-violet-200 bg-white px-4 py-3 text-sm text-violet-900">
-                    Showing {filteredOrders.length} order(s) with Waslah AWB generated.
+                    Showing {filteredOrders.length} order(s) with AWB ready that have not been downloaded yet.
                     {filteredOrders.length > 0 ? (
                         <span className="text-violet-700">
                             {' '}Use <strong>Download all receipts (PDF)</strong> to get every label in one file.
@@ -3339,6 +3406,7 @@ export default function StoreOrders() {
                                             <div className="flex w-full items-center gap-2">
                                                 <OrderStatusPicker
                                                     value={order.status}
+                                                    packed={order?.warehousePacking?.packed === true}
                                                     size="sm"
                                                     className="min-w-[160px] flex-1"
                                                     onChange={(newStatus) => updateOrderStatus(order._id, newStatus, getToken, fetchOrders)}
@@ -3423,7 +3491,16 @@ export default function StoreOrders() {
                                                 ? ` · ${selectedOrder.warehousePacking.packedByName}`
                                                 : ''}
                                         </p>
-                                    ) : null}
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            onClick={() => markOrderPacked(selectedOrder)}
+                                            className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-teal-500/90 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-400 transition-colors"
+                                        >
+                                            <Package size={14} />
+                                            Mark packed
+                                        </button>
+                                    )}
                                     {isManualOrder ? (
                                         <div className="mt-2 flex flex-wrap gap-2">
                                             <span className="rounded-full bg-white/20 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
@@ -4455,6 +4532,7 @@ export default function StoreOrders() {
                                     <label className="mb-2 block text-sm font-semibold text-slate-600">Update order status</label>
                                     <OrderStatusPicker
                                         value={selectedOrder.status}
+                                        packed={selectedOrder?.warehousePacking?.packed === true}
                                         className="max-w-md"
                                         onChange={async (newStatus) => {
                                             try {

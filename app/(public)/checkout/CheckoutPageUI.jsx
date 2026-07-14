@@ -290,7 +290,9 @@ export default function CheckoutPage() {
     }
   }, []);
 
-  // If the customer returns to checkout after abandoning Tabby/Tamara/Stripe, cancel the unpaid order.
+  // If the customer returns to checkout after abandoning Tabby/Tamara/Stripe,
+  // try to cancel ONLY if the order is still unpaid. Never clobber a capture
+  // that completed while they bounced back to /checkout.
   useEffect(() => {
     const pendingOrderId = getPendingCheckoutOrderId();
     if (!pendingOrderId) return undefined;

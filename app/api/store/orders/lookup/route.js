@@ -5,6 +5,34 @@ import { getAuth } from '@/lib/firebase-admin';
 import { findOrderByTrackingIdentifier } from '@/lib/orderTrackingLookup';
 import { batchPopulateOrderUsers } from '@/lib/storeOrderUsers';
 import { formatWarehousePacking } from '@/lib/warehouseOrderPacking';
+import { getOrderLineProduct } from '@/lib/orderDisplay';
+import { getProductThumbnailUrl } from '@/lib/productMedia';
+import { getCustomerSiteUrl } from '@/lib/appUrl';
+
+function ensureAbsoluteHttpsUrl(url) {
+  const value = String(url || '').trim();
+  if (!value || value === '/placeholder.png') return '';
+  if (/^https:\/\//i.test(value)) return value;
+  if (/^http:\/\//i.test(value)) return value.replace(/^http:/i, 'https:');
+  const base = String(getCustomerSiteUrl() || 'https://store1920.com').replace(/\/+$/, '');
+  if (value.startsWith('//')) return `https:${value}`;
+  if (value.startsWith('/')) return `${base}${value}`;
+  return `${base}/${value.replace(/^\//, '')}`;
+}
+
+/** Attach a ready-to-use absolute thumbnail on each line (skips leading videos). */
+function withLineItemImages(order) {
+  if (!order) return order;
+  const orderItems = (order.orderItems || []).map((item) => {
+    const product = getOrderLineProduct(item);
+    const thumbnail = ensureAbsoluteHttpsUrl(
+      getProductThumbnailUrl(product, { fallback: item?.image || '' }),
+    );
+    if (!thumbnail) return item;
+    return { ...item, image: thumbnail };
+  });
+  return { ...order, orderItems };
+}
 
 /**
  * GET /api/store/orders/lookup?q=
@@ -45,10 +73,12 @@ export async function GET(request) {
 
     await batchPopulateOrderUsers([order], { getAuth });
 
+    const enriched = withLineItemImages(order);
+
     return NextResponse.json({
       order: {
-        ...order,
-        warehousePacking: formatWarehousePacking(order),
+        ...enriched,
+        warehousePacking: formatWarehousePacking(enriched),
       },
     });
   } catch (error) {

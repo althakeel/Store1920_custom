@@ -7,7 +7,7 @@ import { Check, ChevronDown, Search } from 'lucide-react';
 export const STORE_ORDER_STATUS_OPTIONS = [
   { value: 'ORDER_PLACED', label: 'Order Placed', color: 'bg-blue-100 text-blue-700' },
   { value: 'PROCESSING', label: 'Processing', color: 'bg-yellow-100 text-yellow-700' },
-  { value: 'WAITING_FOR_PICKUP', label: 'Waiting For Pickup', color: 'bg-yellow-50 text-yellow-700' },
+  { value: 'WAITING_FOR_PICKUP', label: 'Packed / Awaiting Pickup', color: 'bg-teal-50 text-teal-800' },
   { value: 'PICKUP_REQUESTED', label: 'Pickup Requested', color: 'bg-yellow-100 text-yellow-700' },
   { value: 'PICKED_UP', label: 'Picked Up', color: 'bg-purple-100 text-purple-700' },
   { value: 'WAREHOUSE_RECEIVED', label: 'Warehouse Received', color: 'bg-indigo-100 text-indigo-700' },
@@ -26,6 +26,7 @@ export const STORE_ORDER_STATUS_OPTIONS = [
 export const STORE_ORDER_STATUS_FILTER_OPTIONS = [
   { value: 'ALL', label: 'All Orders' },
   ...STORE_ORDER_STATUS_OPTIONS.map(({ value, label }) => ({ value, label })),
+  { value: 'PACKED', label: 'Packed', isSpecial: true },
   { value: 'RETURN_REQUESTED', label: 'Return Requested', isSpecial: true },
 ];
 
@@ -52,7 +53,24 @@ const STATUS_GROUPS = [
   },
 ];
 
-export function getStoreOrderStatusMeta(status) {
+export function getStoreOrderStatusMeta(status, { packed = false } = {}) {
+  const normalized = String(status || '').toUpperCase();
+  const packedDisplayStatuses = new Set([
+    'ORDER_PLACED',
+    'PROCESSING',
+    'WAITING_FOR_PICKUP',
+    'PICKUP_REQUESTED',
+  ]);
+
+  // After warehouse pack API: show Packed until courier advances past pickup.
+  if (packed && packedDisplayStatuses.has(normalized)) {
+    return {
+      value: status,
+      label: 'Packed',
+      color: 'bg-teal-100 text-teal-800',
+    };
+  }
+
   const match = STORE_ORDER_STATUS_OPTIONS.find((option) => option.value === status);
   if (match) return match;
 
@@ -68,8 +86,8 @@ export function getStoreOrderStatusMeta(status) {
   };
 }
 
-export function getStoreOrderStatusColor(status) {
-  return getStoreOrderStatusMeta(status).color;
+export function getStoreOrderStatusColor(status, options = {}) {
+  return getStoreOrderStatusMeta(status, options).color;
 }
 
 export default function OrderStatusPicker({
@@ -78,13 +96,14 @@ export default function OrderStatusPicker({
   disabled = false,
   size = 'md',
   className = '',
+  packed = false,
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [menuStyle, setMenuStyle] = useState({});
   const triggerRef = useRef(null);
   const menuRef = useRef(null);
-  const current = getStoreOrderStatusMeta(value);
+  const current = getStoreOrderStatusMeta(value, { packed });
   const isCompact = size === 'sm';
 
   const filteredGroups = useMemo(() => {
