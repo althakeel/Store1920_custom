@@ -1,5 +1,8 @@
 /** @type {import('next').NextConfig} */
-import productRedirects from './data/productRedirects.json';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+const productRedirects = require('./data/productRedirects.json');
 
 const domains = ['store1920-images.s3.ap-south-1.amazonaws.com', 'ik.imagekit.io'];
 // Allow placehold.co for demo/placeholder images

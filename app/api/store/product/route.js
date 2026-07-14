@@ -14,6 +14,7 @@ import {
 import { NextResponse } from "next/server";
 import { getAuth } from '@/lib/firebase-admin';
 import { sanitizeCategoryIdsForSave } from '@/lib/productCategoryRefs';
+import { createProductFromJson, updateProductFromJson } from '@/lib/productJsonSave';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;

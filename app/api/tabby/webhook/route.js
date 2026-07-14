@@ -57,11 +57,17 @@ export async function POST(request) {
                 );
             }
         } else if (isTabbyPaymentSuccessful(parsed)) {
-            await finalizeTabbyOrderPayment(mongoOrderId, {
+            const finalize = await finalizeTabbyOrderPayment(mongoOrderId, {
                 paymentId,
                 providerEventId: String(body?.event_id || body?.event?.id || '').trim(),
                 source: 'tabby_webhook',
             });
+            if (!finalize?.success && !finalize?.alreadyPaid && !finalize?.paymentVerified) {
+                // Force Tabby retry instead of ACK-and-drop when capture/mark-paid fails.
+                throw new Error(
+                    `Tabby success webhook did not finalize payment (${finalize?.reason || 'unknown'})`,
+                );
+            }
         } else if (isTabbyPaymentFailed(parsed) && paymentId) {
             // A delayed signed failure notification must not cancel an order
             // whose authoritative provider state later became captured.

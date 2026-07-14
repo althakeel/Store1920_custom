@@ -20,7 +20,7 @@ import { useAuth } from '@/lib/useAuth';
 import { trackPurchase } from '@/lib/tracking';
 import { trackOrderSuccessPurchaseOnce } from '@/lib/orderSuccessMetaPurchase';
 import { canTrackMetaPurchaseOnOrderSuccess } from '@/lib/orderConfirmationPolicy';
-import { hasTrackedPersistently, markTrackedPersistently, hasTrackedOnce, markTrackedOnce } from '@/lib/trackingDedupe';
+import { hasTrackedPersistently, markTrackedPersistently } from '@/lib/trackingDedupe';
 import { getMetaPurchaseDedupeKey } from '@/lib/metaPurchase';
 import { getDisplayOrderNumber } from '@/lib/orderDisplay';
 import { resolveOrderLineLineTotal, resolveOrderLinePackQuantity, resolveOrderLineQuantity } from '@/lib/gtmEcommerceHelpers';
@@ -86,51 +86,104 @@ function OrderSuccessContent() {
         const loadedOrder = loadedOrders?.[0];
         if (loadedOrder?._id) {
           const status = String(loadedOrder.status || '').toUpperCase();
-          if (status === 'PAYMENT_FAILED' || status === 'CANCELLED') {
+          const paidRedirect = params.get('stripe') === '1'
+            || params.get('tabby') === '1'
+            || params.get('tamara') === '1';
+
+          // Never bounce to order-failed before verifying provider return params —
+          // cancel/expiry can race ahead of the success webhook and leave PAYMENT_FAILED
+          // while Tabby/Tamara/Stripe already took the money.
+          if (!paidRedirect && (status === 'PAYMENT_FAILED' || status === 'CANCELLED')) {
             router.replace(`/order-failed?orderId=${orderId}&reason=${encodeURIComponent('Payment was not completed')}`);
             return;
           }
 
-          const paidRedirect = params.get('stripe') === '1'
-            || params.get('tabby') === '1'
-            || params.get('tamara') === '1';
-          const orderIsPaid = loadedOrder.isPaid === true
-            || String(loadedOrder.paymentStatus || '').toLowerCase() === 'paid'
-            || status === 'ORDER_PLACED';
+          const orderTrulyPaid = loadedOrder.isPaid === true
+            || String(loadedOrder.paymentStatus || '').toLowerCase() === 'paid';
           // Prepaid upsell: the base order is COD (often already ORDER_PLACED),
           // so verify strictly by actual payment state instead of order status.
           const isPrepaidReturn = params.get('prepaid') === '1';
-          const orderTrulyPaid = loadedOrder.isPaid === true
-            || String(loadedOrder.paymentStatus || '').toLowerCase() === 'paid';
           const prepaidDiscountMissing = isPrepaidReturn
             && String(loadedOrder.coupon?.code || '').toUpperCase() !== 'PREPAID5';
 
-          if (params.get('tabby') === '1' && !orderIsPaid) {
+          const applyVerifiedOrders = (data) => {
+            if (cancelled) return;
+            if (data?.order) {
+              setOrders([data.order]);
+            } else if (Array.isArray(data?.orders) && data.orders.length) {
+              setOrders(data.orders);
+            }
+          };
+
+          const reloadOrders = async () => {
+            const refresh = await fetch(`/api/orders?orderId=${orderId}`, fetchOptions);
+            if (!refresh.ok) return null;
+            return refresh.json();
+          };
+
+          const redirectIfStillFailed = (ordersPayload) => {
+            if (cancelled || !paidRedirect) return;
+            const refreshed = ordersPayload?.order
+              || (Array.isArray(ordersPayload?.orders) ? ordersPayload.orders[0] : null)
+              || loadedOrder;
+            const refreshedStatus = String(refreshed?.status || '').toUpperCase();
+            const refreshedPaid = refreshed?.isPaid === true
+              || String(refreshed?.paymentStatus || '').toLowerCase() === 'paid';
+            if (!refreshedPaid && (refreshedStatus === 'PAYMENT_FAILED' || refreshedStatus === 'CANCELLED')) {
+              router.replace(`/order-failed?orderId=${orderId}&reason=${encodeURIComponent('Payment was not completed')}`);
+            }
+          };
+
+          if (params.get('tabby') === '1' && !orderTrulyPaid) {
             fetch('/api/orders/verify-tabby', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ orderId: loadedOrder._id }),
             })
               .then((res) => (res.ok ? res.json() : null))
-              .then((result) => {
-                if (result?.success && !cancelled) {
-                  return fetch(`/api/orders?orderId=${orderId}`, fetchOptions);
+              .then(async (result) => {
+                if (cancelled) return null;
+                if (result?.success) {
+                  const data = await reloadOrders();
+                  applyVerifiedOrders(data);
+                  return data;
                 }
-                return null;
+                return reloadOrders();
               })
-              .then((res) => (res?.ok ? res.json() : null))
               .then((data) => {
-                if (cancelled) return;
-                if (data?.order) {
-                  setOrders([data.order]);
-                } else if (Array.isArray(data?.orders) && data.orders.length) {
-                  setOrders(data.orders);
-                }
+                if (data) applyVerifiedOrders(data);
+                redirectIfStillFailed(data);
               })
-              .catch(() => {});
-          }
-
-          if (params.get('stripe') === '1' && (prepaidDiscountMissing || (isPrepaidReturn ? !orderTrulyPaid : !orderIsPaid))) {
+              .catch(() => {
+                redirectIfStillFailed(null);
+              });
+          } else if (params.get('tamara') === '1' && !orderTrulyPaid) {
+            fetch('/api/orders/verify-tamara', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ orderId: loadedOrder._id }),
+            })
+              .then((res) => (res.ok ? res.json() : null))
+              .then(async (result) => {
+                if (cancelled) return null;
+                if (result?.success) {
+                  const data = await reloadOrders();
+                  applyVerifiedOrders(data);
+                  return data;
+                }
+                return reloadOrders();
+              })
+              .then((data) => {
+                if (data) applyVerifiedOrders(data);
+                redirectIfStillFailed(data);
+              })
+              .catch(() => {
+                redirectIfStillFailed(null);
+              });
+          } else if (
+            params.get('stripe') === '1'
+            && (prepaidDiscountMissing || !orderTrulyPaid)
+          ) {
             fetch('/api/orders/verify-stripe', {
               method: 'POST',
               headers: {
@@ -143,25 +196,27 @@ function OrderSuccessContent() {
               }),
             })
               .then((res) => (res.ok ? res.json() : null))
-              .then((result) => {
-                if (result?.success && !cancelled) {
-                  return fetch(`/api/orders?orderId=${orderId}`, fetchOptions);
+              .then(async (result) => {
+                if (cancelled) return null;
+                if (result?.success) {
+                  const data = await reloadOrders();
+                  applyVerifiedOrders(data);
+                  return data;
                 }
-                return null;
+                return reloadOrders();
               })
-              .then((res) => (res?.ok ? res.json() : null))
               .then((data) => {
-                if (cancelled) return;
-                if (data?.order) {
-                  setOrders([data.order]);
-                } else if (Array.isArray(data?.orders) && data.orders.length) {
-                  setOrders(data.orders);
-                }
+                if (data) applyVerifiedOrders(data);
+                redirectIfStillFailed(data);
               })
-              .catch(() => {});
+              .catch(() => {
+                redirectIfStillFailed(null);
+              });
+          } else if (paidRedirect && (status === 'PAYMENT_FAILED' || status === 'CANCELLED') && !orderTrulyPaid) {
+            redirectIfStillFailed(null);
           }
 
-          if (paidRedirect && orderIsPaid) {
+          if (paidRedirect && orderTrulyPaid) {
             fetch('/api/orders/confirm-paid', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -189,27 +244,27 @@ function OrderSuccessContent() {
     if (loading || !order?._id || purchaseTrackedRef.current) return;
     if (!canTrackMetaPurchaseOnOrderSuccess(order)) return;
 
-    const orderTrackingKey = `order-success:tracked:${String(order._id)}`;
-    const purchaseKey = getMetaPurchaseDedupeKey(String(order._id));
-    const orderStartKey = `order-success:started:${String(order._id)}`;
+    const orderId = String(order._id);
+    const orderTrackingKey = `order-success:tracked:${orderId}`;
+    const purchaseKey = getMetaPurchaseDedupeKey(orderId);
     if (hasTrackedPersistently(orderTrackingKey) || hasTrackedPersistently(purchaseKey)) {
       purchaseTrackedRef.current = true;
       return;
     }
-    if (hasTrackedOnce(orderStartKey)) {
-      purchaseTrackedRef.current = true;
-      return;
-    }
-    markTrackedOnce(orderStartKey);
+
+    // Do NOT claim a session "started" key here. Auth/payment-verify remounts used to
+    // cancel the retry loop and then permanently skip Purchase on the remount.
 
     let cancelled = false;
     let attempts = 0;
+    const orderForTracking = order;
+    const userForTracking = user;
 
     const run = async () => {
       while (!cancelled && !purchaseTrackedRef.current && attempts < 60) {
         attempts += 1;
-        const ok = await trackOrderSuccessPurchaseOnce(order, {
-          onAnalytics: () => trackPurchase(order, { user, metaSkip: true }),
+        const ok = await trackOrderSuccessPurchaseOnce(orderForTracking, {
+          onAnalytics: () => trackPurchase(orderForTracking, { user: userForTracking, metaSkip: true }),
         });
         if (cancelled) return;
         if (ok || hasTrackedPersistently(purchaseKey)) {
@@ -226,7 +281,14 @@ function OrderSuccessContent() {
     return () => {
       cancelled = true;
     };
-  }, [loading, order, user]);
+  }, [
+    loading,
+    order?._id,
+    order?.isPaid,
+    order?.paymentStatus,
+    order?.status,
+    user?.uid,
+  ]);
   function getOrderNumber(orderObj) {
     return getDisplayOrderNumber(orderObj);
   }

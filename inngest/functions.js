@@ -146,6 +146,53 @@ export const recoverWaslahPaymentProofs = inngest.createFunction(
     },
 )
 
+// Re-check failed/pending Tabby/Tamara/Stripe/card payments every 15 minutes
+// even when the seller dashboard is closed (browser only runs while /store/orders is open).
+export const reconcileFailedOnlinePayments = inngest.createFunction(
+    {
+        id: 'reconcile-failed-online-payments',
+        retries: 2,
+        concurrency: { limit: 1 },
+    },
+    { cron: '*/15 * * * *' },
+    async ({ step }) => {
+        const storeIds = await step.run('find-stores-needing-payment-recheck', async () => {
+            await connectDB();
+            const Order = (await import('@/models/Order')).default;
+            const { AWAITING_PAYMENT_STATUS } = await import('@/lib/deferredOrderStatus');
+            const since = new Date(Date.now() - (72 * 60 * 60 * 1000));
+            return Order.distinct('storeId', {
+                createdAt: { $gte: since },
+                paymentMethod: { $in: ['STRIPE', 'TABBY', 'TAMARA', 'CARD'] },
+                $or: [
+                    { status: { $in: ['PAYMENT_FAILED', AWAITING_PAYMENT_STATUS] } },
+                    {
+                        isPaid: { $ne: true },
+                        paymentStatus: { $in: ['FAILED', 'PENDING', 'UNPAID', 'failed', 'pending', 'unpaid'] },
+                    },
+                ],
+                paymentStatus: {
+                    $not: /^(REFUNDED|PARTIALLY_REFUNDED|REVERSED|DISPUTED|CHARGEBACK|VOID|CANCELLED|CANCELED|EXPIRED)$/i,
+                },
+                'paymentVerification.status': {
+                    $not: /^(REVERSED|REVOKED)$/i,
+                },
+            });
+        });
+
+        const results = [];
+        for (const storeId of storeIds.slice(0, 20)) {
+            results.push(await step.run(`reconcile-failed-payments-${String(storeId)}`, async () => {
+                const { reconcileStoreOrderPayments } = await import('@/lib/orderPaymentReconciliation');
+                return reconcileStoreOrderPayments(String(storeId), { hours: 72, limit: 60 });
+            }));
+        }
+
+        const fixed = results.reduce((sum, row) => sum + Number(row?.fixed || 0), 0);
+        return { stores: storeIds.length, fixed, results };
+    },
+)
+
 
 // Inngest Function to send daily promotional emails
 export const sendDailyPromotionalEmail = inngest.createFunction(

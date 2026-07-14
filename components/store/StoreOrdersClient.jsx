@@ -112,6 +112,29 @@ import {
 import { isWaslahLabelReadyOrder, isWaslahLabelNotPrinted } from '@/lib/waslahReceipts';
 import TrackingTimeline from '@/components/TrackingTimeline';
 
+function formatPaymentRecheckReason(reason = '', paymentMethod = '') {
+    const method = String(paymentMethod || 'provider').toUpperCase();
+    const raw = String(reason || '').trim().toLowerCase().replace(/\s+/g, '_');
+
+    if (raw === 'tamara_expired' || raw === 'expired') {
+        return 'Tamara expired this payment — customer did not finish checkout, or Approved was not Authorised within 72 hours. Cannot mark paid from here.';
+    }
+    if (raw === 'tamara_declined' || raw === 'declined') {
+        return 'Tamara declined this payment. Customer was not charged.';
+    }
+    if (raw === 'tamara_canceled' || raw === 'tamara_cancelled' || raw === 'canceled' || raw === 'cancelled') {
+        return 'Tamara cancelled this payment. Cannot mark paid.';
+    }
+    if (raw.startsWith('tabby_expired')) {
+        return 'Tabby expired this payment session. Customer did not complete payment.';
+    }
+    if (raw.startsWith('tabby_rejected')) {
+        return 'Tabby rejected this payment. Customer was not charged.';
+    }
+    if (!raw) return `Still unpaid at ${method}`;
+    return `Still unpaid at ${method} — ${raw.replace(/_/g, ' ')}`;
+}
+
 function normalizeOrderSearchQuery(value = '') {
     return String(value || '').trim().toLowerCase();
 }
@@ -408,6 +431,7 @@ export default function StoreOrders() {
     const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false);
     const [paymentFailedCallOrder, setPaymentFailedCallOrder] = useState(null);
     const [savingPaymentFailedFollowUp, setSavingPaymentFailedFollowUp] = useState(false);
+    const [recheckingPaymentOrderId, setRecheckingPaymentOrderId] = useState(null);
     const [schedulingPickup, setSchedulingPickup] = useState(false);
     const [sendingToC3xpress, setSendingToC3xpress] = useState(false);
     const [showCommunicationHistory, setShowCommunicationHistory] = useState(false);
@@ -659,9 +683,17 @@ export default function StoreOrders() {
         const start = fromDate ? buildFilterDateTime(fromDate, normalizedFromTime) : null;
         let end = toDate ? buildFilterDateTime(toDate, normalizedToTime) : null;
 
-        // Same cutover on both ends (or To-only) → To date includes that full business day.
-        // e.g. 10:00–10:00 means through the next 10:00 cutover.
-        if (end && toDate && (!start || normalizedFromTime === normalizedToTime)) {
+        // Same calendar day + same From/To clock time → one business day through the next cutover.
+        // e.g. 14 Jul 10:00 – 14 Jul 10:00 → [14 Jul 10:00, 15 Jul 10:00)
+        // Different days with matching times stay literal (13 Jul 10:00 – 14 Jul 10:00 ends at 14 Jul 10:00).
+        if (
+            end
+            && start
+            && fromDate
+            && toDate
+            && fromDate === toDate
+            && normalizedFromTime === normalizedToTime
+        ) {
             end = buildFilterDateTime(addDaysToDateOnly(toDate, 1), normalizedToTime);
         } else if (start && end && end.getTime() <= start.getTime()) {
             end = new Date(end.getTime() + 24 * 60 * 60 * 1000);
@@ -1437,6 +1469,53 @@ export default function StoreOrders() {
             toast.error(error?.response?.data?.error || 'Failed to save follow-up');
         } finally {
             setSavingPaymentFailedFollowUp(false);
+        }
+    };
+
+    const recheckFailedOrderPayment = async (order) => {
+        const orderId = String(order?._id || '').trim();
+        if (!orderId || !isPaymentFailedStoreOrder(order)) return;
+        if (recheckingPaymentOrderId) return;
+
+        setRecheckingPaymentOrderId(orderId);
+        try {
+            let token = await getToken(false);
+            if (!token) token = await getToken(true);
+            if (!token) {
+                toast.error('Authentication failed. Please sign in again.');
+                return;
+            }
+
+            const { data } = await axios.post(
+                `/api/store/orders/${orderId}/recheck-payment`,
+                {},
+                { headers: { Authorization: `Bearer ${token}` } },
+            );
+
+            const updatedOrder = data?.order;
+            if (updatedOrder?._id) {
+                setOrders((prev) => prev.map((row) => (
+                    String(row._id) === orderId ? { ...row, ...updatedOrder } : row
+                )));
+                setSelectedOrder((prev) => (
+                    prev && String(prev._id) === orderId
+                        ? { ...prev, ...updatedOrder }
+                        : prev
+                ));
+            }
+
+            if (data?.paid || data?.fixed) {
+                toast.success('Payment confirmed — order marked as paid');
+                await fetchOrders({ silent: true });
+                return;
+            }
+
+            const method = String(data?.paymentMethod || order?.paymentMethod || 'provider').toUpperCase();
+            toast.error(formatPaymentRecheckReason(data?.reason, method), { duration: 8000 });
+        } catch (error) {
+            toast.error(error?.response?.data?.error || 'Payment recheck failed');
+        } finally {
+            setRecheckingPaymentOrderId(null);
         }
     };
 
@@ -2581,7 +2660,7 @@ export default function StoreOrders() {
                 <div>
                     <p className="font-semibold text-slate-900">Payment health check (last 24 hours)</p>
                     <p className="mt-1 text-xs text-slate-500">
-                        Auto-runs every 15 minutes. Re-checks Stripe, Tabby, Tamara, and card payments that may show failed/pending due to webhook issues.
+                        Auto-runs every 15 minutes on this page, plus a server job every 15 minutes (even when closed). Re-checks Stripe, Tabby, Tamara, and card payments that may show failed/pending due to webhook issues.
                         {paymentReconcileStatus?.checkedAt ? (
                             <>
                                 {' '}Last check: {new Date(paymentReconcileStatus.checkedAt).toLocaleString('en-GB')}
@@ -3026,7 +3105,7 @@ export default function StoreOrders() {
                     ) : null}
                 </div>
                 <p className="text-xs text-slate-500">
-                    Dates use Dubai time (Asia/Dubai). With matching From/To times (default 10:00), the To date includes that full business day through the next 10:00.
+                    Dates use Dubai time (Asia/Dubai). Range ends at the To date/time you set (orders at or after that moment are excluded). Same From and To day with the same clock time (e.g. both 10:00) means one business day through the next cutover.
                 </p>
 
                 {(hasDateFilter || orders.length > 0) && (
@@ -3422,15 +3501,32 @@ export default function StoreOrders() {
                                                     </button>
                                                 )}
                                             </div>
-                                            {isPaymentFailedStoreOrder(order) && !hasPaymentFailedFollowUp(order) ? (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setPaymentFailedCallOrder(order)}
-                                                    className="inline-flex items-center gap-1.5 rounded-lg border border-orange-300 bg-orange-50 px-2.5 py-1.5 text-xs font-semibold text-orange-800 hover:bg-orange-100"
-                                                >
-                                                    <Phone size={13} />
-                                                    Call customer
-                                                </button>
+                                            {isPaymentFailedStoreOrder(order) ? (
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        disabled={recheckingPaymentOrderId === String(order._id)}
+                                                        onClick={() => recheckFailedOrderPayment(order)}
+                                                        className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                                        title="Check Tabby / Tamara / Stripe if this order was actually paid"
+                                                    >
+                                                        <RefreshCw
+                                                            size={13}
+                                                            className={recheckingPaymentOrderId === String(order._id) ? 'animate-spin' : ''}
+                                                        />
+                                                        {recheckingPaymentOrderId === String(order._id) ? 'Checking…' : 'Recheck payment'}
+                                                    </button>
+                                                    {!hasPaymentFailedFollowUp(order) ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setPaymentFailedCallOrder(order)}
+                                                            className="inline-flex items-center gap-1.5 rounded-lg border border-orange-300 bg-orange-50 px-2.5 py-1.5 text-xs font-semibold text-orange-800 hover:bg-orange-100"
+                                                        >
+                                                            <Phone size={13} />
+                                                            Call customer
+                                                        </button>
+                                                    ) : null}
+                                                </div>
                                             ) : null}
                                         </div>
                                     </td>
@@ -4556,6 +4652,34 @@ export default function StoreOrders() {
                                             }
                                         }}
                                     />
+                                    {isPaymentFailedStoreOrder(selectedOrder) ? (
+                                        <div className="mt-3 flex flex-wrap gap-2">
+                                            <button
+                                                type="button"
+                                                disabled={recheckingPaymentOrderId === String(selectedOrder._id)}
+                                                onClick={() => recheckFailedOrderPayment(selectedOrder)}
+                                                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                            >
+                                                <RefreshCw
+                                                    size={14}
+                                                    className={recheckingPaymentOrderId === String(selectedOrder._id) ? 'animate-spin' : ''}
+                                                />
+                                                {recheckingPaymentOrderId === String(selectedOrder._id)
+                                                    ? 'Checking payment…'
+                                                    : 'Recheck payment'}
+                                            </button>
+                                            {!hasPaymentFailedFollowUp(selectedOrder) ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setPaymentFailedCallOrder(selectedOrder)}
+                                                    className="inline-flex items-center gap-1.5 rounded-lg border border-orange-300 bg-orange-50 px-3 py-2 text-xs font-semibold text-orange-800 hover:bg-orange-100"
+                                                >
+                                                    <Phone size={14} />
+                                                    Call customer
+                                                </button>
+                                            ) : null}
+                                        </div>
+                                    ) : null}
                                 </div>
                             </div>
 

@@ -5,6 +5,7 @@ import {
   deleteCouponOnExpiry,
   recoverWaslahAutoShipments,
   recoverWaslahPaymentProofs,
+  reconcileFailedOnlinePayments,
   syncUserCreation,
   syncUserDeletion,
   syncUserUpdation,
@@ -20,6 +21,7 @@ export const { GET, POST, PUT } = serve({
     deleteCouponOnExpiry,
     autoShipWaslahOrder,
     recoverWaslahAutoShipments,
-    recoverWaslahPaymentProofs
+    recoverWaslahPaymentProofs,
+    reconcileFailedOnlinePayments,
   ],
 });

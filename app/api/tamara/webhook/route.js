@@ -3,7 +3,7 @@ import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import {
     buildTamaraCaptureItemsFromOrder,
-    captureTamaraPayment,
+    ensureTamaraOrderCaptured,
     extractTamaraWebhookToken,
     getTamaraOrder,
     verifyTamaraWebhookToken,
@@ -55,19 +55,13 @@ async function finalizeTamaraOrderGroup({
         const aggregateItems = orders.flatMap((order) => buildTamaraCaptureItemsFromOrder(order));
         const aggregateTotal = getTamaraOrderGroupTotalInMinorUnits(orders) / 100;
 
-        try {
-            await captureTamaraPayment(tamaraOrderId, {
-                orderId: orderReference,
-                amount: aggregateTotal,
-                items: aggregateItems,
-            });
-        } catch (captureError) {
-            // A duplicate approved webhook may race with the provider's captured
-            // webhook. Re-read the authoritative provider record before failing.
-            console.error('Tamara capture request failed:', captureError.message);
-        }
-
-        verifiedProviderOrder = await getTamaraOrder(tamaraOrderId);
+        // Tamara requires approved → authorise → capture (unless merchant auto-authorise/capture).
+        // Calling capture while still "approved" fails and leaves orders Failed in our dashboard.
+        verifiedProviderOrder = await ensureTamaraOrderCaptured(tamaraOrderId, {
+            orderId: orderReference,
+            amount: aggregateTotal,
+            items: aggregateItems,
+        });
         const validated = assertTamaraProviderOrder({
             providerOrder: verifiedProviderOrder,
             tamaraOrderId,

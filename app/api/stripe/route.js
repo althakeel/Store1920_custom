@@ -52,47 +52,55 @@ export async function POST(request){
             await Promise.all(authoritativeOrderIds.map(async (orderId) => {
                 const order = await markOrderPaymentSucceeded(orderId, { paymentStatus: 'PAID' })
 
-                if (order) {
-                    const proof = await recordTrustedOrderPayment(orderId, {
-                        provider: 'STRIPE',
-                        providerReference: authoritativeSession.id,
-                        providerEventId: sessionValidation.paymentIntentId || event?.id || '',
-                        source: 'signed_stripe_webhook',
-                        verifiedAmount: order.total,
-                        currency: authoritativeSession?.currency || 'AED',
-                        allowUnenrolledWithoutAutoShipment: true,
-                    });
-                    if (proof?.verified !== true) {
-                        throw new Error(`Could not persist trusted Stripe proof for ${orderId}: ${proof?.reason || 'unknown'}`)
+                if (!order) {
+                    const latest = await Order.findById(orderId).select('isPaid paymentStatus status deletedAt').lean()
+                    const alreadyPaid = latest?.isPaid === true
+                        || String(latest?.paymentStatus || '').toUpperCase() === 'PAID'
+                    if (!alreadyPaid) {
+                        throw new Error(`Stripe paid session could not mark order ${orderId} as paid (status=${latest?.status || 'missing'})`)
                     }
-                    await Order.findByIdAndUpdate(orderId, {
-                        stripePaymentStatus: 'paid',
-                    });
-                    try {
-                        await recordPurchaseFromOrder({
-                            order,
-                            trackingContext: order.trackingContext || {},
-                            attribution: order.attribution || {},
-                            userId: userId || order.userId || null,
-                            isGuest: Boolean(order.isGuest),
-                            source: 'stripe_webhook',
-                        })
-                    } catch (trackingError) {
-                        console.error('Stripe purchase tracking failed for order', orderId, trackingError)
-                    }
+                    return
+                }
 
-                    try {
-                        const notificationResult = await sendPaidOrderConfirmationNotifications(orderId)
-                        console.log('[stripe] Paid confirmation notifications:', notificationResult)
-                    } catch (notificationError) {
-                        console.error('[stripe] Confirmation notifications failed for order', orderId, notificationError)
-                    }
+                const proof = await recordTrustedOrderPayment(orderId, {
+                    provider: 'STRIPE',
+                    providerReference: authoritativeSession.id,
+                    providerEventId: sessionValidation.paymentIntentId || event?.id || '',
+                    source: 'signed_stripe_webhook',
+                    verifiedAmount: order.total,
+                    currency: authoritativeSession?.currency || 'AED',
+                    allowUnenrolledWithoutAutoShipment: true,
+                });
+                if (proof?.verified !== true) {
+                    throw new Error(`Could not persist trusted Stripe proof for ${orderId}: ${proof?.reason || 'unknown'}`)
+                }
+                await Order.findByIdAndUpdate(orderId, {
+                    stripePaymentStatus: 'paid',
+                });
+                try {
+                    await recordPurchaseFromOrder({
+                        order,
+                        trackingContext: order.trackingContext || {},
+                        attribution: order.attribution || {},
+                        userId: userId || order.userId || null,
+                        isGuest: Boolean(order.isGuest),
+                        source: 'stripe_webhook',
+                    })
+                } catch (trackingError) {
+                    console.error('Stripe purchase tracking failed for order', orderId, trackingError)
+                }
 
-                    try {
-                        await sendMetaPurchaseFromOrder(order, { paymentMethod: order.paymentMethod || 'STRIPE' })
-                    } catch (metaError) {
-                        console.error('[stripe] Meta purchase CAPI failed for order', orderId, metaError)
-                    }
+                try {
+                    const notificationResult = await sendPaidOrderConfirmationNotifications(orderId)
+                    console.log('[stripe] Paid confirmation notifications:', notificationResult)
+                } catch (notificationError) {
+                    console.error('[stripe] Confirmation notifications failed for order', orderId, notificationError)
+                }
+
+                try {
+                    await sendMetaPurchaseFromOrder(order, { paymentMethod: order.paymentMethod || 'STRIPE' })
+                } catch (metaError) {
+                    console.error('[stripe] Meta purchase CAPI failed for order', orderId, metaError)
                 }
             }))
             if (userId) {
@@ -100,8 +108,24 @@ export async function POST(request){
             }
         }
 
-        const cancelUnpaidOrders = async (orderIds, reason = 'Payment cancelled') => {
+        const cancelUnpaidOrders = async (orderIds, reason = 'Payment cancelled', session = null) => {
             await dbConnect()
+            // Never cancel from a failure event if Checkout session is already paid
+            // (customer can retry and succeed after an earlier PI failure).
+            if (session?.id) {
+                try {
+                    const live = await stripe.checkout.sessions.retrieve(session.id)
+                    if (String(live?.payment_status || '').toLowerCase() === 'paid') {
+                        const { orderIds: paidOrderIds, userId } = extractMeta(live.metadata)
+                        if (paidOrderIds.length) {
+                            await markOrdersPaid(paidOrderIds, userId, live)
+                        }
+                        return
+                    }
+                } catch (sessionError) {
+                    console.error('[stripe] cancel-time session check failed:', sessionError)
+                }
+            }
             await Promise.all(orderIds.map(async (orderId) => {
                 try {
                     await handlePaymentCancellationRecovery({ orderId, reason })
@@ -224,7 +248,7 @@ export async function POST(request){
             case 'checkout.session.async_payment_failed': {
                 const session = event.data.object
                 const { orderIds } = extractMeta(session.metadata)
-                if (orderIds.length) await cancelUnpaidOrders(orderIds, 'Payment failed')
+                if (orderIds.length) await cancelUnpaidOrders(orderIds, 'Payment failed', session)
                 break
             }
 
@@ -256,7 +280,7 @@ export async function POST(request){
                 const sess = sessions.data[0]
                 if (sess) {
                     const { orderIds } = extractMeta(sess.metadata)
-                    if (orderIds.length) await cancelUnpaidOrders(orderIds, 'Payment failed')
+                    if (orderIds.length) await cancelUnpaidOrders(orderIds, 'Payment failed', sess)
                 }
                 break
             }
