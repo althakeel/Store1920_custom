@@ -101,20 +101,6 @@ function RatingBar({ stars, count, total, barClassName, isArabic }) {
   );
 }
 
-function FaqItem({ title, body }) {
-  return (
-    <div>
-      <div className="flex items-start gap-2.5 text-[14px] font-semibold text-gray-900">
-        <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-400">
-          <StarIcon size={11} fill="#fff" className="text-white" />
-        </span>
-        <span>{title}</span>
-      </div>
-      <p className="mt-2 ps-8 text-[13px] leading-6 text-gray-600">{body}</p>
-    </div>
-  );
-}
-
 function WriteReviewModal({ open, onClose, productId, t, onReviewSubmitted }) {
   const { user, getToken } = useAuth();
   const pathname = usePathname();
@@ -590,10 +576,6 @@ export default function ProductReviewsSection({
         <RatingBar stars={3} count={ratingBreakdown[3]} total={reviewCount} barClassName="bg-amber-400" isArabic={isArabic} />
         <RatingBar stars={2} count={ratingBreakdown[2]} total={reviewCount} barClassName="bg-orange-400" isArabic={isArabic} />
         <RatingBar stars={1} count={ratingBreakdown[1]} total={reviewCount} barClassName="bg-orange-500" isArabic={isArabic} />
-      </div>
-
-      <div className="space-y-5 border-t border-gray-200 pt-5">
-        <FaqItem title={t('reviews.whereFromTitle')} body={t('reviews.whereFromBody')} />
       </div>
     </aside>
   );

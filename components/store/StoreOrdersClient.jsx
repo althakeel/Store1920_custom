@@ -4573,9 +4573,10 @@ export default function StoreOrders() {
                                                     {new Date(selectedOrder.conversion.convertedAt).toLocaleString()}
                                                 </p>
                                             ) : null}
-                                            {formatConversionDiscount(selectedOrder.conversion, currency) ? (
+                                            {formatConversionDiscount(selectedOrder.conversion, currency)
+                                              && !(Number(selectedOrder?.manualDiscount?.amount) > 0) ? (
                                                 <p className="mt-1 text-sm text-emerald-900">
-                                                    Recovery discount: {formatConversionDiscount(selectedOrder.conversion, currency)}
+                                                    Customer discount (abandoned cart): {formatConversionDiscount(selectedOrder.conversion, currency)}
                                                 </p>
                                             ) : null}
                                             {getConversionPaymentLabel(selectedOrder.conversion) ? (
