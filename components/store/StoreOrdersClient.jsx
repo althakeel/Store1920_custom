@@ -419,7 +419,7 @@ export default function StoreOrders() {
     const [showOrderFilters, setShowOrderFilters] = useState(false);
     const [paymentReconcileStatus, setPaymentReconcileStatus] = useState(null);
     const paymentReconcileRunningRef = useRef(false);
-    const PAYMENT_RECONCILE_INTERVAL_MS = 15 * 60 * 1000;
+    const PAYMENT_RECONCILE_INTERVAL_MS = 5 * 60 * 1000;
     const [showCreateOrderModal, setShowCreateOrderModal] = useState(false);
     const suppressLiveAlertsRef = useRef(false);
     const [selectedOrderIds, setSelectedOrderIds] = useState([]);
@@ -2660,7 +2660,7 @@ export default function StoreOrders() {
                 <div>
                     <p className="font-semibold text-slate-900">Payment health check (last 24 hours)</p>
                     <p className="mt-1 text-xs text-slate-500">
-                        Auto-runs every 15 minutes here, plus a Vercel cron every 15 minutes (even when this page is closed). Only marks paid when Tabby/Tamara/Stripe confirm payment — true Pending/Awaiting orders stay unpaid until the customer finishes.
+                        Auto-runs every 5 minutes here, plus a Vercel cron every 5 minutes (even when this page is closed). Only marks paid when Tabby/Tamara/Stripe confirm payment — true Pending/Awaiting orders stay unpaid until the customer finishes.
                         {paymentReconcileStatus?.checkedAt ? (
                             <>
                                 {' '}Last check: {new Date(paymentReconcileStatus.checkedAt).toLocaleString('en-GB')}

@@ -146,7 +146,7 @@ export const recoverWaslahPaymentProofs = inngest.createFunction(
     },
 )
 
-// Re-check failed/pending Tabby/Tamara/Stripe/card payments every 15 minutes
+// Re-check failed/pending Tabby/Tamara/Stripe/card payments every 5 minutes
 // even when the seller dashboard is closed (browser only runs while /store/orders is open).
 export const reconcileFailedOnlinePayments = inngest.createFunction(
     {
@@ -154,7 +154,7 @@ export const reconcileFailedOnlinePayments = inngest.createFunction(
         retries: 2,
         concurrency: { limit: 1 },
     },
-    { cron: '*/15 * * * *' },
+    { cron: '*/5 * * * *' },
     async ({ step }) => step.run('reconcile-all-stores', async () => {
         await connectDB();
         const { reconcileFailedOnlinePaymentsForAllStores } = await import('@/lib/orderPaymentReconciliation');
