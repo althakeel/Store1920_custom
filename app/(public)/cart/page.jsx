@@ -87,6 +87,7 @@ function CartContent() {
                     return;
                 }
 
+                setProductsLoaded(false);
                 dispatch(clearCart());
                 data.items.forEach(({ productId, entry }) => {
                     if (!productId || !entry) return;
@@ -154,6 +155,9 @@ function CartContent() {
             return undefined;
         }
 
+        // Cart just gained IDs (e.g. WhatsApp ?restore=) — block UI + do not treat missing products as deleteable yet
+        setProductsLoaded(false);
+
         let ignore = false;
         const loadMissingProducts = async () => {
             try {
@@ -185,7 +189,6 @@ function CartContent() {
     const createCartArray = () => {
         let total = 0;
         const arr = [];
-        const invalidKeys = [];
 
         for (const [key, value] of Object.entries(cartItems || {})) {
             const actualProductId = getCartEntryProductId(key, value);
@@ -215,17 +218,8 @@ function CartContent() {
                 if (!isOutOfStock && !isFreeGift) {
                     total += pricing.lineTotal;
                 }
-            } else if (!product && qty > 0) {
-                console.warn('[Cart Page] Product not found in list:', key, 'qty:', qty);
-                invalidKeys.push(key);
             }
-        }
-
-        // Only delete after products are confirmed loaded
-        // (to avoid deleting valid items during initial load)
-        if (productsLoaded && invalidKeys.length > 0) {
-            invalidKeys.forEach((key) => dispatch(deleteItemFromCart({ productId: key })));
-            dispatch(uploadCart({ getToken }));
+            // Keep unknown cart keys (WhatsApp restore / slow batch). Never auto-delete them.
         }
 
         setCartArray(arr);
