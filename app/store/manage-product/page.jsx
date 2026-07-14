@@ -24,6 +24,13 @@ import { getProductThumbnailUrl } from '@/lib/productMedia'
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100, 500]
 
+const DETAILS_PROGRESS_FILTERS = [
+    { value: 'all', label: 'All details' },
+    { value: 'lte5', label: '≤ 5/10' },
+    { value: 'lte7', label: '≤ 7/10' },
+    { value: 'incomplete', label: 'Incomplete' },
+]
+
 const MANAGE_PRODUCT_SELECT_CLASS =
     'h-10 w-full appearance-none rounded-lg border border-gray-300 bg-white pl-3 pr-9 text-sm leading-none text-slate-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500'
 
@@ -126,6 +133,7 @@ export default function StoreManageProducts() {
     const [categoryMap, setCategoryMap] = useState({}) // Map of category ID to name
     const [searchQuery, setSearchQuery] = useState('')
     const [selectedCategory, setSelectedCategory] = useState('') // Category filter
+    const [detailsProgressFilter, setDetailsProgressFilter] = useState('all')
     const [currentPage, setCurrentPage] = useState(1)
     const [pageSize, setPageSize] = useState(20)
 
@@ -173,7 +181,9 @@ export default function StoreManageProducts() {
     const [showDetailColumns, setShowDetailColumns] = useState(false)
     const BULK_AUTOFILL_INTERVAL_MS = 60000
 
-    const fetchStoreProducts = useCallback(async ({ page = currentPage, search = debouncedSearch, category = selectedCategory, silent = false } = {}) => {
+    const detailsFilterActive = detailsProgressFilter !== 'all'
+
+    const fetchStoreProducts = useCallback(async ({ page = currentPage, search = debouncedSearch, category = selectedCategory, silent = false, detailsFilter = detailsProgressFilter } = {}) => {
         try {
             if (silent) setListLoading(true)
             else setInitialLoading(true)
@@ -187,6 +197,7 @@ export default function StoreManageProducts() {
                     category: category || undefined,
                     manage: 'true',
                     sort: 'newest',
+                    detailsProgress: detailsFilter && detailsFilter !== 'all' ? detailsFilter : undefined,
                 },
              })
              const nextProducts = Array.isArray(data?.products) ? data.products : []
@@ -202,7 +213,7 @@ export default function StoreManageProducts() {
             setInitialLoading(false)
             setListLoading(false)
         }
-    }, [currentPage, debouncedSearch, selectedCategory, pageSize, getToken])
+    }, [currentPage, debouncedSearch, selectedCategory, pageSize, detailsProgressFilter, getToken])
 
     const fetchFbtSearchResults = useCallback(async (search = '') => {
         const query = String(search || '').trim()
@@ -717,26 +728,28 @@ export default function StoreManageProducts() {
             page: currentPage,
             search: debouncedSearch,
             category: selectedCategory,
+            detailsFilter: detailsProgressFilter,
             silent: hasLoadedOnceRef.current,
         })
         hasLoadedOnceRef.current = true
-    }, [user, currentPage, debouncedSearch, selectedCategory, pageSize, fetchStoreProducts])
+    }, [user, currentPage, debouncedSearch, selectedCategory, pageSize, detailsProgressFilter, fetchStoreProducts])
 
     const handleImportComplete = async () => {
-        await fetchStoreProducts({ silent: true })
+        await fetchStoreProducts({ silent: true, detailsFilter: detailsProgressFilter })
         dispatch(fetchProductsAction(STOREFRONT_CATALOG_FETCH))
     }
 
     useEffect(() => {
         setCurrentPage(1)
-    }, [debouncedSearch, selectedCategory, pageSize])
+    }, [debouncedSearch, selectedCategory, pageSize, detailsProgressFilter])
 
     const filteredProducts = products
-    const totalPages = Math.max(1, Math.ceil(totalProducts / pageSize))
+    const listTotal = totalProducts
+    const totalPages = Math.max(1, Math.ceil(listTotal / pageSize))
     const safeCurrentPage = Math.min(currentPage, totalPages)
     const paginatedProducts = filteredProducts
-    const paginationStart = totalProducts ? ((safeCurrentPage - 1) * pageSize) + 1 : 0
-    const paginationEnd = totalProducts ? Math.min(safeCurrentPage * pageSize, totalProducts) : 0
+    const paginationStart = listTotal ? ((safeCurrentPage - 1) * pageSize) + 1 : 0
+    const paginationEnd = listTotal ? Math.min(safeCurrentPage * pageSize, listTotal) : 0
 
     const selectedFbtProductIds = useMemo(
         () => selectedFbtProducts.map((item) => String(item._id)),
@@ -1082,6 +1095,40 @@ export default function StoreManageProducts() {
                 >
                     {aiAutofillRunning ? 'AI Auto Fill...' : 'AI Auto Fill Queue'}
                 </button>
+            </div>
+
+            <div className="mb-6 flex w-full flex-wrap items-center gap-2">
+                <span className="text-sm font-medium text-slate-600">Details progress</span>
+                {DETAILS_PROGRESS_FILTERS.map((option) => {
+                    const isActive = detailsProgressFilter === option.value
+                    return (
+                        <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => setDetailsProgressFilter(option.value)}
+                            className={`h-9 rounded-lg px-3 text-sm font-medium transition ${
+                                isActive
+                                    ? 'bg-slate-900 text-white'
+                                    : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                            }`}
+                        >
+                            {option.label}
+                        </button>
+                    )
+                })}
+                {detailsFilterActive ? (
+                    <span className="text-xs text-slate-500">
+                        {listLoading
+                            ? 'Scanning all products by Details score…'
+                            : `Found ${listTotal} product${listTotal !== 1 ? 's' : ''} with Details ${
+                                detailsProgressFilter === 'lte5'
+                                    ? '≤ 5/10'
+                                    : detailsProgressFilter === 'lte7'
+                                        ? '≤ 7/10'
+                                        : 'not fully filled'
+                            }`}
+                    </span>
+                ) : null}
             </div>
 
             <div className="hidden mb-4 w-full rounded-xl border border-blue-200 bg-blue-50/70 px-4 py-4">
@@ -1532,7 +1579,7 @@ export default function StoreManageProducts() {
 
             <div className="mt-4 flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm text-slate-600">
-                    Showing {paginationStart}-{paginationEnd} of {totalProducts} product{totalProducts !== 1 ? 's' : ''}
+                    Showing {paginationStart}-{paginationEnd} of {listTotal} product{listTotal !== 1 ? 's' : ''}
                 </p>
 
                 <div className="flex items-center gap-2">

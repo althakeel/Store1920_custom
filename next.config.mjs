@@ -1,4 +1,6 @@
 /** @type {import('next').NextConfig} */
+import productRedirects from './data/productRedirects.json';
+
 const domains = ['store1920-images.s3.ap-south-1.amazonaws.com', 'ik.imagekit.io'];
 // Allow placehold.co for demo/placeholder images
 if (!domains.includes('placehold.co')) domains.push('placehold.co');
@@ -87,6 +89,26 @@ const nextConfig = {
                 destination: '/sitemap-index.xml',
             },
         ];
+    },
+
+    async redirects() {
+        return Object.entries(productRedirects || {}).flatMap(([fromSlug, destination]) => {
+            const sourceSlug = String(fromSlug || '').trim().replace(/^\/+/, '');
+            const dest = String(destination || '').trim();
+            if (!sourceSlug || !dest) return [];
+            return [
+                {
+                    source: `/product/${sourceSlug}`,
+                    destination: dest,
+                    permanent: true,
+                },
+                {
+                    source: `/products/${sourceSlug}`,
+                    destination: dest,
+                    permanent: true,
+                },
+            ];
+        });
     },
 
     webpack: (config, { dev }) => {

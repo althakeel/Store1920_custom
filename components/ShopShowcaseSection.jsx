@@ -673,7 +673,7 @@ export default function ShopShowcaseSection({
                       <Link
                         key={`${dropdownItem.title}-${dropdownItem.href}-${dropdownIndex}`}
                         href={dropdownItem.href}
-                        className={`group flex items-center justify-between border-b px-4 py-3 text-[13px] font-medium leading-5 transition-colors ${isArabic ? 'flex-row-reverse text-right' : ''}`}
+                        className={`group flex items-center border-b px-4 py-3 text-[13px] font-medium leading-5 transition-colors ${isArabic ? 'flex-row-reverse text-right' : ''}`}
                         style={{
                           color: menuStyle.showcaseFlyoutLinkColor,
                           borderColor: menuStyle.showcaseFlyoutBorderColor,
@@ -685,8 +685,7 @@ export default function ShopShowcaseSection({
                           event.currentTarget.style.backgroundColor = 'transparent'
                         }}
                       >
-                        <span className={`truncate ${isArabic ? 'pl-3 pr-0' : 'pr-3'}`}>{dropdownItem.title}</span>
-                        <MenuChevron size={16} className={`shrink-0 text-slate-400 transition-transform duration-200 ${isArabic ? 'group-hover:-translate-x-0.5' : 'group-hover:translate-x-0.5'}`} />
+                        <span className="truncate">{dropdownItem.title}</span>
                       </Link>
                     ))}
                   </div>
