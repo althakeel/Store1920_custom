@@ -945,20 +945,11 @@ export async function POST(request) {
                 );
             }
             
-            // Assign sequential store order number starting at 612345
-            if (deferPaymentAtCreate) {
-                deferPostOrderTask('short-order-number', async () => {
-                    try {
-                        order.shortOrderNumber = await allocateShortOrderNumber(storeId);
-                        await order.save();
-                    } catch (numberError) {
-                        console.error('[orders] Deferred short order number failed:', numberError);
-                    }
-                });
-            } else {
-                order.shortOrderNumber = await allocateShortOrderNumber(storeId);
-                await order.save();
-            }
+            // Always assign the store order number before payment provider
+            // checkout. Deferred allocation races Tabby/Tamara session creation
+            // and can stamp ORD-{n+1} on the provider while Mongo keeps {n}.
+            order.shortOrderNumber = await allocateShortOrderNumber(storeId);
+            await order.save();
 
             orderIds.push(order._id.toString());
             createdOrderTotals.set(order._id.toString(), order.total);
