@@ -2,24 +2,43 @@ import {
   STORE1920_CUSTOMER_SUPPORT_PHONE,
   STORE1920_CUSTOMER_SUPPORT_TEL,
   STORE1920_SUPPORT_EMAIL,
+  formatCustomerSupportPhoneDisplay,
 } from '@/lib/storeContact';
+import {
+  STORE1920_LEGAL_NAME,
+  getBusinessAddressSingleLine,
+  STORE1920_BUSINESS_HOURS_EN,
+  STORE1920_BUSINESS_HOURS_AR,
+} from '@/lib/businessIdentity';
 
 export default function PolicyContactBlock({ isArabic = false }) {
+  const hours = isArabic ? STORE1920_BUSINESS_HOURS_AR : STORE1920_BUSINESS_HOURS_EN;
+  const phoneDisplay = formatCustomerSupportPhoneDisplay(STORE1920_CUSTOMER_SUPPORT_PHONE);
+
   if (isArabic) {
     return (
       <section className="border-t border-gray-200 pt-4">
         <h2 className="font-semibold text-gray-900 mb-2">معلومات التواصل</h2>
+        <p className="text-gray-700 mb-1">
+          <strong>الكيان القانوني:</strong> {STORE1920_LEGAL_NAME}
+        </p>
+        <p className="text-gray-700 mb-1">
+          <strong>العنوان:</strong> {getBusinessAddressSingleLine()}
+        </p>
         <p className="text-gray-700 mb-1">
           <strong>البريد الإلكتروني:</strong>{' '}
           <a href={`mailto:${STORE1920_SUPPORT_EMAIL}`} className="text-orange-600 underline">
             {STORE1920_SUPPORT_EMAIL}
           </a>
         </p>
-        <p className="text-gray-700">
+        <p className="text-gray-700 mb-1">
           <strong>دعم العملاء:</strong>{' '}
           <a href={STORE1920_CUSTOMER_SUPPORT_TEL} className="text-orange-600 underline">
-            {STORE1920_CUSTOMER_SUPPORT_PHONE}
+            {phoneDisplay}
           </a>
+        </p>
+        <p className="text-gray-700">
+          <strong>ساعات العمل:</strong> {hours}
         </p>
       </section>
     );
@@ -29,16 +48,25 @@ export default function PolicyContactBlock({ isArabic = false }) {
     <section className="border-t border-gray-200 pt-4">
       <h2 className="font-semibold text-gray-900 mb-2">Contact Information</h2>
       <p className="text-gray-700 mb-1">
+        <strong>Legal entity:</strong> {STORE1920_LEGAL_NAME}
+      </p>
+      <p className="text-gray-700 mb-1">
+        <strong>Address:</strong> {getBusinessAddressSingleLine()}
+      </p>
+      <p className="text-gray-700 mb-1">
         <strong>Email:</strong>{' '}
         <a href={`mailto:${STORE1920_SUPPORT_EMAIL}`} className="text-orange-600 underline">
           {STORE1920_SUPPORT_EMAIL}
         </a>
       </p>
-      <p className="text-gray-700">
+      <p className="text-gray-700 mb-1">
         <strong>Customer Support:</strong>{' '}
         <a href={STORE1920_CUSTOMER_SUPPORT_TEL} className="text-orange-600 underline">
-          {STORE1920_CUSTOMER_SUPPORT_PHONE}
+          {phoneDisplay}
         </a>
+      </p>
+      <p className="text-gray-700">
+        <strong>Business hours:</strong> {hours}
       </p>
     </section>
   );

@@ -22,13 +22,14 @@ import { TableCell } from '@tiptap/extension-table-cell'
 import { TableHeader } from '@tiptap/extension-table-header'
 
 import { useAuth } from '@/lib/useAuth';
+import { readSellerCache } from '@/lib/storeDashboardCache';
 import { Trash2 } from 'lucide-react';
 import { formatStorefrontMoney } from '@/lib/storefrontMarket';
 import { getProductImageAspectRatioClass } from '@/lib/productMedia';
 import { compressImageForUpload, getUploadErrorMessage } from '@/lib/compressImageForUpload';
 import { uploadStoreImage } from '@/lib/uploadStoreImage';
 import { sanitizeRichTextMedia } from '@/lib/sanitizeRichTextMedia';
-import { getVariantCardLabel, formatMatrixPackSizeLabel } from '@/lib/productVariantOptions';
+import { getVariantCardLabel, formatMatrixPackSizeLabel, normalizeSellerVariantOptions } from '@/lib/productVariantOptions';
 import { sanitizeCategoryIdsForSave } from '@/lib/productCategoryRefs';
 
 const VARIANT_MATRIX_SELECTION_FIELDS = ['title', 'optionLabel', 'option', 'color', 'size'];
@@ -634,6 +635,13 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
         const [enhanceImportedImages, setEnhanceImportedImages] = useState(true);
     const router = useRouter();
     // ...existing state declarations...
+    const sellerAccess = readSellerCache()?.dashboardAccess || {};
+    const canEditPricing = Boolean(
+        sellerAccess.isOwner
+        || sellerAccess.accessRole === 'owner'
+        || sellerAccess.accessRole === 'admin'
+        || !product?._id // new products: allow initial price
+    );
 
     // UI stepper state
     const [step, setStep] = useState(1);
@@ -1049,10 +1057,18 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 setMatrixCells({})
                 // If this product was previously matrix, strip pack Qty so the editor
                 // and next save stay on "Product variants only".
-                const cleaned = stripBundleQtyFromVariants(pv).filter((v) => (
+                const cleaned = stripBundleQtyFromVariants(pv)
+                    .map((v) => ({
+                        ...v,
+                        options: normalizeSellerVariantOptions(v?.options),
+                    }))
+                    .filter((v) => (
                     VARIANT_MATRIX_SELECTION_FIELDS.some((f) => String(v?.options?.[f] || '').trim())
                 ))
-                setVariants(cleaned.length ? cleaned : stripBundleQtyFromVariants(pv))
+                setVariants(cleaned.length ? cleaned : stripBundleQtyFromVariants(pv).map((v) => ({
+                    ...v,
+                    options: normalizeSellerVariantOptions(v?.options),
+                })))
             } else {
                 setBulkEnabled(false)
                 setHasVariants(false)
@@ -1938,8 +1954,16 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 variantsToSend = expanded
                 hasVariantsFlag = expanded.length > 0
             } else if (pricingMode === 'bundles' || (wantsBulk && !wantsVariants)) {
-                variantsToSend = bulkOptions
-                    .filter(b => Number(b.qty) > 0 && Number(b.price) > 0)
+                const validBundles = bulkOptions.filter(b => Number(b.qty) > 0 && Number(b.price) > 0)
+                if (validBundles.length === 0) {
+                    setLoading(false)
+                    return toast.error('Add at least one pack with Qty and Price before saving. Bundle pricing will not clear automatically.')
+                }
+                if (product?._id && !canEditPricing) {
+                    setLoading(false)
+                    return toast.error('Only the store owner or store admin can change pack prices.')
+                }
+                variantsToSend = validBundles
                     .map(b => ({
                         options: resolveVariantImageOptions({
                             bundleQty: Number(b.qty),
@@ -1952,11 +1976,15 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                         AED: Number(b.AED || b.price),
                         stock: Number(b.stock || 0),
                     }))
-                hasVariantsFlag = variantsToSend.length > 0
+                hasVariantsFlag = true
             } else if (pricingMode === 'variants') {
                 // Persist color/size rows only — strip any leftover pack Qty so reload
                 // cannot re-detect matrix mode from saved data.
                 variantsToSend = stripBundleQtyFromVariants(variantsToSend)
+                    .map((v) => ({
+                        ...v,
+                        options: normalizeSellerVariantOptions(v?.options),
+                    }))
                     .filter((v) => VARIANT_MATRIX_SELECTION_FIELDS.some(
                         (f) => String(v?.options?.[f] || '').trim(),
                     ))
@@ -2016,20 +2044,12 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 shortDescription2Ar: productInfo.shortDescription2Ar || '',
                 description,
                 descriptionAr,
-                price: isMatrixMode
-                    ? (Number(productInfo.price) || (variantsToSend.length > 0 ? Number(variantsToSend[0].price) : 0))
-                    : (pricingMode === 'bundles' && variantsToSend.length > 0
-                        ? Number(variantsToSend[0].price)
-                        : (pricingMode === 'variants' && variantsToSend.length > 0
-                            ? Number(variantsToSend[0].price || productInfo.price)
-                            : Number(productInfo.price))),
-                AED: isMatrixMode
-                    ? (Number(productInfo.AED) || (variantsToSend.length > 0 ? Number(variantsToSend[0].AED) : 0))
-                    : (pricingMode === 'bundles' && variantsToSend.length > 0
-                        ? Number(variantsToSend[0].AED)
-                        : (pricingMode === 'variants' && variantsToSend.length > 0
-                            ? Number(variantsToSend[0].AED || variantsToSend[0].price || productInfo.AED)
-                            : Number(productInfo.AED))),
+                price: Number(productInfo.price)
+                    || (variantsToSend.length > 0 ? Number(variantsToSend[0].price) : 0)
+                    || 0,
+                AED: Number(productInfo.AED)
+                    || (variantsToSend.length > 0 ? Number(variantsToSend[0].AED || variantsToSend[0].price) : 0)
+                    || 0,
                 sku: productInfo.sku || '',
                 stockQuantity: Number(productInfo.stockQuantity) || 0,
                 soldCount: Math.max(0, Number(productInfo.soldCount) || 0),
@@ -2308,16 +2328,21 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                           <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Regular Price</label>
                           <button type="button" onClick={translateRegularPriceToArabic} className="text-[11px] font-semibold text-amber-700 hover:text-amber-800">Translate</button>
                         </div>
-                        <div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-bold">AED</span><input type="number" step="0.01" name="AED" value={productInfo.AED} onChange={onChangeHandler} className="w-full border border-gray-200 rounded-lg px-3 py-2 pl-12 text-sm outline-none focus:ring-2 focus:ring-emerald-200" placeholder="0.00" /></div>
+                        <div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-bold">AED</span><input type="number" step="0.01" name="AED" value={productInfo.AED} onChange={onChangeHandler} disabled={!canEditPricing} className="w-full border border-gray-200 rounded-lg px-3 py-2 pl-12 text-sm outline-none focus:ring-2 focus:ring-emerald-200 disabled:bg-gray-100 disabled:cursor-not-allowed" placeholder="0.00" /></div>
                     </div>
                     <div>
                         <div className="flex items-center justify-between gap-2 mb-1">
                           <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Sale Price</label>
                           <button type="button" onClick={translateSalePriceToArabic} className="text-[11px] font-semibold text-amber-700 hover:text-amber-800">Translate</button>
                         </div>
-                        <div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-bold">AED</span><input type="number" step="0.01" name="price" value={productInfo.price} onChange={onChangeHandler} className="w-full border border-gray-200 rounded-lg px-3 py-2 pl-12 text-sm outline-none focus:ring-2 focus:ring-emerald-200" placeholder="0.00" /></div>
+                        <div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-bold">AED</span><input type="number" step="0.01" name="price" value={productInfo.price} onChange={onChangeHandler} disabled={!canEditPricing} className="w-full border border-gray-200 rounded-lg px-3 py-2 pl-12 text-sm outline-none focus:ring-2 focus:ring-emerald-200 disabled:bg-gray-100 disabled:cursor-not-allowed" placeholder="0.00" /></div>
                     </div>
                   </div>
+                  {!canEditPricing ? (
+                    <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                      Only the store owner or store admin can change prices. Saving will keep the current prices.
+                    </p>
+                  ) : null}
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
@@ -3004,9 +3029,11 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                                   onChange={(e) => { const v = [...bulkOptions]; v[idx] = { ...b, title: e.target.value }; setBulkOptions(v) }} />
                                 <input className="border border-slate-200 rounded-lg px-2.5 py-2 text-sm bg-white" type="number" min={1} value={b.qty}
                                   onChange={(e) => { const v = [...bulkOptions]; v[idx] = { ...b, qty: Number(e.target.value) }; setBulkOptions(v) }} />
-                                <input className="border border-slate-200 rounded-lg px-2.5 py-2 text-sm bg-white" type="number" step="0.01" placeholder="0.00" value={b.price}
+                                <input className="border border-slate-200 rounded-lg px-2.5 py-2 text-sm bg-white disabled:bg-gray-100 disabled:cursor-not-allowed" type="number" step="0.01" placeholder="0.00" value={b.price}
+                                  disabled={!canEditPricing}
                                   onChange={(e) => { markDirty(); const v = [...bulkOptions]; v[idx] = { ...b, price: parseOptionalPriceInput(e.target.value) }; setBulkOptions(v) }} />
-                                <input className="border border-slate-200 rounded-lg px-2.5 py-2 text-sm bg-white" type="number" step="0.01" placeholder="0.00" value={b.AED}
+                                <input className="border border-slate-200 rounded-lg px-2.5 py-2 text-sm bg-white disabled:bg-gray-100 disabled:cursor-not-allowed" type="number" step="0.01" placeholder="0.00" value={b.AED}
+                                  disabled={!canEditPricing}
                                   onChange={(e) => { markDirty(); const v = [...bulkOptions]; v[idx] = { ...b, AED: parseOptionalPriceInput(e.target.value) }; setBulkOptions(v) }} />
                                 <input className="border border-slate-200 rounded-lg px-2.5 py-2 text-sm bg-white" type="number" placeholder="0" value={b.stock}
                                   onChange={(e) => { const v = [...bulkOptions]; v[idx] = { ...b, stock: Number(e.target.value) }; setBulkOptions(v) }} />
@@ -3084,16 +3111,18 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
 
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                   <div>
-                                    <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Option label</label>
-                                    <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200" placeholder="e.g., Storage, Material, Model"
+                                    <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Group name</label>
+                                    <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200" placeholder="e.g., Battery, Storage, Model"
                                       value={v.options?.optionLabel || ''}
                                       onChange={(e) => updateVariantOptionField(idx, 'optionLabel', e.target.value)} />
+                                    <p className="mt-1 text-[11px] text-slate-400">Heading above the buttons (same for all variants).</p>
                                   </div>
                                   <div>
-                                    <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Option value</label>
-                                    <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200" placeholder="e.g., 128GB, Cotton, Pro Max"
+                                    <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Choice shown to customer</label>
+                                    <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200" placeholder="e.g., Single Battery, Double Battery"
                                       value={v.options?.option || ''}
                                       onChange={(e) => updateVariantOptionField(idx, 'option', e.target.value)} />
+                                    <p className="mt-1 text-[11px] text-slate-400">This is what appears as the selectable option on the product page.</p>
                                   </div>
                                 </div>
 
@@ -3159,8 +3188,9 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                                     <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Sale price (AED)</label>
                                     <div className="relative">
                                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-bold">AED</span>
-                                      <input className="w-full border border-gray-200 rounded-lg pl-12 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-200" placeholder="0.00" type="number" step="0.01"
+                                      <input className="w-full border border-gray-200 rounded-lg pl-12 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-200 disabled:bg-gray-100 disabled:cursor-not-allowed" placeholder="0.00" type="number" step="0.01"
                                         value={v.price === '' || v.price == null ? '' : v.price}
+                                        disabled={!canEditPricing}
                                         onChange={(e) => { markDirty(); const nv = [...variants]; nv[idx] = { ...v, price: parseOptionalPriceInput(e.target.value) }; setVariants(nv) }} />
                                     </div>
                                   </div>
@@ -3168,8 +3198,9 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                                     <label className="block text-xs font-semibold mb-1 text-gray-500 uppercase tracking-wide">Regular price (AED)</label>
                                     <div className="relative">
                                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs font-bold">AED</span>
-                                      <input className="w-full border border-gray-200 rounded-lg pl-12 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-200" placeholder="0.00" type="number" step="0.01"
+                                      <input className="w-full border border-gray-200 rounded-lg pl-12 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-200 disabled:bg-gray-100 disabled:cursor-not-allowed" placeholder="0.00" type="number" step="0.01"
                                         value={v.AED === '' || v.AED == null ? '' : v.AED}
+                                        disabled={!canEditPricing}
                                         onChange={(e) => { markDirty(); const nv = [...variants]; nv[idx] = { ...v, AED: parseOptionalPriceInput(e.target.value) }; setVariants(nv) }} />
                                     </div>
                                   </div>

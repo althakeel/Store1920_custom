@@ -70,6 +70,7 @@ import {
   isMatrixVariantProduct,
   getMatrixBundleTiers,
   matchMatrixVariant,
+  normalizeSellerVariantOptions,
 } from '@/lib/productVariantOptions';
 
 const PLACEHOLDER_IMAGE = 'https://store1920-images.s3.ap-south-1.amazonaws.com/uploads/placeholder.png';
@@ -932,9 +933,14 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
     fbtViewedEventSent.current = true;
   }, [fbtPreloaded, fbtEnabled, fbtProducts, product?.storeId]);
 
-  // Variants support
+  // Variants support — promote misplaced Option Label values so the picker shows them
   const variants = useMemo(
-    () => (Array.isArray(product?.variants) ? product.variants : []),
+    () => (Array.isArray(product?.variants)
+      ? product.variants.map((variant) => ({
+          ...variant,
+          options: normalizeSellerVariantOptions(variant?.options),
+        }))
+      : []),
     [product?._id, product?.variants]
   );
   const isBulkBundleVariant = isBulkBundleVariantOption;
@@ -3561,7 +3567,13 @@ const ProductDetails = ({ product, reviews = [], loadingReviews = false, onRevie
               <p className="font-semibold text-slate-900">{deliverySummary.primary}</p>
               <p className="mt-1 text-slate-700">{deliverySummary.secondary}</p>
               <p className="mt-2 text-[11px] text-slate-500">
-                {buyboxCopy.returnsText}
+                <Link href="/return-policy" className="font-medium text-[#E52721] hover:underline">
+                  {buyboxCopy.returnsText}
+                </Link>
+                <span className="mx-1 text-slate-300" aria-hidden="true">·</span>
+                <Link href="/shipping-policy" className="font-medium text-slate-700 hover:underline">
+                  {isArabic ? 'سياسة الشحن' : 'Shipping Policy'}
+                </Link>
                 <span className="mx-1 text-slate-300" aria-hidden="true">·</span>
                 {buyboxCopy.vatText}
               </p>

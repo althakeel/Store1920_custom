@@ -3,6 +3,10 @@
 import Link from 'next/link';
 import PolicyPageLayout from '@/components/PolicyPageLayout';
 import { useStorefrontI18n } from '@/lib/useStorefrontI18n';
+import {
+  STORE1920_CUSTOMER_SUPPORT_PHONE,
+  STORE1920_SUPPORT_EMAIL,
+} from '@/lib/storeContact';
 
 export default function AboutUsPage() {
   const { isArabic } = useStorefrontI18n();
@@ -38,7 +42,7 @@ export default function AboutUsPage() {
               Business Information
             </Link>
             {' '}
-            page.
+            page, including our registered fulfilment address in Sharjah, UAE, phone {STORE1920_CUSTOMER_SUPPORT_PHONE}, and email {STORE1920_SUPPORT_EMAIL}.
           </p>
         </section>
 

@@ -41,6 +41,11 @@ import { resolveCartLinePricing, resolveMatrixCartMaxPacks, isBulkBundleProduct,
 import { decrementCartItem, incrementCartItem } from "@/lib/bundleCartActions";
 import { STORE1920_LOGO_PATH } from "@/lib/brandLogo";
 import {
+  STORE1920_SUPPORT_EMAIL,
+  STORE1920_CUSTOMER_SUPPORT_PHONE,
+  formatCustomerSupportPhoneDisplay,
+} from '@/lib/storeContact';
+import {
   rememberPendingCheckoutOrder,
   getPendingCheckoutOrderId,
   clearPendingCheckoutOrder,
@@ -3425,12 +3430,25 @@ export default function CheckoutPage() {
               </div>
             </div>
             
+            <div className="mb-3 text-xs text-gray-600">
+              <p>
+                {t('checkout.customerSupport', {
+                  phone: formatCustomerSupportPhoneDisplay(STORE1920_CUSTOMER_SUPPORT_PHONE),
+                  email: STORE1920_SUPPORT_EMAIL,
+                })}
+              </p>
+            </div>
+
             <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
               
               <span className="text-gray-300">•</span>
               <a href="/terms-and-conditions" className="text-gray-600 hover:text-gray-900 hover:underline">{t('checkout.termsOfUse')}</a>
               <span className="text-gray-300">•</span>
               <a href="/terms-of-sale" className="text-gray-600 hover:text-gray-900 hover:underline">{t('checkout.termsOfSale')}</a>
+              <span className="text-gray-300">•</span>
+              <a href="/shipping-policy" className="text-gray-600 hover:text-gray-900 hover:underline">{t('checkout.shippingPolicy')}</a>
+              <span className="text-gray-300">•</span>
+              <a href="/return-policy" className="text-gray-600 hover:text-gray-900 hover:underline">{t('checkout.returnPolicy')}</a>
               <span className="text-gray-300">•</span>
               <a href="/privacy-policy" className="text-gray-600 hover:text-gray-900 hover:underline">{t('checkout.privacyPolicy')}</a>
             </div>

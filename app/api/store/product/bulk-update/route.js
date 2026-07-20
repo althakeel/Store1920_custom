@@ -5,6 +5,8 @@ import authSeller from '@/middlewares/authSeller'
 import { getAuth } from '@/lib/firebase-admin'
 import { getCurrentStock } from '@/lib/storeInventory'
 import { recordInventoryHistory, resolveInventoryActor } from '@/lib/inventoryHistory'
+import { resolveDashboardAccess } from '@/lib/storeAccessControl'
+import { canChangeProductPricing } from '@/lib/productSaveGuards'
 
 export const runtime = 'nodejs'
 
@@ -42,6 +44,8 @@ export async function PATCH(request) {
     }
 
     const { storeId, userId, decodedToken } = sellerContext
+    const access = await resolveDashboardAccess(userId, decodedToken)
+    const canChangePrice = canChangeProductPricing(access)
 
     const body = await request.json()
     const productIds = Array.isArray(body?.productIds)
@@ -65,11 +69,15 @@ export async function PATCH(request) {
       updateData.stockQuantity = stockQuantity
       updateData.stockUpdatedAt = new Date()
     }
-    if (price !== undefined) {
-      updateData.price = price
-    }
-    if (aed !== undefined) {
-      updateData.AED = aed
+    if (price !== undefined || aed !== undefined) {
+      if (!canChangePrice) {
+        return NextResponse.json(
+          { error: 'Only the store owner or store admin can change product prices.' },
+          { status: 403 },
+        )
+      }
+      if (price !== undefined) updateData.price = price
+      if (aed !== undefined) updateData.AED = aed
     }
 
     if (!Object.keys(updateData).length) {

@@ -15,6 +15,12 @@ import { NextResponse } from "next/server";
 import { getAuth } from '@/lib/firebase-admin';
 import { sanitizeCategoryIdsForSave } from '@/lib/productCategoryRefs';
 import { createProductFromJson, updateProductFromJson } from '@/lib/productJsonSave';
+import { resolveDashboardAccess } from '@/lib/storeAccessControl';
+import {
+  canChangeProductPricing,
+  resolveProductCreatePricing,
+  resolveProductUpdatePricing,
+} from '@/lib/productSaveGuards';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -141,9 +147,10 @@ export async function POST(request) {
                 return NextResponse.json({ message: "Product added successfully", product });
             } catch (error) {
                 const message = error?.message || 'Failed to save product';
-                const status = message.includes('Slug already exists') || message.includes('Missing') || message.includes('required')
-                    ? 400
-                    : 500;
+                const status = error?.statusCode
+                    || (message.includes('Slug already exists') || message.includes('Missing') || message.includes('required') || message.includes('Cannot') || message.includes('Add at least')
+                        ? 400
+                        : 500);
                 return NextResponse.json({ error: message }, { status });
             }
         }
@@ -266,42 +273,31 @@ export async function POST(request) {
         categories = sanitizeCategoryIdsForSave(categories);
 
         let variants = [];
-        let finalPrice = price;
-        let finalAED = AED;
-        let inStock = true;
-
         if (hasVariants) {
             try {
                 variants = JSON.parse(variantsRaw || "[]");
-                if (!Array.isArray(variants) || variants.length === 0) {
-                    return NextResponse.json({ error: "Variants must be a non-empty array when hasVariants is true" }, { status: 400 });
-                }
             } catch (e) {
                 return NextResponse.json({ error: "Invalid variants JSON" }, { status: 400 });
             }
+        }
 
-            const stockFallback = Number(stockQuantity) || 0;
-            if (stockFallback > 0) {
-                variants = variants.map((variant) => {
-                    const stock = Number(variant?.stock);
-                    if (Number.isFinite(stock) && stock > 0) return variant;
-                    return { ...variant, stock: stockFallback };
-                });
-            }
-
-            // Compute derived fields from variants
-            const prices = variants.map(v => Number(v.price)).filter(n => Number.isFinite(n));
-            const AEDs = variants.map(v => Number(v.AED ?? v.price)).filter(n => Number.isFinite(n));
-            const stocks = variants.map(v => Number(v.stock ?? 0)).filter(n => Number.isFinite(n));
-            finalPrice = prices.length ? Math.min(...prices) : 0;
-            finalAED = AEDs.length ? Math.min(...AEDs) : finalPrice;
-            inStock = stocks.some(s => s > 0) || stockFallback > 0;
-        } else {
-            // No variants: require price and AED
-            if (!Number.isFinite(price) || !Number.isFinite(AED)) {
-                return NextResponse.json({ error: "Price and AED are required when no variants provided" }, { status: 400 });
-            }
-            inStock = Number(stockQuantity) > 0;
+        let finalPrice;
+        let finalAED;
+        let inStock;
+        try {
+            const priced = resolveProductCreatePricing({
+                hasVariants,
+                variants,
+                price,
+                AED,
+                stockQuantity,
+            });
+            variants = priced.variants;
+            finalPrice = priced.finalPrice;
+            finalAED = priced.finalAED;
+            inStock = priced.inStock;
+        } catch (error) {
+            return NextResponse.json({ error: error?.message || 'Invalid pricing' }, { status: error?.statusCode || 400 });
         }
 
         // Support both file uploads and string URLs
@@ -596,12 +592,13 @@ export async function PUT(request) {
         // Firebase Auth: Extract token from Authorization header
         const authHeader = request.headers.get('authorization');
         let userId = null;
+        let decodedToken = null;
         if (authHeader && authHeader.startsWith('Bearer ')) {
             const idToken = authHeader.split('Bearer ')[1];
             try {
                 const { getAuth } = await import('@/lib/firebase-admin');
                 const adminAuth = getAuth();
-                const decodedToken = await adminAuth.verifyIdToken(idToken);
+                decodedToken = await adminAuth.verifyIdToken(idToken);
                 userId = decodedToken.uid;
             } catch (e) {
                 console.error('Auth verification failed (PUT /api/store/product):', e.message);
@@ -610,6 +607,9 @@ export async function PUT(request) {
         }
         const storeId = await authSeller(userId);
         if (!storeId) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
+
+        const access = await resolveDashboardAccess(userId, decodedToken || {});
+        const canChangePrice = canChangeProductPricing(access);
 
         const contentType = request.headers.get('content-type')?.toLowerCase() || '';
         if (contentType.includes('application/json')) {
@@ -640,12 +640,15 @@ export async function PUT(request) {
             }
 
             try {
-                const updated = await updateProductFromJson(body, storeId);
+                const updated = await updateProductFromJson(body, storeId, { canChangePrice });
                 return NextResponse.json({ message: "Product updated successfully", product: updated });
             } catch (error) {
                 const message = error?.message || 'Failed to update product';
-                const status = message.includes('Not authorized') ? 401
-                    : (message.includes('Slug') || message.includes('required') || message.includes('invalid') ? 400 : 500);
+                const status = error?.statusCode
+                    || (message.includes('Not authorized') ? 401
+                        : (message.includes('Slug') || message.includes('required') || message.includes('invalid')
+                            || message.includes('Cannot') || message.includes('Switch') || message.includes('Only the store')
+                            ? 400 : 500));
                 return NextResponse.json({ error: message }, { status });
             }
         }
@@ -680,8 +683,7 @@ export async function PUT(request) {
         const soldCount = soldCountRaw === null || soldCountRaw === undefined || soldCountRaw === ''
             ? undefined
             : Math.max(0, Number(soldCountRaw) || 0);
-        // Variants support
-        const hasVariants = String(formData.get("hasVariants") || "").toLowerCase() === "true";
+        // Variants support (resolved below — do not treat missing field as "clear variants")
         const variantsRaw = formData.get("variants");
         const attributesRaw = formData.get("attributes");
         const AED = formData.get("AED") ? Number(formData.get("AED")) : undefined;
@@ -731,36 +733,55 @@ export async function PUT(request) {
             }
         }
 
-        // Compute variants/price/AED/inStock
+        // Compute variants/price/AED/inStock — never auto-min or silently clear packs
         let variants = product.variants || [];
         let attributes = product.attributes || {};
-        let finalPrice = price ?? product.price;
-        let finalAED = AED ?? product.AED;
-        let inStock = product.inStock;
+        if (attributesRaw) {
+            try {
+                const parsed = JSON.parse(attributesRaw) || {};
+                attributes = { ...(product.attributes || {}), ...parsed };
+                if (!attributes.variantType) {
+                    delete attributes.variantType;
+                }
+            } catch {}
+        }
 
-        if (hasVariants) {
-            try { variants = JSON.parse(variantsRaw || "[]"); } catch { variants = []; }
-            const stockFallback = Number(stockQuantity ?? product.stockQuantity) || 0;
-            if (stockFallback > 0) {
-                variants = variants.map((variant) => {
-                    const stock = Number(variant?.stock);
-                    if (Number.isFinite(stock) && stock > 0) return variant;
-                    return { ...variant, stock: stockFallback };
-                });
-            }
-            const prices = variants.map(v => Number(v.price)).filter(n => Number.isFinite(n));
-            const AEDs = variants.map(v => Number(v.AED ?? v.price)).filter(n => Number.isFinite(n));
-            const stocks = variants.map(v => Number(v.stock ?? 0)).filter(n => Number.isFinite(n));
-            finalPrice = prices.length ? Math.min(...prices) : finalPrice;
-            finalAED = AEDs.length ? Math.min(...AEDs) : finalAED;
-            inStock = stocks.some(s => s > 0) || stockFallback > 0;
-        } else {
-            variants = [];
-            if (price !== undefined) finalPrice = price;
-            if (AED !== undefined) finalAED = AED;
-            if (stockQuantity !== undefined) {
-                inStock = Number(stockQuantity) > 0;
-            }
+        let incomingVariants = undefined;
+        const hasVariantsField = formData.get("hasVariants");
+        const requestedHasVariants = hasVariantsField !== null && hasVariantsField !== undefined && String(hasVariantsField) !== ''
+            ? String(hasVariantsField).toLowerCase() === 'true'
+            : undefined;
+        if (variantsRaw !== null && variantsRaw !== undefined && String(variantsRaw) !== '') {
+            try { incomingVariants = JSON.parse(variantsRaw || "[]"); } catch { incomingVariants = []; }
+        }
+
+        let finalPrice;
+        let finalAED;
+        let inStock;
+        let hasVariantsResolved;
+        try {
+            const priced = resolveProductUpdatePricing({
+                existing: product,
+                body: {
+                    hasVariants: requestedHasVariants,
+                    variants: incomingVariants,
+                    price,
+                    AED,
+                    stockQuantity,
+                    attributes,
+                },
+                canChangePrice,
+            });
+            hasVariantsResolved = priced.hasVariants;
+            variants = priced.variants;
+            finalPrice = priced.finalPrice;
+            finalAED = priced.finalAED;
+            inStock = priced.inStock;
+        } catch (error) {
+            return NextResponse.json(
+                { error: error?.message || 'Invalid pricing update' },
+                { status: error?.statusCode || 400 },
+            );
         }
 
         let shortDescription = typeof shortDescriptionRaw === 'string' ? shortDescriptionRaw : product.shortDescription;
@@ -775,18 +796,8 @@ export async function PUT(request) {
         const specTableRows = specTableRowsRaw !== null && specTableRowsRaw !== undefined
             ? parseSpecTableRows(specTableRowsRaw, specTableColumns.length)
             : (Array.isArray(product.specTableRows) ? parseSpecTableRows(product.specTableRows, specTableColumns.length) : []);
-        if (attributesRaw) {
-            try {
-                const parsed = JSON.parse(attributesRaw) || {};
-                attributes = { ...(product.attributes || {}), ...parsed };
-                if (!attributes.variantType) {
-                    delete attributes.variantType;
-                }
-                // Extract shortDescription from attributes
-                if (attributes.shortDescription !== undefined) {
-                    shortDescription = attributes.shortDescription;
-                }
-            } catch {}
+        if (attributes.shortDescription !== undefined) {
+            shortDescription = attributes.shortDescription;
         }
 
         const imageAspectRatio = imageAspectRatioRaw || product.imageAspectRatio || "1:1";
@@ -844,7 +855,7 @@ export async function PUT(request) {
             categories, // New: store all categories
             sku,
             images: imagesUrl,
-            hasVariants,
+            hasVariants: hasVariantsResolved,
             variants,
             attributes,
             inStock,

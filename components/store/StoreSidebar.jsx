@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation"
 
-import { HomeIcon, LayoutListIcon, SquarePenIcon, SquarePlusIcon, StarIcon, FolderIcon, TicketIcon, TruckIcon, RefreshCw, User as UserIcon, Users as UsersIcon, MessageSquare, Sparkles, BellIcon, MailIcon, Image as ImageIcon, ShoppingCart, Wallet, BarChart3, Target, Gift, Palette, CircleDashed, PackagePlus, Package, Activity, Layers, LineChart, Warehouse, MousePointerClick, ShieldAlert, Zap, Trash2 } from "lucide-react"
+import { HomeIcon, LayoutListIcon, SquarePenIcon, SquarePlusIcon, StarIcon, FolderIcon, TicketIcon, TruckIcon, RefreshCw, User as UserIcon, Users as UsersIcon, MessageSquare, Sparkles, BellIcon, MailIcon, Image as ImageIcon, ShoppingCart, Wallet, BarChart3, Target, Gift, Palette, CircleDashed, PackagePlus, Package, Activity, Layers, LineChart, Warehouse, MousePointerClick, ShieldAlert, Zap, Trash2, Smartphone } from "lucide-react"
 
 import StoreNavLink from "@/components/store/StoreNavLink"
 
@@ -43,6 +43,8 @@ const StoreSidebar = ({ storeInfo, isOwner = false, permissions = {} }) => {
         { name: 'Database Import', href: '/store/settings/database-import', icon: RefreshCw },
 
         { name: 'Customize', href: '/store/customize', icon: Palette },
+
+        { name: 'Mobile Features', href: '/store/mobile-features', icon: Smartphone },
 
         { name: 'Menu Management', href: '/store/menu-management', icon: LayoutListIcon },
 
@@ -139,6 +141,8 @@ const StoreSidebar = ({ storeInfo, isOwner = false, permissions = {} }) => {
             links: [
 
                 '/store/customize',
+
+                '/store/mobile-features',
 
                 '/store/menu-management',
 

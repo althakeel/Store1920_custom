@@ -5,7 +5,12 @@ import { useStorefrontI18n } from "@/lib/useStorefrontI18n";
 import {
   STORE1920_CUSTOMER_SUPPORT_PHONE,
   STORE1920_CUSTOMER_SUPPORT_TEL,
+  STORE1920_SUPPORT_EMAIL,
 } from '@/lib/storeContact';
+import {
+  STORE1920_LEGAL_NAME,
+  getBusinessAddressSingleLine,
+} from '@/lib/businessIdentity';
 
 export default function PrivacyPolicyPage() {
   const { isArabic } = useStorefrontI18n();
@@ -51,6 +56,19 @@ export default function PrivacyPolicyPage() {
             </section>
 
             <section>
+              <h2 className="font-semibold text-gray-900 mb-2">4أ. الإعلانات والتخصيص</h2>
+              <p className="text-gray-700 mb-2">
+                قد نستخدم نحن وشركاؤنا الإعلانيون (مثل خدمات Google Ads / Google Merchant Center وMeta وأدوات التحليلات)
+                ملفات تعريف الارتباط والبكسل لتقياس أداء الحملات وعرض إعلانات ذات صلة، بما في ذلك الإعلانات المخصصة.
+              </p>
+              <p className="text-gray-700">
+                يمكنك إدارة تفضيلات ملفات تعريف الارتباط من المتصفح واستخدام خيارات إلغاء الاشتراك المتاحة. حيثما تنطبق قوانين حماية البيانات
+                (بما في ذلك قانون حماية البيانات الشخصية في الإمارات ومبادئ GDPR/CCPA للزوار الدوليين عند الاقتضاء)، نعالج البيانات بشكل قانوني
+                ونحترم طلبات الوصول والتصحيح والحذف عبر {STORE1920_SUPPORT_EMAIL}.
+              </p>
+            </section>
+
+            <section>
               <h2 className="font-semibold text-gray-900 mb-2">5. أمان البيانات</h2>
               <p className="text-gray-700">
                 نطبق إجراءات أمنية مناسبة مثل الاتصالات المشفرة وضوابط الوصول لحماية بياناتك. ورغم ذلك، لا توجد وسيلة نقل عبر الإنترنت
@@ -75,8 +93,10 @@ export default function PrivacyPolicyPage() {
             <section className="border-t pt-4">
               <h2 className="font-semibold text-gray-900 mb-2">معلومات التواصل</h2>
               <p className="text-gray-700 mb-1"><strong>اسم النشاط:</strong> Store1920</p>
+              <p className="text-gray-700 mb-1"><strong>الكيان القانوني:</strong> {STORE1920_LEGAL_NAME}</p>
+              <p className="text-gray-700 mb-1"><strong>العنوان:</strong> {getBusinessAddressSingleLine()}</p>
               <p className="text-gray-700 mb-1"><strong>الموقع:</strong> https://www.Store1920.com</p>
-              <p className="text-gray-700 mb-1"><strong>البريد الإلكتروني:</strong> support@Store1920.com</p>
+              <p className="text-gray-700 mb-1"><strong>البريد الإلكتروني:</strong> {STORE1920_SUPPORT_EMAIL}</p>
               <p className="text-gray-700">
                 <strong>الدعم:</strong>{' '}
                 <a href={STORE1920_CUSTOMER_SUPPORT_TEL} className="text-orange-600 underline">
@@ -156,6 +176,27 @@ export default function PrivacyPolicyPage() {
               enhance overall user experience. You may disable cookies through
               your browser settings, but certain features of the website may not
               function properly.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="font-semibold text-gray-900 mb-2">
+              4A. Advertising & Personalization
+            </h2>
+            <p className="text-gray-700 mb-2">
+              We and our advertising partners (such as Google Ads / Google Merchant
+              Center related services, Meta, and analytics providers) may use cookies,
+              pixels, and similar technologies to measure campaign performance and
+              show relevant ads. This may include personalized advertising based on
+              your interactions with our store.
+            </p>
+            <p className="text-gray-700">
+              You can manage cookie preferences in your browser and use available
+              industry opt-outs for personalized ads. Where required by applicable
+              privacy laws (including UAE Personal Data Protection Law and, where
+              relevant, GDPR/CCPA principles for international visitors), we process
+              personal data lawfully, keep it secure, and honor access, correction,
+              and deletion requests sent to {STORE1920_SUPPORT_EMAIL}.
             </p>
           </section>
 
@@ -254,10 +295,16 @@ export default function PrivacyPolicyPage() {
               <strong>Business Name:</strong> Store1920
             </p>
             <p className="text-gray-700 mb-1">
+              <strong>Legal entity:</strong> {STORE1920_LEGAL_NAME}
+            </p>
+            <p className="text-gray-700 mb-1">
+              <strong>Address:</strong> {getBusinessAddressSingleLine()}
+            </p>
+            <p className="text-gray-700 mb-1">
               <strong>Website:</strong> https://www.Store1920.com
             </p>
             <p className="text-gray-700 mb-1">
-              <strong>Email:</strong> support@Store1920.com
+              <strong>Email:</strong> {STORE1920_SUPPORT_EMAIL}
             </p>
             <p className="text-gray-700">
               <strong>Customer Support:</strong>{' '}

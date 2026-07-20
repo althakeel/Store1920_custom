@@ -5,7 +5,16 @@ import { useSearchParams } from 'next/navigation';
 import {
   STORE1920_CUSTOMER_SUPPORT_PHONE,
   STORE1920_CUSTOMER_SUPPORT_TEL,
+  STORE1920_SUPPORT_EMAIL,
+  formatCustomerSupportPhoneDisplay,
 } from '@/lib/storeContact';
+import {
+  STORE1920_LEGAL_NAME,
+  STORE1920_TRADE_LICENSE_NO,
+  STORE1920_BUSINESS_HOURS_EN,
+  getBusinessAddressLines,
+} from '@/lib/businessIdentity';
+import Link from 'next/link';
 
 const NAVBAR_APPEARANCE_CACHE_KEY = 'navbarAppearanceCache';
 const DEFAULT_BG = '#8f3404';
@@ -72,8 +81,12 @@ export default function ContactUs() {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    const subject = encodeURIComponent(`Contact form: ${form.name || 'Customer'}`);
+    const body = encodeURIComponent(
+      `Name: ${form.name}\nEmail: ${form.email}\n\n${form.message}`,
+    );
+    window.location.href = `mailto:${STORE1920_SUPPORT_EMAIL}?subject=${subject}&body=${body}`;
     setSubmitted(true);
-    // TODO: fetch('/api/contact', { method: 'POST', body: JSON.stringify(form) });
   };
 
   return (
@@ -108,7 +121,7 @@ export default function ContactUs() {
                   </svg>
                 ),
                 label: 'Customer Support',
-                value: STORE1920_CUSTOMER_SUPPORT_PHONE,
+                value: formatCustomerSupportPhoneDisplay(STORE1920_CUSTOMER_SUPPORT_PHONE),
                 href: STORE1920_CUSTOMER_SUPPORT_TEL,
               },
               {
@@ -118,8 +131,8 @@ export default function ContactUs() {
                   </svg>
                 ),
                 label: 'Email Us',
-                value: 'support@store1920.com',
-                href: 'mailto:support@store1920.com',
+                value: STORE1920_SUPPORT_EMAIL,
+                href: `mailto:${STORE1920_SUPPORT_EMAIL}`,
               },
               {
                 icon: (
@@ -127,8 +140,8 @@ export default function ContactUs() {
                     <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
                   </svg>
                 ),
-                label: 'Response Time',
-                value: 'Within 24 hours',
+                label: 'Business Hours',
+                value: STORE1920_BUSINESS_HOURS_EN,
                 href: null,
               },
               {
@@ -137,9 +150,9 @@ export default function ContactUs() {
                     <path d="M12 22s-8-4.5-8-11.8A8 8 0 0112 2a8 8 0 018 8.2c0 7.3-8 11.8-8 11.8z"/><circle cx="12" cy="10" r="3"/>
                   </svg>
                 ),
-                label: 'Website',
-                value: 'www.store1920.com',
-                href: 'https://www.store1920.com',
+                label: 'Business Address',
+                value: getBusinessAddressLines().join(', '),
+                href: null,
               },
             ].map(({ icon, label, value, href }) => (
               <div key={label} className="flex items-start gap-4 bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4 hover:shadow-md transition-shadow">
@@ -163,9 +176,18 @@ export default function ContactUs() {
             ))}
 
             {/* Business info card */}
-            <div className="bg-gray-50 rounded-2xl border border-gray-100 px-5 py-4 text-sm text-gray-600">
-              <p className="font-semibold text-gray-700 mb-2">Store1920</p>
-              <p>Registered business providing quality products online. All communications are handled by our dedicated support team.</p>
+            <div className="bg-gray-50 rounded-2xl border border-gray-100 px-5 py-4 text-sm text-gray-600 space-y-2">
+              <p className="font-semibold text-gray-700">Store1920</p>
+              <p>
+                Operated by <strong>{STORE1920_LEGAL_NAME}</strong> (UAE Trade License {STORE1920_TRADE_LICENSE_NO}).
+              </p>
+              <p>
+                Full company details:{' '}
+                <Link href="/business-information" className="font-semibold text-[#E52721] hover:underline">
+                  Business Information
+                </Link>
+              </p>
+              <p>We typically respond within 24 hours during business hours.</p>
             </div>
           </div>
 

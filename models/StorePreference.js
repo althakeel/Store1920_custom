@@ -161,6 +161,24 @@ const StorePreferenceSchema = new mongoose.Schema(
       ctaButtonText: { type: String, trim: true, default: 'Shop Now' },
       ctaButtonLink: { type: String, trim: true, default: '/shop' },
     },
+    /** Mobile app design only (home banners, etc.) — separate from web showcase */
+    mobileFeatures: {
+      banners: {
+        enabled: { type: Boolean, default: true },
+        autoplayInterval: { type: Number, default: 4000 },
+        homeBanners: {
+          type: [{
+            id: { type: String, trim: true, default: '' },
+            image: { type: String, trim: true, default: '' },
+            link: { type: String, trim: true, default: '/shop' },
+            alt: { type: String, trim: true, default: '' },
+            title: { type: String, trim: true, default: '' },
+            enabled: { type: Boolean, default: true },
+          }],
+          default: [],
+        },
+      },
+    },
     appearanceSections: {
       type: mongoose.Schema.Types.Mixed,
       default: {}
@@ -361,6 +379,28 @@ if (!StorePreferenceModel.schema.path('shopShowcase.bottomBannerSliderItems')) {
 if (Object.keys(missingShopShowcasePaths).length) {
   StorePreferenceModel.schema.add({
     shopShowcase: missingShopShowcasePaths
+  })
+}
+
+if (!StorePreferenceModel.schema.path('mobileFeatures')) {
+  StorePreferenceModel.schema.add({
+    mobileFeatures: {
+      banners: {
+        enabled: { type: Boolean, default: true },
+        autoplayInterval: { type: Number, default: 4000 },
+        homeBanners: {
+          type: [{
+            id: { type: String, trim: true, default: '' },
+            image: { type: String, trim: true, default: '' },
+            link: { type: String, trim: true, default: '/shop' },
+            alt: { type: String, trim: true, default: '' },
+            title: { type: String, trim: true, default: '' },
+            enabled: { type: Boolean, default: true },
+          }],
+          default: [],
+        },
+      },
+    },
   })
 }
 

@@ -7,7 +7,7 @@ const PAGE_COPY = {
   en: {
     title: 'Shipping & Delivery Policy',
     intro:
-      'This Shipping & Delivery Policy explains how orders placed on Store1920.com, owned and operated by Store1920, are processed, shipped, and delivered.',
+      'This Shipping & Delivery Policy explains how orders placed on Store1920.com, owned and operated by ALTHAKEEL GENERAL TRADING L.L.C (Store1920), are processed, shipped, and delivered within the United Arab Emirates.',
     sections: [
       {
         title: '1. Order Processing Time',
@@ -80,7 +80,7 @@ const PAGE_COPY = {
   ar: {
     title: 'سياسة الشحن والتوصيل',
     intro:
-      'توضح سياسة الشحن والتوصيل هذه كيفية معالجة الطلبات المقدمة على Store1920.com وشحنها وتسليمها من قبل Store1920.',
+      'توضح سياسة الشحن والتوصيل هذه كيفية معالجة الطلبات المقدمة على Store1920.com وشحنها وتسليمها من قبل الثقيل للتجارة العامة ش.ذ.م.م (Store1920) داخل دولة الإمارات العربية المتحدة.',
     sections: [
       {
         title: '1. وقت معالجة الطلب',

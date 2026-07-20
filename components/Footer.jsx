@@ -6,7 +6,17 @@ import { createPortal } from "react-dom";
 import Logo from "@/assets/logo/Store1920.png";
 import { useStorefrontI18n } from '@/lib/useStorefrontI18n';
 import { HOME_SECTION_INNER_CLASS } from '@/lib/storefrontCarousel';
-import { STORE1920_SUPPORT_EMAIL } from '@/lib/storeContact';
+import {
+    STORE1920_SUPPORT_EMAIL,
+    STORE1920_CUSTOMER_SUPPORT_PHONE,
+    STORE1920_CUSTOMER_SUPPORT_TEL,
+    formatCustomerSupportPhoneDisplay,
+} from '@/lib/storeContact';
+import {
+    STORE1920_LEGAL_NAME,
+    getBusinessAddressLines,
+    STORE1920_SOCIAL_LINKS,
+} from '@/lib/businessIdentity';
 
 const NAVBAR_APPEARANCE_CACHE_KEY = 'navbarAppearanceCacheV1';
 
@@ -155,9 +165,11 @@ const Footer = () => {
     ];
 
     const socialIcons = [
-        { icon: FacebookIcon, link: "https://www.facebook.com/Store1920AE" },
-        { icon: InstagramIcon, link: "https://www.instagram.com/Store1920" },
+        { icon: FacebookIcon, link: STORE1920_SOCIAL_LINKS.facebook },
+        { icon: InstagramIcon, link: STORE1920_SOCIAL_LINKS.instagram },
     ];
+    const phoneDisplay = formatCustomerSupportPhoneDisplay(STORE1920_CUSTOMER_SUPPORT_PHONE);
+    const addressLines = getBusinessAddressLines();
 
     const appDownloadLinks = [
         {
@@ -219,20 +231,43 @@ const Footer = () => {
                                 priority
                             />
                         </Link>
-                        <p className="text-sm text-slate-400 leading-relaxed mb-6 max-w-sm">
+                        <p className="text-sm text-slate-400 leading-relaxed mb-3 max-w-sm">
                             {t('footer.description')}
                         </p>
+                        <p className="text-xs text-slate-500 mb-6 max-w-sm">
+                            {t('footer.operatedBy', { legalName: STORE1920_LEGAL_NAME })}
+                        </p>
                         <div className="space-y-3 mb-6">
+                            <div className="flex items-center gap-2 text-sm">
+                                <PhoneIcon />
+                                <a href={STORE1920_CUSTOMER_SUPPORT_TEL} className="text-slate-400 hover:text-white transition">
+                                    {phoneDisplay}
+                                </a>
+                            </div>
                             <div className="flex items-center gap-2 text-sm">
                                 <MailIcon />
                                 <a href={`mailto:${STORE1920_SUPPORT_EMAIL}`} className="text-slate-400 hover:text-white transition">
                                     {STORE1920_SUPPORT_EMAIL}
                                 </a>
                             </div>
-                            <div className="flex items-center gap-2 text-sm">
+                            <div className="flex items-start gap-2 text-sm">
                                 <MapPinIcon />
-                                <span className="text-slate-400">{t('footer.uae')}</span>
+                                <span className="text-slate-400 leading-relaxed">
+                                    {addressLines.map((line) => (
+                                        <span key={line} className="block">{line}</span>
+                                    ))}
+                                </span>
                             </div>
+                        </div>
+                        <div className="mb-6 flex flex-wrap items-center gap-2" aria-label={t('footer.paymentMethods')}>
+                            {['Visa', 'Mastercard', 'Tabby', 'Tamara', 'COD'].map((method) => (
+                                <span
+                                    key={method}
+                                    className="rounded-md border border-slate-700 bg-slate-900/70 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-300"
+                                >
+                                    {method}
+                                </span>
+                            ))}
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
                             {appDownloadLinks.map((item) => (
