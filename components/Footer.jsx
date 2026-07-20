@@ -269,6 +269,8 @@ const Footer = () => {
                                 </span>
                             ))}
                         </div>
+                        {/* App download buttons hidden for now (coming-soon placeholders). */}
+                        {false ? (
                         <div className="flex flex-wrap items-center gap-2">
                             {appDownloadLinks.map((item) => (
                                 <button
@@ -286,6 +288,7 @@ const Footer = () => {
                                 </button>
                             ))}
                         </div>
+                        ) : null}
                     </div>
 
                     {linkSections.map((section) => (

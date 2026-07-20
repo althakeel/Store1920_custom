@@ -27,8 +27,10 @@ async function hydrateOrderItemProducts(orders = []) {
 
       const hasName = Boolean(String(product?.name || item?.name || '').trim());
       const hasImage = Boolean(product?.images?.length || item?.image);
-      // Always refill when populate was skipped/wiped or the line snapshot is empty.
-      if (!hasName || !hasImage || !product?.variants) {
+      const hasSku = Boolean(String(product?.sku || item?.sku || '').trim())
+        || (Array.isArray(product?.variants) && product.variants.some((variant) => String(variant?.sku || '').trim()));
+      // Always refill when populate was skipped/wiped, snapshot is empty, or SKU is missing for export.
+      if (!hasName || !hasImage || !product?.variants || !hasSku) {
         missingIds.add(String(rawId));
       }
     }
