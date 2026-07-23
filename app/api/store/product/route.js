@@ -853,7 +853,10 @@ export async function PUT(request) {
             price: finalPrice,
             category: categories[0], // Keep first category for backward compatibility
             categories, // New: store all categories
-            sku,
+            // Empty SKU must not wipe an existing value (FormData often sends "").
+            sku: (sku !== null && String(sku).trim() !== '')
+              ? String(sku).trim()
+              : (product.sku || null),
             images: imagesUrl,
             hasVariants: hasVariantsResolved,
             variants,

@@ -2092,8 +2092,11 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 AED: Number(productInfo.AED)
                     || (variantsToSend.length > 0 ? Number(variantsToSend[0].AED || variantsToSend[0].price) : 0)
                     || 0,
-                sku: productInfo.sku || '',
-                stockQuantity: Number(productInfo.stockQuantity) || 0,
+                sku: String(productInfo.sku || '').trim(),
+                // Omit blank stock on edit so server keeps existing qty (Number('')||0 was wiping stock).
+                ...(String(productInfo.stockQuantity ?? '').trim() !== ''
+                  ? { stockQuantity: Number(productInfo.stockQuantity) }
+                  : (product?._id ? {} : { stockQuantity: 0 })),
                 soldCount: Math.max(0, Number(productInfo.soldCount) || 0),
                 colors: productInfo.colors || [],
                 sizes: productInfo.sizes || [],

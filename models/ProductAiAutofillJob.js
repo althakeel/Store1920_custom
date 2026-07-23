@@ -18,6 +18,8 @@ const ProductAiAutofillJobSchema = new mongoose.Schema({
     index: true,
   },
   includeArabic: { type: Boolean, default: true },
+  /** missing_details = only empty products; with_images = all (legacy, cancelled by cron). */
+  mode: { type: String, enum: ['missing_details', 'with_images'], default: 'missing_details' },
   intervalMs: { type: Number, default: 60000 },
   productIds: { type: [String], default: [] },
   currentIndex: { type: Number, default: 0 },

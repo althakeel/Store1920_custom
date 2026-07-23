@@ -710,7 +710,8 @@ export async function POST(request) {
 
         const rawLegacyId = String(row.ID || row.id || '').trim();
         const legacySourceId = rawLegacyId ? `woo:${rawLegacyId}` : `woo:row:${rowNumber}`;
-        const sku = String(getFirstPresentValue(row.SKU, row.sku, row['GTIN, UPC, EAN, or ISBN']) || '').trim() || null;
+        const skuRaw = getFirstPresentValue(row.SKU, row.sku, row['GTIN, UPC, EAN, or ISBN']);
+        const sku = String(skuRaw || '').trim() || null;
         const existingByLegacySourceId = legacySourceId
           ? await Product.findOne({ legacySourceId, storeId }).lean()
           : null;
@@ -725,32 +726,26 @@ export async function POST(request) {
             ? await ensureUniqueSlug(baseSlug)
             : baseSlug;
 
-        const description = truncateImportedText(
-          normalizeImportedRichText(
-            getFirstPresentValue(
-              row.Description,
-              row.description,
-              row['Meta: fb_rich_text_description'],
-              row['Meta: fb_product_description'],
-              parentRow?.Description,
-              parentRow?.description,
-              parentRow?.['Meta: fb_rich_text_description'],
-              parentRow?.['Meta: fb_product_description']
-            )
-          )
+        const descriptionRaw = getFirstPresentValue(
+          row.Description,
+          row.description,
+          row['Meta: fb_rich_text_description'],
+          row['Meta: fb_product_description'],
+          parentRow?.Description,
+          parentRow?.description,
+          parentRow?.['Meta: fb_rich_text_description'],
+          parentRow?.['Meta: fb_product_description']
         );
-        const shortDescription = truncateImportedText(
-          normalizeImportedText(
-            getFirstPresentValue(
-              row['Short description'],
-              row.shortDescription,
-              row['Meta: _store1920_product_subtitle'],
-              parentRow?.['Short description'],
-              parentRow?.shortDescription,
-              parentRow?.['Meta: _store1920_product_subtitle']
-            )
-          )
+        const description = truncateImportedText(normalizeImportedRichText(descriptionRaw));
+        const shortDescriptionRaw = getFirstPresentValue(
+          row['Short description'],
+          row.shortDescription,
+          row['Meta: _store1920_product_subtitle'],
+          parentRow?.['Short description'],
+          parentRow?.shortDescription,
+          parentRow?.['Meta: _store1920_product_subtitle']
         );
+        const shortDescription = truncateImportedText(normalizeImportedText(shortDescriptionRaw));
         const fallbackRegularPrice = parseNumber(
           getFirstPresentValue(row['Regular price'], row.mrp, row.MRP, row['Regular Price'], parentRow?.['Regular price'], parentRow?.mrp, parentRow?.MRP, parentRow?.['Regular Price']),
           0
@@ -782,10 +777,18 @@ export async function POST(request) {
         const mirroredImageResult = await resolveImportedImages(images, { storeId, slug });
         mirroredImages += mirroredImageResult.mirroredCount;
         failedImageMirrors += mirroredImageResult.failed.length;
-        const stockQuantity = parseNumber(
-          getFirstPresentValue(row['Meta: _total_stock_quantity'], row.stockQuantity, row.Stock, row.stock, parentRow?.['Meta: _total_stock_quantity'], parentRow?.stockQuantity, parentRow?.Stock, parentRow?.stock),
-          0
+        const stockRaw = getFirstPresentValue(
+          row['Meta: _total_stock_quantity'],
+          row.stockQuantity,
+          row.Stock,
+          row.stock,
+          parentRow?.['Meta: _total_stock_quantity'],
+          parentRow?.stockQuantity,
+          parentRow?.Stock,
+          parentRow?.stock
         );
+        const stockProvided = stockRaw !== undefined && stockRaw !== null && String(stockRaw).trim() !== '';
+        const stockQuantity = stockProvided ? parseNumber(stockRaw, 0) : 0;
         const brand = String(getFirstPresentValue(row.Brands, row.brand, row.Brand, parentRow?.Brands, parentRow?.brand, parentRow?.Brand) || '').trim();
         const tags = parseStringArray(getFirstPresentValue(row.Tags, row.tags, row.Tag, row.tag, parentRow?.Tags, parentRow?.tags, parentRow?.Tag, parentRow?.tag));
         const badges = normalizeBadgeValues(
@@ -798,9 +801,11 @@ export async function POST(request) {
           parentRow?.['Product Badges'],
           tags.join(',')
         );
+        const inStockRaw = getFirstPresentValue(row['In stock?'], row['Stock status'], row.stockStatus, row.InStock, row.inStock, parentRow?.['In stock?'], parentRow?.['Stock status'], parentRow?.stockStatus, parentRow?.InStock, parentRow?.inStock);
+        const inStockProvided = inStockRaw !== undefined && inStockRaw !== null && String(inStockRaw).trim() !== '';
         const inStock = parseBoolean(
-          getFirstPresentValue(row['In stock?'], row['Stock status'], row.stockStatus, row.InStock, row.inStock, parentRow?.['In stock?'], parentRow?.['Stock status'], parentRow?.stockStatus, parentRow?.InStock, parentRow?.inStock),
-          stockQuantity > 0
+          inStockRaw,
+          stockProvided ? stockQuantity > 0 : true
         );
         const fastDelivery = parseBoolean(getFirstPresentValue(row['Fast delivery'], row.fastDelivery, parentRow?.['Fast delivery'], parentRow?.fastDelivery), false);
         const freeShippingEligible = parseBoolean(getFirstPresentValue(row['Free shipping'], row.freeShippingEligible, parentRow?.['Free shipping'], parentRow?.freeShippingEligible), false);
@@ -963,9 +968,43 @@ export async function POST(request) {
         };
 
         if (existingProduct) {
+          // Re-import must not wipe SKU / stock / copy when those CSV columns are blank.
+          const updatePayload = { ...productPayload };
+          if (!sku && existingProduct.sku) {
+            updatePayload.sku = existingProduct.sku;
+          }
+          if (!variants.length && !stockProvided) {
+            updatePayload.stockQuantity = existingProduct.stockQuantity;
+            if (!inStockProvided) {
+              updatePayload.inStock = existingProduct.inStock;
+            }
+          }
+          if (!String(description || '').trim() && existingProduct.description) {
+            updatePayload.description = existingProduct.description;
+          }
+          if (!String(shortDescription || '').trim() && existingProduct.shortDescription) {
+            updatePayload.shortDescription = existingProduct.shortDescription;
+          }
+          if (!String(name || '').trim() && existingProduct.name) {
+            updatePayload.name = existingProduct.name;
+          }
+          if (!String(brand || '').trim() && existingProduct.brand) {
+            updatePayload.brand = existingProduct.brand;
+          }
+          if ((!Array.isArray(categoryIds) || categoryIds.length === 0) && existingProduct.categories?.length) {
+            updatePayload.categories = existingProduct.categories;
+            updatePayload.category = existingProduct.category || existingProduct.categories[0];
+          }
+          if ((!Array.isArray(variants) || variants.length === 0) && existingProduct.hasVariants && existingProduct.variants?.length) {
+            updatePayload.variants = existingProduct.variants;
+            updatePayload.hasVariants = existingProduct.hasVariants;
+            updatePayload.stockQuantity = existingProduct.stockQuantity;
+            updatePayload.inStock = existingProduct.inStock;
+          }
+
           await Product.findByIdAndUpdate(existingProduct._id, {
             $set: {
-              ...productPayload,
+              ...updatePayload,
               images: mergedProductImages.length
                 ? mergedProductImages
                 : (mirroredImageResult.finalUrls.length ? mirroredImageResult.finalUrls : existingProduct.images || []),

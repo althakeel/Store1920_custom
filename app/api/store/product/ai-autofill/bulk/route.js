@@ -38,7 +38,7 @@ export async function GET(request) {
     await connectDB();
     const { searchParams } = new URL(request.url);
     const preview = searchParams.get('preview') === 'true';
-    const mode = searchParams.get('mode') === 'missing_details' ? 'missing_details' : 'with_images';
+    const mode = searchParams.get('mode') === 'with_images' ? 'with_images' : 'missing_details';
 
     const job = await getActiveAutofillJob(sellerContext.storeId);
 
@@ -74,7 +74,7 @@ export async function POST(request) {
 
     const body = await request.json();
     const action = String(body?.action || 'start').trim().toLowerCase();
-    const mode = body?.mode === 'missing_details' ? 'missing_details' : 'with_images';
+    const mode = body?.mode === 'with_images' ? 'with_images' : 'missing_details';
     const includeArabic = body?.includeArabic !== false;
     const intervalMs = Number(body?.intervalMs) || getBulkAutofillIntervalMs();
 

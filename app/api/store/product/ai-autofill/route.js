@@ -58,6 +58,8 @@ export async function POST(request) {
           storeId: sellerContext.storeId,
           includeArabic,
           storeCategories,
+          // Explicit seller click may overwrite; pass overwriteExisting:false to only fill blanks.
+          overwriteExisting: body?.overwriteExisting !== false,
         });
         results.push({ success: true, ...result });
       } catch (error) {

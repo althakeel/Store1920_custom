@@ -252,7 +252,7 @@ export default function StoreManageProducts() {
     const fetchBulkAutofillStatus = useCallback(async () => {
         try {
             const token = await getToken()
-            const { data } = await axios.get('/api/store/product/ai-autofill/bulk?preview=true', {
+            const { data } = await axios.get('/api/store/product/ai-autofill/bulk?preview=true&mode=missing_details', {
                 headers: { Authorization: `Bearer ${token}` },
             })
             setBulkAutofillJob(data?.job || null)
@@ -349,12 +349,12 @@ export default function StoreManageProducts() {
     const startBulkAutofillAll = async () => {
         const count = bulkEligibleCount ?? 0
         if (!count) {
-            toast.error('No products with images found for AI auto-fill')
+            toast.error('No products missing details for AI auto-fill')
             return
         }
 
         const hours = Math.ceil((count * BULK_AUTOFILL_INTERVAL_MS) / 3600000)
-        if (!confirm(`Start automatic AI auto-fill for ${count} product(s)?\n\nOne product every 1 minute.\nEstimated time: ~${hours} hour(s).\n\nYou can close this page — the queue keeps running on the server.`)) {
+        if (!confirm(`Start AI auto-fill for ${count} product(s) that are MISSING details?\n\nOne product every 1 minute.\nEstimated: ~${hours} hour(s).\n\nProducts that already have name/description are NEVER overwritten.`)) {
             return
         }
 
@@ -363,14 +363,14 @@ export default function StoreManageProducts() {
             const token = await getToken()
             const { data } = await axios.post('/api/store/product/ai-autofill/bulk', {
                 action: 'start',
-                mode: 'with_images',
+                mode: 'missing_details',
                 includeArabic: true,
                 intervalMs: BULK_AUTOFILL_INTERVAL_MS,
             }, {
                 headers: { Authorization: `Bearer ${token}` },
             })
             setBulkAutofillJob(data?.job || null)
-            toast.success('Bulk AI auto-fill queue started')
+            toast.success('Bulk AI auto-fill started (missing details only)')
         } catch (error) {
             toast.error(error?.response?.data?.error || error.message || 'Failed to start bulk queue')
         } finally {
@@ -1148,7 +1148,7 @@ export default function StoreManageProducts() {
                                 disabled={bulkAutofillLoading || !bulkEligibleCount}
                                 className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                                {bulkAutofillLoading ? 'Starting...' : 'Auto Fill All Products'}
+                                {bulkAutofillLoading ? 'Starting...' : 'Auto Fill Missing Details'}
                             </button>
                         ) : null}
                         {bulkAutofillJob?.status === 'running' ? (
