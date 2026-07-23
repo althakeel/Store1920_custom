@@ -704,6 +704,9 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
     const [fbtBundleDiscount, setFbtBundleDiscount] = useState('')
     const [searchFbt, setSearchFbt] = useState('')
     const [loadingFbt, setLoadingFbt] = useState(false)
+    // Only PATCH FBT after config loaded — otherwise every save wiped the bundle to empty.
+    const [fbtConfigLoaded, setFbtConfigLoaded] = useState(!product?._id)
+    const [fbtConfigDirty, setFbtConfigDirty] = useState(false)
     const [storeBadgeOptions, setStoreBadgeOptions] = useState(DEFAULT_BADGE_OPTIONS)
 
     const { user, loading: authLoading, getToken } = useAuth();
@@ -870,30 +873,38 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
         fetchProducts();
     }, [enableFBT, availableProducts.length]);
 
-    // Fetch FBT config when editing
+    // Fetch FBT config when editing — never default-wipe on fetch failure.
     useEffect(() => {
-        if (product?._id) {
-            const fetchFbtConfig = async () => {
-                try {
-                    setLoadingFbt(true);
-                    const { data } = await axios.get(`/api/products/${product._id}/fbt`);
-                    setEnableFBT(data.enableFBT || false);
-                    setFbtBundlePrice(data.bundlePrice || '');
-                    setFbtBundleDiscount(data.bundleDiscount || '');
-                    if (data.products && data.products.length > 0) {
-                        setSelectedFbtProducts(data.products);
-                    }
-                } catch (error) {
-                    setEnableFBT(false);
-                    setFbtBundlePrice('');
-                    setFbtBundleDiscount('');
-                    setSelectedFbtProducts([]);
-                } finally {
-                    setLoadingFbt(false);
-                }
-            };
-            fetchFbtConfig();
+        if (!product?._id) {
+            setFbtConfigLoaded(true);
+            return undefined;
         }
+
+        let cancelled = false;
+        const fetchFbtConfig = async () => {
+            try {
+                setLoadingFbt(true);
+                setFbtConfigLoaded(false);
+                const { data } = await axios.get(`/api/products/${product._id}/fbt`);
+                if (cancelled) return;
+                setEnableFBT(Boolean(data.enableFBT));
+                setFbtBundlePrice(data.bundlePrice || '');
+                setFbtBundleDiscount(data.bundleDiscount || '');
+                setSelectedFbtProducts(Array.isArray(data.products) ? data.products : []);
+                setFbtConfigDirty(false);
+                setFbtConfigLoaded(true);
+            } catch (error) {
+                if (cancelled) return;
+                // Keep existing DB FBT — do not mark loaded/dirty so save will not PATCH empty.
+                console.warn('Could not load FBT config; leaving bundle unchanged on save:', error?.message);
+                setFbtConfigLoaded(false);
+                setFbtConfigDirty(false);
+            } finally {
+                if (!cancelled) setLoadingFbt(false);
+            }
+        };
+        fetchFbtConfig();
+        return () => { cancelled = true; };
     }, [product?._id]);
     useEffect(() => {
         isDirtyRef.current = false;
@@ -2140,9 +2151,13 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
             const { data } = await apiCall
             toast.success(data.message)
             
-            // Save FBT configuration (always save, even if disabled)
+            // Never auto-save FBT on edit unless seller changed it (fbtConfigDirty).
+            // Old code always PATCHed enableFBT:false and cleared Frequently Bought Together bundles.
             const savedProduct = data.product || data.updatedProduct;
-            if (savedProduct?._id) {
+            const shouldPersistFbt = Boolean(savedProduct?._id)
+              && fbtConfigLoaded
+              && (fbtConfigDirty || !product?._id);
+            if (shouldPersistFbt) {
                 try {
                     await axios.patch(`/api/products/${savedProduct._id}/fbt`, {
                         enableFBT: enableFBT,
@@ -2150,10 +2165,10 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                         fbtBundlePrice: enableFBT && fbtBundlePrice ? parseFloat(fbtBundlePrice) : null,
                         fbtBundleDiscount: enableFBT && fbtBundleDiscount ? parseFloat(fbtBundleDiscount) : null
                     });
-                    toast.success('FBT configuration saved!');
+                    setFbtConfigDirty(false);
                 } catch (fbtError) {
                     console.error('Error saving FBT config:', fbtError);
-                    toast.error('Product saved but FBT config failed');
+                    toast.error('Product saved but FBT/bundle config failed');
                 }
             }
             
