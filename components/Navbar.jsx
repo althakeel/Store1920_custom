@@ -33,6 +33,7 @@ import {
 } from '@/lib/categoryNavigation';
 import { getProductThumbnailUrl } from '@/lib/productMedia';
 import { getProductPath } from '@/lib/productUrl';
+import { secureSignOut } from '@/lib/authClient';
 
 const NAVBAR_SELECTED_ADDRESS_KEY = 'navbarSelectedAddressId';
 const NAVBAR_APPEARANCE_CACHE_KEY = 'navbarAppearanceCache';
@@ -129,6 +130,7 @@ const Navbar = () => {
   const [signInMode, setSignInMode] = useState('login');
   const [firebaseUser, setFirebaseUser] = useState(undefined);
   const [signOutConfirmOpen, setSignOutConfirmOpen] = useState(false);
+  const [signOutAllDevices, setSignOutAllDevices] = useState(false);
   const [signOutContext, setSignOutContext] = useState('desktop');
   const [walletCoins, setWalletCoins] = useState(0);
   const storefrontWalletEnabled = isStorefrontWalletEnabled();
@@ -594,6 +596,7 @@ const Navbar = () => {
 
   const openSignOutConfirm = (context = 'desktop') => {
     setSignOutContext(context);
+    setSignOutAllDevices(false);
     setSignOutConfirmOpen(true);
   };
 
@@ -602,19 +605,21 @@ const Navbar = () => {
       // Store user info before signing out (for background email)
       const userEmail = user?.email;
       const userName = user?.displayName || 'Customer';
-      
-      // Sign out immediately
-      await auth.signOut();
+      const allDevices = signOutAllDevices;
+
+      // Revoke server session(s) then Firebase sign-out
+      await secureSignOut(auth, { allDevices });
       
       // Update UI
       setUserDropdownOpen(false);
       setMobileMenuOpen(false);
       setSignOutConfirmOpen(false);
+      setSignOutAllDevices(false);
       dispatch(clearCart());
       if (typeof window !== 'undefined') {
         localStorage.removeItem('cartState');
       }
-      toast.success('Signed out successfully');
+      toast.success(allDevices ? 'Signed out of all devices' : 'Signed out successfully');
       
       // Send email in background (completely non-blocking, no auth required)
       if (userEmail) {
@@ -643,10 +648,11 @@ const Navbar = () => {
       console.error('Sign out error:', error);
       // Force sign out even if there's an error
       try {
-        await auth.signOut();
+        await secureSignOut(auth, { allDevices: false });
         setUserDropdownOpen(false);
         setMobileMenuOpen(false);
         setSignOutConfirmOpen(false);
+        setSignOutAllDevices(false);
         dispatch(clearCart());
         if (typeof window !== 'undefined') {
           localStorage.removeItem('cartState');
@@ -1736,6 +1742,7 @@ const Navbar = () => {
                       </button>
                     )}
                     <Link href="/dashboard/profile" className="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm" onClick={() => setUserDropdownOpen(false)}>{t('navbar.profile')}</Link>
+                    <Link href="/dashboard/security" className="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm" onClick={() => setUserDropdownOpen(false)}>Security</Link>
                     <Link href="/dashboard/orders" className="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm" onClick={() => setUserDropdownOpen(false)}>{t('navbar.orders')}</Link>
                     {storefrontWalletEnabled ? (
                     <Link href="/wallet" className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-100 transition text-sm" onClick={() => setUserDropdownOpen(false)}>
@@ -1902,6 +1909,13 @@ const Navbar = () => {
                       <span>{t('navbar.profile')}</span>
                     </Link>
                     <Link 
+                      href="/dashboard/security"
+                      className="flex items-center gap-3 px-4 py-3 hover:bg-gray-100 rounded-lg transition text-gray-700 font-medium"
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      <span>Security</span>
+                    </Link>
+                    <Link
                       href="/dashboard/orders" 
                       className="flex items-center gap-3 px-4 py-3 hover:bg-gray-100 rounded-lg transition text-gray-700 font-medium"
                       onClick={() => setMobileMenuOpen(false)}
@@ -2066,10 +2080,27 @@ const Navbar = () => {
                   </div>
                   <h3 className="text-xl font-semibold text-slate-900 text-center">{t('navbar.readyToSignOut')}</h3>
                   <p className="mt-2 text-sm text-slate-600 text-center">{t('navbar.saveCartWishlist')}</p>
+                  <label className="mt-4 flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={signOutAllDevices}
+                      onChange={(e) => setSignOutAllDevices(e.target.checked)}
+                    />
+                    <span>
+                      Sign out of all devices
+                      <span className="block text-xs text-slate-500">
+                        Ends sessions everywhere and invalidates refresh tokens.
+                      </span>
+                    </span>
+                  </label>
                   <div className="mt-6 grid grid-cols-2 gap-3">
                     <button
                       className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 hover:border-slate-300 hover:bg-slate-50 transition"
-                      onClick={() => setSignOutConfirmOpen(false)}
+                      onClick={() => {
+                        setSignOutConfirmOpen(false);
+                        setSignOutAllDevices(false);
+                      }}
                     >
                       {t('navbar.staySignedIn')}
                     </button>

@@ -1,13 +1,12 @@
 "use client";
 
 import { useEffect } from "react";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { META_PIXEL_ID } from "@/lib/metaPixelConfig";
 import { trackPageView } from "@/lib/metaPixelTracking";
 
 export default function MetaPixel() {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
 
   useEffect(() => {
     if (typeof window === "undefined" || !pathname) return;
@@ -26,10 +25,9 @@ export default function MetaPixel() {
     };
     applyAutoConfig();
 
-    const query = searchParams?.toString();
-    const routeKey = query ? `${pathname}?${query}` : pathname;
-    trackPageView({ pagePath: routeKey });
-  }, [pathname, searchParams]);
+    // Path only — query-string identity changes must not create a 2nd PageView.
+    trackPageView({ pagePath: pathOnly });
+  }, [pathname]);
 
   return (
     <noscript>

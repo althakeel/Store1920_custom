@@ -27,8 +27,9 @@ async function maybeOptimizeBuffer(buffer, meta) {
 }
 
 function resolveUploadFolder(type = '') {
-  if (type === 'logo') return 'brands';
+  if (type === 'logo' || type === 'navbar-logo') return 'brands';
   if (type === 'category') return 'categories';
+  if (type === 'blog') return 'blogs';
   return 'products';
 }
 
@@ -73,15 +74,40 @@ export async function POST(request) {
     let uploadName = image.name || (video ? 'upload.mp4' : 'upload.jpg');
 
     if (!video) {
+      const isLogoUpload = type === 'logo' || type === 'navbar-logo';
       const optimized = await maybeOptimizeBuffer(buffer, {
         contentType: image.type,
         fileName: image.name,
+        forcePreserveAlpha: isLogoUpload,
+        // Logos stay smaller and never flatten to JPEG (black corners).
+        maxBytes: isLogoUpload ? 8 * 1024 * 1024 : 4 * 1024 * 1024,
+        maxWidth: isLogoUpload ? 1200 : 2048,
+        maxHeight: isLogoUpload ? 1200 : 2048,
       });
       uploadBuffer = optimized.buffer;
       uploadContentType = optimized.contentType || image.type || undefined;
-      uploadName = optimized.optimized && !String(image.name || '').toLowerCase().endsWith('.jpg')
-        ? String(image.name || 'upload').replace(/\.[^.]+$/, '.jpg')
-        : (image.name || 'upload.jpg');
+      if (isLogoUpload && !uploadContentType) {
+        uploadContentType = 'image/png';
+      }
+      if (optimized.optimized) {
+        const ext = optimized.extension
+          || (String(optimized.contentType || '').includes('png')
+            ? 'png'
+            : String(optimized.contentType || '').includes('webp')
+              ? 'webp'
+              : 'jpg');
+        uploadName = String(image.name || 'upload').replace(/\.[^.]+$/, `.${ext}`);
+      } else if (isLogoUpload) {
+        const keepExt = /\.(png|webp)$/i.test(String(image.name || ''))
+          ? String(image.name).split('.').pop()
+          : 'png';
+        uploadName = String(image.name || 'logo').replace(/\.[^.]+$/, `.${keepExt}`);
+        if (!String(uploadContentType || '').includes('png') && !String(uploadContentType || '').includes('webp')) {
+          uploadContentType = keepExt === 'webp' ? 'image/webp' : 'image/png';
+        }
+      } else {
+        uploadName = image.name || 'upload.png';
+      }
     }
 
     const fileName = type

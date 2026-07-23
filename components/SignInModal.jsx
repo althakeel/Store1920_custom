@@ -1,20 +1,34 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { X, Eye, EyeOff } from 'lucide-react';
-import { auth, googleProvider } from '../lib/firebase';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { auth } from '../lib/firebase';
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  updateProfile,
+  sendEmailVerification,
+} from 'firebase/auth';
 import { pushGtmEvent } from '@/lib/pushGtmEcommerceEvent';
 import { GTM_EVENTS, gtmDedupeKey } from '@/lib/gtmEvents';
 import { signInWithGooglePopup } from '@/lib/firebaseAuthActions';
 import Image from 'next/image';
 import Link from 'next/link';
 import GoogleIcon from '../assets/google.png';
-import Imageslider from '../assets/signin/76.webp';
 import axios from 'axios';
 import { countryCodes } from '../assets/countryCodes';
 import { linkGuestOrdersForCurrentUser } from '@/lib/linkGuestOrdersClient';
+import { validatePasswordStrength } from '@/lib/passwordPolicy';
+import {
+  fetchCaptchaChallenge,
+  runPreLogin,
+  reportLoginResult,
+  requestPasswordReset,
+  confirmPasswordReset,
+  setMfaVerified,
+} from '@/lib/authClient';
 
 const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '', variant = 'modal' }) => {
   const [isRegister, setIsRegister] = useState(false);
+  const [view, setView] = useState('auth'); // auth | forgot | reset | mfa
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -22,6 +36,7 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '', 
   const [countryCode, setCountryCode] = useState('+91');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [error, setError] = useState('');
+  const [info, setInfo] = useState('');
   const [fieldErrors, setFieldErrors] = useState({
     name: '',
     phone: '',
@@ -32,6 +47,12 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '', 
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [captcha, setCaptcha] = useState({ challengeId: '', question: '' });
+  const [captchaAnswer, setCaptchaAnswer] = useState('');
+  const [resetToken, setResetToken] = useState('');
+  const [resetOtp, setResetOtp] = useState('');
+  const [mfaCode, setMfaCode] = useState('');
+  const [pendingMfaToken, setPendingMfaToken] = useState('');
   const [modalSettings, setModalSettings] = useState({
     sideImage: '',
     sideImageLink: '',
@@ -46,7 +67,7 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '', 
     const msg = String(err?.message || '').toLowerCase();
 
     if (code === 'auth/email-already-in-use') return 'This email is already registered. Please sign in.';
-    if (code === 'auth/weak-password') return 'Password is too weak. Please use at least 6 characters.';
+    if (code === 'auth/weak-password') return 'Password is too weak. Use 8+ characters with upper, lower, number, and special character.';
     if (code === 'auth/invalid-email') return 'Please enter a valid email address.';
     if (code === 'auth/user-not-found') return 'No account found with this email. Please sign up first.';
     if (code === 'auth/wrong-password') return 'Incorrect password. Please try again.';
@@ -87,6 +108,34 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '', 
     });
   }, [isRegister]);
 
+  const loadCaptcha = useCallback(async () => {
+    try {
+      const data = await fetchCaptchaChallenge();
+      setCaptcha({ challengeId: data.challengeId, question: data.question });
+      setCaptchaAnswer('');
+    } catch {
+      setCaptcha({ challengeId: '', question: '' });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (open || variant === 'page') {
+      void loadCaptcha();
+    }
+  }, [open, variant, isRegister, view, loadCaptcha]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('resetToken');
+    const resetEmail = params.get('email');
+    if (token) {
+      setResetToken(token);
+      setView('reset');
+      if (resetEmail) setEmail(resetEmail);
+    }
+  }, []);
+
   if (!open && variant === 'modal') return null;
 
   const isPage = variant === 'page';
@@ -109,19 +158,6 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '', 
     }
     // For other countries, allow 7-15 digits
     return cleaned.length >= 7 && cleaned.length <= 15;
-  };
-
-  const validatePassword = (password) => {
-    // Password should be at least 6 characters
-    return password.length >= 6;
-  };
-
-  const validatePasswordStrength = (password) => {
-    // Check for strong password: at least 8 chars, contains letters and numbers
-    if (password.length < 8) return 'Password should be at least 8 characters';
-    if (!/[a-zA-Z]/.test(password)) return 'Password should contain letters';
-    if (!/[0-9]/.test(password)) return 'Password should contain numbers';
-    return null;
   };
 
   const trackLoginLocation = (token) => {
@@ -175,6 +211,42 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '', 
     }
   };
 
+  const finishAuthSuccess = async (user, { isNewUser = false, emailOverride = '', nameOverride = '' } = {}) => {
+    const token = await user.getIdToken();
+    const loginMeta = await reportLoginResult({
+      email: emailOverride || user.email,
+      success: true,
+      idToken: token,
+    });
+
+    if (loginMeta.twoFactorRequired) {
+      setPendingMfaToken(token);
+      setView('mfa');
+      setInfo('Enter the verification code sent to your email.');
+      await fetch('/api/auth/mfa', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ idToken: token }),
+      }).catch(() => {});
+      return;
+    }
+
+    setMfaVerified(true);
+    if (isNewUser && !user.emailVerified) {
+      try {
+        await sendEmailVerification(user);
+      } catch {
+        // non-blocking
+      }
+    }
+
+    onClose();
+    void runPostAuthTasks(user, { isNewUser, emailOverride, nameOverride });
+  };
+
   const handleGoogleSignIn = async () => {
     setError('');
     setLoading(true);
@@ -188,8 +260,7 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '', 
         localStorage.removeItem('welcomeBonusClaimed');
       }
 
-      onClose();
-      void runPostAuthTasks(result.user, { isNewUser });
+      await finishAuthSuccess(result.user, { isNewUser });
     } catch (err) {
       console.error('Google sign-in error:', err);
       const errorMessage = getAuthErrorMessage(err, 'Google sign-in failed. Please try again.');
@@ -199,12 +270,105 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '', 
     }
   };
 
+  const handleForgotSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setInfo('');
+    if (!validateEmail(email)) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+    if (!captchaAnswer.trim()) {
+      setError('Please solve the CAPTCHA.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const data = await requestPasswordReset({
+        email,
+        captchaChallengeId: captcha.challengeId,
+        captchaAnswer,
+      });
+      setInfo(data.message || 'If an account exists, a reset email was sent.');
+      setView('reset');
+      void loadCaptcha();
+    } catch (err) {
+      setError(err.message || 'Could not request reset');
+      void loadCaptcha();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetConfirm = async (e) => {
+    e.preventDefault();
+    setError('');
+    const policy = validatePasswordStrength(password);
+    if (!policy.ok) {
+      setError(policy.message);
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+    setLoading(true);
+    try {
+      await confirmPasswordReset({
+        email,
+        newPassword: password,
+        resetToken: resetToken || undefined,
+        otp: resetOtp || undefined,
+      });
+      setInfo('Password updated. Please sign in.');
+      setView('auth');
+      setIsRegister(false);
+      setPassword('');
+      setConfirmPassword('');
+      setResetOtp('');
+      setResetToken('');
+    } catch (err) {
+      setError(err.message || 'Could not reset password');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMfaVerify = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const token = pendingMfaToken || (await auth.currentUser?.getIdToken());
+      const res = await fetch('/api/auth/mfa', {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ code: mfaCode, idToken: token }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Invalid code');
+      setMfaVerified(true);
+      setView('auth');
+      onClose();
+      if (auth.currentUser) {
+        void runPostAuthTasks(auth.currentUser, { emailOverride: email });
+      }
+    } catch (err) {
+      setError(err.message || 'MFA failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    
+    setInfo('');
+
     if (isRegister) {
-      // Validate name
       if (!name.trim()) {
         setError('Please enter your full name.');
         return;
@@ -213,52 +377,31 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '', 
         setError('Name should contain only letters and be at least 2 characters.');
         return;
       }
-      
-      // Validate phone number
       if (!phoneNumber.trim()) {
         setError('Please enter your phone number.');
         return;
       }
       if (!validatePhoneNumber(phoneNumber, countryCode)) {
-        if (countryCode === '+91') {
-          setError('Indian phone number must be exactly 10 digits.');
-        } else {
-          setError('Please enter a valid phone number (7-15 digits).');
-        }
+        setError(countryCode === '+91'
+          ? 'Indian phone number must be exactly 10 digits.'
+          : 'Please enter a valid phone number (7-15 digits).');
         return;
       }
-      
-      // Validate email
       if (!validateEmail(email)) {
         setError('Please enter a valid email address.');
         return;
       }
-      
-      // Validate password
-      if (!validatePassword(password)) {
-        setError('Password should be at least 6 characters.');
+      const policy = validatePasswordStrength(password);
+      if (!policy.ok) {
+        setError(policy.message);
         return;
       }
-      
-      // Check password strength (warning, not blocking)
-      const strengthError = validatePasswordStrength(password);
-      if (strengthError) {
-        setError(strengthError + '. We recommend a stronger password.');
-        // Don't return here - it's just a warning
-      }
-      
-      // Validate password match
       if (password !== confirmPassword) {
         setError('Passwords do not match.');
         return;
       }
     } else {
-      // Login validation
-      if (!email.trim()) {
-        setError('Please enter your email.');
-        return;
-      }
-      if (!validateEmail(email)) {
+      if (!email.trim() || !validateEmail(email)) {
         setError('Please enter a valid email address.');
         return;
       }
@@ -266,14 +409,21 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '', 
         setError('Please enter your password.');
         return;
       }
-      if (password.length < 6) {
-        setError('Password must be at least 6 characters.');
-        return;
-      }
     }
-    
+
+    if (!captchaAnswer.trim()) {
+      setError('Please solve the CAPTCHA.');
+      return;
+    }
+
     setLoading(true);
     try {
+      await runPreLogin({
+        email,
+        captchaChallengeId: captcha.challengeId,
+        captchaAnswer,
+      });
+
       if (isRegister) {
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         if (name) {
@@ -286,23 +436,31 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '', 
           localStorage.removeItem('welcomeBonusClaimed');
         }
 
-        onClose();
-        void runPostAuthTasks(userCredential.user, {
+        await finishAuthSuccess(userCredential.user, {
           isNewUser: true,
           emailOverride: email,
           nameOverride: name,
         });
       } else {
-        const userCredential = await signInWithEmailAndPassword(auth, email, password);
-        onClose();
-        void runPostAuthTasks(userCredential.user, {
-          emailOverride: email,
-          nameOverride: userCredential.user.displayName || name || 'Customer',
-        });
+        try {
+          const userCredential = await signInWithEmailAndPassword(auth, email, password);
+          await finishAuthSuccess(userCredential.user, {
+            emailOverride: email,
+            nameOverride: userCredential.user.displayName || name || 'Customer',
+          });
+        } catch (authErr) {
+          await reportLoginResult({ email, success: false });
+          void loadCaptcha();
+          throw authErr;
+        }
       }
     } catch (err) {
-      const errorMessage = getAuthErrorMessage(err, 'Sign in failed. Please try again.');
-      setError(errorMessage);
+      if (err.status === 423) {
+        setError(err.data?.error || 'Account locked. Try again later.');
+      } else {
+        setError(getAuthErrorMessage(err, err.message || 'Sign in failed. Please try again.'));
+      }
+      void loadCaptcha();
     } finally {
       setLoading(false);
     }
@@ -389,8 +547,10 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '', 
           )}
 
           {/* Tab Buttons */}
+          {view === 'auth' ? (
           <div className="flex gap-2 sm:gap-3 mb-3 sm:mb-4">
             <button
+              type="button"
               onClick={() => setIsRegister(false)}
               className={`flex-1 py-2 sm:py-2.5 px-3 sm:px-4 rounded-lg font-semibold transition text-sm ${
                 !isRegister
@@ -401,6 +561,7 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '', 
               Log in
             </button>
             <button
+              type="button"
               onClick={() => setIsRegister(true)}
               className={`flex-1 py-2 sm:py-2.5 px-3 sm:px-4 rounded-lg font-semibold transition text-sm ${
                 isRegister
@@ -411,8 +572,112 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '', 
               Sign up
             </button>
           </div>
+          ) : null}
+
+          {view === 'forgot' ? (
+            <form className="flex flex-col gap-2.5 sm:gap-3" onSubmit={handleForgotSubmit}>
+              <p className="text-sm text-gray-600">Enter your email to receive a secure password reset link and code.</p>
+              <input
+                type="email"
+                placeholder="Enter your email"
+                className="border border-gray-300 rounded-lg px-3 py-2.5 text-sm w-full"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+              {captcha.question ? (
+                <div className="flex gap-2 items-center">
+                  <label className="text-xs text-gray-600 whitespace-nowrap">{captcha.question}</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm flex-1"
+                    value={captchaAnswer}
+                    onChange={(e) => setCaptchaAnswer(e.target.value)}
+                    placeholder="Answer"
+                    required
+                  />
+                </div>
+              ) : null}
+              {error ? <div className="text-red-500 text-xs bg-red-50 p-2 rounded-lg">{error}</div> : null}
+              {info ? <div className="text-green-700 text-xs bg-green-50 p-2 rounded-lg">{info}</div> : null}
+              <button type="submit" disabled={loading} className="bg-gray-800 text-white font-semibold py-2.5 rounded-lg text-sm disabled:opacity-50">
+                {loading ? 'Sending…' : 'Send reset link'}
+              </button>
+              <button type="button" className="text-sm text-gray-600" onClick={() => { setView('auth'); setError(''); setInfo(''); }}>
+                Back to sign in
+              </button>
+            </form>
+          ) : null}
+
+          {view === 'reset' ? (
+            <form className="flex flex-col gap-2.5 sm:gap-3" onSubmit={handleResetConfirm}>
+              <p className="text-sm text-gray-600">Set a new strong password. Use the email code if you do not have a link token.</p>
+              <input
+                type="email"
+                className="border border-gray-300 rounded-lg px-3 py-2.5 text-sm w-full"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+              {!resetToken ? (
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Email OTP code"
+                  className="border border-gray-300 rounded-lg px-3 py-2.5 text-sm w-full"
+                  value={resetOtp}
+                  onChange={(e) => setResetOtp(e.target.value)}
+                />
+              ) : null}
+              <input
+                type="password"
+                placeholder="New password"
+                className="border border-gray-300 rounded-lg px-3 py-2.5 text-sm w-full"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+              <input
+                type="password"
+                placeholder="Confirm new password"
+                className="border border-gray-300 rounded-lg px-3 py-2.5 text-sm w-full"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+              />
+              <p className="text-[11px] text-gray-500">Min 8 chars, upper, lower, number, special character.</p>
+              {error ? <div className="text-red-500 text-xs bg-red-50 p-2 rounded-lg">{error}</div> : null}
+              {info ? <div className="text-green-700 text-xs bg-green-50 p-2 rounded-lg">{info}</div> : null}
+              <button type="submit" disabled={loading} className="bg-gray-800 text-white font-semibold py-2.5 rounded-lg text-sm disabled:opacity-50">
+                {loading ? 'Updating…' : 'Update password'}
+              </button>
+              <button type="button" className="text-sm text-gray-600" onClick={() => setView('auth')}>Back to sign in</button>
+            </form>
+          ) : null}
+
+          {view === 'mfa' ? (
+            <form className="flex flex-col gap-2.5 sm:gap-3" onSubmit={handleMfaVerify}>
+              <p className="text-sm text-gray-600">Multi-factor authentication — enter the code from your email.</p>
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder="6-digit code"
+                className="border border-gray-300 rounded-lg px-3 py-2.5 text-sm w-full tracking-widest"
+                value={mfaCode}
+                onChange={(e) => setMfaCode(e.target.value)}
+                required
+              />
+              {error ? <div className="text-red-500 text-xs bg-red-50 p-2 rounded-lg">{error}</div> : null}
+              {info ? <div className="text-green-700 text-xs bg-green-50 p-2 rounded-lg">{info}</div> : null}
+              <button type="submit" disabled={loading} className="bg-gray-800 text-white font-semibold py-2.5 rounded-lg text-sm disabled:opacity-50">
+                {loading ? 'Verifying…' : 'Verify'}
+              </button>
+            </form>
+          ) : null}
 
           {/* Form */}
+          {view === 'auth' ? (
           <form className="flex flex-col gap-2.5 sm:gap-3" onSubmit={handleSubmit}>
             {isRegister && (
               <div>
@@ -568,10 +833,12 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '', 
                       setFieldErrors(prev => ({ ...prev, password: 'Password is required' }));
                     } else if (pwdValue.length < 6) {
                       setFieldErrors(prev => ({ ...prev, password: 'Password must be at least 6 characters' }));
-                    } else if (isRegister && pwdValue.length < 8) {
-                      setFieldErrors(prev => ({ ...prev, password: 'Weak password. Use 8+ characters' }));
-                    } else if (isRegister && (!/[0-9]/.test(pwdValue) || !/[a-zA-Z]/.test(pwdValue))) {
-                      setFieldErrors(prev => ({ ...prev, password: 'Use both letters and numbers for stronger password' }));
+                    } else if (isRegister) {
+                      const policy = validatePasswordStrength(pwdValue);
+                      setFieldErrors(prev => ({
+                        ...prev,
+                        password: policy.ok ? '' : policy.message,
+                      }));
                     } else {
                       setFieldErrors(prev => ({ ...prev, password: '' }));
                     }
@@ -584,7 +851,7 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '', 
                       setFieldErrors(prev => ({ ...prev, password: 'Password must be at least 6 characters' }));
                     }
                   }}
-                  minLength={6}
+                  minLength={isRegister ? 8 : 6}
                   required
                 />
                 <button
@@ -599,6 +866,11 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '', 
               {fieldErrors.password && (
                 <div className="text-red-600 text-xs mt-1">{fieldErrors.password}</div>
               )}
+              {isRegister ? (
+                <div className="text-gray-500 text-[11px] mt-1">
+                  Min 8 characters with upper, lower, number, and special character.
+                </div>
+              ) : null}
             </div>
             {isRegister && (
               <div>
@@ -647,11 +919,44 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '', 
               </div>
             )}
             
+            {captcha.question ? (
+              <div className="flex gap-2 items-center">
+                <label className="text-xs text-gray-600 whitespace-nowrap shrink-0">{captcha.question}</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm flex-1"
+                  value={captchaAnswer}
+                  onChange={(e) => setCaptchaAnswer(e.target.value)}
+                  placeholder="CAPTCHA answer"
+                  required
+                />
+                <button type="button" className="text-xs text-blue-600 shrink-0" onClick={() => void loadCaptcha()}>
+                  Refresh
+                </button>
+              </div>
+            ) : null}
+
             {error && (
               <div className="text-red-500 text-xs sm:text-sm bg-red-50 p-2 rounded-lg">
                 {error}
               </div>
             )}
+            {info && (
+              <div className="text-green-700 text-xs sm:text-sm bg-green-50 p-2 rounded-lg">
+                {info}
+              </div>
+            )}
+
+            {!isRegister ? (
+              <button
+                type="button"
+                className="text-left text-xs text-blue-600 hover:underline"
+                onClick={() => { setView('forgot'); setError(''); setInfo(''); }}
+              >
+                Forgot password?
+              </button>
+            ) : null}
 
             <button
               type="submit"
@@ -661,7 +966,10 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '', 
               {loading ? 'Loading...' : 'CONTINUE'}
             </button>
           </form>
+          ) : null}
 
+          {view === 'auth' ? (
+          <>
           {/* Divider */}
           <div className="flex items-center gap-2 sm:gap-3 my-3 sm:my-4">
             <div className="flex-1 h-px bg-gray-200" />
@@ -687,6 +995,8 @@ const SignInModal = ({ open, onClose, defaultMode = 'login', bonusMessage = '', 
               Privacy Policy
             </a>
           </p>
+          </>
+          ) : null}
 
           {isPage ? (
             <button

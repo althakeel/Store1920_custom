@@ -6,6 +6,7 @@
 
 Related:
 - Full shopper API: [MOBILE_APP_API.md](./MOBILE_APP_API.md)
+- App banners: [MOBILE_FEATURES_DOCUMENTATION.md](./MOBILE_FEATURES_DOCUMENTATION.md)
 - Overview: [API_OVERVIEW.md](./API_OVERVIEW.md)
 - Docs index: [README.md](./README.md)
 
@@ -15,7 +16,7 @@ Related:
 
 | Website homepage piece | Mobile app should |
 |------------------------|-------------------|
-| Hero / banner sliders / showcase image banners | Use **`GET /api/public/mobile-features`** (not web shop-showcase banners) |
+| Hero / banner sliders / showcase image banners | Prefer **`GET /api/public/shop-showcase`** (same as website) **or** `GET /api/store/mobile-banner-slider` (mirrors showcase when “Use website home banners” is on) |
 | Product grids, categories, deals, featured sections | Use the **same public APIs** as the website |
 | Navbar / footer / website chrome | Skip (native app UI) |
 
@@ -28,7 +29,13 @@ Related:
       → storeId
 
 2. In parallel:
-   GET /api/public/mobile-features?storeId={storeId}     ← app banners only
+   GET /api/store/mobile-banner-slider          ← large hero
+   GET /api/store/mobile-small-banners
+   GET /api/store/mobile-promo-cards
+   GET /api/store/mobile-tile-banners
+   — or instead —
+   GET /api/public/mobile-features?storeId={storeId}
+   plus:
    GET /api/store/featured-products?includeProducts=true&limit=12
    GET /api/home/sections
    GET /api/public/featured-sections
@@ -44,8 +51,9 @@ Related:
    GET /api/browse-history
 ```
 
-**Do not use for mobile home banners:**  
-`GET /api/public/shop-showcase` (that is for the **website**).
+**Do not skip for mobile home banners:**  
+`GET /api/public/shop-showcase` is the **same** website home showcase API — the app can use it directly.  
+`GET /api/store/mobile-banner-slider` returns the same website banner slider when “Use website home banners” is enabled in `/store/mobile-features/banners`.
 
 ---
 
@@ -55,9 +63,9 @@ Website home: `app/(public)/page.jsx` → `HomePageClient` sections.
 
 | # | Website section | Website API(s) | Mobile app API | Same? |
 |---|-----------------|----------------|----------------|-------|
-| 1 | Hero banner | `/api/public/shop-showcase` | `/api/public/mobile-features` | **Replace** |
-| 2 | Shop showcase banners | `/api/public/shop-showcase` | `/api/public/mobile-features` | **Replace** |
-| 3 | Primary / secondary banner sliders | `/api/public/shop-showcase` | `/api/public/mobile-features` | **Replace** |
+| 1 | Hero banner | `/api/public/shop-showcase` | Four mobile banner APIs or `/api/public/mobile-features` | **Replace** |
+| 2 | Shop showcase banners | `/api/public/shop-showcase` | Same as above | **Replace** |
+| 3 | Primary / secondary banner sliders | `/api/public/shop-showcase` | Same as above | **Replace** |
 | 4 | Home category icons | `/api/store/home-menu-categories` | Same | **Same** |
 | 5 | Featured / top picks products | `/api/store/featured-products?includeProducts=true` | Same | **Same** |
 | 5b | Featured layout | `/api/store/appearance/sections/public` | Same (optional) | **Same** |
@@ -73,39 +81,41 @@ Website home: `app/(public)/page.jsx` → `HomePageClient` sections.
 
 ### A. App-only banners (from Store → Mobile Features)
 
+See full overview: [MOBILE_FEATURES_DOCUMENTATION.md](./MOBILE_FEATURES_DOCUMENTATION.md).
+
 ```http
+GET /api/store/mobile-banner-slider
+GET /api/store/mobile-small-banners
+GET /api/store/mobile-promo-cards
+GET /api/store/mobile-tile-banners
 GET /api/public/mobile-features
 GET /api/public/mobile-features?storeId={storeId}
 ```
 
-**Auth:** none  
+**Auth:** none on GET  
 
-**Response (example):**
+**Section response (hero / small / promo example):**
 
 ```json
 {
-  "success": true,
-  "storeId": "...",
-  "mobileFeatures": {
-    "banners": {
-      "enabled": true,
-      "autoplayInterval": 4000,
-      "homeBanners": [
-        {
-          "id": "mobile-banner-1",
-          "image": "https://...",
-          "link": "/shop",
-          "alt": "",
-          "title": "",
-          "enabled": true
-        }
-      ]
+  "enabled": true,
+  "slideIntervalSeconds": 4,
+  "heightPx": 168,
+  "slides": [
+    {
+      "image": "https://...",
+      "link": "/shop",
+      "path": "/shop",
+      "title": "Sale"
     }
-  }
+  ]
 }
 ```
 
-Seller configures these at `/store/mobile-features/banners`.
+**Combined bag** includes `bannerSlider`, `smallBanners`, `promoCards`, `tileBanners`, and **`homeLayout`**
+(ordered list of website-same + app sections with `enabled`, `path`, `method` for the Flutter home screen).
+
+Seller configures order by drag-and-drop at `/store/mobile-features`.
 
 ---
 
@@ -185,21 +195,25 @@ Tree with `children` for chips / navigation.
 
 | Order | Block | API |
 |------:|-------|-----|
-| 1 | Banner carousel | `/api/public/mobile-features` → `mobileFeatures.banners.homeBanners` |
-| 2 | Category icons | `/api/store/home-menu-categories` |
-| 3 | Featured products | `/api/store/featured-products?includeProducts=true` |
-| 4 | Top deals | `/api/home/sections` + products/batch |
-| 5 | Featured / category sliders | `/api/public/featured-sections` |
-| 6 | Explore interests | `/api/store/explore-interests/public` + `/api/categories` |
-| 7 | Recently viewed | `/api/browse-history` (logged in) |
-| 8 | Recommended | explore-interests public + `/api/products/batch` |
+| 1 | Large hero slider | `/api/store/mobile-banner-slider` |
+| 2 | Small promo strips | `/api/store/mobile-small-banners` |
+| 3 | Promo cards | `/api/store/mobile-promo-cards` |
+| 4 | Category tiles | `/api/store/mobile-tile-banners` |
+| 5 | Category icons | `/api/store/home-menu-categories` |
+| 6 | Featured products | `/api/store/featured-products?includeProducts=true` |
+| 7 | Top deals | `/api/home/sections` + products/batch |
+| 8 | Featured / category sliders | `/api/public/featured-sections` |
+| 9 | Explore interests | `/api/store/explore-interests/public` + `/api/categories` |
+| 10 | Recently viewed | `/api/browse-history` (logged in) |
+| 11 | Recommended | explore-interests public + `/api/products/batch` |
 
 ---
 
 ## 7. Checklist for mobile developers
 
 - [ ] Call `tracking-context` once and cache `storeId`
-- [ ] Load banners only from `/api/public/mobile-features`
+- [ ] Load the four banner section GETs (or `/api/public/mobile-features`)
+- [ ] Skip a section when `enabled` is false or `slides`/`tiles` is empty
 - [ ] Do **not** drive the app home slider from `/api/public/shop-showcase`
 - [ ] Parallel-fetch product/section APIs listed in section 2
 - [ ] Use `/api/products/batch` whenever you only have IDs

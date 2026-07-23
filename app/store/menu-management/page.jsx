@@ -409,8 +409,16 @@ export default function MenuManagementPage() {
     try {
       setUploadingNavbarLogo(true);
       const token = await getToken();
+      // Keep PNG/WebP transparency — JPEG would show black around the logo.
+      const { compressImageForUpload } = await import('@/lib/compressImageForUpload');
+      const prepared = await compressImageForUpload(file, {
+        maxWidth: 1200,
+        maxHeight: 1200,
+        maxBytes: 2 * 1024 * 1024,
+        preserveTransparency: true,
+      });
       const body = new FormData();
-      body.append('image', file);
+      body.append('image', prepared);
       body.append('type', 'navbar-logo');
 
       const uploadResponse = await fetch('/api/store/upload-image', {
@@ -826,10 +834,22 @@ export default function MenuManagementPage() {
                 <Palette size={16} className="text-indigo-600" />
                 <h2 className="text-sm font-semibold text-slate-900">Navbar branding</h2>
               </div>
-              <p className="mb-4 text-xs text-slate-500">Upload logo, set size, and change the navbar background color.</p>
+              <p className="mb-4 text-xs text-slate-500">
+                Upload a PNG or WebP with a transparent background. Transparent areas show the navbar color
+                (not black). Avoid JPEG for logos — JPEG fills empty areas with black.
+              </p>
 
               <div className="grid gap-4 lg:grid-cols-[180px_minmax(0,1fr)]">
-                <div className="flex min-h-[120px] items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3">
+                <div
+                  className="flex min-h-[120px] items-center justify-center rounded-xl border border-dashed border-slate-300 p-3"
+                  style={{
+                    backgroundImage:
+                      'linear-gradient(45deg, #e2e8f0 25%, transparent 25%), linear-gradient(-45deg, #e2e8f0 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e2e8f0 75%), linear-gradient(-45deg, transparent 75%, #e2e8f0 75%)',
+                    backgroundSize: '16px 16px',
+                    backgroundPosition: '0 0, 0 8px, 8px -8px, -8px 0',
+                    backgroundColor: '#f8fafc',
+                  }}
+                >
                   {navbarBranding.logoUrl ? (
                     <img
                       src={navbarBranding.logoUrl}
@@ -847,7 +867,7 @@ export default function MenuManagementPage() {
                       {uploadingNavbarLogo ? 'Uploading...' : 'Upload logo'}
                       <input
                         type="file"
-                        accept="image/*"
+                        accept="image/png,image/webp,image/jpeg,image/*"
                         className="hidden"
                         disabled={uploadingNavbarLogo}
                         onChange={(event) => uploadNavbarLogo(event.target.files?.[0])}

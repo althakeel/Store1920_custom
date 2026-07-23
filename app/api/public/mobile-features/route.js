@@ -18,7 +18,7 @@ async function resolvePreference(storeIdQuery) {
   const queried = String(storeIdQuery || '').trim();
   if (queried && mongoose.Types.ObjectId.isValid(queried)) {
     const byQuery = await StorePreference.findOne({ storeId: queried })
-      .select('mobileFeatures storeId updatedAt')
+      .select('mobileFeatures shopShowcase storeId updatedAt')
       .lean();
     if (byQuery) return byQuery;
   }
@@ -26,14 +26,14 @@ async function resolvePreference(storeIdQuery) {
   const store = await resolvePublicFeaturedStore(Store, Product);
   if (store?._id) {
     const byStore = await StorePreference.findOne({ storeId: store._id })
-      .select('mobileFeatures storeId updatedAt')
+      .select('mobileFeatures shopShowcase storeId updatedAt')
       .lean();
     if (byStore) return byStore;
   }
 
   return StorePreference.findOne()
     .sort({ updatedAt: -1 })
-    .select('mobileFeatures storeId updatedAt')
+    .select('mobileFeatures shopShowcase storeId updatedAt')
     .lean();
 }
 
@@ -57,7 +57,10 @@ export async function GET(request) {
     const payload = {
       success: true,
       storeId: pref?.storeId ? String(pref.storeId) : null,
-      mobileFeatures: toPublicMobileFeatures(pref?.mobileFeatures || DEFAULT_MOBILE_FEATURES),
+      mobileFeatures: toPublicMobileFeatures(
+        pref?.mobileFeatures || DEFAULT_MOBILE_FEATURES,
+        pref?.shopShowcase || null,
+      ),
     };
 
     setCachedData(cacheKey, payload, 60);

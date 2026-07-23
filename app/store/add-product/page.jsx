@@ -30,6 +30,47 @@ import { compressImageForUpload, getUploadErrorMessage } from '@/lib/compressIma
 import { uploadStoreImage } from '@/lib/uploadStoreImage';
 import { sanitizeRichTextMedia } from '@/lib/sanitizeRichTextMedia';
 import { getVariantCardLabel, formatMatrixPackSizeLabel, normalizeSellerVariantOptions } from '@/lib/productVariantOptions';
+
+const MAX_PRODUCT_MEDIA = 16
+
+function createEmptyImageSlots(count = MAX_PRODUCT_MEDIA) {
+    const slots = {}
+    for (let i = 1; i <= count; i += 1) {
+        slots[String(i)] = null
+    }
+    return slots
+}
+
+function fillImageSlotsFromList(list = [], count = MAX_PRODUCT_MEDIA) {
+    const slots = createEmptyImageSlots(count)
+    ;(Array.isArray(list) ? list : []).forEach((img, i) => {
+        if (i < count && img) slots[String(i + 1)] = img
+    })
+    return slots
+}
+
+function reorderImageSlots(images, fromKey, toKey) {
+    const keys = Object.keys(images || {}).sort((a, b) => Number(a) - Number(b))
+    if (!keys.length) return images
+    const list = keys.map((key) => images[key] ?? null)
+    const from = Number(fromKey) - 1
+    const to = Number(toKey) - 1
+    if (
+        Number.isNaN(from) ||
+        Number.isNaN(to) ||
+        from < 0 ||
+        to < 0 ||
+        from >= list.length ||
+        to >= list.length ||
+        from === to
+    ) {
+        return images
+    }
+    const next = [...list]
+    const [moved] = next.splice(from, 1)
+    next.splice(to, 0, moved)
+    return fillImageSlotsFromList(next, keys.length)
+}
 import { sanitizeCategoryIdsForSave } from '@/lib/productCategoryRefs';
 
 const VARIANT_MATRIX_SELECTION_FIELDS = ['title', 'optionLabel', 'option', 'color', 'size'];
@@ -596,7 +637,9 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
         const [bulkEnabled, setBulkEnabled] = useState(false);
         const [variants, setVariants] = useState([]);
         const [isSlugManuallyEdited, setIsSlugManuallyEdited] = useState(false);
-        const [images, setImages] = useState({ "1": null, "2": null, "3": null, "4": null, "5": null, "6": null, "7": null, "8": null });
+        const [images, setImages] = useState(() => createEmptyImageSlots());
+        const [draggingMediaKey, setDraggingMediaKey] = useState(null);
+        const [dragOverMediaKey, setDragOverMediaKey] = useState(null);
         const [productInfo, setProductInfo] = useState({
             name: '', nameAr: '', slug: '', brand: '', brandAr: '', shortDescription: '', shortDescriptionAr: '', shortDescription2: '', shortDescription2Ar: '', specTableEnabled: false, specTableTitle: 'Product information', specTableTitleAr: 'مواصفات المنتج', specTableColumns: ['Property', 'Value'], specTableColumnsAr: ['الخاصية', 'القيمة'], specTableRows: [['', '']], specTableRowsAr: [['', '']], description: '', descriptionAr: '', AED: '', price: '', priceAr: '', AEDAr: '', category: '', sku: '', stockQuantity: 50, soldCount: 0, colors: [], sizes: [], fastDelivery: false, freeShippingEligible: false, useProductsPath: false, allowReturn: true, allowReplacement: true, reviews: [], badges: [], imageAspectRatio: '1:1', cardVideoPreviewEnabled: true, cardVideoPreviewDelaySec: 24, tags: [], seoTitle: '', seoDescription: '', seoKeywords: [], deliveredBy: '', soldBy: '', paymentInfo: ''
         });
@@ -1017,10 +1060,9 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 setVariants([...baseMap.values()])
                 setBulkOptions([...tierMap.values()].sort((a, b) => a.qty - b.qty))
                 setMatrixCells(cells)
-                const matrixImgState = { "1": null, "2": null, "3": null, "4": null, "5": null, "6": null, "7": null, "8": null }
-                if (product.images && Array.isArray(product.images)) {
-                    product.images.forEach((img, i) => { if (i < 8) matrixImgState[String(i + 1)] = img })
-                }
+                const matrixImgState = fillImageSlotsFromList(
+                    product.images && Array.isArray(product.images) ? product.images : []
+                )
                 setImages(matrixImgState)
                 setVariantBundleMode('matrix')
                 initializedProductIdRef.current = productId;
@@ -1078,12 +1120,9 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                 setMatrixCells({})
             }
             // Map existing images to slots - store as strings (URLs)
-            const imgState = { "1": null, "2": null, "3": null, "4": null, "5": null, "6": null, "7": null, "8": null }
-            if (product.images && Array.isArray(product.images)) {
-                product.images.forEach((img, i) => {
-                    if (i < 8) imgState[String(i + 1)] = img // Keep as string URL
-                })
-            }
+            const imgState = fillImageSlotsFromList(
+                product.images && Array.isArray(product.images) ? product.images : []
+            )
             setImages(imgState)
             initializedProductIdRef.current = productId;
     }, [product])
@@ -1229,6 +1268,12 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
             }
             return updated;
         });
+    }
+
+    const handleImageReorder = (fromKey, toKey) => {
+        if (!fromKey || !toKey || fromKey === toKey) return
+        markDirty()
+        setImages((prev) => reorderImageSlots(prev, fromKey, toKey))
     }
 
     const fileToBase64 = (file) => {
@@ -1665,10 +1710,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
             }));
 
             if (Array.isArray(imported.images) && imported.images.length > 0) {
-                const imgState = { "1": null, "2": null, "3": null, "4": null, "5": null, "6": null, "7": null, "8": null };
-                imported.images.slice(0, 8).forEach((imageUrl, index) => {
-                    if (imageUrl) imgState[String(index + 1)] = imageUrl;
-                });
+                const imgState = fillImageSlotsFromList(imported.images);
                 setImages(imgState);
             }
 
@@ -2791,7 +2833,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
 
                 {/* RIGHT COLUMN */}
                 <div className="space-y-4 order-1 xl:order-2">
-                <FormSection id="section-media" title="Product Media" icon="🖼️" subtitle="Up to 8 images or videos — upload before using AI auto-fill" defaultOpen>
+                <FormSection id="section-media" title="Product Media" icon="🖼️" subtitle={`Up to ${MAX_PRODUCT_MEDIA} images or videos — upload before using AI auto-fill`} defaultOpen>
                     <div className="flex flex-wrap items-center gap-2 mb-3 text-sm">
                         <span className="text-gray-700 font-medium">Image Aspect Ratio:</span>
                         {aspectRatioOptions.map((ratio) => (
@@ -2850,6 +2892,9 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                             ) : null}
                         </div>
                     ) : null}
+                    <p className="mb-3 text-xs text-slate-500">
+                        Drag media to reorder. Slot 1 is the main product image.
+                    </p>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                         {Object.keys(images).map((key) => {
                             const img = images[key]
@@ -2857,8 +2902,55 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                             const mediaSrc = img?.preview || img
                             const isVideo = Boolean(hasImage && ((typeof img === 'string' && isVideoSource(img)) || img?.type === 'video' || isVideoSource(mediaSrc)))
                             const mediaAspectClass = getProductImageAspectRatioClass(productInfo.imageAspectRatio)
+                            const isDragging = draggingMediaKey === key
+                            const isDropTarget = dragOverMediaKey === key && draggingMediaKey && draggingMediaKey !== key
                             return (
-                                <div key={key} className={`relative border rounded flex items-center justify-center w-full ${mediaAspectClass} cursor-pointer bg-gray-50 hover:bg-gray-100 overflow-hidden group`}>
+                                <div
+                                    key={key}
+                                    draggable={Boolean(hasImage)}
+                                    onDragStart={(e) => {
+                                        if (!hasImage) {
+                                            e.preventDefault()
+                                            return
+                                        }
+                                        e.dataTransfer.setData('text/plain', key)
+                                        e.dataTransfer.effectAllowed = 'move'
+                                        setDraggingMediaKey(key)
+                                    }}
+                                    onDragEnd={() => {
+                                        setDraggingMediaKey(null)
+                                        setDragOverMediaKey(null)
+                                    }}
+                                    onDragOver={(e) => {
+                                        if (!draggingMediaKey) return
+                                        e.preventDefault()
+                                        e.dataTransfer.dropEffect = 'move'
+                                        if (dragOverMediaKey !== key) setDragOverMediaKey(key)
+                                    }}
+                                    onDragLeave={() => {
+                                        if (dragOverMediaKey === key) setDragOverMediaKey(null)
+                                    }}
+                                    onDrop={(e) => {
+                                        e.preventDefault()
+                                        const fromKey = e.dataTransfer.getData('text/plain') || draggingMediaKey
+                                        handleImageReorder(fromKey, key)
+                                        setDraggingMediaKey(null)
+                                        setDragOverMediaKey(null)
+                                    }}
+                                    className={`relative border rounded flex items-center justify-center w-full ${mediaAspectClass} bg-gray-50 hover:bg-gray-100 overflow-hidden group transition ${
+                                        hasImage ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
+                                    } ${isDragging ? 'opacity-50 ring-2 ring-blue-300' : ''} ${
+                                        isDropTarget ? 'ring-2 ring-blue-500 border-blue-400' : ''
+                                    }`}
+                                >
+                                    {hasImage ? (
+                                        <div
+                                            className="absolute left-2 top-2 z-10 rounded bg-black/55 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white pointer-events-none"
+                                            title="Drag to reorder"
+                                        >
+                                            Drag
+                                        </div>
+                                    ) : null}
                                     <label className="absolute inset-0 w-full h-full cursor-pointer">
                                         <input type="file" accept="image/*,video/*" className="hidden" onChange={(e)=> e.target.files && handleImageUpload(key, e.target.files[0])} />
                                         {hasImage ? (
@@ -2866,7 +2958,7 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                                                 {isVideo ? (
                                                     <video
                                                         src={mediaSrc}
-                                                        className="h-full w-full object-cover"
+                                                        className="h-full w-full object-cover pointer-events-none"
                                                         muted
                                                         loop
                                                         autoPlay
@@ -2876,11 +2968,12 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                                                     <img
                                                         src={mediaSrc}
                                                         alt={`Product ${key}`}
-                                                        className="absolute inset-0 h-full w-full object-cover"
+                                                        className="absolute inset-0 h-full w-full object-cover pointer-events-none"
+                                                        draggable={false}
                                                     />
                                                 )}
-                                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                                    <span className="text-white text-sm">Change</span>
+                                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                                                    <span className="text-white text-sm">Change / Drag</span>
                                                 </div>
                                             </>
                                         ) : (
@@ -2892,13 +2985,20 @@ export default function ProductForm({ product = null, onClose, onSubmitSuccess }
                                     {hasImage && (
                                         <button
                                             type="button"
-                                            onClick={() => handleImageDelete(key)}
+                                            onClick={(e) => {
+                                                e.preventDefault()
+                                                e.stopPropagation()
+                                                handleImageDelete(key)
+                                            }}
                                             className="absolute top-2 right-2 z-10 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 focus:outline-none"
                                             title="Delete image"
                                         >
                                             &times;
                                         </button>
                                     )}
+                                    <span className="absolute bottom-1.5 left-1.5 z-10 rounded bg-white/90 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 pointer-events-none">
+                                        #{key}
+                                    </span>
                                 </div>
                             )
                         })}

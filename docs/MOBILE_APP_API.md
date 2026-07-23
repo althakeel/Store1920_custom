@@ -232,32 +232,33 @@ Optional; contact is also taken from the Firebase token / profile.
 
 ### Mobile app design (seller-managed)
 
-Configure under **Store dashboard → Mobile Features → Mobile Banners**.
+Configure under **Store dashboard → Mobile Features** (four banner sections).  
+Details: [MOBILE_FEATURES_DOCUMENTATION.md](./MOBILE_FEATURES_DOCUMENTATION.md).
 
 | Method | Path | Auth | Notes |
 |--------|------|------|-------|
-| `GET` | `/api/public/mobile-features` | Public | App home banners; optional `?storeId=` |
-| `GET` / `PUT` | `/api/store/mobile-features` | Seller Bearer | Dashboard save/load |
+| `GET` | `/api/store/mobile-banner-slider` | Public | Large hero slides |
+| `GET` | `/api/store/mobile-small-banners` | Public | Small promo strips |
+| `GET` | `/api/store/mobile-promo-cards` | Public | Promo cards (+ optional Ad badge) |
+| `GET` | `/api/store/mobile-tile-banners` | Public | Category tiles |
+| `GET` | `/api/public/mobile-features` | Public | All four sections; optional `?storeId=` |
+| `POST`/`PUT` | `/api/store/mobile-*` section routes | Seller Bearer | Save one section |
+| `GET` / `PUT` | `/api/store/mobile-features` | Seller Bearer | Dashboard load / merge save |
 
-**Public response shape:**
+**Section GET shape (hero example):**
 
 ```json
 {
-  "success": true,
-  "storeId": "...",
-  "mobileFeatures": {
-    "banners": {
-      "enabled": true,
-      "autoplayInterval": 4000,
-      "homeBanners": [
-        { "id": "...", "image": "https://...", "link": "/shop", "alt": "", "title": "", "enabled": true }
-      ]
-    }
-  }
+  "enabled": true,
+  "slideIntervalSeconds": 4,
+  "heightPx": 168,
+  "slides": [
+    { "image": "https://...", "link": "/shop", "path": "/shop", "title": "" }
+  ]
 }
 ```
 
-Website showcase banners (`/api/public/shop-showcase`) are separate and not used for the native app home slider.
+Website showcase banners (`/api/public/shop-showcase`) are separate and not used for the native app home.
 
 ### Categories & search
 

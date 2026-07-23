@@ -2,12 +2,14 @@ import authSeller from "@/middlewares/authSeller";
 import { NextResponse } from "next/server";
 import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
+import Product from '@/models/Product';
 import User from '@/models/User';
 import { appendOrderCommunicationLog } from '@/lib/orderCommunicationLog';
 import { ACTIVE_RECORD_FILTER, buildTrashMeta } from '@/lib/storeTrash';
 import { getRepairedBundleOrderLine } from '@/lib/bundleOrderRepair';
 import { getOrderLineProduct } from '@/lib/orderDisplay';
 import { requestWaslahAutoShipment } from '@/lib/waslahAutoShipment';
+import { matchVariantByOptions } from '@/lib/productVariantOptions';
 
 const ORDER_LINE_PRODUCT_SELECT = 'name slug images sku variants price salePrice';
 
@@ -168,16 +170,68 @@ export async function PUT(request, { params }) {
         if (total !== undefined) updateData.total = Number(total) || 0;
         if (notes !== undefined) updateData.notes = String(notes || '').slice(0, 5000);
         if (Array.isArray(orderItems)) {
+            const requestedProductIds = [...new Set(orderItems
+                .map((item) => String(item?.productId?._id || item?.productId || '').trim())
+                .filter(Boolean))];
+            const requestedProducts = requestedProductIds.length
+                ? await Product.find({
+                    _id: { $in: requestedProductIds },
+                    storeId: String(storeId),
+                })
+                    .select(ORDER_LINE_PRODUCT_SELECT)
+                    .lean()
+                : [];
+            const productById = new Map(
+                requestedProducts.map((product) => [String(product._id), product]),
+            );
+
+            const missingProductId = requestedProductIds.find((id) => !productById.has(id));
+            if (missingProductId) {
+                return NextResponse.json({
+                    error: 'One of the selected products was not found in this store.',
+                }, { status: 400 });
+            }
+
             updateData.orderItems = orderItems.map((item, index) => {
                 const existingItem = existingOrder.orderItems?.[index] || {};
-                const product = getOrderLineProduct(existingItem)
-                  || getOrderLineProduct(item);
+                const requestedProductId = String(
+                    item?.productId?._id || item?.productId || '',
+                ).trim();
+                const existingProduct = getOrderLineProduct(existingItem);
+                const product = productById.get(requestedProductId)
+                    || (existingProduct?._id ? existingProduct : {});
+                const requestedVariantOptions = item?.variantOptions
+                    && typeof item.variantOptions === 'object'
+                    ? item.variantOptions
+                    : null;
+                const matchedVariant = requestedVariantOptions
+                    && Array.isArray(product?.variants)
+                    && product.variants.length
+                    ? matchVariantByOptions(product.variants, requestedVariantOptions)
+                    : null;
+
+                if (
+                    requestedVariantOptions
+                    && Array.isArray(product?.variants)
+                    && product.variants.length
+                    && !matchedVariant
+                ) {
+                    throw new Error(`Select a valid bundle or variant for item ${index + 1}.`);
+                }
+
                 const base = {
                     productId: item?.productId?._id || item?.productId || existingItem?.productId?._id || existingItem?.productId || undefined,
                     name: String(item?.name || '').trim(),
                     price: Number(item?.price) || 0,
                     quantity: Math.max(1, Number(item?.quantity) || 1),
-                    ...(item?.variantOptions ? { variantOptions: item.variantOptions } : {}),
+                    ...(requestedVariantOptions
+                        ? {
+                            variantOptions: {
+                                ...(matchedVariant?.options || {}),
+                                ...requestedVariantOptions,
+                            },
+                        }
+                        : {}),
                 };
                 return getRepairedBundleOrderLine(base, product, existingOrder) || base;
             }).filter((item) => item.name && item.quantity > 0);

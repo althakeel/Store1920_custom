@@ -114,8 +114,21 @@ const Footer = () => {
     const MapPinIcon = () => (<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"> <path d="M13.3346 6.66634C13.3346 9.99501 9.64197 13.4617 8.40197 14.5323C8.28645 14.6192 8.14583 14.6662 8.0013 14.6662C7.85677 14.6662 7.71615 14.6192 7.60064 14.5323C6.36064 13.4617 2.66797 9.99501 2.66797 6.66634C2.66797 5.25185 3.22987 3.8953 4.23007 2.89511C5.23026 1.89491 6.58681 1.33301 8.0013 1.33301C9.41579 1.33301 10.7723 1.89491 11.7725 2.89511C12.7727 3.8953 13.3346 5.25185 13.3346 6.66634Z" stroke="#90A1B9" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /> <path d="M8.0013 8.66634C9.10587 8.66634 10.0013 7.77091 10.0013 6.66634C10.0013 5.56177 9.10587 4.66634 8.0013 4.66634C6.89673 4.66634 6.0013 5.56177 6.0013 6.66634C6.0013 7.77091 6.89673 8.66634 8.0013 8.66634Z" stroke="#90A1B9" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /> </svg>)
     const FacebookIcon = () => (<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"> <path d="M14.9987 1.66699H12.4987C11.3936 1.66699 10.3338 2.10598 9.55242 2.88738C8.77102 3.66878 8.33203 4.72859 8.33203 5.83366V8.33366H5.83203V11.667H8.33203V18.3337H11.6654V11.667H14.1654L14.9987 8.33366H11.6654V5.83366C11.6654 5.61265 11.7532 5.40068 11.9094 5.2444C12.0657 5.08812 12.2777 5.00033 12.4987 5.00033H14.9987V1.66699Z" stroke="#90A1B9" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /> </svg>)
     const InstagramIcon = () => (<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"> <path d="M14.5846 5.41699H14.593M5.83464 1.66699H14.168C16.4692 1.66699 18.3346 3.53247 18.3346 5.83366V14.167C18.3346 16.4682 16.4692 18.3337 14.168 18.3337H5.83464C3.53345 18.3337 1.66797 16.4682 1.66797 14.167V5.83366C1.66797 3.53247 3.53345 1.66699 5.83464 1.66699ZM13.3346 9.47533C13.4375 10.1689 13.319 10.8772 12.9961 11.4995C12.6732 12.1218 12.1623 12.6265 11.536 12.9417C10.9097 13.2569 10.2 13.3667 9.50779 13.2553C8.81557 13.1439 8.1761 12.8171 7.68033 12.3213C7.18457 11.8255 6.85775 11.1861 6.74636 10.4938C6.63497 9.80162 6.74469 9.0919 7.05991 8.46564C7.37512 7.83937 7.87979 7.32844 8.50212 7.00553C9.12445 6.68261 9.83276 6.56415 10.5263 6.66699C11.2337 6.7719 11.8887 7.10154 12.3944 7.60725C12.9001 8.11295 13.2297 8.76789 13.3346 9.47533Z" stroke="#90A1B9" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /> </svg>)
-    const TwitterIcon = () => (<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"> <path d="M18.3346 3.33368C18.3346 3.33368 17.7513 5.08368 16.668 6.16701C18.0013 14.5003 8.83464 20.5837 1.66797 15.8337C3.5013 15.917 5.33464 15.3337 6.66797 14.167C2.5013 12.917 0.417969 8.00034 2.5013 4.16701C4.33464 6.33368 7.16797 7.58368 10.0013 7.50034C9.2513 4.00034 13.3346 2.00034 15.8346 4.33368C16.7513 4.33368 18.3346 3.33368 18.3346 3.33368Z" stroke="#90A1B9" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /> </svg>)
-    const LinkedinIcon = () => (<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"> <path d="M13.3346 6.66699C14.6607 6.66699 15.9325 7.19378 16.8702 8.13146C17.8079 9.06914 18.3346 10.3409 18.3346 11.667V17.5003H15.0013V11.667C15.0013 11.225 14.8257 10.801 14.5131 10.4885C14.2006 10.1759 13.7767 10.0003 13.3346 10.0003C12.8926 10.0003 12.4687 10.1759 12.1561 10.4885C11.8436 10.801 11.668 11.225 11.668 11.667V17.5003H8.33464V11.667C8.33464 10.3409 8.86142 9.06914 9.7991 8.13146C10.7368 7.19378 12.0086 6.66699 13.3346 6.66699Z" stroke="#90A1B9" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /> <path d="M5.0013 7.50033H1.66797V17.5003H5.0013V7.50033Z" stroke="#90A1B9" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /> <path d="M3.33464 5.00033C4.25511 5.00033 5.0013 4.25413 5.0013 3.33366C5.0013 2.41318 4.25511 1.66699 3.33464 1.66699C2.41416 1.66699 1.66797 2.41318 1.66797 3.33366C1.66797 4.25413 2.41416 5.00033 3.33464 5.00033Z" stroke="#90A1B9" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /> </svg>)
+    const TikTokIcon = () => (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M14.5 3c.5 2.6 2.1 4.4 4.7 4.8v3.1c-1.6.1-3.1-.4-4.4-1.3v5.7c0 3.6-2.9 6.5-6.5 6.5S1.8 18.9 1.8 15.3 4.7 8.8 8.3 8.8c.4 0 .8 0 1.2.1v3.2c-.4-.1-.8-.2-1.2-.2-1.8 0-3.3 1.5-3.3 3.4s1.5 3.4 3.3 3.4 3.3-1.5 3.3-3.4V3h2.9z" stroke="#90A1B9" strokeWidth="1.5" strokeLinejoin="round" />
+      </svg>
+    )
+    const PinterestIcon = () => (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M12 2.5c-5.2 0-9.5 4.2-9.5 9.5 0 4 2.5 7.4 6 8.7-.1-.7-.2-1.9 0-2.7.2-.7 1.4-5.9 1.4-5.9s-.3-.7-.3-1.7c0-1.6.9-2.8 2.1-2.8 1 0 1.5.7 1.5 1.6 0 1-.6 2.4-.9 3.8-.3 1.1.5 2 1.6 2 2 0 3.4-2.5 3.4-5.5 0-2.3-1.5-3.9-4.3-3.9-3.1 0-5.1 2.3-5.1 4.9 0 .9.3 1.8.7 2.3.1.1.1.2.1.3l-.3 1.1c0 .2-.1.2-.3.1-1.3-.6-1.9-2.1-1.9-3.8 0-2.8 2.4-6.2 7.1-6.2 3.8 0 6.3 2.7 6.3 5.7 0 3.9-2.2 6.8-5.4 6.8-1.1 0-2.1-.6-2.4-1.2l-.7 2.5c-.2.9-.9 2-1.3 2.7 1.1.3 2.3.5 3.5.5 5.2 0 9.5-4.2 9.5-9.5S17.2 2.5 12 2.5z" stroke="#90A1B9" strokeWidth="1.4" strokeLinejoin="round" />
+      </svg>
+    )
+    const SnapchatIcon = () => (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M12 3.2c2.7 0 4.7 1.9 4.7 4.9v1.3c0 .4.1.8.4 1.1.5.5 1.3.7 2 .5.2 0 .4.2.3.4-.4 1.1-1.5 1.7-2.4 2.2-.4.2-.7.5-.7.9 0 .5.5 1 1.1 1.3.9.4 1.9.7 2.2 1.1.2.3 0 .7-.3.8-1 .4-1.7.2-2.4 0-.3-.1-.6-.1-.9.1-.7.5-1.6 1.2-2.6 1.5-.2.1-.4.1-.6.1h-.8c-.2 0-.4 0-.6-.1-1-.3-1.9-1-2.6-1.5-.3-.2-.6-.2-.9-.1-.7.2-1.4.4-2.4 0-.3-.1-.5-.5-.3-.8.3-.4 1.3-.7 2.2-1.1.6-.3 1.1-.8 1.1-1.3 0-.4-.3-.7-.7-.9-.9-.5-2-1.1-2.4-2.2-.1-.2.1-.4.3-.4.7.2 1.5 0 2-.5.3-.3.4-.7.4-1.1V8.1c0-3 2-4.9 4.7-4.9z" stroke="#90A1B9" strokeWidth="1.4" strokeLinejoin="round" />
+      </svg>
+    )
     const GooglePlayIcon = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3.25 2.8L13.88 13.43L3.28 20.05C3.1 19.76 3 19.42 3 19.05V3.79C3 3.43 3.09 3.09 3.25 2.8Z" fill="#22D3EE"/><path d="M16.22 10.95L19.8 8.74C20.29 8.44 20.29 7.72 19.8 7.42L15.5 4.75L13.88 13.43L16.22 10.95Z" fill="#F59E0B"/><path d="M15.5 4.75L3.25 2.8C3.42 2.52 3.68 2.29 4 2.11L16.22 10.95L13.88 13.43L15.5 4.75Z" fill="#34D399"/><path d="M16.22 10.95L4 21.73C3.67 21.55 3.41 21.31 3.23 21.02L13.88 13.43L16.22 10.95Z" fill="#F43F5E"/></svg>)
     const AppleIcon = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M15.93 3.54C16.6 2.73 17.09 1.62 17 0.5C16 0.54 14.8 1.16 14.11 1.97C13.49 2.69 12.94 3.83 13.06 4.92C14.18 5.01 15.25 4.37 15.93 3.54Z" fill="#E2E8F0"/><path d="M20.4 17.15C19.98 18.08 19.79 18.49 19.25 19.32C18.5 20.49 17.45 21.95 16.15 21.97C15 21.98 14.7 21.2 13.15 21.21C11.59 21.22 11.26 21.99 10.1 21.98C8.8 21.96 7.81 20.64 7.06 19.47C4.96 16.2 4.74 12.36 6.03 10.38C6.94 8.96 8.38 8.13 9.74 8.13C11.13 8.13 12 8.93 13.12 8.93C14.22 8.93 14.9 8.13 16.49 8.13C17.7 8.13 18.98 8.79 19.89 9.94C16.91 11.58 17.39 15.83 20.4 17.15Z" fill="#E2E8F0"/></svg>)
 
@@ -157,6 +170,7 @@ const Footer = () => {
             title: t('footer.aboutStore'),
             links: [
                 { text: t('footer.aboutUs'), path: '/about-us' },
+                { text: t('footer.blog'), path: '/blogs' },
                 { text: t('footer.businessInformation'), path: '/business-information' },
                 { text: t('footer.sellOnStore1920'), path: '/create-store' },
                 { text: t('footer.careers'), path: '/careers' },
@@ -165,8 +179,11 @@ const Footer = () => {
     ];
 
     const socialIcons = [
-        { icon: FacebookIcon, link: STORE1920_SOCIAL_LINKS.facebook },
-        { icon: InstagramIcon, link: STORE1920_SOCIAL_LINKS.instagram },
+        { icon: FacebookIcon, link: STORE1920_SOCIAL_LINKS.facebook, label: 'Facebook' },
+        { icon: InstagramIcon, link: STORE1920_SOCIAL_LINKS.instagram, label: 'Instagram' },
+        { icon: TikTokIcon, link: STORE1920_SOCIAL_LINKS.tiktok, label: 'TikTok' },
+        { icon: PinterestIcon, link: STORE1920_SOCIAL_LINKS.pinterest, label: 'Pinterest' },
+        { icon: SnapchatIcon, link: STORE1920_SOCIAL_LINKS.snapchat, label: 'Snapchat' },
     ];
     const phoneDisplay = formatCustomerSupportPhoneDisplay(STORE1920_CUSTOMER_SUPPORT_PHONE);
     const addressLines = getBusinessAddressLines();
@@ -313,12 +330,14 @@ const Footer = () => {
                 <div className="border-t border-slate-800 py-8 mt-4 w-full flex flex-col items-center justify-end">
                     <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 w-full">
                         <div className="flex items-center justify-center lg:justify-start gap-3">
-                            {socialIcons.map((item, i) => (
+                            {socialIcons.map((item) => (
                                 <Link
                                     href={item.link}
-                                    key={i}
+                                    key={item.label}
                                     target="_blank"
                                     rel="noopener noreferrer"
+                                    aria-label={item.label}
+                                    title={item.label}
                                     className="flex items-center justify-center w-8 h-8 bg-white/5 hover:bg-white/10 border border-slate-800 hover:border-slate-700 transition rounded-lg"
                                 >
                                     <item.icon />

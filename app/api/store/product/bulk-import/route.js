@@ -231,7 +231,7 @@ const mirrorRemoteImageToS3ForImport = async (imageUrl, { storeId, slug, imageIn
 };
 
 const resolveImportedImages = async (imageUrls = [], { storeId, slug }) => {
-  const normalized = [...new Set(imageUrls.map((value) => String(value || '').trim()).filter(Boolean))].slice(0, 8);
+  const normalized = [...new Set(imageUrls.map((value) => String(value || '').trim()).filter(Boolean))].slice(0, 16);
   const results = await Promise.allSettled(
     normalized.map(async (imageUrl, imageIndex) => {
       if (!shouldMirrorImageUrl(imageUrl)) {
@@ -865,11 +865,11 @@ export async function POST(request) {
         const mergedProductImages = [...new Set([
           ...mirroredImageResult.finalUrls,
           ...variantImageUrls,
-        ])].slice(0, 8);
+        ])].slice(0, 16);
         const mergedOriginalImages = [...new Set([
           ...mirroredImageResult.originalUrls,
           ...variantImageUrls,
-        ])].slice(0, 8);
+        ])].slice(0, 16);
 
         const variantPrices = variants.map((variant) => Number(variant.price)).filter((value) => Number.isFinite(value) && value > 0);
         const variantRegularPrices = variants.map((variant) => Number(variant.AED)).filter((value) => Number.isFinite(value) && value > 0);

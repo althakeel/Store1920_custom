@@ -135,6 +135,37 @@ try {
   checks.failed.push('❌ Could not read next.config.mjs');
 }
 
+// Check 5b: API security controls (rate limit, CORS, Zod validation)
+console.log('5b. Checking API security layer...');
+try {
+  const apiSecurity = fs.readFileSync('lib/apiSecurity.js', 'utf8');
+  const apiValidate = fs.readFileSync('lib/apiValidate.js', 'utf8');
+  const apiSchemas = fs.readFileSync('lib/apiSchemas.js', 'utf8');
+  const proxy = fs.existsSync('proxy.ts')
+    ? fs.readFileSync('proxy.ts', 'utf8')
+    : (fs.existsSync('middleware.ts') ? fs.readFileSync('middleware.ts', 'utf8') : '');
+
+  if (apiSecurity.includes('checkRateLimit') && apiSecurity.includes('applyCorsHeaders')) {
+    checks.passed.push('✅ API rate limiting + CORS helpers present');
+  } else {
+    checks.failed.push('❌ Missing API rate limiting / CORS helpers in lib/apiSecurity.js');
+  }
+
+  if (proxy.includes('checkRateLimit') && proxy.includes('applyCorsHeaders')) {
+    checks.passed.push('✅ Proxy/middleware enforces rate limit + CORS');
+  } else {
+    checks.warnings.push('⚠️  Proxy/middleware may not enforce global rate limit / CORS');
+  }
+
+  if (apiValidate.includes('parseJsonBody') && apiSchemas.includes("from 'zod'")) {
+    checks.passed.push('✅ Zod request validation helpers present');
+  } else {
+    checks.warnings.push('⚠️  Zod validation helpers incomplete');
+  }
+} catch (e) {
+  checks.warnings.push('⚠️  Could not verify API security layer files');
+}
+
 // Check 6: Firebase config not exposed
 console.log('6. Checking Firebase configuration...');
 try {

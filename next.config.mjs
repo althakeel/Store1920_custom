@@ -9,6 +9,16 @@ const domains = ['store1920-images.s3.ap-south-1.amazonaws.com', 'ik.imagekit.io
 if (!domains.includes('placehold.co')) domains.push('placehold.co');
 // Allow Flixcart CDN for category images
 if (!domains.includes('rukminim2.flixcart.com')) domains.push('rukminim2.flixcart.com');
+// Noon CDN (imported catalog product images)
+[
+    'f.nooncdn.com',
+    'k.nooncdn.com',
+    'a.nooncdn.com',
+    'z.nooncdn.com',
+    'n.nooncdn.com',
+].forEach((host) => {
+    if (!domains.includes(host)) domains.push(host);
+});
 // Store1920 media / WordPress uploads (category images, catalog imports)
 if (!domains.includes('db.store1920.com')) domains.push('db.store1920.com');
 // Amazon product image CDNs (imported / scraped catalog images)
@@ -55,6 +65,13 @@ const nextConfig = {
             ...domains.map((host) => ({ protocol: 'https', hostname: host, pathname: '/**' })),
             { protocol: 'https', hostname: '*.media-amazon.com', pathname: '/**' },
             { protocol: 'https', hostname: '*.ssl-images-amazon.com', pathname: '/**' },
+            { protocol: 'https', hostname: 'f.nooncdn.com', pathname: '/**' },
+            { protocol: 'https', hostname: 'k.nooncdn.com', pathname: '/**' },
+            { protocol: 'https', hostname: 'a.nooncdn.com', pathname: '/**' },
+            { protocol: 'https', hostname: 'z.nooncdn.com', pathname: '/**' },
+            { protocol: 'https', hostname: 'n.nooncdn.com', pathname: '/**' },
+            { protocol: 'https', hostname: '*.nooncdn.com', pathname: '/**' },
+            { protocol: 'http', hostname: 'f.nooncdn.com', pathname: '/**' },
             { protocol: 'https', hostname: '*.store1920.com', pathname: '/**' },
             { protocol: 'https', hostname: 'ik.imagekit.io', pathname: '/**' },
         ],

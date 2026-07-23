@@ -1,36 +1,35 @@
 import { NextResponse } from "next/server";
 import Razorpay from "razorpay";
-import { rateLimit } from "@/lib/rateLimit";
+import { checkRateLimit, getClientIp } from "@/lib/apiSecurity";
+import { razorpayOrderCreateSchema } from "@/lib/apiSchemas";
+import { parseJsonBody } from "@/lib/apiValidate";
 
 export async function POST(request) {
   try {
-    // Rate limiting: 5 requests per minute per IP
-    const ip = request.headers.get('x-forwarded-for') || 
-               request.headers.get('x-real-ip') || 
-               'unknown';
-    
-    const rateLimitResult = rateLimit(`razorpay-order:${ip}`, 5, 60000);
-    
+    // Defense-in-depth: route-level limit (proxy also throttles /api/razorpay)
+    const ip = getClientIp(request);
+    const rateLimitResult = checkRateLimit(`razorpay-order:${ip}`, 5, 60000);
+
     if (!rateLimitResult.allowed) {
       console.warn('[Razorpay Order] Rate limit exceeded for IP:', ip);
       return NextResponse.json({
-        error: rateLimitResult.message,
+        error: rateLimitResult.waitTime
+          ? `Rate limit exceeded. Try again in ${rateLimitResult.waitTime} seconds.`
+          : 'Rate limit exceeded',
         retryAfter: rateLimitResult.waitTime
-      }, { 
+      }, {
         status: 429,
         headers: {
-          'Retry-After': rateLimitResult.waitTime.toString()
+          'Retry-After': String(rateLimitResult.waitTime || 60),
+          'X-RateLimit-Limit': String(rateLimitResult.limit),
+          'X-RateLimit-Remaining': '0',
         }
       });
     }
 
-    const { amount, currency = "AED", receipt } = await request.json();
-
-    // Validate inputs
-    if (!amount || amount <= 0) {
-      console.error('[Razorpay Order] Invalid amount:', amount);
-      return NextResponse.json({ error: "Amount must be greater than 0" }, { status: 400 });
-    }
+    const parsed = await parseJsonBody(request, razorpayOrderCreateSchema);
+    if (parsed.error) return parsed.error;
+    const { amount, currency = "AED", receipt } = parsed.data;
 
     // Check environment variables
     if (!process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {

@@ -55,6 +55,7 @@ export default function StoreCreateOrderModal({ open, onClose, getToken, onCreat
   const [productResults, setProductResults] = useState([]);
   const [searchingProducts, setSearchingProducts] = useState(false);
   const [shippingFee, setShippingFee] = useState(0);
+  const [shippingMode, setShippingMode] = useState('charge'); // 'free' | 'charge'
   const [shippingSetting, setShippingSetting] = useState(null);
   const [notes, setNotes] = useState('');
   const [couponCode, setCouponCode] = useState('');
@@ -76,6 +77,8 @@ export default function StoreCreateOrderModal({ open, onClose, getToken, onCreat
     setCouponCode('');
     setDiscountType('fixed');
     setDiscountValue('');
+    setShippingMode('charge');
+    setShippingFee(0);
     setInvalidFieldIds(new Set());
     setValidationMessage('');
 
@@ -105,6 +108,11 @@ export default function StoreCreateOrderModal({ open, onClose, getToken, onCreat
   );
 
   useEffect(() => {
+    if (shippingMode === 'free') {
+      setShippingFee(0);
+      return;
+    }
+
     if (!shippingSetting || !validLineItems.length) {
       setShippingFee(0);
       return;
@@ -127,7 +135,7 @@ export default function StoreCreateOrderModal({ open, onClose, getToken, onCreat
     });
 
     setShippingFee(Number(fee || 0));
-  }, [shippingSetting, validLineItems, form.state, form.country, form.payment, subtotal]);
+  }, [shippingMode, shippingSetting, validLineItems, form.state, form.country, form.payment, subtotal]);
 
   const discountAmount = useMemo(() => {
     const value = Math.max(0, Number(discountValue) || 0);
@@ -372,7 +380,7 @@ export default function StoreCreateOrderModal({ open, onClose, getToken, onCreat
           paymentReferenceId: storeOrderPaymentNeedsReference(form.payment)
             ? form.paymentReferenceId?.trim() || undefined
             : undefined,
-          shippingFee,
+          shippingFee: shippingMode === 'free' ? 0 : Number(shippingFee || 0),
           couponCode: couponCode.trim() || undefined,
           discount: Number(discountValue) > 0
             ? { type: discountType, value: Number(discountValue) }
@@ -678,16 +686,54 @@ export default function StoreCreateOrderModal({ open, onClose, getToken, onCreat
 
               <div className="space-y-4">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-slate-600">Shipping fee ({currency})</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={shippingFee}
-                    onChange={(e) => setShippingFee(Number(e.target.value) || 0)}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  />
+                  <label className="mb-2 block text-xs font-medium text-slate-600">Shipping</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShippingMode('free')}
+                      className={`rounded-lg border px-3 py-2.5 text-left text-sm font-medium transition-colors ${
+                        shippingMode === 'free'
+                          ? 'border-emerald-500 bg-emerald-50 text-emerald-800 ring-1 ring-emerald-500'
+                          : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      Free shipping
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShippingMode('charge')}
+                      className={`rounded-lg border px-3 py-2.5 text-left text-sm font-medium transition-colors ${
+                        shippingMode === 'charge'
+                          ? 'border-blue-500 bg-blue-50 text-blue-800 ring-1 ring-blue-500'
+                          : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      Delivery charge
+                    </button>
+                  </div>
                 </div>
+                {shippingMode === 'charge' ? (
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-600">
+                      Shipping fee ({currency})
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={shippingFee}
+                      onChange={(e) => setShippingFee(Number(e.target.value) || 0)}
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    />
+                    <p className="mt-1 text-xs text-slate-500">
+                      Auto-filled from shipping settings — you can override.
+                    </p>
+                  </div>
+                ) : (
+                  <p className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                    No delivery charge — shipping fee will be {currency} 0.
+                  </p>
+                )}
                 <div>
                   <label className="mb-1 block text-xs font-medium text-slate-600">Coupon code (optional)</label>
                   <input
@@ -747,8 +793,12 @@ export default function StoreCreateOrderModal({ open, onClose, getToken, onCreat
                 </div>
               ) : null}
               <div className="mt-2 flex items-center justify-between text-sm text-slate-600">
-                <span>Shipping</span>
-                <span>{currency} {Number(shippingFee || 0).toLocaleString()}</span>
+                <span>{shippingMode === 'free' ? 'Shipping (free)' : 'Shipping'}</span>
+                <span>
+                  {shippingMode === 'free'
+                    ? `${currency} 0`
+                    : `${currency} ${Number(shippingFee || 0).toLocaleString()}`}
+                </span>
               </div>
               <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3 text-base font-semibold text-slate-900">
                 <span>Order total</span>

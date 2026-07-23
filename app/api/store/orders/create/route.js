@@ -8,6 +8,8 @@ import { getAuth } from '@/lib/firebase-admin';
 import { buildGuestInfoFromForm } from '@/lib/storeCreateOrder';
 import { validateAddressPayload } from '@/lib/addressValidation';
 import { runWithTrustedManualStoreOrder } from '@/lib/manualStoreOrderContext';
+import { storeCreateOrderSchema } from '@/lib/apiSchemas';
+import { parseJsonBody, sanitizePlainText } from '@/lib/apiValidate';
 
 async function verifySeller(request) {
   const authHeader = request.headers.get('authorization');
@@ -60,21 +62,20 @@ export async function POST(request) {
     if (auth.error) return auth.error;
 
     const { storeId, sellerUid, sellerName } = auth;
-    const body = await request.json();
+    const parsed = await parseJsonBody(request, storeCreateOrderSchema);
+    if (parsed.error) return parsed.error;
+
     const {
       form,
       items,
       paymentMethod: paymentMethodInput,
       shippingFee,
       couponCode,
-      notes,
+      notes: notesRaw,
       paymentReferenceId,
       discount,
-    } = body || {};
-
-    if (!Array.isArray(items) || items.length === 0) {
-      return NextResponse.json({ error: 'Add at least one product' }, { status: 400 });
-    }
+    } = parsed.data;
+    const notes = notesRaw ? sanitizePlainText(notesRaw, { maxLength: 2000 }) : undefined;
 
     const guestInfo = buildGuestInfoFromForm(form || {});
     const addressError = validateAddressPayload({

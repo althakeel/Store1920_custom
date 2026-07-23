@@ -5,10 +5,11 @@ import connectDB from '@/lib/mongodb';
 import StorePreference from '@/models/StorePreference';
 import authSeller from '@/middlewares/authSeller';
 import { getAuth } from '@/lib/firebase-admin';
-import { deleteCacheKey } from '@/lib/cache';
+import { deleteCacheKey, invalidateCachePattern } from '@/lib/cache';
 import {
   DEFAULT_MOBILE_FEATURES,
   MOBILE_FEATURES_CACHE_KEY,
+  mergeMobileFeaturesUpdate,
   normalizeMobileFeatures,
 } from '@/lib/mobileFeatures';
 
@@ -42,6 +43,7 @@ async function requireSeller(request) {
 
 function invalidateMobileFeaturesCache() {
   deleteCacheKey(MOBILE_FEATURES_CACHE_KEY);
+  invalidateCachePattern(`${MOBILE_FEATURES_CACHE_KEY}:`);
   try {
     revalidatePath('/');
   } catch {
@@ -76,10 +78,16 @@ export async function PUT(request) {
     if (auth.error) return auth.error;
 
     const body = await request.json();
-    const mobileFeatures = normalizeMobileFeatures(body?.mobileFeatures || body || {});
-
     await connectDB();
     const storeObjectId = resolveStoreObjectId(auth.storeId);
+    const existing = await StorePreference.findOne({ storeId: storeObjectId })
+      .select('mobileFeatures')
+      .lean();
+
+    const mobileFeatures = mergeMobileFeaturesUpdate(
+      existing?.mobileFeatures || {},
+      body?.mobileFeatures || body || {},
+    );
 
     const updated = await StorePreference.findOneAndUpdate(
       { storeId: storeObjectId },

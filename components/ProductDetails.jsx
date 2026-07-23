@@ -1,7 +1,7 @@
 'use client'
 
 import { StarIcon, HeartIcon, MinusIcon, PlusIcon, ShoppingCartIcon, Trash2, Check, ChevronLeft, ChevronRight, ChevronDown, X, Truck } from "lucide-react";
-import Image from "next/image";
+import Image from "@/components/SafeNextImage";
 import Link from "next/link";
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { createPortal } from "react-dom";

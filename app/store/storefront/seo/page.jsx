@@ -1,19 +1,70 @@
 "use client"
 
-import { useMemo, useState, useEffect } from "react"
+import { useMemo, useState, useEffect, useRef } from "react"
 import axios from "axios"
 import { useAuth } from "@/lib/useAuth"
 
 const PRESET_PAGES = [
+  // Main
   { label: "Home", path: "/" },
   { label: "Shop", path: "/shop" },
+  { label: "Products", path: "/products" },
+  { label: "Categories", path: "/categories" },
+  { label: "Browse", path: "/browse" },
+  { label: "Search Results", path: "/search-results" },
+  // Shopping
   { label: "Fast Delivery", path: "/fast-delivery" },
+  { label: "Offers", path: "/offers" },
+  { label: "New Arrivals", path: "/new" },
+  { label: "New Arrivals (alt)", path: "/new-arrivals" },
+  { label: "Best Sellers", path: "/best-sellers" },
+  { label: "Top Selling", path: "/top-selling" },
+  { label: "Trending Now", path: "/trending-now" },
+  { label: "Clearance Sale", path: "/clearance-sale" },
+  { label: "5 Star Rated", path: "/5-star-rated" },
+  { label: "Recommended", path: "/recommended" },
+  { label: "Under 149", path: "/under-149" },
+  { label: "Under 499", path: "/under-499" },
+  { label: "Recently Viewed", path: "/recently-viewed" },
+  // Account / cart
   { label: "Wishlist", path: "/wishlist" },
   { label: "Cart", path: "/cart" },
   { label: "Checkout", path: "/checkout" },
+  { label: "Orders", path: "/orders" },
   { label: "Track Order", path: "/track-order" },
-  { label: "Contact", path: "/contact" },
-  { label: "About", path: "/about" },
+  { label: "Return Request", path: "/return-request" },
+  { label: "Sign In", path: "/sign-in" },
+  { label: "Sign Up", path: "/sign-up" },
+  // Content
+  { label: "Blog", path: "/blogs" },
+  { label: "About Us", path: "/about-us" },
+  { label: "Contact Us", path: "/contact-us" },
+  { label: "Business Information", path: "/business-information" },
+  { label: "Careers", path: "/careers" },
+  { label: "Create Store", path: "/create-store" },
+  { label: "FAQ", path: "/faq" },
+  { label: "Help", path: "/help" },
+  { label: "Support", path: "/support" },
+  { label: "Sitemap", path: "/sitemap" },
+  { label: "Pricing", path: "/pricing" },
+  { label: "Payment and Pricing", path: "/payment-and-pricing" },
+  // Policies
+  { label: "Privacy Policy", path: "/privacy-policy" },
+  { label: "Privacy", path: "/privacy" },
+  { label: "Shipping Policy", path: "/shipping-policy" },
+  { label: "Shipping", path: "/shipping" },
+  { label: "Return Policy", path: "/return-policy" },
+  { label: "Refund Policy", path: "/refund-policy" },
+  { label: "Cancellation and Refunds", path: "/cancellation-and-refunds" },
+  { label: "Cancellation Policy", path: "/cancellation-policy" },
+  { label: "Terms and Conditions", path: "/terms-and-conditions" },
+  { label: "Terms of Sale", path: "/terms-of-sale" },
+  { label: "Terms", path: "/terms" },
+  { label: "Cookie Policy", path: "/cookie-policy" },
+  { label: "Warranty Policy", path: "/warranty-policy" },
+  // Legacy aliases (if older SEO was saved under these)
+  { label: "About (legacy)", path: "/about" },
+  { label: "Contact (legacy)", path: "/contact" },
 ]
 
 function normalizePath(path = "/") {
@@ -36,8 +87,21 @@ function parseKeywords(input = "") {
   )
 }
 
+function pathLabel(path) {
+  const preset = PRESET_PAGES.find((page) => page.path === path)
+  return preset ? `${preset.label} (${path})` : path
+}
+
+function hasSeoContent(entry = {}) {
+  const title = String(entry.title || "").trim()
+  const description = String(entry.description || "").trim()
+  const keywords = Array.isArray(entry.keywords) ? entry.keywords.filter(Boolean) : []
+  return Boolean(title || description || keywords.length)
+}
+
 export default function StorefrontSeoPage() {
   const { getToken } = useAuth()
+  const formRef = useRef(null)
 
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -50,9 +114,21 @@ export default function StorefrontSeoPage() {
   const [pageSeoMap, setPageSeoMap] = useState({})
 
   const allPathOptions = useMemo(() => {
-    const preset = PRESET_PAGES.map((page) => page.path)
-    const dynamic = Object.keys(pageSeoMap || {})
-    return Array.from(new Set([...preset, ...dynamic])).sort((a, b) => a.localeCompare(b))
+    const presetOrder = PRESET_PAGES.map((page) => page.path)
+    const dynamic = Object.keys(pageSeoMap || {}).filter((path) => !presetOrder.includes(path))
+    return [...presetOrder, ...dynamic.sort((a, b) => a.localeCompare(b))]
+  }, [pageSeoMap])
+
+  const savedEntries = useMemo(() => {
+    return Object.entries(pageSeoMap || {})
+      .filter(([, value]) => hasSeoContent(value))
+      .map(([path, value]) => ({
+        path,
+        title: value?.title || "",
+        description: value?.description || "",
+        keywords: Array.isArray(value?.keywords) ? value.keywords : [],
+      }))
+      .sort((a, b) => a.path.localeCompare(b.path))
   }, [pageSeoMap])
 
   const hydrateFormForPath = (path, map = pageSeoMap) => {
@@ -98,6 +174,15 @@ export default function StorefrontSeoPage() {
     setCustomPath("")
   }
 
+  const handleEditEntry = (path) => {
+    handlePathSelect(path)
+    setMessage(`Editing SEO for ${path}`)
+    // Scroll form into view for editing
+    requestAnimationFrame(() => {
+      formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+    })
+  }
+
   const handleSave = async (e) => {
     e.preventDefault()
     setSaving(true)
@@ -136,8 +221,8 @@ export default function StorefrontSeoPage() {
     }
   }
 
-  const handleRemove = async () => {
-    const key = normalizePath(selectedPath)
+  const handleRemove = async (path = selectedPath) => {
+    const key = normalizePath(path)
     const nextMap = { ...(pageSeoMap || {}) }
     delete nextMap[key]
 
@@ -151,10 +236,12 @@ export default function StorefrontSeoPage() {
         { headers: { Authorization: `Bearer ${token}` } }
       )
       setPageSeoMap(nextMap)
-      setTitle("")
-      setDescription("")
-      setKeywordsInput("")
-      setMessage("SEO settings removed for this page")
+      if (normalizePath(selectedPath) === key) {
+        setTitle("")
+        setDescription("")
+        setKeywordsInput("")
+      }
+      setMessage(`SEO settings removed for ${key}`)
     } catch (error) {
       setMessage(error?.response?.data?.error || "Failed to remove SEO settings")
     } finally {
@@ -164,10 +251,12 @@ export default function StorefrontSeoPage() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div ref={formRef} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <h1 className="text-2xl font-semibold text-slate-900">Page SEO Meta Tags</h1>
         <p className="mt-2 text-sm text-slate-600">
-          Select a page path and configure meta title, description, and keywords.
+          Set Google/search meta title, description, and keywords for each storefront page.
+          Choose a page (or type a custom path), fill the fields, then click <strong>Save SEO</strong>.
+          Saved pages appear in the list below — use <strong>Edit</strong> to change them anytime.
         </p>
 
         {loading ? (
@@ -184,7 +273,8 @@ export default function StorefrontSeoPage() {
                 >
                   {allPathOptions.map((path) => (
                     <option key={path} value={path}>
-                      {path}
+                      {pathLabel(path)}
+                      {hasSeoContent(pageSeoMap?.[path]) ? " • saved" : ""}
                     </option>
                   ))}
                 </select>
@@ -256,7 +346,7 @@ export default function StorefrontSeoPage() {
               </button>
               <button
                 type="button"
-                onClick={handleRemove}
+                onClick={() => handleRemove(selectedPath)}
                 disabled={saving}
                 className="rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 disabled:opacity-60"
               >
@@ -273,13 +363,87 @@ export default function StorefrontSeoPage() {
             </div>
 
             {message && (
-              <p className={`text-sm ${message.toLowerCase().includes("success") ? "text-emerald-700" : "text-slate-700"}`}>
+              <p className={`text-sm ${message.toLowerCase().includes("success") || message.toLowerCase().includes("editing") || message.toLowerCase().includes("removed") ? "text-emerald-700" : "text-slate-700"}`}>
                 {message}
               </p>
             )}
           </form>
         )}
       </div>
+
+      {!loading && (
+        <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">Saved SEO pages</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Pages you already configured. Click Edit to load them into the form above.
+              </p>
+            </div>
+            <p className="text-sm font-medium text-slate-500">
+              {savedEntries.length} saved
+            </p>
+          </div>
+
+          {savedEntries.length === 0 ? (
+            <div className="mt-5 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+              No SEO entries yet. Select a page, fill meta fields, and click Save SEO.
+            </div>
+          ) : (
+            <div className="mt-5 overflow-x-auto rounded-xl border border-slate-200">
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Page</th>
+                    <th className="px-4 py-3">Meta title</th>
+                    <th className="px-4 py-3">Description</th>
+                    <th className="px-4 py-3">Keywords</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {savedEntries.map((entry) => (
+                    <tr key={entry.path} className={selectedPath === entry.path ? "bg-sky-50/60" : undefined}>
+                      <td className="px-4 py-3 align-top font-medium text-slate-900 whitespace-nowrap">
+                        {pathLabel(entry.path)}
+                      </td>
+                      <td className="px-4 py-3 align-top text-slate-700 max-w-[180px]">
+                        <span className="line-clamp-2">{entry.title || "—"}</span>
+                      </td>
+                      <td className="px-4 py-3 align-top text-slate-600 max-w-[260px]">
+                        <span className="line-clamp-2">{entry.description || "—"}</span>
+                      </td>
+                      <td className="px-4 py-3 align-top text-slate-600 max-w-[180px]">
+                        <span className="line-clamp-2">
+                          {entry.keywords.length ? entry.keywords.join(", ") : "—"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 align-top text-right whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() => handleEditEntry(entry.path)}
+                          disabled={saving}
+                          className="rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-700 disabled:opacity-60"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRemove(entry.path)}
+                          disabled={saving}
+                          className="ml-2 rounded-md border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60"
+                        >
+                          Remove
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

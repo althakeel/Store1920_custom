@@ -6,6 +6,8 @@ import { getAuth } from '@/lib/firebase-admin';
 import { getAuthoritativeStripeCheckoutPayment } from '@/lib/stripeOrderPayment';
 import { validateStripeAuthoritativePaymentState } from '@/lib/stripePaymentState';
 import { verifyPrepaidUpsellToken } from '@/lib/prepaidUpsellToken';
+import { stripeSecureCheckoutOptions } from '@/lib/paymentSecurity';
+import { logPaymentEvent } from '@/lib/paymentTransactionLog';
 
 export const dynamic = 'force-dynamic';
 
@@ -145,7 +147,7 @@ export async function POST(request) {
     }
 
     const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
+      ...stripeSecureCheckoutOptions(),
       line_items: [{
         price_data: {
           currency: 'AED',
@@ -192,6 +194,17 @@ export async function POST(request) {
       await stripe.checkout.sessions.expire(session.id).catch(() => {});
       return NextResponse.json({ error: 'Order changed before Stripe checkout could be saved' }, { status: 409 });
     }
+
+    await logPaymentEvent({
+      storeId: order.storeId || '',
+      orderId,
+      eventType: 'SESSION_CREATED',
+      provider: 'STRIPE',
+      providerReference: session.id,
+      amount: discountedTotal,
+      status: 'pending',
+      meta: { prepaidUpsell: true },
+    });
 
     return NextResponse.json({ success: true, url: session.url, orderId });
   } catch (error) {

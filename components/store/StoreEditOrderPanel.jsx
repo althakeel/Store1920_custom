@@ -12,6 +12,8 @@ import {
 import {
   buildOrderDetailsUpdatePayload,
   calculateEditOrderSubtotal,
+  getEditOrderSelectedVariantIndex,
+  getEditOrderVariantChoices,
   orderHasManualTotal,
   orderToEditForm,
   orderToEditLineItems,
@@ -26,6 +28,8 @@ function emptyLineItem() {
     price: 0,
     quantity: 1,
     image: '',
+    product: null,
+    variantOptions: null,
   };
 }
 
@@ -41,6 +45,7 @@ export default function StoreEditOrderPanel({
   const [productSearch, setProductSearch] = useState('');
   const [productResults, setProductResults] = useState([]);
   const [searchingProducts, setSearchingProducts] = useState(false);
+  const [addingProductId, setAddingProductId] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -50,6 +55,53 @@ export default function StoreEditOrderPanel({
     setProductSearch('');
     setProductResults([]);
   }, [order?._id]);
+
+  // Load full product variants/bundles for existing lines so the selector appears.
+  useEffect(() => {
+    let cancelled = false;
+    const initialItems = orderToEditLineItems(order);
+    const productIds = [...new Set(
+      initialItems
+        .filter((item) => item.productId && !Array.isArray(item.product?.variants))
+        .map((item) => String(item.productId)),
+    )];
+
+    if (!productIds.length) return undefined;
+
+    const hydrateLineProducts = async () => {
+      try {
+        const token = await getToken();
+        const results = await Promise.all(
+          productIds.map(async (productId) => {
+            const { data } = await axios.get('/api/store/product', {
+              headers: { Authorization: `Bearer ${token}` },
+              params: { productId },
+            });
+            return [productId, data?.product || null];
+          }),
+        );
+        if (cancelled) return;
+
+        const productById = new Map(results.filter(([, product]) => product));
+        if (!productById.size) return;
+
+        setLineItems((current) => current.map((item) => {
+          const product = productById.get(String(item.productId || ''));
+          if (!product || Array.isArray(item.product?.variants)) return item;
+          return {
+            ...item,
+            product,
+            image: item.image || product.images?.[0] || '',
+          };
+        }));
+      } catch (error) {
+        console.error('Order line product hydrate failed:', error);
+      }
+    };
+
+    hydrateLineProducts();
+    return () => { cancelled = true; };
+  }, [order?._id, getToken]);
 
   const subtotal = useMemo(() => calculateEditOrderSubtotal(lineItems), [lineItems]);
   const computedTotal = useMemo(
@@ -83,21 +135,41 @@ export default function StoreEditOrderPanel({
     }
   };
 
-  const addProductToOrder = (product) => {
+  const addProductToOrder = async (product) => {
     if (!product?._id) return;
-    setLineItems((current) => [
-      ...current.filter((item) => item.productId || item.name),
-      {
-        key: `product-${product._id}`,
-        productId: String(product._id),
-        name: product.name || 'Product',
-        price: Number(product.price || product.AED || 0),
-        quantity: 1,
-        image: product.images?.[0] || '',
-      },
-    ]);
-    setProductSearch('');
-    setProductResults([]);
+    const productId = String(product._id);
+    setAddingProductId(productId);
+    try {
+      const token = await getToken();
+      const { data } = await axios.get('/api/store/product', {
+        headers: { Authorization: `Bearer ${token}` },
+        params: { productId },
+      });
+      const fullProduct = data?.product || product;
+      const choices = getEditOrderVariantChoices(fullProduct);
+      const firstChoice = choices[0] || null;
+
+      setLineItems((current) => [
+        ...current.filter((item) => item.productId || item.name),
+        {
+          key: `product-${productId}-${Date.now()}`,
+          productId,
+          product: fullProduct,
+          name: fullProduct.name || 'Product',
+          price: firstChoice?.price ?? Number(fullProduct.price || fullProduct.AED || 0),
+          quantity: 1,
+          image: fullProduct.images?.[0] || '',
+          variantOptions: firstChoice?.options || null,
+        },
+      ]);
+      setProductSearch('');
+      setProductResults([]);
+    } catch (error) {
+      console.error('Product details load failed:', error);
+      toast.error('Could not load product variants');
+    } finally {
+      setAddingProductId('');
+    }
   };
 
   const updateLineItem = (key, patch) => {
@@ -110,6 +182,17 @@ export default function StoreEditOrderPanel({
     setLineItems((current) => {
       const next = current.filter((item) => item.key !== key);
       return next.length ? next : [emptyLineItem()];
+    });
+  };
+
+  const selectLineVariant = (item, rawIndex) => {
+    const choices = getEditOrderVariantChoices(item.product);
+    const choice = choices[Number(rawIndex)];
+    if (!choice) return;
+
+    updateLineItem(item.key, {
+      variantOptions: choice.options,
+      price: choice.price,
     });
   };
 
@@ -210,53 +293,91 @@ export default function StoreEditOrderPanel({
                 key={product._id}
                 type="button"
                 onClick={() => addProductToOrder(product)}
+                disabled={Boolean(addingProductId)}
                 className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-50"
               >
                 <span className="font-medium text-slate-900">{product.name}</span>
-                <span className="text-slate-500">{currency}{Number(product.price || product.AED || 0)}</span>
+                <span className="text-slate-500">
+                  {addingProductId === String(product._id)
+                    ? 'Loading options...'
+                    : `${currency}${Number(product.price || product.AED || 0)}`}
+                </span>
               </button>
             ))}
           </div>
         ) : null}
 
         <div className="space-y-3">
-          {lineItems.map((item) => (
-            <div key={item.key} className="grid gap-2 rounded-lg border border-slate-200 p-3 sm:grid-cols-[1fr_100px_90px_40px]">
-              <input
-                value={item.name}
-                onChange={(e) => updateLineItem(item.key, { name: e.target.value })}
-                placeholder="Product name"
-                className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
-              />
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={item.price}
-                onChange={(e) => updateLineItem(item.key, { price: Number(e.target.value) || 0 })}
-                placeholder="Price"
-                className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
-              />
-              <div className="flex items-center gap-1">
-                <button type="button" onClick={() => updateLineItem(item.key, { quantity: Math.max(1, item.quantity - 1) })} className="rounded border border-slate-200 p-1">
-                  <Minus size={14} />
-                </button>
-                <input
-                  type="number"
-                  min="1"
-                  value={item.quantity}
-                  onChange={(e) => updateLineItem(item.key, { quantity: Math.max(1, Number(e.target.value) || 1) })}
-                  className="w-12 rounded border border-slate-200 px-1 py-1 text-center text-sm"
-                />
-                <button type="button" onClick={() => updateLineItem(item.key, { quantity: item.quantity + 1 })} className="rounded border border-slate-200 p-1">
-                  <Plus size={14} />
-                </button>
+          {lineItems.map((item) => {
+            const variantChoices = getEditOrderVariantChoices(item.product);
+            const selectedVariantIndex = getEditOrderSelectedVariantIndex(item, item.product);
+
+            return (
+              <div key={item.key} className="space-y-3 rounded-lg border border-slate-200 p-3">
+                <div className="grid gap-2 sm:grid-cols-[1fr_100px_90px_40px]">
+                  <input
+                    value={item.name}
+                    onChange={(e) => updateLineItem(item.key, { name: e.target.value })}
+                    placeholder="Product name"
+                    className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={item.price}
+                    onChange={(e) => updateLineItem(item.key, { price: Number(e.target.value) || 0 })}
+                    placeholder="Price"
+                    className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  />
+                  <div className="flex items-center gap-1">
+                    <button type="button" onClick={() => updateLineItem(item.key, { quantity: Math.max(1, item.quantity - 1) })} className="rounded border border-slate-200 p-1">
+                      <Minus size={14} />
+                    </button>
+                    <input
+                      type="number"
+                      min="1"
+                      value={item.quantity}
+                      onChange={(e) => updateLineItem(item.key, { quantity: Math.max(1, Number(e.target.value) || 1) })}
+                      className="w-12 rounded border border-slate-200 px-1 py-1 text-center text-sm"
+                    />
+                    <button type="button" onClick={() => updateLineItem(item.key, { quantity: item.quantity + 1 })} className="rounded border border-slate-200 p-1">
+                      <Plus size={14} />
+                    </button>
+                  </div>
+                  <button type="button" onClick={() => removeLineItem(item.key)} className="rounded border border-red-200 p-2 text-red-600 hover:bg-red-50">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+
+                {variantChoices.length > 0 ? (
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-600">
+                      Bundle / variant
+                    </label>
+                    <select
+                      value={selectedVariantIndex >= 0 ? String(selectedVariantIndex) : ''}
+                      onChange={(event) => selectLineVariant(item, event.target.value)}
+                      className="w-full rounded-lg border border-blue-200 bg-blue-50/50 px-3 py-2.5 text-sm text-slate-900"
+                    >
+                      {selectedVariantIndex < 0 ? <option value="">Select bundle or variant</option> : null}
+                      {variantChoices.map((choice) => (
+                        <option key={`${choice.index}-${choice.label}`} value={choice.index}>
+                          {choice.label}
+                          {choice.sku ? ` · SKU ${choice.sku}` : ''}
+                          {` · ${currency}${choice.price.toFixed(2)}`}
+                          {choice.stock > 0 ? ` · Stock ${choice.stock}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Selecting an option updates this order line&apos;s price and saved variant.
+                    </p>
+                  </div>
+                ) : null}
               </div>
-              <button type="button" onClick={() => removeLineItem(item.key)} className="rounded border border-red-200 p-2 text-red-600 hover:bg-red-50">
-                <Trash2 size={14} />
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 

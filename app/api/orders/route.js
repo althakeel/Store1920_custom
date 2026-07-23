@@ -48,12 +48,20 @@ import { getPaymentMethodLimitError } from '@/lib/paymentMethodLimits';
 import { requestWaslahAutoShipment } from '@/lib/waslahAutoShipment';
 import { isWaslahAutoShipEnabled } from '@/lib/waslahAutoShipPolicy';
 import { createPrepaidUpsellToken } from '@/lib/prepaidUpsellToken';
+import {
+  getClientIpFromRequest,
+  stripeSecureCheckoutOptions,
+} from '@/lib/paymentSecurity';
+import { evaluateCheckoutFraud } from '@/lib/paymentFraud';
+import { logPaymentEvent } from '@/lib/paymentTransactionLog';
 import { reserveOrderStockAtomically } from '@/lib/orderStockReservation';
 import { getVerifiedRazorpayOrder } from '@/lib/razorpayVerifiedOrderContext';
 import { getTrustedManualStoreOrder } from '@/lib/manualStoreOrderContext';
 import {
   matchVariantByOptions,
 } from '@/lib/productVariantOptions';
+import { checkoutOrderCreateSchema } from '@/lib/apiSchemas';
+import { parseWithSchema } from '@/lib/apiValidate';
 
 const PaymentMethod = {
     COD: 'COD',
@@ -89,8 +97,14 @@ export async function POST(request) {
         // customer details from its headers/body.
         let bodyText = '';
         try { bodyText = await request.text(); } catch (err) { bodyText = '[unreadable]'; }
-        let body = {};
-        try { body = JSON.parse(bodyText); } catch (err) { body = { raw: bodyText }; }
+        let rawBody = {};
+        try { rawBody = JSON.parse(bodyText); } catch (err) {
+            return NextResponse.json({ error: 'Invalid JSON body', code: 'INVALID_JSON' }, { status: 400 });
+        }
+
+        const parsed = parseWithSchema(rawBody, checkoutOrderCreateSchema);
+        if (parsed.error) return parsed.error;
+        const body = parsed.data;
 
         // Extract fields
         const {
@@ -1068,13 +1082,33 @@ export async function POST(request) {
             }
         }
 
-        // Stripe payment
+        // Stripe payment (hosted Checkout — PAN never touches our servers; 3DS enforced)
         if (paymentMethod === 'STRIPE') {
+            const clientIp = getClientIpFromRequest(request);
             const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
             const origin = request.headers.get('origin') || process.env.NEXT_PUBLIC_BASE_URL || 'https://store1920.com';
             const primaryOrderId = orderIds[0] || '';
+            const primaryOrderMeta = primaryOrderId
+                ? await Order.findById(primaryOrderId).select('storeId').lean()
+                : null;
+            const fraudStoreId = primaryOrderMeta?.storeId || '';
+            const fraud = await evaluateCheckoutFraud({
+                email: guestInfo?.email || '',
+                phone: guestInfo?.phone || '',
+                ip: clientIp,
+                userId: userId || '',
+                amount: fullAmount,
+                paymentMethod: 'STRIPE',
+                storeId: fraudStoreId,
+                orderId: primaryOrderId,
+                userAgent: request.headers.get('user-agent') || '',
+            });
+            if (fraud.block) {
+                return NextResponse.json({ error: fraud.message, code: 'FRAUD_BLOCKED', riskScore: fraud.score }, { status: 403 });
+            }
+
             const session = await stripe.checkout.sessions.create({
-                payment_method_types: ['card'],
+                ...stripeSecureCheckoutOptions(),
                 line_items: [{
                     price_data: {
                         currency: 'AED',
@@ -1100,6 +1134,20 @@ export async function POST(request) {
                 ).catch((err) => {
                     console.error('[orders] Failed to save Stripe session id:', err?.message || err);
                 });
+                await Promise.all(orderIds.map((oid) => logPaymentEvent({
+                    storeId: fraudStoreId,
+                    orderId: oid,
+                    eventType: 'SESSION_CREATED',
+                    provider: 'STRIPE',
+                    providerReference: session.id,
+                    amount: fullAmount,
+                    status: 'pending',
+                    ip: clientIp,
+                    userAgent: request.headers.get('user-agent') || '',
+                    riskScore: fraud.score,
+                    riskSignals: fraud.signals,
+                    meta: { review: fraud.review },
+                })));
             }
             return NextResponse.json({ session, orderId: primaryOrderId });
         }

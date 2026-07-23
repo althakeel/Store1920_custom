@@ -16,6 +16,7 @@ import {
 } from '@/lib/stripeOrderPayment';
 import { recordTrustedOrderPayment } from '@/lib/orderPaymentVerification';
 import { blockOrdersForPaymentReversal } from '@/lib/orderPaymentReversal';
+import { logPaymentEvent } from '@/lib/paymentTransactionLog';
 
 export async function POST(request){
     try {
@@ -199,6 +200,16 @@ export async function POST(request){
                 paymentStatus,
                 reason,
             })
+            await Promise.all((context.orderIds || []).map((orderId) => logPaymentEvent({
+                orderId,
+                eventType: String(paymentStatus || '').includes('DISPUTE') || event.type.includes('dispute')
+                    ? 'DISPUTE'
+                    : 'REVERSAL',
+                provider: 'STRIPE',
+                providerReference: context.session.id,
+                status: paymentStatus,
+                meta: { eventType: event.type, reason, eventId: event.id },
+            })))
         }
 
         switch (event.type) {

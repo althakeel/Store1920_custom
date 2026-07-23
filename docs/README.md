@@ -15,6 +15,7 @@ This folder is the **full API documentation set** — from public storefront / m
 | 0 | **[API_OVERVIEW.md](./API_OVERVIEW.md)** | Everyone | Architecture, auth modes, systems map, how pieces connect |
 | 1 | **[MOBILE_APP_API.md](./MOBILE_APP_API.md)** | Customer mobile / web shopper | Catalog, cart, checkout, COD/Stripe/Tabby/Tamara, wishlist, track order (~90 routes) |
 | 1b | **[MOBILE_HOME_PAGE_APIS.md](./MOBILE_HOME_PAGE_APIS.md)** | Mobile home screen | Same APIs as website homepage + mobile banners API |
+| 1c | **[MOBILE_FEATURES_DOCUMENTATION.md](./MOBILE_FEATURES_DOCUMENTATION.md)** | App home banners | Four banner sections, dashboard, public GETs |
 | 2 | **[STORE_DASHBOARD_API.md](./STORE_DASHBOARD_API.md)** | Seller `/store` dashboard apps | Products, orders, shipping, **Mobile Features**, marketing, team (~160+ routes) |
 | 3 | **[ADMIN_API.md](./ADMIN_API.md)** | Platform admins | Store approval, home merchandising, global coupons (~19 routes) |
 | 4 | **[WEBHOOKS_AND_CRONS.md](./WEBHOOKS_AND_CRONS.md)** | Backend / DevOps | Stripe, Tabby, Tamara, Razorpay, Waslah, crons |

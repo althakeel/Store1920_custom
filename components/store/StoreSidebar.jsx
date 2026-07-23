@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation"
 
-import { HomeIcon, LayoutListIcon, SquarePenIcon, SquarePlusIcon, StarIcon, FolderIcon, TicketIcon, TruckIcon, RefreshCw, User as UserIcon, Users as UsersIcon, MessageSquare, Sparkles, BellIcon, MailIcon, Image as ImageIcon, ShoppingCart, Wallet, BarChart3, Target, Gift, Palette, CircleDashed, PackagePlus, Package, Activity, Layers, LineChart, Warehouse, MousePointerClick, ShieldAlert, Zap, Trash2, Smartphone } from "lucide-react"
+import { HomeIcon, LayoutListIcon, SquarePenIcon, SquarePlusIcon, StarIcon, FolderIcon, TicketIcon, TruckIcon, RefreshCw, User as UserIcon, Users as UsersIcon, MessageSquare, Sparkles, BellIcon, MailIcon, Image as ImageIcon, ShoppingCart, Wallet, BarChart3, Target, Gift, Palette, CircleDashed, PackagePlus, Package, Activity, Layers, LineChart, Warehouse, MousePointerClick, ShieldAlert, Zap, Trash2, Smartphone, FileText } from "lucide-react"
 
 import StoreNavLink from "@/components/store/StoreNavLink"
 
@@ -46,6 +46,8 @@ const StoreSidebar = ({ storeInfo, isOwner = false, permissions = {} }) => {
 
         { name: 'Mobile Features', href: '/store/mobile-features', icon: Smartphone },
 
+        { name: 'Blogs', href: '/store/blogs', icon: FileText },
+
         { name: 'Menu Management', href: '/store/menu-management', icon: LayoutListIcon },
 
         { name: 'Promotional Offers', href: '/store/personalized-offers', icon: Gift },
@@ -61,6 +63,8 @@ const StoreSidebar = ({ storeInfo, isOwner = false, permissions = {} }) => {
         { name: 'Spin Wheel', href: '/store/spin-wheel', icon: CircleDashed },
 
         { name: 'Shipping', href: '/store/shipping', icon: TruckIcon },
+
+        { name: 'Payment Security', href: '/store/payment-security', icon: ShieldAlert },
 
         { name: 'Customers', href: '/store/customers', icon: UsersIcon },
 
@@ -144,6 +148,8 @@ const StoreSidebar = ({ storeInfo, isOwner = false, permissions = {} }) => {
 
                 '/store/mobile-features',
 
+                '/store/blogs',
+
                 '/store/menu-management',
 
                 '/store/media',
@@ -207,6 +213,8 @@ const StoreSidebar = ({ storeInfo, isOwner = false, permissions = {} }) => {
                 '/store/abandoned-checkout',
 
                 '/store/shipping',
+
+                '/store/payment-security',
 
                 '/store/return-requests',
 

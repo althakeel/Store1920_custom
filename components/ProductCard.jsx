@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useEffect, useRef, useState } from 'react'
-import Image from 'next/image'
+import Image from '@/components/SafeNextImage'
 import Link from 'next/link'
 import { FaStar } from 'react-icons/fa'
 import { Minus, Plus, ShoppingCart, Trash2 } from 'lucide-react'

@@ -239,6 +239,10 @@ function OrderSuccessContent() {
   }, [params, router, user, getToken]);
 
   const order = orders && orders.length > 0 ? orders[0] : null;
+  const orderRef = useRef(order);
+  const userRef = useRef(user);
+  orderRef.current = order;
+  userRef.current = user;
 
   useEffect(() => {
     if (loading || !order?._id || purchaseTrackedRef.current) return;
@@ -257,14 +261,13 @@ function OrderSuccessContent() {
 
     let cancelled = false;
     let attempts = 0;
-    const orderForTracking = order;
-    const userForTracking = user;
 
     const run = async () => {
       while (!cancelled && !purchaseTrackedRef.current && attempts < 60) {
         attempts += 1;
-        const ok = await trackOrderSuccessPurchaseOnce(orderForTracking, {
-          onAnalytics: () => trackPurchase(orderForTracking, { user: userForTracking, metaSkip: true }),
+        const latestOrder = orderRef.current || order;
+        const ok = await trackOrderSuccessPurchaseOnce(latestOrder, {
+          onAnalytics: () => trackPurchase(latestOrder, { user: userRef.current, metaSkip: true }),
         });
         if (cancelled) return;
         if (ok || hasTrackedPersistently(purchaseKey)) {
@@ -287,6 +290,7 @@ function OrderSuccessContent() {
     order?.isPaid,
     order?.paymentStatus,
     order?.status,
+    order?.metaPurchaseSentAt,
     user?.uid,
   ]);
   function getOrderNumber(orderObj) {

@@ -978,7 +978,7 @@ export default function CheckoutPage() {
     }
   }, [appliedCoupon, form.payment]);
 
-  // Meta Pixel: AddPaymentInfo when payment method is selected on checkout
+  // Meta Pixel: AddPaymentInfo once per payment method (not per total change).
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (!form.payment) return;
@@ -990,8 +990,11 @@ export default function CheckoutPage() {
 
     if (contentIds.length === 0) return;
 
-    const eventKey = `meta_add_payment_info_${form.payment}_${contentIds.join(',')}_${Number(totalAfterWallet || 0)}`;
+    const paymentMethod = String(form.payment).toLowerCase();
+    const eventKey = `meta_add_payment_info_${paymentMethod}`;
+    // Claim before fbq — totalAfterWallet / cart remounts must not send a 2nd event.
     if (sessionStorage.getItem(eventKey)) return;
+    sessionStorage.setItem(eventKey, '1');
 
     trackMetaEvent('AddPaymentInfo', {
       value: Number(totalAfterWallet || 0),
@@ -1001,10 +1004,9 @@ export default function CheckoutPage() {
       num_items: cartArray.reduce((sum, item) => sum + Number(item?.quantity || 0), 0),
       payment_method: String(form.payment).toUpperCase(),
     }, {
+      eventID: `api:${paymentMethod}`,
       dedupeKey: `meta:AddPaymentInfo:${eventKey}`,
     });
-
-    sessionStorage.setItem(eventKey, '1');
   }, [form.payment, cartArray, totalAfterWallet]);
 
   // Load shipping settings - refetch on page load and when products change

@@ -15,6 +15,7 @@ import { Toaster } from "react-hot-toast";
 
 const SpinWheelWidget = dynamic(() => import("@/components/SpinWheelWidget"), { ssr: false });
 const GiveawayCartManager = dynamic(() => import("@/components/GiveawayCartManager"), { ssr: false });
+const AuthSessionGuard = dynamic(() => import("@/components/AuthSessionGuard"), { ssr: false });
 
 function DeferredWidgets() {
   const [ready, setReady] = useState(false);
@@ -52,6 +53,7 @@ export default function ClientLayout({ children, initialStorefrontLanguage = 'en
 
   return (
     <ReduxProvider>
+      <AuthSessionGuard />
       <Suspense fallback={null}>
         <GtmPageView />
         <MetaPixel />
@@ -87,6 +89,7 @@ export default function ClientLayout({ children, initialStorefrontLanguage = 'en
         }}
       />
       <DynamicMetaTags />
+      <AuthSessionGuard />
       {children}
       {!hideStorefrontChrome && (
         <>

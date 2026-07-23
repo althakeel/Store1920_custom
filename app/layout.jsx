@@ -74,6 +74,13 @@ export default async function RootLayout({ children }) {
             <link rel="preconnect" href={imageKitOrigin} crossOrigin="anonymous" />
           </>
         )}
+        <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=Poppins:wght@400;500;600;700;800&family=Shadows+Into+Light&display=swap"
+        />
         <link rel="dns-prefetch" href="https://connect.facebook.net" />
         <link rel="preconnect" href="https://connect.facebook.net" crossOrigin="anonymous" />
         <link rel="dns-prefetch" href="https://www.googletagmanager.com" />

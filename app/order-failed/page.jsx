@@ -76,9 +76,9 @@ function OrderFailedContent() {
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">What you can do</p>
               <ul className="space-y-1.5">
                 {[
-                  'Check your card details and try again',
-                  'Try a different payment method',
-                  'Contact your bank if the issue persists',
+                  'Go back to checkout and place the order again',
+                  'Try Cash on Delivery or another payment method',
+                  'Contact support if the issue persists',
                 ].map((tip) => (
                   <li key={tip} className="flex items-center gap-2 text-sm text-gray-600">
                     <span className="w-1.5 h-1.5 rounded-full bg-orange-400 flex-shrink-0" />
